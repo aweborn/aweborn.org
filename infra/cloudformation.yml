@@ -1,0 +1,364 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Aweborn.org — Static website hosting with S3, CloudFront, ACM, Route53,
+  and a serverless Stripe Checkout API (API Gateway + Lambda).
+  MUST be deployed in us-east-1 (ACM requirement for CloudFront).
+
+Parameters:
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID for aweborn.org
+
+  StripeSecretKey:
+    Type: String
+    NoEcho: true
+    Default: sk_test_placeholder
+    Description: Stripe Secret Key (use test key initially)
+
+Resources:
+  # ============================================
+  # S3 — Static Site Content Bucket
+  # ============================================
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: aweborn-website-content
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ============================================
+  # CloudFront — Origin Access Control (OAC)
+  # ============================================
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: aweborn-oac
+        Description: OAC for aweborn.org S3 bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ============================================
+  # S3 — Bucket Policy (CloudFront OAC access)
+  # ============================================
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontOAC
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${SiteBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                'AWS:SourceArn': !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  # ============================================
+  # ACM — TLS Certificate
+  # ============================================
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: aweborn.org
+      SubjectAlternativeNames:
+        - '*.aweborn.org'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: aweborn.org
+          HostedZoneId: !Ref HostedZoneId
+
+  # ============================================
+  # CloudFront — Distribution
+  # ============================================
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: aweborn.org website
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http2and3
+
+        Aliases:
+          - aweborn.org
+          - www.aweborn.org
+
+        ViewerCertificate:
+          AcmCertificateArn: !Ref Certificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !Ref CloudFrontOAC
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          Compress: true
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+
+        # SPA routing — serve index.html for 403/404
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 300
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 300
+
+  # ============================================
+  # Route53 — DNS Records
+  # ============================================
+  DNSRecordApex:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: aweborn.org
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront global hosted zone ID
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        EvaluateTargetHealth: false
+
+  DNSRecordWww:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: www.aweborn.org
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        EvaluateTargetHealth: false
+
+  # ============================================
+  # Lambda — Stripe Checkout Session Creator
+  # ============================================
+  StripeCheckoutRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aweborn-stripe-checkout-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  StripeCheckoutFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aweborn-stripe-checkout
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt StripeCheckoutRole.Arn
+      Timeout: 15
+      MemorySize: 128
+      Environment:
+        Variables:
+          STRIPE_SECRET_KEY: !Ref StripeSecretKey
+          SITE_URL: https://aweborn.org
+      Code:
+        ZipFile: |
+          const https = require('https');
+
+          const ALLOWED_ORIGINS = [
+            'https://aweborn.org',
+            'https://www.aweborn.org'
+          ];
+
+          function corsHeaders(origin) {
+            const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+            return {
+              'Access-Control-Allow-Origin': allowed,
+              'Access-Control-Allow-Headers': 'Content-Type',
+              'Access-Control-Allow-Methods': 'POST, OPTIONS',
+              'Content-Type': 'application/json'
+            };
+          }
+
+          function stripeRequest(path, data, apiKey) {
+            return new Promise((resolve, reject) => {
+              const postData = new URLSearchParams(data).toString();
+              const options = {
+                hostname: 'api.stripe.com',
+                port: 443,
+                path: path,
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${apiKey}`,
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                  'Content-Length': Buffer.byteLength(postData)
+                }
+              };
+
+              const req = https.request(options, (res) => {
+                let body = '';
+                res.on('data', (chunk) => body += chunk);
+                res.on('end', () => {
+                  try {
+                    resolve(JSON.parse(body));
+                  } catch (e) {
+                    reject(new Error('Failed to parse Stripe response'));
+                  }
+                });
+              });
+
+              req.on('error', reject);
+              req.write(postData);
+              req.end();
+            });
+          }
+
+          exports.handler = async (event) => {
+            const origin = event.headers?.origin || '';
+            const headers = corsHeaders(origin);
+
+            // Handle CORS preflight
+            if (event.requestContext?.http?.method === 'OPTIONS') {
+              return { statusCode: 200, headers, body: '' };
+            }
+
+            try {
+              const body = JSON.parse(event.body || '{}');
+              const amount = parseInt(body.amount, 10);
+              const currency = body.currency || 'usd';
+
+              if (!amount || amount < 100) {
+                return {
+                  statusCode: 400,
+                  headers,
+                  body: JSON.stringify({ error: 'Minimum donation is $1.00' })
+                };
+              }
+
+              const siteUrl = process.env.SITE_URL || 'https://aweborn.org';
+
+              const session = await stripeRequest('/v1/checkout/sessions', {
+                'mode': 'payment',
+                'line_items[0][price_data][currency]': currency,
+                'line_items[0][price_data][product_data][name]': 'Donation to Aweborn',
+                'line_items[0][price_data][unit_amount]': amount.toString(),
+                'line_items[0][quantity]': '1',
+                'success_url': `${siteUrl}?donation=success`,
+                'cancel_url': `${siteUrl}?donation=cancelled`,
+                'submit_type': 'donate'
+              }, process.env.STRIPE_SECRET_KEY);
+
+              if (session.error) {
+                console.error('Stripe error:', session.error);
+                return {
+                  statusCode: 500,
+                  headers,
+                  body: JSON.stringify({ error: 'Failed to create checkout session' })
+                };
+              }
+
+              return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify({ url: session.url })
+              };
+            } catch (err) {
+              console.error('Handler error:', err);
+              return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ error: 'Internal server error' })
+              };
+            }
+          };
+
+  StripeCheckoutFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref StripeCheckoutFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${PaymentApi}/*'
+
+  # ============================================
+  # API Gateway — HTTP API for Stripe
+  # ============================================
+  PaymentApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: aweborn-payment-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - https://aweborn.org
+          - https://www.aweborn.org
+        AllowMethods:
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+        MaxAge: 86400
+
+  PaymentApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PaymentApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt StripeCheckoutFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  PaymentApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PaymentApi
+      RouteKey: POST /create-checkout-session
+      Target: !Sub 'integrations/${PaymentApiIntegration}'
+
+  PaymentApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref PaymentApi
+      StageName: $default
+      AutoDeploy: true
+
+# ============================================
+# Outputs
+# ============================================
+Outputs:
+  DistributionId:
+    Description: CloudFront Distribution ID
+    Value: !Ref CloudFrontDistribution
+
+  DistributionDomainName:
+    Description: CloudFront Distribution Domain Name
+    Value: !GetAtt CloudFrontDistribution.DomainName
+
+  BucketName:
+    Description: S3 Bucket Name
+    Value: !Ref SiteBucket
+
+  ApiEndpoint:
+    Description: API Gateway endpoint URL for Stripe Checkout
+    Value: !GetAtt PaymentApi.ApiEndpoint
