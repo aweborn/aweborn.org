@@ -38,7 +38,7 @@ export default function App() {
       {/* HUD overlay — shows after loading */}
       {isLoaded && (
         <HUD
-          showPrompt={false}
+          showPrompt={true}
           onPromptClick={handlePortalActivate}
         />
       )}
