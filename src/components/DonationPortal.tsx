@@ -147,7 +147,6 @@ export function DonationPortal({ onActivate }: DonationPortalProps) {
           color="#e8b94a"
           anchorX="center"
           anchorY="middle"
-          font="https://fonts.gstatic.com/s/outfit/v11/QGYyz_MVcBeNP4NjuGObqx1XmO1I4TC1O4a0Ew.woff"
           outlineWidth={0.005}
           outlineColor="#000000"
           fillOpacity={hovered ? 1 : 0.6}

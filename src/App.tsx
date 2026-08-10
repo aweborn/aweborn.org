@@ -30,10 +30,12 @@ export default function App() {
       />
 
       {/* Loading screen — fades out when ready */}
-      <LoadingScreen
-        progress={loadingProgress}
-        onComplete={handleLoadComplete}
-      />
+      {!isLoaded && (
+        <LoadingScreen
+          progress={loadingProgress}
+          onComplete={handleLoadComplete}
+        />
+      )}
 
       {/* HUD overlay — shows after loading */}
       {isLoaded && (
