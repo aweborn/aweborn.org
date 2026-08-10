@@ -4,6 +4,9 @@ import { LoadingScreen } from './components/LoadingScreen'
 import { HUD } from './components/HUD'
 import { DonationModal } from './components/DonationModal'
 
+import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
+import { FallbackScene } from './components/FallbackScene'
+
 export default function App() {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)
@@ -23,11 +26,20 @@ export default function App() {
 
   return (
     <>
-      {/* 3D Scene — always mounted for loading */}
-      <Scene
-        onPortalActivate={handlePortalActivate}
-        onProgress={setLoadingProgress}
-      />
+      {/* 3D Scene with WebGL Error Boundary */}
+      <CanvasErrorBoundary 
+        fallback={
+          <FallbackScene 
+            onReady={handleLoadComplete} 
+            onDonate={handlePortalActivate} 
+          />
+        }
+      >
+        <Scene
+          onPortalActivate={handlePortalActivate}
+          onProgress={setLoadingProgress}
+        />
+      </CanvasErrorBoundary>
 
       {/* Loading screen — fades out when ready */}
       {!isLoaded && (
