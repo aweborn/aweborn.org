@@ -27,6 +27,9 @@ The immersive 3D donation experience for Aweborn has been successfully built and
 
 The site is live, but it currently uses a placeholder Stripe key. To enable real donations:
 
+https://docs.stripe.com/keys
+https://dashboard.stripe.com/test/settings/keys
+
 1. **Get your Stripe Secret Key**: Once your Stripe non-profit account is approved and ready for live transactions, obtain your live Secret Key (`sk_live_...`).
 2. **Update the AWS Stack**: You can update the CloudFormation stack to inject the real key into the Lambda function. Run this command locally (replace `<YOUR_KEY>`):
    ```bash
