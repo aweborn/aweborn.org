@@ -25,21 +25,18 @@ The immersive 3D donation experience for Aweborn has been successfully built and
 
 ## What you need to do next
 
-The site is live, but it currently uses a placeholder Stripe key. To enable real donations:
+The site is live and the real Stripe Secret Key has been successfully loaded! Live donations are now enabled.
 
-https://docs.stripe.com/keys
-https://dashboard.stripe.com/test/settings/keys
-
-1. **Get your Stripe Secret Key**: Once your Stripe non-profit account is approved and ready for live transactions, obtain your live Secret Key (`sk_live_...`).
-2. **Update the AWS Stack**: You can update the CloudFormation stack to inject the real key into the Lambda function. Run this command locally (replace `<YOUR_KEY>`):
+1. ~~**Get your Stripe Secret Key**: Once your Stripe non-profit account is approved and ready for live transactions, obtain your live Secret Key (`sk_live_...`).~~ *(Completed)*
+2. ~~**Update the AWS Stack**: You can update the CloudFormation stack to inject the real key into the Lambda function.~~ *(Completed: The AWS CloudFormation command was run and the secret key is loaded.)*
    ```bash
-   aws cloudformation deploy \
-     --template-file infra/cloudformation.yml \
-     --stack-name aweborn-website \
-     --capabilities CAPABILITY_NAMED_IAM \
-     --parameter-overrides \
-         HostedZoneId=Z077908710IGH7R1XO587 \
-         StripeSecretKey="<YOUR_KEY>"
+   # aws cloudformation deploy \
+   #   --template-file infra/cloudformation.yml \
+   #   --stack-name aweborn-website \
+   #   --capabilities CAPABILITY_NAMED_IAM \
+   #   --parameter-overrides \
+   #       HostedZoneId=Z077908710IGH7R1XO587 \
+   #       StripeSecretKey="<YOUR_KEY>"
    ```
 3. *(Optional)* **Webhooks**: If you need to trigger backend actions (like sending an automated email or saving the donor to a database) when a donation succeeds, you can expand the Lambda function to handle Stripe webhooks in the future.
 
