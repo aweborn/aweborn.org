@@ -40,7 +40,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 
 1. User clicks the glowing 3D portal → `DonationModal` opens as 2D overlay
 2. **Step 1 — Amount**: User picks a preset ($10–$500) or enters a custom amount → clicks "Continue"
-3. `usePaymentIntent` hook calls `POST /create-payment-intent` on API Gateway
+3. `usePaymentIntent` hook calls `POST /create-payment-intent` on API Gateway (proxied via Vite during development)
 4. Lambda creates a Stripe PaymentIntent and returns `{ clientSecret }`
 5. **Step 2 — Payment**: Stripe `<PaymentElement>` renders inline inside the glassmorphism modal (cosmic dark theme, golden accents)
 6. User fills in card details → clicks "Complete Donation" → `stripe.confirmPayment()` runs
@@ -63,6 +63,8 @@ The 3D scene renders behind the modal throughout — no page redirects.
 | `src/index.css` | Added ~190 lines: payment form layout, back button, amount banner, Stripe element wrapper, error styling, spinner, success screen with radial burst + checkmark pop animations |
 | `infra/cloudformation.yml` | Lambda: added path-based routing + `/create-payment-intent` handler. API Gateway: added `PaymentIntentApiRoute` |
 | `.env.production` | Added `VITE_STRIPE_PUBLISHABLE_KEY=pk_live_REPLACE_ME` |
+| `.env` | Set `VITE_API_ENDPOINT=/api` to use Vite proxy locally |
+| `vite.config.ts` | Configured proxy for `/api` to point to live API Gateway to solve CORS without modifying backend |
 | `package.json` | Added `@stripe/stripe-js` and `@stripe/react-stripe-js` |
 
 ### Unchanged

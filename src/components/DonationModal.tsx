@@ -214,6 +214,15 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
     onClose()
   }, [onClose, reset])
 
+  // Elements options — memoized to avoid re-mounting
+  const elementsOptions = useMemo(() => {
+    if (!clientSecret) return null
+    return {
+      clientSecret,
+      appearance: stripeAppearance,
+    }
+  }, [clientSecret])
+
   if (!isOpen) return null
 
   const handlePresetClick = (cents: number) => {
@@ -252,14 +261,6 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
   // Determine effective step: if we have a clientSecret and step is 'amount', advance
   const effectiveStep = step === 'amount' && clientSecret ? 'payment' : step
 
-  // Elements options — memoized to avoid re-mounting
-  const elementsOptions = useMemo(() => {
-    if (!clientSecret) return null
-    return {
-      clientSecret,
-      appearance: stripeAppearance,
-    }
-  }, [clientSecret])
 
   return (
     <div className="modal-backdrop" onClick={handleFullClose}>
