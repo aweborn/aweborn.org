@@ -483,6 +483,193 @@ html, body, #root {
   color: var(--color-text-tertiary);
 }
 
+/* --- Modal Steps (Two-Step Flow) --- */
+.modal-step {
+  animation: step-enter var(--duration-normal) var(--ease-out-expo);
+}
+
+@keyframes step-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Payment Form */
+.payment-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.payment-back-btn {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: var(--space-xs) 0;
+  transition: color var(--duration-fast);
+  letter-spacing: 0.01em;
+}
+
+.payment-back-btn:hover {
+  color: var(--color-accent-primary);
+}
+
+.payment-back-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.payment-amount-banner {
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  padding: var(--space-md);
+  background: rgba(232, 185, 74, 0.06);
+  border: 1px solid rgba(232, 185, 74, 0.12);
+  border-radius: var(--radius-md);
+}
+
+.payment-amount-banner strong {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-accent-primary);
+  display: block;
+  margin-top: var(--space-xs);
+}
+
+.stripe-element-wrapper {
+  padding: var(--space-sm) 0;
+  min-height: 120px;
+}
+
+.payment-error {
+  color: #e8594a;
+  font-size: var(--text-sm);
+  text-align: center;
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(232, 89, 74, 0.08);
+  border: 1px solid rgba(232, 89, 74, 0.15);
+  border-radius: var(--radius-md);
+}
+
+.btn-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.btn-spinner::before {
+  content: '';
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(5, 5, 16, 0.3);
+  border-top-color: var(--color-bg-deep);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- Success Screen --- */
+.modal-content.modal-success {
+  text-align: center;
+  overflow: hidden;
+}
+
+.donation-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  position: relative;
+  z-index: 1;
+}
+
+.success-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(232, 185, 74, 0.3) 0%, rgba(232, 185, 74, 0) 70%);
+  animation: burst-expand 1s var(--ease-out-expo) forwards;
+  z-index: 0;
+  pointer-events: none;
+}
+
+@keyframes burst-expand {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.8;
+  }
+  100% {
+    width: 600px;
+    height: 600px;
+    opacity: 0;
+  }
+}
+
+.success-icon {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--color-bg-deep);
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary));
+  border-radius: 50%;
+  box-shadow: 0 0 40px rgba(232, 185, 74, 0.4), 0 0 80px rgba(232, 185, 74, 0.15);
+  animation: success-pop 0.5s var(--ease-spring) forwards;
+  transform: scale(0);
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes success-pop {
+  0% {
+    transform: scale(0) rotate(-45deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.donation-success .modal-title {
+  animation: fade-in var(--duration-slow) var(--ease-out-expo) 0.2s both;
+}
+
+.donation-success .modal-subtitle {
+  animation: fade-in var(--duration-slow) var(--ease-out-expo) 0.35s both;
+  margin-bottom: var(--space-md);
+}
+
+.donation-success .donate-btn {
+  animation: fade-in var(--duration-slow) var(--ease-out-expo) 0.5s both;
+  max-width: 300px;
+}
+
 /* --- Sound Toggle --- */
 .sound-toggle {
   pointer-events: auto;

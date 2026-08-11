@@ -238,6 +238,7 @@ Resources:
           exports.handler = async (event) => {
             const origin = event.headers?.origin || '';
             const headers = corsHeaders(origin);
+            const path = event.requestContext?.http?.path || '';
 
             // Handle CORS preflight
             if (event.requestContext?.http?.method === 'OPTIONS') {
@@ -257,6 +258,33 @@ Resources:
                 };
               }
 
+              // --- Route: Create PaymentIntent (embedded Elements flow) ---
+              if (path.endsWith('/create-payment-intent')) {
+                const paymentIntent = await stripeRequest('/v1/payment_intents', {
+                  'amount': amount.toString(),
+                  'currency': currency,
+                  'automatic_payment_methods[enabled]': 'true',
+                  'description': 'Donation to Aweborn',
+                  'metadata[source]': 'aweborn.org'
+                }, process.env.STRIPE_SECRET_KEY);
+
+                if (paymentIntent.error) {
+                  console.error('Stripe error:', paymentIntent.error);
+                  return {
+                    statusCode: 500,
+                    headers,
+                    body: JSON.stringify({ error: 'Failed to initialize payment' })
+                  };
+                }
+
+                return {
+                  statusCode: 200,
+                  headers,
+                  body: JSON.stringify({ clientSecret: paymentIntent.client_secret })
+                };
+              }
+
+              // --- Route: Create Checkout Session (redirect fallback) ---
               const siteUrl = process.env.SITE_URL || 'https://aweborn.org';
 
               const session = await stripeRequest('/v1/checkout/sessions', {
@@ -334,6 +362,13 @@ Resources:
     Properties:
       ApiId: !Ref PaymentApi
       RouteKey: POST /create-checkout-session
+      Target: !Sub 'integrations/${PaymentApiIntegration}'
+
+  PaymentIntentApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PaymentApi
+      RouteKey: POST /create-payment-intent
       Target: !Sub 'integrations/${PaymentApiIntegration}'
 
   PaymentApiStage:
