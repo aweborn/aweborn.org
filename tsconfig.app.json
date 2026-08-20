@@ -16,11 +16,18 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Shared types */
+    "paths": {
+      "@aweborn/shared/*": ["./shared/*"]
+    },
+
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src", "shared"]
 }
+

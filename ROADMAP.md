@@ -195,13 +195,6 @@ Total: 2 scans. Connection established.
 - **Existing libraries**: [`QWBP`](https://github.com/magarcia/qwbp) (binary protocol, recommended), [`webrtc-via-qr`](https://github.com/Qivex/webrtc-via-qr) (simpler API with `HostConnection`/`UserConnection` classes), [`libp2p-webrtc-qr`](https://github.com/NiKrause/libp2p-webrtc-qr) (if integrating with libp2p ecosystem).
 - **For Aweborn**: Once the DataChannel is open, we pipe Yjs CRDT updates through it. Player positions, world edits, chat — all synced over the peer-to-peer channel with zero servers.
 
-##### Sneakernet CRDT Sync (Async / No Live Connection)
-
-Even without a live connection, Yjs CRDT diffs are tiny (often < 1KB for a building action). Players can sync asynchronously:
-- Build a world offline → app encodes the CRDT update as a QR code → friend scans it later → their world merges the changes automatically with zero conflicts.
-- This is like "passing notes" — no network needed at all, just two cameras.
-
-
 ### The Two-Layer CRDT Architecture & Persistence
 
 The system uses two nested CRDT layers. The stateful VPS holds active documents in RAM and lazily flushes to durable storage:

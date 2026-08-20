@@ -1,6 +1,6 @@
 # Phase 02: Multiplayer Core (CRDT + WebSocket)
 
-**Status:** `[ ]` Not Started
+**Status:** `[/]` In Progress
 **Depends on:** [Phase 01: Foundation & VPS Setup](./01-foundation.md)
 **ROADMAP reference:** [The Two-Layer CRDT Architecture & Persistence](../ROADMAP.md#the-two-layer-crdt-architecture--persistence)
 **Estimated sessions:** 4-6
@@ -117,4 +117,4 @@ Implement the two-layer CRDT architecture (Universe CRDT + per-World CRDTs) with
 
 | Date | What was done | Next step |
 |------|--------------|-----------|
-| — | — | — |
+| 2026-08-20 | Chunk 1–5: Created shared/crdt-schema.ts (types + spatial helpers), SQLite persistence layer, Universe CRDT manager, Room Manager with binary wire protocol, spatial resolver, world doc factory. Upgraded sync-service from y-websocket passthrough to room-aware server. Built client Zustand stores (universeStore, worldStore), useSyncConnection hook, usePresence hook. Replaced CRDTDevOverlay with multiplayer dev panel. Both server and client compile clean, Vite builds. | End-to-end two-tab sync test |

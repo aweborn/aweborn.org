@@ -26,7 +26,7 @@ Every new agent session should follow this sequence:
 | Phase | Name | Status | Plan | Description |
 |-------|------|--------|------|-------------|
 | **01** | Foundation & Infrastructure | ✅ Complete | [01-foundation.md](./01-foundation.md) | VPS (Lightsail + k3s), sync-service, genai-service, client CRDT hook |
-| **02** | Multiplayer Core | 🔴 Not Started | [02-multiplayer-core.md](./02-multiplayer-core.md) | Universe CRDT, World CRDTs, sector rooms, player presence |
+| **02** | Multiplayer Core | 🟡 In Progress | [02-multiplayer-core.md](./02-multiplayer-core.md) | Universe CRDT, World CRDTs, sector rooms, player presence |
 | **03** | Universe Rendering & LOD | 🔴 Not Started | [03-universe-rendering.md](./03-universe-rendering.md) | Data-driven worlds, LOD tiers, Ghost/Solid visuals |
 | **04** | Navigation & Controls | 🔴 Not Started | [04-navigation-controls.md](./04-navigation-controls.md) | Keyboard flight, gravity wells, warp, world entry/exit |
 | **05** | Mana Economy & Donations | 🔴 Not Started | [05-mana-economy.md](./05-mana-economy.md) | Mana pool, Living Frontier, Ghost/Solid states, donation→mana pipeline |

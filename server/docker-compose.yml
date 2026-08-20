@@ -13,6 +13,8 @@ services:
       - HOST=0.0.0.0
     volumes:
       - ./sync-service/src:/app/src
+      - ./data:/app/data
+      - ../shared:/shared
     # Override CMD with tsx watch for hot-reload in dev
     command: ["npx", "tsx", "watch", "src/index.ts"]
     restart: unless-stopped
