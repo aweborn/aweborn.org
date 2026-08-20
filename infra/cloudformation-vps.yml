@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Aweborn.org — VPS infrastructure for k3s cluster.
+  Provisions a Lightsail instance with static IP, firewall rules,
+  k3s + Docker bootstrap via UserData, and Route53 DNS records
+  for sync.aweborn.org and api.aweborn.org.
+
+Parameters:
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID for aweborn.org
+
+  InstanceBundle:
+    Type: String
+    Default: small_3_0
+    Description: >
+      Lightsail bundle ID. small_3_0 = 2GB RAM, 2 vCPU, 60GB SSD, $12/mo.
+      See: aws lightsail get-bundles
+    AllowedValues:
+      - micro_3_0
+      - small_3_0
+      - medium_3_0
+
+  AvailabilityZone:
+    Type: String
+    Default: us-east-1a
+    Description: AZ for the Lightsail instance
+
+Resources:
+  # ============================================
+  # Lightsail — VPS Instance
+  # ============================================
+  VPSInstance:
+    Type: AWS::Lightsail::Instance
+    Properties:
+      InstanceName: aweborn-vps
+      BlueprintId: ubuntu_22_04
+      BundleId: !Ref InstanceBundle
+      AvailabilityZone: !Ref AvailabilityZone
+      # SSH key — Lightsail creates a default key pair per region.
+      # To use a custom key, create it first via:
+      #   aws lightsail create-key-pair --key-pair-name aweborn-ssh
+      # Then uncomment:
+      # KeyPairName: aweborn-ssh
+      Networking:
+        Ports:
+          # SSH — default, restrict to your IP in production
+          - FromPort: 22
+            ToPort: 22
+            Protocol: tcp
+            AccessFrom: '0.0.0.0/0'
+            AccessType: public
+          # HTTP — for Caddy ACME challenge + redirect
+          - FromPort: 80
+            ToPort: 80
+            Protocol: tcp
+            AccessFrom: '0.0.0.0/0'
+            AccessType: public
+          # HTTPS — main traffic (WSS + HTTPS)
+          - FromPort: 443
+            ToPort: 443
+            Protocol: tcp
+            AccessFrom: '0.0.0.0/0'
+            AccessType: public
+          # k3s API — intentionally NOT exposed to public internet.
+          # Access via SSH tunnel: ssh -L 6443:localhost:6443 ubuntu@<ip>
+      UserData: |
+        #!/bin/bash
+        set -euo pipefail
+        exec > /var/log/aweborn-bootstrap.log 2>&1
+        echo "=== Aweborn VPS bootstrap starting at $(date) ==="
+
+        # ── System updates ───────────────────────────────────────
+        apt-get update -y
+        apt-get upgrade -y
+
+        # ── Install Docker ───────────────────────────────────────
+        curl -fsSL https://get.docker.com | sh
+        usermod -aG docker ubuntu
+
+        # ── Install k3s (without Traefik — we use Caddy) ────────
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
+
+        # Wait for k3s to be ready
+        echo "Waiting for k3s node to be ready..."
+        until k3s kubectl get nodes | grep -q ' Ready'; do
+          sleep 5
+        done
+        echo "k3s node is ready"
+
+        # ── Clone repo and build images ──────────────────────────
+        git clone https://github.com/aweborn/aweborn.org.git /home/ubuntu/aweborn
+        chown -R ubuntu:ubuntu /home/ubuntu/aweborn
+
+        # Build Docker images
+        docker build -t ghcr.io/aweborn/sync-service:latest /home/ubuntu/aweborn/server/sync-service
+        docker build -t ghcr.io/aweborn/genai-service:latest /home/ubuntu/aweborn/server/genai-service
+
+        # Import images into k3s containerd
+        docker save ghcr.io/aweborn/sync-service:latest | k3s ctr images import -
+        docker save ghcr.io/aweborn/genai-service:latest | k3s ctr images import -
+
+        # ── Deploy k3s manifests ─────────────────────────────────
+        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/namespace.yaml
+        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/secrets.yaml
+        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/sync-service-deployment.yaml
+        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/genai-service-deployment.yaml
+        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/caddy-pvc.yaml
+        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/caddy-ingress.yaml
+
+        echo "=== Aweborn VPS bootstrap complete at $(date) ==="
+
+  # ============================================
+  # Lightsail — Static IP
+  # ============================================
+  VPSStaticIp:
+    Type: AWS::Lightsail::StaticIp
+    Properties:
+      StaticIpName: aweborn-vps-ip
+      AttachedTo: !GetAtt VPSInstance.InstanceName
+    DependsOn: VPSInstance
+
+  # ============================================
+  # Route53 — DNS Records for VPS services
+  # ============================================
+  SyncDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: sync.aweborn.org
+      Type: A
+      TTL: '300'
+      ResourceRecords:
+        - !GetAtt VPSStaticIp.IpAddress
+    DependsOn: VPSStaticIp
+
+  ApiDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: api.aweborn.org
+      Type: A
+      TTL: '300'
+      ResourceRecords:
+        - !GetAtt VPSStaticIp.IpAddress
+    DependsOn: VPSStaticIp
+
+# ============================================
+# Outputs
+# ============================================
+Outputs:
+  InstanceName:
+    Description: Lightsail instance name
+    Value: !Ref VPSInstance
+
+  StaticIpAddress:
+    Description: Static IP address of the VPS
+    Value: !GetAtt VPSStaticIp.IpAddress
+
+  SyncServiceUrl:
+    Description: Sync service URL (WSS)
+    Value: wss://sync.aweborn.org
+
+  ApiServiceUrl:
+    Description: API service URL (HTTPS)
+    Value: https://api.aweborn.org
+
+  SSHCommand:
+    Description: SSH command to connect to the VPS
+    Value: !Sub
+      - 'ssh ubuntu@${IP}'
+      - IP: !GetAtt VPSStaticIp.IpAddress
+
+  BootstrapLogCommand:
+    Description: Command to check bootstrap progress on the VPS
+    Value: 'sudo tail -f /var/log/aweborn-bootstrap.log'

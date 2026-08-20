@@ -1,0 +1,32 @@
+# Aweborn — Local Development
+# Usage: docker compose up  (from server/ directory)
+
+services:
+  sync-service:
+    build:
+      context: ./sync-service
+      dockerfile: Dockerfile
+    ports:
+      - "1234:1234"
+    environment:
+      - PORT=1234
+      - HOST=0.0.0.0
+    volumes:
+      - ./sync-service/src:/app/src
+    # Override CMD with tsx watch for hot-reload in dev
+    command: ["npx", "tsx", "watch", "src/index.ts"]
+    restart: unless-stopped
+
+  genai-service:
+    build:
+      context: ./genai-service
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+    volumes:
+      - ./genai-service/src:/app/src
+    command: ["npx", "tsx", "watch", "src/index.ts"]
+    restart: unless-stopped

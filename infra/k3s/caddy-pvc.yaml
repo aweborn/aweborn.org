@@ -1,0 +1,15 @@
+# PersistentVolumeClaim for Caddy TLS certificates
+# Uses k3s's built-in local-path StorageClass so certs survive pod restarts
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: caddy-data
+  namespace: aweborn
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 256Mi

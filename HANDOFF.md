@@ -46,7 +46,13 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `src/components/FallbackScene.tsx` | 2D fallback for no-WebGL — includes browser-specific fix instructions |
 | `src/components/CanvasErrorBoundary.tsx` | React error boundary for R3F Canvas crashes |
 | `src/hooks/usePaymentIntent.ts` | Hook — calls `POST /create-payment-intent`, returns `clientSecret` for embedded Elements |
+| `src/hooks/useCRDT.ts` | Hook — connects to sync-service via y-websocket, returns `{ doc, connected, synced }` |
 | `src/index.css` | Full design system — tokens, glass effects, animations, payment form styles, success animation |
+| `server/sync-service/src/index.ts` | WebSocket + Yjs CRDT sync server |
+| `server/genai-service/src/index.ts` | Gen AI API proxy (placeholder, all routes return 501) |
+| `server/docker-compose.yml` | Local dev: runs both services with hot-reload |
+| `infra/k3s/` | Kubernetes manifests for k3s deployment (namespace, deployments, Caddy ingress, secrets) |
+| `infra/k3s/deploy.sh` | Build → push → apply deployment script |
 | `.env.production` | `VITE_API_ENDPOINT` and `VITE_STRIPE_PUBLISHABLE_KEY` |
 | `infra/cloudformation.yml` | Complete AWS stack (S3, CloudFront, ACM, Route53, API GW, Lambda) with both `/create-checkout-session` and `/create-payment-intent` routes |
 
@@ -82,6 +88,19 @@ The 3D scene renders behind the modal throughout — no page redirects.
    aws s3 sync dist/ s3://aweborn-website-content --delete
    aws cloudfront create-invalidation --distribution-id <DIST_ID> --paths "/*"
    ```
+
+## Local dev (server services)
+
+```bash
+# Start sync-service + genai-service with hot-reload
+cd server && docker compose up
+
+# Or without Docker (requires npm install in each service dir):
+cd server/sync-service && npm run dev
+cd server/genai-service && npm run dev
+```
+
+The Vite frontend connects to `ws://localhost:1234` (sync-service) in dev mode via the `VITE_SYNC_URL` env var.
 
 ## Useful commands
 

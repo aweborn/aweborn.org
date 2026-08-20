@@ -3,6 +3,7 @@ import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
 import { HUD } from './components/HUD'
 import { DonationModal } from './components/DonationModal'
+import { CRDTDevOverlay } from './components/CRDTDevOverlay'
 
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
 import { FallbackScene } from './components/FallbackScene'
@@ -86,6 +87,9 @@ export default function App() {
         isOpen={showDonationModal}
         onClose={handleCloseDonation}
       />
+
+      {/* CRDT dev overlay — dev only, toggle with backtick */}
+      {import.meta.env.DEV && <CRDTDevOverlay />}
     </>
   )
 }

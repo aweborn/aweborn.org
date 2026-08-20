@@ -62,12 +62,6 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - `[ ]` Join page reads `window.location.hash`, extracts SDP, generates answer
 - `[ ]` Documentation: how to write join URLs to NFC stickers
 
-### Sneakernet CRDT Sync
-- `[ ]` Create `src/components/SneakernetSync.tsx`
-- `[ ]` Export CRDT diff as QR code (tiny — often < 1KB)
-- `[ ]` Import: scan someone's QR → merge changes into local state
-- `[ ]` No live connection needed — "passing notes" between devices
-
 ### Offline Reconnect
 - `[ ]` On reconnect: y-websocket auto-syncs local state to VPS
 - `[ ]` Server validates structural changes, resolves collisions
@@ -89,7 +83,6 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - [ ] CRDT changes sync over WebRTC DataChannel
 - [ ] Offline creations persist in IndexedDB and sync as Ghosts on reconnect
 - [ ] NFC URL deep-links work (online: join room, offline: SDP in hash)
-- [ ] Sneakernet QR sync works (export diff → scan → merge)
 - [ ] Connectivity status displayed in HUD
 - [ ] No data loss on reconnect — CRDT merge handles all cases
 
