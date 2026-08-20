@@ -115,10 +115,10 @@ Resources:
   # ============================================
   VPSStaticIp:
     Type: AWS::Lightsail::StaticIp
+    DependsOn: VPSInstance
     Properties:
       StaticIpName: aweborn-vps-ip
-      AttachedTo: !GetAtt VPSInstance.InstanceName
-    DependsOn: VPSInstance
+      AttachedTo: aweborn-vps
 
   # ============================================
   # Route53 — DNS Records for VPS services
