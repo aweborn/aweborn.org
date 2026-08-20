@@ -22,15 +22,18 @@ An immersive 3D donation experience for Aweborn, a non-profit. Users explore a c
 
 ```text
 User → CloudFront (CDN) → S3 (static Vite/React app)
-                        ↘ Lightsail VPS (Ubuntu + k3s) → WebSocket (real-time CRDT sync)
+     → sync.aweborn.org → Lightsail VPS (k3s) → Caddy → sync-service (WSS CRDT sync)
+     → api.aweborn.org  → Lightsail VPS (k3s) → Caddy → genai-service (HTTPS REST)
                         ↘ API Gateway → Lambda → Stripe API (webhooks only)
 ```
 
 - **Frontend**: Vite + React 19 + TypeScript + React Three Fiber (Three.js r185) + Stripe Elements
 - **Backend**: Single Lambda function (Node.js 20, inline in CloudFormation) that proxies to Stripe
-- **Infra**: All in `infra/cloudformation.yml` — S3, CloudFront, ACM cert, Route53 DNS, API Gateway, Lambda
-- **CI/CD**: `.github/workflows/deploy.yml` — auto-deploys on push to `main` via OIDC auth
+- **Infra (static)**: `infra/cloudformation.yml` — S3, CloudFront, ACM cert, Route53, API Gateway, Lambda
+- **Infra (VPS)**: `infra/cloudformation-vps.yml` — Lightsail instance, static IP, Route53 DNS, k3s bootstrap
+- **CI/CD**: `.github/workflows/deploy.yml` — auto-deploys frontend on push to `main` via OIDC auth
 - **Domain**: `aweborn.org` + `www.aweborn.org`, Hosted Zone ID `Z077908710IGH7R1XO587`
+- **VPS**: `sync.aweborn.org` + `api.aweborn.org` → Lightsail (Ubuntu 22.04 + k3s + Caddy auto-TLS)
 
 ## Key files
 
@@ -53,8 +56,9 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `server/docker-compose.yml` | Local dev: runs both services with hot-reload |
 | `infra/k3s/` | Kubernetes manifests for k3s deployment (namespace, deployments, Caddy ingress, secrets) |
 | `infra/k3s/deploy.sh` | Build → push → apply deployment script |
-| `.env.production` | `VITE_API_ENDPOINT` and `VITE_STRIPE_PUBLISHABLE_KEY` |
-| `infra/cloudformation.yml` | Complete AWS stack (S3, CloudFront, ACM, Route53, API GW, Lambda) with both `/create-checkout-session` and `/create-payment-intent` routes |
+| `.env.production` | `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY`, `VITE_SYNC_URL` |
+| `infra/cloudformation.yml` | Static site AWS stack (S3, CloudFront, ACM, Route53, API GW, Lambda) |
+| `infra/cloudformation-vps.yml` | VPS AWS stack (Lightsail instance, static IP, Route53 DNS, k3s+Docker bootstrap) |
 
 ## Donation flow
 
@@ -85,9 +89,18 @@ The 3D scene renders behind the modal throughout — no page redirects.
 3. **Build and deploy frontend** (Pushing to `main` triggers CI/CD, or you can do it manually):
    ```bash
    npm run build
-   aws s3 sync dist/ s3://aweborn-website-content --delete
-   aws cloudfront create-invalidation --distribution-id <DIST_ID> --paths "/*"
-   ```
+    aws s3 sync dist/ s3://aweborn-website-content --delete
+    aws cloudfront create-invalidation --distribution-id <DIST_ID> --paths "/*"
+    ```
+4. **Deploy the VPS stack** (one-time, or to recreate):
+    ```bash
+    aws cloudformation create-stack \
+      --stack-name aweborn-vps \
+      --template-body file://infra/cloudformation-vps.yml \
+      --parameters \
+        ParameterKey=HostedZoneId,ParameterValue=Z077908710IGH7R1XO587
+    ```
+    The UserData script automatically installs k3s + Docker, builds images from `main`, and deploys all K8s manifests.
 
 ## Local dev (server services)
 
@@ -105,13 +118,13 @@ The Vite frontend connects to `ws://localhost:1234` (sync-service) in dev mode v
 ## Useful commands
 
 ```bash
-# Dev server
+# Dev server (frontend)
 npm run dev
 
-# Build
+# Build frontend
 npm run build
 
-# Deploy infra (update stack)
+# Deploy static site infra (update stack)
 aws cloudformation deploy \
   --template-file infra/cloudformation.yml \
   --stack-name aweborn-website \
@@ -119,6 +132,28 @@ aws cloudformation deploy \
   --parameter-overrides \
       HostedZoneId=Z077908710IGH7R1XO587 \
       StripeSecretKey="<YOUR_KEY>"
+```
+
+## VPS management
+
+```bash
+# SSH into VPS
+ssh -i ~/.ssh/lightsail-default.pem ubuntu@$(aws cloudformation describe-stacks --stack-name aweborn-vps --query 'Stacks[0].Outputs[?OutputKey==`StaticIpAddress`].OutputValue' --output text)
+
+# Check pod status
+sudo k3s kubectl -n aweborn get pods
+
+# View service logs
+sudo k3s kubectl -n aweborn logs deployment/sync-service
+sudo k3s kubectl -n aweborn logs deployment/genai-service
+sudo k3s kubectl -n aweborn logs daemonset/caddy
+
+# Update services after code changes (on VPS)
+cd /home/ubuntu/aweborn && git pull
+./infra/k3s/deploy.sh --vps --apply
+
+# Check bootstrap log (first boot only)
+sudo cat /var/log/aweborn-bootstrap.log
 ```
 
 ## Future Roadmap
