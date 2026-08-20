@@ -15,7 +15,7 @@ Aweborn.org is an immersive 3D cosmic universe in the browser. Users explore spa
 | Backend (payments) | AWS Lambda (Node.js 20, inline CloudFormation) | ✅ Live |
 | Infra (static) | CloudFormation (S3, CloudFront, ACM, Route53, API GW) | ✅ Live |
 | CI/CD | GitHub Actions → OIDC → S3 sync + CloudFront invalidation | ✅ Live |
-| VPS (Talos + containers) | — | ❌ Not started |
+| VPS (k3s on Ubuntu + containers) | — | ❌ Not started |
 | CRDT sync service | — | ❌ Not started |
 | Gen AI service | — | ❌ Not started |
 | Multiplayer | — | ❌ Not started |
@@ -25,7 +25,7 @@ Aweborn.org is an immersive 3D cosmic universe in the browser. Users explore spa
 ```
 User's Browser
   ├── CloudFront → S3 (static Vite/React app)
-  ├── wss://sync.aweborn.org → Talos VPS
+  ├── wss://sync.aweborn.org → Lightsail VPS (Ubuntu + k3s)
   │     ├── [caddy] reverse proxy + TLS
   │     ├── [sync-service] WebSocket, Yjs CRDT, spatial resolver, mana validation
   │     └── [genai-service] AI API proxy (Meshy, image, music, voice, text)
@@ -36,7 +36,7 @@ User's Browser
 
 | # | Phase | Status | Depends On | Sessions Est. | Phase File |
 |---|-------|--------|-----------|---------------|------------|
-| 01 | Foundation & Infra (Talos + Docker) | `[ ]` Not Started | — | 3-4 | [→ 01-foundation.md](./phases/01-foundation.md) |
+| 01 | Foundation & Infra (Lightsail + k3s) | `[ ]` Not Started | — | 2-3 | [→ 01-foundation.md](./phases/01-foundation.md) |
 | 02 | Multiplayer Core (CRDT + WebSocket) | `[ ]` Not Started | Phase 01 | 4-6 | [→ 02-multiplayer-core.md](./phases/02-multiplayer-core.md) |
 | 03 | Universe Rendering & LOD | `[ ]` Not Started | Phase 02 | 3-4 | [→ 03-universe-rendering.md](./phases/03-universe-rendering.md) |
 | 04 | Navigation & Controls | `[ ]` Not Started | Phase 03 | 3-4 | [→ 04-navigation-controls.md](./phases/04-navigation-controls.md) |
@@ -50,7 +50,7 @@ User's Browser
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| VPS OS | **Talos OS** (immutable Kubernetes) | Matches `ajmedeio-cluster-infra` approach, enables multi-node scaling |
+| VPS OS | **Ubuntu 22.04 LTS + k3s** | Fast provisioning on Lightsail, lightweight K8s. Talos OS is a future migration target once infra is stable. |
 | Container runtime | **Docker** via Kubernetes | Each service is independently deployable |
 | CRDT library | **Yjs** | Transport-agnostic, battle-tested, supports awareness protocol, works offline |
 | Real-time transport | **Native WebSockets** (sync-service container) | In-memory CRDT merge, near-zero cost |
@@ -86,7 +86,7 @@ aweborn.org/
 │   └── docker-compose.yml         # Local dev orchestration
 ├── infra/
 │   ├── cloudformation.yml         # AWS static infra
-│   └── talos/                     # ← NEW: Talos cluster config
+│   └── k3s/                       # ← NEW: k3s cluster K8s manifests
 ├── ROADMAP.md                     # Design bible (850 lines)
 ├── HANDOFF.md                     # Architecture snapshot
 ├── PLAN.md                        # This file

@@ -22,7 +22,7 @@ An immersive 3D donation experience for Aweborn, a non-profit. Users explore a c
 
 ```text
 User → CloudFront (CDN) → S3 (static Vite/React app)
-                        ↘ Lightsail VPS (Node.js) → WebSocket (real-time CRDT sync)
+                        ↘ Lightsail VPS (Ubuntu + k3s) → WebSocket (real-time CRDT sync)
                         ↘ API Gateway → Lambda → Stripe API (webhooks only)
 ```
 

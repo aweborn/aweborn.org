@@ -23,7 +23,7 @@ This phase answers the ROADMAP's open question: **"What can players actually do 
 ## Architecture: genai-service
 
 ```
-genai-service (Node.js container on Talos VPS)
+genai-service (Node.js container on k3s VPS)
 ├── POST /generate/model      → Meshy AI (3D models, avatars, characters)
 ├── POST /generate/image      → [TBD provider] (textures, paintings, decals)
 ├── POST /generate/music      → [TBD provider] (ambient loops, soundtracks)
@@ -200,7 +200,7 @@ interface GenerateResult {
 
 ## Acceptance Criteria
 
-- [ ] genai-service is running as a container on the Talos VPS
+- [ ] genai-service is running as a container on the k3s VPS
 - [ ] At least one generation type works end-to-end (recommend: 3D model via Meshy)
 - [ ] Mana is deducted for AI generation, refunded on failure
 - [ ] Generated assets appear in the world and sync to other players via CRDT
