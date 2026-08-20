@@ -1,5 +1,7 @@
 # Aweborn.org — Future Roadmap
 
+> **📋 Implementation Plan:** This document is the design bible. For the actionable, phased implementation plan, see [MASTER_PLAN.md](./docs/plans/MASTER_PLAN.md).
+
 ## Table of Contents
 
 <!-- toc -->

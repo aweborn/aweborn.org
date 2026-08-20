@@ -105,3 +105,5 @@ aws cloudformation deploy \
 ## Future Roadmap
 
 The roadmap for multiplayer/mesh networking has been moved to [ROADMAP.md](ROADMAP.md).
+
+For the actionable, phased implementation plan (with session protocol for picking up where you left off), see [MASTER_PLAN.md](./docs/plans/MASTER_PLAN.md).
