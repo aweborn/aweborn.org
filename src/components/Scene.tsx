@@ -5,50 +5,80 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { Environment } from './Environment'
 import { DonationPortal } from './DonationPortal'
 import { UniverseWorlds } from './UniverseWorlds'
+import { PlayerStars } from './PlayerStars'
+import { WorldInterior } from './WorldInterior'
+import { useUniverseStore } from '../stores/universeStore'
 
 interface SceneProps {
   onPortalActivate: () => void
   onProgress: (progress: number) => void
 }
 
-function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
+/**
+ * Universe view — the star map with worlds, players, and the portal.
+ * Hidden when the player is inside a world.
+ */
+function UniverseView({ onPortalActivate }: { onPortalActivate: () => void }) {
   return (
     <>
-      {/* Camera controls — orbit around the scene */}
-      <OrbitControls
-        enablePan={false}
-        enableZoom={true}
-        minDistance={3}
-        maxDistance={25}
-        autoRotate
-        autoRotateSpeed={0.3}
-        maxPolarAngle={Math.PI * 0.75}
-        minPolarAngle={Math.PI * 0.25}
-        dampingFactor={0.05}
-        enableDamping
-      />
-
-      {/* Fog for depth */}
-      <fog attach="fog" args={['#050510', 8, 45]} />
-
-      {/* Environment — the cosmos */}
+      {/* Environment — the cosmos (starfield, clouds, nebula) */}
       <Environment />
 
-      {/* Synced worlds from Universe CRDT */}
+      {/* Synced worlds from Universe CRDT (with LOD) */}
       <UniverseWorlds />
+
+      {/* Other players as glowing orbs */}
+      <PlayerStars />
 
       {/* Donation Portal — the discoverable object */}
       <DonationPortal onActivate={onPortalActivate} />
+    </>
+  )
+}
+
+function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
+  const activeWorldId = useUniverseStore((s) => s.activeWorldId)
+  const isInWorld = activeWorldId !== null
+
+  return (
+    <>
+      {/* Camera controls */}
+      <OrbitControls
+        enablePan={isInWorld}
+        enableZoom={true}
+        minDistance={isInWorld ? 1 : 3}
+        maxDistance={isInWorld ? 50 : 25}
+        autoRotate={!isInWorld}
+        autoRotateSpeed={0.3}
+        maxPolarAngle={isInWorld ? Math.PI * 0.95 : Math.PI * 0.75}
+        minPolarAngle={isInWorld ? Math.PI * 0.05 : Math.PI * 0.25}
+        dampingFactor={0.05}
+        enableDamping
+        target={isInWorld ? [0, 1, 0] : [0, 0, 0]}
+      />
+
+      {/* Fog — different for universe vs world interior */}
+      <fog attach="fog" args={[
+        isInWorld ? '#050510' : '#050510',
+        isInWorld ? 15 : 8,
+        isInWorld ? 50 : 45,
+      ]} />
+
+      {/* Universe view — star map (hidden when inside a world) */}
+      {!isInWorld && <UniverseView onPortalActivate={onPortalActivate} />}
+
+      {/* World interior — inside a world (shown when entered) */}
+      {isInWorld && <WorldInterior />}
 
       {/* Post-processing */}
       <EffectComposer>
         <Bloom
           luminanceThreshold={0.3}
           luminanceSmoothing={0.9}
-          intensity={1.2}
+          intensity={isInWorld ? 0.8 : 1.2}
           mipmapBlur
         />
-        <Vignette eskil={false} offset={0.15} darkness={0.8} />
+        <Vignette eskil={false} offset={0.15} darkness={isInWorld ? 0.6 : 0.8} />
       </EffectComposer>
 
       <Preload all />

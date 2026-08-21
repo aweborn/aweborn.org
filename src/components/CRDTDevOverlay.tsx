@@ -33,7 +33,6 @@ export function CRDTDevOverlay() {
 
   // World interior state
   const worldObjects = useWorldStore((s) => s.objects);
-  const worldMeta = useWorldStore((s) => s.meta);
   const worldChat = useWorldStore((s) => s.chat);
   const worldLoaded = useWorldStore((s) => s.loaded);
   const placeObject = useWorldStore((s) => s.placeObject);

@@ -173,12 +173,12 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
     }
 
     // Apply the incoming update, tagged as "remote" so we don't echo it back
-    Y.applyUpdate(doc, update, "remote");
+    Y.applyUpdate(doc!, update, "remote");
     set({ activeWorldDoc: doc });
 
     // If this is a new doc (full sync), load it into the world store for reactive UI
     if (isNewDoc) {
-      useWorldStore.getState().loadFromDoc(doc);
+      useWorldStore.getState().loadFromDoc(doc!);
     }
   },
 

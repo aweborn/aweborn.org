@@ -1,67 +1,20 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Float, Stars, Cloud } from '@react-three/drei'
+import { Stars, Cloud } from '@react-three/drei'
 import * as THREE from 'three'
 
 /**
- * Cosmic nebula environment with floating islands, particle fields,
- * a dynamic starfield, and atmospheric volumetric clouds.
+ * Cosmic nebula environment — ambient backdrop for the universe view.
+ *
+ * Contains:
+ *  - Dynamic starfield (background stars)
+ *  - Volumetric nebula clouds
+ *  - Orbital particle fields
+ *  - Nebula rings
+ *  - Ambient + accent lighting
+ *
+ * FloatingIslands have been promoted to landmark worlds in UniverseWorlds.tsx.
  */
-
-/* ---- Floating Island ---- */
-function FloatingIsland({ position, scale = 1 }: { position: [number, number, number]; scale?: number }) {
-  const ref = useRef<THREE.Group>(null!)
-
-  useFrame((state) => {
-    if (ref.current) {
-      ref.current.rotation.y = state.clock.elapsedTime * 0.05
-    }
-  })
-
-  return (
-    <Float speed={1.2} rotationIntensity={0.3} floatIntensity={0.8}>
-      <group ref={ref} position={position} scale={scale}>
-        {/* Main rock body */}
-        <mesh>
-          <dodecahedronGeometry args={[1, 1]} />
-          <meshStandardMaterial
-            color="#1a1a4e"
-            roughness={0.85}
-            metalness={0.1}
-            emissive="#1a0a30"
-            emissiveIntensity={0.15}
-          />
-        </mesh>
-        {/* Crystal formation */}
-        <mesh position={[0, 0.8, 0]} rotation={[0.3, 0, 0.2]}>
-          <octahedronGeometry args={[0.35, 0]} />
-          <meshStandardMaterial
-            color="#e8b94a"
-            roughness={0.1}
-            metalness={0.9}
-            emissive="#e8b94a"
-            emissiveIntensity={0.5}
-            transparent
-            opacity={0.85}
-          />
-        </mesh>
-        {/* Smaller crystals */}
-        <mesh position={[0.5, 0.5, 0.3]} rotation={[0.5, 0.8, 0]}>
-          <octahedronGeometry args={[0.15, 0]} />
-          <meshStandardMaterial
-            color="#6b3fa0"
-            roughness={0.15}
-            metalness={0.8}
-            emissive="#6b3fa0"
-            emissiveIntensity={0.6}
-            transparent
-            opacity={0.8}
-          />
-        </mesh>
-      </group>
-    </Float>
-  )
-}
 
 /* ---- Orbiting Particles ---- */
 function OrbitalParticles({ count = 200, radius = 15 }: { count?: number; radius?: number }) {
@@ -194,13 +147,6 @@ export function Environment() {
         position={[12, 8, -25]}
         scale={[20, 3, 3]}
       />
-
-      {/* Floating islands */}
-      <FloatingIsland position={[-8, 2, -12]} scale={1.2} />
-      <FloatingIsland position={[6, -1, -10]} scale={0.8} />
-      <FloatingIsland position={[-4, -3, -18]} scale={1.5} />
-      <FloatingIsland position={[10, 4, -20]} scale={0.6} />
-      <FloatingIsland position={[-12, 5, -25]} scale={1.0} />
 
       {/* Orbital particle fields */}
       <OrbitalParticles count={300} radius={18} />
