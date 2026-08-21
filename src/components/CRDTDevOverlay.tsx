@@ -51,7 +51,7 @@ export function CRDTDevOverlay() {
     [applyWorldUpdate]
   );
 
-  const { connected, createWorld, send } = useSyncConnection(
+  const { connected, createWorld, joinWorld: syncJoinWorld, leaveWorld: syncLeaveWorld } = useSyncConnection(
     sectorKeys,
     onUniverseUpdate,
     onWorldUpdate
@@ -80,11 +80,14 @@ export function CRDTDevOverlay() {
 
   const handleEnterWorld = (worldId: string) => {
     enterWorld(worldId);
-    // Tell server to join the world room
-    send("world-update", new TextEncoder().encode("join"), worldId);
+    // Tell server to join the world room via multiplexed protocol
+    syncJoinWorld(worldId);
   };
 
   const handleExitWorld = () => {
+    if (activeWorldId) {
+      syncLeaveWorld(activeWorldId);
+    }
     exitWorld();
   };
 

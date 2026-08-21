@@ -4,6 +4,7 @@ import { OrbitControls, Preload } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { Environment } from './Environment'
 import { DonationPortal } from './DonationPortal'
+import { UniverseWorlds } from './UniverseWorlds'
 
 interface SceneProps {
   onPortalActivate: () => void
@@ -32,6 +33,9 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
 
       {/* Environment — the cosmos */}
       <Environment />
+
+      {/* Synced worlds from Universe CRDT */}
+      <UniverseWorlds />
 
       {/* Donation Portal — the discoverable object */}
       <DonationPortal onActivate={onPortalActivate} />

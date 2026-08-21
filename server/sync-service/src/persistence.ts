@@ -12,10 +12,9 @@ import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-const DEFAULT_DB_PATH = resolve(
-  import.meta.dirname ?? ".",
-  "../../data/universe.db"
-);
+const DEFAULT_DB_PATH =
+  process.env.DB_PATH ??
+  resolve(process.cwd(), "data/universe.db");
 
 let db: Database.Database | null = null;
 

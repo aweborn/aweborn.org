@@ -275,6 +275,23 @@ export class RoomManager {
           this.updateSectors(ws, sectors);
           break;
         }
+        case "join-world": {
+          // Client wants to enter a world (multiplexed over universe connection)
+          if (message.worldId) {
+            const doc = this.joinWorld(ws, message.worldId);
+            if (!doc) {
+              console.warn(`[rooms] join-world failed: world "${message.worldId}" not found`);
+            }
+          }
+          break;
+        }
+        case "leave-world": {
+          // Client wants to leave a world
+          if (message.worldId) {
+            this.leaveWorld(ws, message.worldId);
+          }
+          break;
+        }
         default:
           console.warn(`[rooms] unknown message type: ${message.type}`);
       }
@@ -451,6 +468,8 @@ export class RoomManager {
   //   0x04 = world-update     (bidirectional: CRDT delta)
   //   0x05 = create-world     (client → server: JSON payload)
   //   0x06 = update-sectors   (client → server: JSON payload)
+  //   0x07 = join-world       (client → server: worldId in header)
+  //   0x08 = leave-world      (client → server: worldId in header)
 
   private static readonly MSG_TYPES: Record<string, number> = {
     "universe-sync": 0x01,
@@ -459,6 +478,8 @@ export class RoomManager {
     "world-update": 0x04,
     "create-world": 0x05,
     "update-sectors": 0x06,
+    "join-world": 0x07,
+    "leave-world": 0x08,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

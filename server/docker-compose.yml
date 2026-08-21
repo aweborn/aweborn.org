@@ -17,6 +17,8 @@ services:
       - ../shared:/shared
     # Override CMD with tsx watch for hot-reload in dev
     command: ["npx", "tsx", "watch", "src/index.ts"]
+    # Run as root in dev so we can write to the volume-mounted data dir
+    user: root
     restart: unless-stopped
 
   genai-service:

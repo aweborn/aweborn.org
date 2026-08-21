@@ -16,6 +16,8 @@ const MSG_TYPES: Record<string, number> = {
   "world-update": 0x04,
   "create-world": 0x05,
   "update-sectors": 0x06,
+  "join-world": 0x07,
+  "leave-world": 0x08,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -69,6 +71,10 @@ export interface SyncConnection {
   createWorld: (name: string, creator: string, position: Vec3, color: string) => void;
   /** Update sector subscriptions */
   updateSectors: (sectors: string[]) => void;
+  /** Join a world room (start receiving world CRDT updates) */
+  joinWorld: (worldId: string) => void;
+  /** Leave a world room (stop receiving world CRDT updates) */
+  leaveWorld: (worldId: string) => void;
 }
 
 export type UniverseUpdateHandler = (type: string, data: Uint8Array) => void;
@@ -122,6 +128,21 @@ export function useSyncConnection(
     [send]
   );
 
+  const joinWorld = useCallback(
+    (worldId: string) => {
+      // Send empty data — the worldId in the header is all the server needs
+      send("join-world", new Uint8Array(0), worldId);
+    },
+    [send]
+  );
+
+  const leaveWorld = useCallback(
+    (worldId: string) => {
+      send("leave-world", new Uint8Array(0), worldId);
+    },
+    [send]
+  );
+
   useEffect(() => {
     const sectorsParam = sectorKeys.join(",");
     const url = `${SYNC_URL}/universe?sectors=${encodeURIComponent(sectorsParam)}`;
@@ -171,5 +192,5 @@ export function useSyncConnection(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sectorKeys.join(",")]);
 
-  return { connected, send, createWorld, updateSectors };
+  return { connected, send, createWorld, updateSectors, joinWorld, leaveWorld };
 }
