@@ -18,6 +18,7 @@ import {
   positionToSector,
   adjacentSectorKeys,
 } from "@aweborn/shared/crdt-schema";
+import { useWorldStore } from "./worldStore";
 
 interface UniverseState {
   /** All known worlds (from Universe CRDT) */
@@ -44,6 +45,12 @@ interface UniverseState {
   /** Connection status */
   connected: boolean;
 
+  /**
+   * Callback for sending world doc updates to the server.
+   * Set by the component that owns the sync connection.
+   */
+  _worldDocUpdateHandler: ((worldId: string, update: Uint8Array) => void) | null;
+
   // ── Actions ──
 
   /** Initialize the universe doc from a sync payload */
@@ -63,6 +70,9 @@ interface UniverseState {
 
   /** Set connection status */
   setConnected: (connected: boolean) => void;
+
+  /** Register a handler for outgoing world doc updates */
+  setWorldDocUpdateHandler: (handler: ((worldId: string, update: Uint8Array) => void) | null) => void;
 }
 
 /**
@@ -116,6 +126,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
   activeWorldId: null,
   activeWorldDoc: null,
   connected: false,
+  _worldDocUpdateHandler: null,
 
   applyUniverseUpdate: (update, _isFullSync) => {
     let doc = get().universeDoc;
@@ -139,20 +150,36 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
     });
   },
 
-  applyWorldUpdate: (worldId, update, _isFullSync) => {
+  applyWorldUpdate: (worldId, update, isFullSync) => {
     const state = get();
 
     // Only apply if this is the active world
     if (state.activeWorldId !== worldId) return;
 
     let doc = state.activeWorldDoc;
-    if (!doc || _isFullSync) {
+    const isNewDoc = !doc || isFullSync;
+    if (isNewDoc) {
       doc?.destroy();
       doc = new Y.Doc();
+
+      // Wire outgoing updates: when the local doc changes, send delta to server
+      doc.on("update", (delta: Uint8Array, origin: unknown) => {
+        // Only send locally-originated changes (not updates from the server)
+        if (origin !== "remote") {
+          const handler = get()._worldDocUpdateHandler;
+          handler?.(worldId, delta);
+        }
+      });
     }
 
-    Y.applyUpdate(doc, update);
+    // Apply the incoming update, tagged as "remote" so we don't echo it back
+    Y.applyUpdate(doc, update, "remote");
     set({ activeWorldDoc: doc });
+
+    // If this is a new doc (full sync), load it into the world store for reactive UI
+    if (isNewDoc) {
+      useWorldStore.getState().loadFromDoc(doc);
+    }
   },
 
   setCameraPosition: (pos) => {
@@ -186,4 +213,6 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
   },
 
   setConnected: (connected) => set({ connected }),
+
+  setWorldDocUpdateHandler: (handler) => set({ _worldDocUpdateHandler: handler }),
 }));

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSyncConnection } from "../hooks/useCRDT";
 import { usePresence } from "../hooks/usePresence";
 import { useUniverseStore } from "../stores/universeStore";
+import { useWorldStore } from "../stores/worldStore";
 import type { WorldEntry } from "@aweborn/shared/crdt-schema";
 import { adjacentSectorKeys } from "@aweborn/shared/crdt-schema";
 
@@ -18,14 +19,26 @@ export function CRDTDevOverlay() {
   const [visible, setVisible] = useState(true);
   const [worldName, setWorldName] = useState("");
   const [worldColor, setWorldColor] = useState("#ff7b54");
+  const [chatInput, setChatInput] = useState("");
 
   // Store state
   const worlds = useUniverseStore((s) => s.worlds);
   const activeWorldId = useUniverseStore((s) => s.activeWorldId);
+  const activeWorldDoc = useUniverseStore((s) => s.activeWorldDoc);
   const applyUniverseUpdate = useUniverseStore((s) => s.applyUniverseUpdate);
   const applyWorldUpdate = useUniverseStore((s) => s.applyWorldUpdate);
   const enterWorld = useUniverseStore((s) => s.enterWorld);
   const exitWorld = useUniverseStore((s) => s.exitWorld);
+  const setWorldDocUpdateHandler = useUniverseStore((s) => s.setWorldDocUpdateHandler);
+
+  // World interior state
+  const worldObjects = useWorldStore((s) => s.objects);
+  const worldMeta = useWorldStore((s) => s.meta);
+  const worldChat = useWorldStore((s) => s.chat);
+  const worldLoaded = useWorldStore((s) => s.loaded);
+  const placeObject = useWorldStore((s) => s.placeObject);
+  const sendChat = useWorldStore((s) => s.sendChat);
+  const resetWorld = useWorldStore((s) => s.reset);
 
   // Presence
   const { playerId, playerColor, players } = usePresence();
@@ -51,11 +64,19 @@ export function CRDTDevOverlay() {
     [applyWorldUpdate]
   );
 
-  const { connected, createWorld, joinWorld: syncJoinWorld, leaveWorld: syncLeaveWorld } = useSyncConnection(
+  const { connected, send, createWorld, joinWorld: syncJoinWorld, leaveWorld: syncLeaveWorld } = useSyncConnection(
     sectorKeys,
     onUniverseUpdate,
     onWorldUpdate
   );
+
+  // Wire world doc update handler: send local world changes to the server
+  useEffect(() => {
+    setWorldDocUpdateHandler((worldId: string, update: Uint8Array) => {
+      send("world-update", update, worldId);
+    });
+    return () => setWorldDocUpdateHandler(null);
+  }, [send, setWorldDocUpdateHandler]);
 
   // Toggle with backtick key
   useEffect(() => {
@@ -89,6 +110,25 @@ export function CRDTDevOverlay() {
       syncLeaveWorld(activeWorldId);
     }
     exitWorld();
+    resetWorld();
+  };
+
+  const handlePlaceObject = () => {
+    if (!activeWorldDoc) return;
+    const position = {
+      x: (Math.random() - 0.5) * 20,
+      y: Math.random() * 5,
+      z: (Math.random() - 0.5) * 20,
+    };
+    const types = ["cube", "sphere", "cylinder", "cone", "torus"];
+    const type = types[Math.floor(Math.random() * types.length)];
+    placeObject(activeWorldDoc, type, position);
+  };
+
+  const handleSendChat = () => {
+    if (!activeWorldDoc || !chatInput.trim()) return;
+    sendChat(activeWorldDoc, playerId, chatInput.trim());
+    setChatInput("");
   };
 
   if (!visible) return null;
@@ -178,6 +218,65 @@ export function CRDTDevOverlay() {
         </div>
       )}
 
+      {/* World Interior UI */}
+      {activeWorldId && worldLoaded && (
+        <>
+          {/* Objects in world */}
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>
+              Objects ({worldObjects.size})
+              <button onClick={handlePlaceObject} style={styles.placeBtn}>
+                + Place Random
+              </button>
+            </div>
+            {worldObjects.size === 0 ? (
+              <div style={styles.empty}>No objects yet — place one!</div>
+            ) : (
+              <div style={styles.objectsList}>
+                {Array.from(worldObjects.values()).slice(-8).map((obj) => (
+                  <div key={obj.id} style={styles.objectItem}>
+                    <span style={styles.objectType}>{obj.type}</span>
+                    <span style={styles.objectPos}>
+                      ({obj.x.toFixed(1)}, {obj.y.toFixed(1)}, {obj.z.toFixed(1)})
+                    </span>
+                    <span style={styles.objectId}>{obj.id}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Chat */}
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>Chat</div>
+            <div style={styles.chatBox}>
+              {worldChat.length === 0 ? (
+                <div style={styles.empty}>No messages yet</div>
+              ) : (
+                worldChat.slice(-5).map((msg, i) => (
+                  <div key={i} style={styles.chatMsg}>
+                    <span style={styles.chatSender}>{msg.sender.slice(0, 6)}:</span>
+                    <span>{msg.text}</span>
+                  </div>
+                ))
+              )}
+            </div>
+            <div style={styles.form}>
+              <input
+                style={styles.input}
+                placeholder="Say something..."
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
+              />
+              <button onClick={handleSendChat} style={styles.createBtn}>
+                Send
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       <div style={styles.hint}>Press ` to toggle</div>
     </div>
   );
@@ -244,7 +343,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: "#e0e0e0",
     zIndex: 9999,
-    maxHeight: 500,
+    maxHeight: 600,
     overflow: "auto",
     boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
   },
@@ -275,6 +374,9 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: "0.05em",
     color: "#888",
     marginBottom: 4,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   playerBadge: {
     display: "flex",
@@ -363,6 +465,43 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "3px 10px",
     whiteSpace: "nowrap" as const,
   },
+  placeBtn: {
+    background: "rgba(200, 160, 255, 0.15)",
+    border: "1px solid rgba(200, 160, 255, 0.3)",
+    borderRadius: 4,
+    color: "#c8a0ff",
+    fontSize: 9,
+    cursor: "pointer",
+    padding: "2px 6px",
+  },
+  objectsList: { display: "flex", flexDirection: "column" as const, gap: 2 },
+  objectItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "2px 0",
+    fontSize: 10,
+  },
+  objectType: {
+    background: "rgba(200, 160, 255, 0.15)",
+    borderRadius: 3,
+    padding: "1px 4px",
+    color: "#c8a0ff",
+    fontSize: 9,
+    fontWeight: 600,
+  },
+  objectPos: { color: "#888", fontSize: 9 },
+  objectId: { color: "#555", fontSize: 9, marginLeft: "auto" },
+  chatBox: {
+    maxHeight: 80,
+    overflow: "auto",
+    marginBottom: 4,
+    padding: 4,
+    background: "rgba(255,255,255,0.02)",
+    borderRadius: 4,
+  },
+  chatMsg: { fontSize: 10, padding: "1px 0" },
+  chatSender: { color: "#6cf", fontWeight: 600, marginRight: 4 },
   hint: {
     textAlign: "center" as const,
     fontSize: 10,

@@ -37,7 +37,7 @@ User's Browser
 | # | Phase | Status | Depends On | Sessions Est. | Phase File |
 |---|-------|--------|-----------|---------------|------------|
 | 01 | Foundation & Infra (Lightsail + k3s) | `[x]` Complete | — | 2-3 | [→ 01-foundation.md](./phases/01-foundation.md) |
-| 02 | Multiplayer Core (CRDT + WebSocket) | `[/]` In Progress | Phase 01 | 4-6 | [→ 02-multiplayer-core.md](./phases/02-multiplayer-core.md) |
+| 02 | Multiplayer Core (CRDT + WebSocket) | `[x]` Complete | Phase 01 | 4-6 | [→ 02-multiplayer-core.md](./phases/02-multiplayer-core.md) |
 | 03 | Universe Rendering & LOD | `[ ]` Not Started | Phase 02 | 3-4 | [→ 03-universe-rendering.md](./phases/03-universe-rendering.md) |
 | 04 | Navigation & Controls | `[ ]` Not Started | Phase 03 | 3-4 | [→ 04-navigation-controls.md](./phases/04-navigation-controls.md) |
 | 05 | Mana Economy & Donations | `[ ]` Not Started | Phase 02, 04 | 4-5 | [→ 05-mana-economy.md](./phases/05-mana-economy.md) |
