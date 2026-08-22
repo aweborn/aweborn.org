@@ -46,10 +46,10 @@ const HEIGHTS: Record<CameraPreset, number> = {
 
 // ── Tuning ───────────────────────────────────────────────────────────
 
-/** Spring stiffness — higher = snappier follow */
-const SPRING_STIFFNESS = 6.0
-/** Spring damping — higher = less oscillation */
-const SPRING_DAMPING = 4.5
+/** Spring stiffness — higher = snappier follow (18 = near-instant) */
+const SPRING_STIFFNESS = 18.0
+/** Spring damping — higher = less oscillation (10 = no bounce) */
+const SPRING_DAMPING = 10.0
 /** How fast the camera distance transitions between presets */
 const DISTANCE_LERP_SPEED = 3.0
 /** How fast the look-behind rotation transitions */

@@ -350,38 +350,253 @@ html, body, #root {
   opacity: 0.6;
 }
 
-.hud-controls {
+/* ── Radar Minimap ── */
+
+.radar-container {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(10, 15, 30, 0.8) 0%,
+    rgba(5, 10, 20, 0.9) 100%
+  );
+  border: 1px solid rgba(100, 140, 200, 0.15);
+  overflow: hidden;
+  margin-bottom: var(--space-md);
+  box-shadow:
+    0 0 12px rgba(0, 10, 40, 0.4),
+    inset 0 0 20px rgba(0, 20, 60, 0.2);
+}
+
+/* Range rings */
+.radar-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(100, 140, 200, 0.06);
+  pointer-events: none;
+}
+
+.radar-ring--outer {
+  width: 100px;
+  height: 100px;
+  top: 10px;
+  left: 10px;
+}
+
+.radar-ring--mid {
+  width: 66px;
+  height: 66px;
+  top: 27px;
+  left: 27px;
+}
+
+.radar-ring--inner {
+  width: 33px;
+  height: 33px;
+  top: 43.5px;
+  left: 43.5px;
+}
+
+/* Cross hairs */
+.radar-crosshair {
+  position: absolute;
+  background: rgba(100, 140, 200, 0.04);
+  pointer-events: none;
+}
+
+.radar-crosshair--h {
+  width: 100%;
+  height: 1px;
+  top: 50%;
+}
+
+.radar-crosshair--v {
+  width: 1px;
+  height: 100%;
+  left: 50%;
+}
+
+/* Sweep line */
+.radar-sweep {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 50%;
+  transform-origin: 0 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(100, 200, 140, 0.3) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* Player center dot */
+.radar-player {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(180, 210, 255, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(180, 210, 255, 0.4);
+  pointer-events: none;
+}
+
+/* Forward direction tick */
+.radar-forward-tick {
+  position: absolute;
+  width: 2px;
+  height: 6px;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(180, 210, 255, 0.3);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Blips */
+.radar-blip {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: left 100ms linear, top 100ms linear;
+}
+
+.radar-blip--portal {
+  box-shadow: 0 0 6px rgba(255, 204, 68, 0.5);
+  z-index: 2;
+}
+
+.radar-blip--offmap {
+  opacity: 0.7;
+}
+
+.radar-blip-arrow {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-bottom: 4px solid rgba(255, 204, 68, 0.6);
+  transform-origin: 50% 200%;
+}
+
+/* ── Live Keyboard Layout ── */
+
+.hud-keyboard {
+  position: absolute;
+  bottom: var(--space-xl);
+  right: var(--space-lg);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 24px;
   align-items: flex-end;
 }
 
-.hud-control-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-body);
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
-  white-space: nowrap;
+.hud-keyboard--world {
+  right: var(--space-lg);
 }
 
-.hud-control-row kbd {
+.hud-keyboard-cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+}
+
+.hud-keyboard-left {
+  /* left navigation cluster */
+}
+
+.hud-keyboard-right {
+  /* right interaction cluster */
+}
+
+.hud-cluster-label {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.2);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 2px;
+}
+
+.hud-key-row {
+  display: flex;
+  gap: 3px;
+}
+
+/* Mimic keyboard row offsets */
+.hud-key-row--offset-1 {
+  margin-left: 6px;
+}
+
+.hud-key-row--offset-2 {
+  margin-left: 12px;
+}
+
+.hud-key-row--space {
+  margin-left: 12px;
+  margin-top: 1px;
+}
+
+/* Individual key cap */
+.hud-keycap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 18px;
+  min-width: 22px;
+  height: 22px;
   padding: 0 4px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.06);
   border-radius: 3px;
   line-height: 1;
+  transition: all 60ms ease-out;
+  user-select: none;
+}
+
+/* Wide key (Space bar) */
+.hud-keycap--wide {
+  min-width: 80px;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+
+/* Active / pressed state — lit up */
+.hud-keycap--active {
+  color: rgba(180, 210, 255, 1);
+  background: rgba(100, 150, 255, 0.15);
+  border-color: rgba(120, 170, 255, 0.4);
+  border-bottom-color: rgba(120, 170, 255, 0.3);
+  box-shadow:
+    0 0 8px rgba(120, 170, 255, 0.2),
+    0 0 2px rgba(120, 170, 255, 0.15) inset;
+  text-shadow: 0 0 6px rgba(140, 180, 255, 0.5);
+}
+
+/* Exit world label next to ESC key */
+.hud-key-label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  margin-left: 6px;
 }
 
 /* Crosshair */

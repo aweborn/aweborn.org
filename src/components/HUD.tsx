@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
+import { inputManager } from '../systems/InputManager'
 import { warpSystem } from '../systems/WarpSystem'
 import { starModSlots } from '../systems/StarModSlots'
+import { RadarMinimap } from './RadarMinimap'
 
 interface HUDProps {
   showPrompt: boolean
@@ -20,9 +22,93 @@ const SHAPE_LABELS: Record<string, string> = {
   sphere: '● Sphere', crystal: '◆ Crystal', spiral: '✿ Spiral', spike: '▲ Spike', jellyfish: '🪼 Jelly',
 }
 
+// ── Key → ActionState mapping (for live highlighting) ────────────────
+
+type ActionKey = keyof ReturnType<typeof inputManager.getActions>
+
+/**
+ * Maps physical key codes (as displayed on the keyboard visual)
+ * to the action they trigger in InputManager.
+ */
+const KEY_TO_ACTION_MAP: Record<string, ActionKey> = {
+  Q: 'yawLeft',
+  W: 'pitchUp',
+  E: 'pitchDown',
+  R: 'yawRight',
+  A: 'rollLeft',
+  S: 'reverse',
+  D: 'strafe',
+  F: 'rollRight',
+  V: 'thrust',
+  T: 'autoOrient',
+  Z: 'lockBehind',
+  X: 'freeLook',
+  C: 'lookBehind',
+  U: 'modTrail',
+  I: 'modAura',
+  O: 'modShape',
+  P: 'modEmote',
+  J: 'lockOn',
+  K: 'warp',
+  L: 'scan',
+  N: 'interact',
+  '1': 'cameraClose',
+  '2': 'cameraMedium',
+  '3': 'cameraFar',
+  '4': 'cameraCinematic',
+  SPACE: 'brake',
+  ESC: 'escape',
+}
+
+// ── Key labels & tooltips ────────────────────────────────────────────
+
+const KEY_LABELS: Record<string, string> = {
+  Q: 'Yaw ←',
+  W: 'Pitch ↑',
+  E: 'Pitch ↓',
+  R: 'Yaw →',
+  A: 'Roll ←',
+  S: 'Reverse',
+  D: 'Strafe',
+  F: 'Roll →',
+  V: 'Thrust',
+  T: 'Auto-orient',
+  Z: 'Lock behind',
+  X: 'Free look',
+  C: 'Look behind',
+  U: 'Trail mod',
+  I: 'Aura mod',
+  O: 'Shape mod',
+  P: 'Emote',
+  J: 'Lock-on',
+  K: 'Warp',
+  L: 'Scan',
+  N: 'Interact',
+  '1': 'Close cam',
+  '2': 'Medium cam',
+  '3': 'Far cam',
+  '4': 'Cinematic cam',
+  SPACE: 'Brake',
+  ESC: 'Exit',
+}
+
+/**
+ * A single key cap that lights up when its corresponding action is active.
+ */
+function KeyCap({ keyName, pressed, wide }: { keyName: string; pressed: boolean; wide?: boolean }) {
+  return (
+    <div
+      className={`hud-keycap${pressed ? ' hud-keycap--active' : ''}${wide ? ' hud-keycap--wide' : ''}`}
+      title={KEY_LABELS[keyName] ?? keyName}
+    >
+      {keyName}
+    </div>
+  )
+}
+
 /**
  * HUD overlay — displays flight telemetry, warp status, mod slots,
- * and contextual control hints over the 3D scene.
+ * and a live keyboard layout with active-key highlighting.
  */
 export function HUD({ showPrompt, onPromptClick }: HUDProps) {
   const speed = useUniverseStore((s) => s.playerSpeed)
@@ -44,8 +130,9 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
     ? worlds.get(activeWorldId)?.name ?? 'Unknown World'
     : null
 
-  // ── FPS counter ──
+  // ── FPS counter + live key state polling ──
   const [fps, setFps] = useState(0)
+  const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set())
   const framesRef = useRef(0)
   const lastTimeRef = useRef(performance.now())
 
@@ -55,16 +142,31 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
       framesRef.current++
       const now = performance.now()
       const elapsed = now - lastTimeRef.current
+
+      // Update FPS every 500ms
       if (elapsed >= 500) {
         setFps(Math.round((framesRef.current / elapsed) * 1000))
         framesRef.current = 0
         lastTimeRef.current = now
       }
+
+      // Poll input state every frame for key highlighting
+      const actions = inputManager.getActions()
+      const active = new Set<string>()
+      for (const [key, action] of Object.entries(KEY_TO_ACTION_MAP)) {
+        if (actions[action]) {
+          active.add(key)
+        }
+      }
+      setPressedKeys(active)
+
       rafId = requestAnimationFrame(tick)
     }
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
   }, [])
+
+  const isPressed = useCallback((key: string) => pressedKeys.has(key), [pressedKeys])
 
   return (
     <div className="hud-overlay">
@@ -108,6 +210,9 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
       {/* Bottom left — Speed indicator + Mod slots */}
       {!isInWorld && (
         <div className="hud-bottom-left">
+          {/* Radar minimap */}
+          <RadarMinimap />
+
           <div className="hud-speed">
             <div className="hud-speed-bar-track">
               <div
@@ -122,13 +227,13 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
 
           {/* Mod slot indicators */}
           <div className="hud-mod-slots">
-            <div className="hud-mod-slot" title="Trail (U)">
+            <div className={`hud-mod-slot${isPressed('U') ? ' hud-mod-slot--active' : ''}`} title="Trail (U)">
               <kbd>U</kbd> {TRAIL_LABELS[mods.trail] ?? mods.trail}
             </div>
-            <div className="hud-mod-slot" title="Aura (I)">
+            <div className={`hud-mod-slot${isPressed('I') ? ' hud-mod-slot--active' : ''}`} title="Aura (I)">
               <kbd>I</kbd> {AURA_LABELS[mods.aura] ?? mods.aura}
             </div>
-            <div className="hud-mod-slot" title="Shape (O)">
+            <div className={`hud-mod-slot${isPressed('O') ? ' hud-mod-slot--active' : ''}`} title="Shape (O)">
               <kbd>O</kbd> {SHAPE_LABELS[mods.shape] ?? mods.shape}
             </div>
           </div>
@@ -152,37 +257,82 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
         )}
       </div>
 
-      {/* Bottom right — Controls hint */}
-      <div className="hud-bottom-right">
-        <div className="hud-controls">
-          {isInWorld ? (
-            <>
-              <div className="hud-control-row">
-                <kbd>ESC</kbd> Exit World
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="hud-control-row">
-                <kbd>V</kbd> Thrust
-                <kbd>SPACE</kbd> Brake
-              </div>
-              <div className="hud-control-row">
-                <kbd>Q</kbd><kbd>R</kbd> Yaw
-                <kbd>W</kbd><kbd>E</kbd> Pitch
-              </div>
-              <div className="hud-control-row">
-                <kbd>J</kbd> Lock-on
-                <kbd>K</kbd> Warp
-              </div>
-              <div className="hud-control-row">
-                <kbd>N</kbd> Enter World
-                <kbd>1-4</kbd> Camera
-              </div>
-            </>
-          )}
+      {/* Bottom — Live keyboard layout */}
+      {!isInWorld && (
+        <div className="hud-keyboard">
+          {/* Left cluster — Navigation */}
+          <div className="hud-keyboard-cluster hud-keyboard-left">
+            <div className="hud-cluster-label">Navigation</div>
+            {/* Number row (camera) */}
+            <div className="hud-key-row">
+              <KeyCap keyName="1" pressed={isPressed('1')} />
+              <KeyCap keyName="2" pressed={isPressed('2')} />
+              <KeyCap keyName="3" pressed={isPressed('3')} />
+              <KeyCap keyName="4" pressed={isPressed('4')} />
+            </div>
+            {/* QWER row */}
+            <div className="hud-key-row">
+              <KeyCap keyName="Q" pressed={isPressed('Q')} />
+              <KeyCap keyName="W" pressed={isPressed('W')} />
+              <KeyCap keyName="E" pressed={isPressed('E')} />
+              <KeyCap keyName="R" pressed={isPressed('R')} />
+              <KeyCap keyName="T" pressed={isPressed('T')} />
+            </div>
+            {/* ASDF row */}
+            <div className="hud-key-row hud-key-row--offset-1">
+              <KeyCap keyName="A" pressed={isPressed('A')} />
+              <KeyCap keyName="S" pressed={isPressed('S')} />
+              <KeyCap keyName="D" pressed={isPressed('D')} />
+              <KeyCap keyName="F" pressed={isPressed('F')} />
+            </div>
+            {/* ZXCV row */}
+            <div className="hud-key-row hud-key-row--offset-2">
+              <KeyCap keyName="Z" pressed={isPressed('Z')} />
+              <KeyCap keyName="X" pressed={isPressed('X')} />
+              <KeyCap keyName="C" pressed={isPressed('C')} />
+              <KeyCap keyName="V" pressed={isPressed('V')} />
+            </div>
+            {/* Space */}
+            <div className="hud-key-row hud-key-row--space">
+              <KeyCap keyName="SPACE" pressed={isPressed('SPACE')} wide />
+            </div>
+          </div>
+
+          {/* Right cluster — Interaction + Mods */}
+          <div className="hud-keyboard-cluster hud-keyboard-right">
+            <div className="hud-cluster-label">Interact / Mods</div>
+            {/* UIOP row (mods) */}
+            <div className="hud-key-row">
+              <KeyCap keyName="U" pressed={isPressed('U')} />
+              <KeyCap keyName="I" pressed={isPressed('I')} />
+              <KeyCap keyName="O" pressed={isPressed('O')} />
+              <KeyCap keyName="P" pressed={isPressed('P')} />
+            </div>
+            {/* JKL row */}
+            <div className="hud-key-row hud-key-row--offset-1">
+              <KeyCap keyName="J" pressed={isPressed('J')} />
+              <KeyCap keyName="K" pressed={isPressed('K')} />
+              <KeyCap keyName="L" pressed={isPressed('L')} />
+            </div>
+            {/* N row */}
+            <div className="hud-key-row hud-key-row--offset-2">
+              <KeyCap keyName="N" pressed={isPressed('N')} />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* World interior — minimal ESC keycap */}
+      {isInWorld && (
+        <div className="hud-keyboard hud-keyboard--world">
+          <div className="hud-keyboard-cluster">
+            <div className="hud-key-row">
+              <KeyCap keyName="ESC" pressed={isPressed('ESC')} />
+              <span className="hud-key-label">Exit World</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Center — Crosshair (subtle) + Warp charge ring */}
       {!isInWorld && (

@@ -9,6 +9,7 @@ import { PlayerStars } from './PlayerStars'
 import { PlayerOrb } from './PlayerOrb'
 import { WarpEffect } from './WarpEffect'
 import { GravityFieldLines } from './GravityFieldLines'
+import { PortalBeacon } from './PortalBeacon'
 import { WorldTransition } from './WorldTransition'
 import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
@@ -195,6 +196,9 @@ function UniverseView({ onPortalActivate, playerColor }: { onPortalActivate: () 
 
       {/* Donation Portal — the discoverable object */}
       <DonationPortal onActivate={onPortalActivate} />
+
+      {/* Portal Beacon — faint golden light beam for wayfinding */}
+      <PortalBeacon />
     </>
   )
 }

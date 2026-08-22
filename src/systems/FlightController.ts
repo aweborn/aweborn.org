@@ -5,14 +5,16 @@
  * InputManager and produces position/velocity/rotation each frame.
  *
  * Key physics:
+ *  - Steering is near-instant (fast slerp, sub-100ms response)
+ *  - Releasing keys → rotation stops within 1-2 frames (no drift)
  *  - Thrust builds speed via acceleration (not instant)
- *  - Releasing thrust → inertia drift (very slow deceleration)
+ *  - Releasing thrust → moderate deceleration (not ice-skating)
  *  - Brake actively decelerates
- *  - Pitch/yaw/roll use angular velocity with damping
  *  - Speed is soft-clamped (asymptotic approach, never hard-stop)
+ *  - Gravity is attenuated to 20% when actively pressing keys
  *
  * Usage:
- *   flightController.update(delta, actions, gravityForce)
+ *   flightController.update(delta, gravityForce)
  *   const { position, velocity, quaternion } = flightController.getState()
  */
 
@@ -29,19 +31,24 @@ const REVERSE_ACCEL = 4.0
 const STRAFE_ACCEL = 5.0
 /** Active brake deceleration (units/s²) */
 const BRAKE_DECEL = 12.0
-/** Passive drift deceleration — very slow coast (units/s²) */
-const DRIFT_DECEL = 0.15
+/** Passive drift deceleration — moderate so ship slows when idle (units/s²) */
+const DRIFT_DECEL = 0.6
 /** Maximum speed (units/s) — soft cap via asymptotic damping */
 const MAX_SPEED = 20.0
 /** Speed above which extra drag kicks in for soft clamping */
 const SOFT_CAP_START = 16.0
 
-/** Angular velocity for pitch/yaw (rad/s) */
-const TURN_RATE = 2.2
-/** Angular velocity for roll (rad/s) */
-const ROLL_RATE = 2.5
-/** Angular velocity damping — how fast rotation stops (0 = instant, 1 = never) */
-const ANGULAR_DAMPING = 0.88
+/** Angular velocity for pitch/yaw (rad/s) — target rate */
+const TURN_RATE = 2.5
+/** Angular velocity for roll (rad/s) — target rate */
+const ROLL_RATE = 2.8
+
+/**
+ * How much gravity is reduced while the player is actively steering.
+ * 0.0 = no gravity during input, 1.0 = full gravity always.
+ * At 0.2, gravity is a gentle nudge you can easily overpower.
+ */
+const GRAVITY_ATTENUATION_WHILE_ACTIVE = 0.2
 
 // ── Flight State ─────────────────────────────────────────────────────
 
@@ -53,6 +60,7 @@ export interface FlightState {
   isDrifting: boolean
   isBraking: boolean
   isThrusting: boolean
+  isActivelyControlling: boolean
 }
 
 // ── Flight Controller ────────────────────────────────────────────────
@@ -65,8 +73,11 @@ class FlightController {
   /** Orientation quaternion */
   readonly quaternion = new THREE.Quaternion()
 
-  /** Current angular velocity (local space: x=pitch, y=yaw, z=roll) */
-  private _angularVelocity = new THREE.Vector3()
+  /**
+   * Current angular velocity — snaps to target on input, decays over
+   * ~100ms on release for a satisfying settle instead of abrupt stop.
+   */
+  private _angularVelocity = new THREE.Vector3() // x=pitch, y=yaw, z=roll
 
   /** Temp vectors to avoid allocation in the hot loop */
   private _forward = new THREE.Vector3()
@@ -76,6 +87,9 @@ class FlightController {
 
   /** Whether the controller is active (disabled in world interior) */
   private _enabled = true
+
+  /** Whether the player is actively pressing any control key this frame */
+  private _isActivelyControlling = false
 
   /**
    * Update flight physics for one frame.
@@ -91,6 +105,13 @@ class FlightController {
 
     const actions = inputManager.getActions()
 
+    // Detect if the player is actively pressing any control key
+    this._isActivelyControlling =
+      actions.thrust || actions.brake || actions.reverse || actions.strafe ||
+      actions.pitchUp || actions.pitchDown ||
+      actions.yawLeft || actions.yawRight ||
+      actions.rollLeft || actions.rollRight
+
     // ── Compute local axes from quaternion ──
     this._forward.set(0, 0, -1).applyQuaternion(this.quaternion)
     this._right.set(1, 0, 0).applyQuaternion(this.quaternion)
@@ -105,15 +126,22 @@ class FlightController {
 
   /** Get a readonly snapshot of the current flight state. */
   getState(): FlightState {
+    const actions = inputManager.getActions()
     return {
       position: this.position,
       velocity: this.velocity,
       quaternion: this.quaternion,
       speed: this.velocity.length(),
-      isDrifting: !inputManager.getActions().thrust && !inputManager.getActions().brake && this.velocity.length() > 0.1,
-      isBraking: inputManager.getActions().brake,
-      isThrusting: inputManager.getActions().thrust,
+      isDrifting: !actions.thrust && !actions.brake && this.velocity.length() > 0.1,
+      isBraking: actions.brake,
+      isThrusting: actions.thrust,
+      isActivelyControlling: this._isActivelyControlling,
     }
+  }
+
+  /** Whether the player is currently pressing any control key. */
+  isActivelyControlling(): boolean {
+    return this._isActivelyControlling
   }
 
   /** Enable/disable the flight controller. */
@@ -147,16 +175,21 @@ class FlightController {
     if (actions.rollLeft) targetRoll += ROLL_RATE
     if (actions.rollRight) targetRoll -= ROLL_RATE
 
-    // Smoothly approach target angular velocity
-    const blend = 1 - Math.pow(ANGULAR_DAMPING, dt * 60)
-    this._angularVelocity.x += (targetPitch - this._angularVelocity.x) * blend
-    this._angularVelocity.y += (targetYaw - this._angularVelocity.y) * blend
-    this._angularVelocity.z += (targetRoll - this._angularVelocity.z) * blend
+    const hasInput = Math.abs(targetPitch) > 0.01 || Math.abs(targetYaw) > 0.01 || Math.abs(targetRoll) > 0.01
 
-    // Damp angular velocity when no input
-    if (Math.abs(targetPitch) < 0.01) this._angularVelocity.x *= Math.pow(ANGULAR_DAMPING, dt * 60)
-    if (Math.abs(targetYaw) < 0.01) this._angularVelocity.y *= Math.pow(ANGULAR_DAMPING, dt * 60)
-    if (Math.abs(targetRoll) < 0.01) this._angularVelocity.z *= Math.pow(ANGULAR_DAMPING, dt * 60)
+    if (hasInput) {
+      // Snap angular velocity to target — instant response on key press
+      this._angularVelocity.set(targetPitch, targetYaw, targetRoll)
+    } else {
+      // Decay angular velocity over ~100ms (damping 0.3 → near-zero in ~6 frames)
+      const damping = Math.pow(0.3, dt * 60)
+      this._angularVelocity.multiplyScalar(damping)
+
+      // Kill tiny residual to avoid micro-drift
+      if (this._angularVelocity.lengthSq() < 0.001) {
+        this._angularVelocity.set(0, 0, 0)
+      }
+    }
 
     // Apply angular velocity to quaternion
     if (this._angularVelocity.lengthSq() > 0.0001) {
@@ -166,7 +199,7 @@ class FlightController {
       rotQ.setFromAxisAngle(this._right, this._angularVelocity.x * dt)
       this.quaternion.premultiply(rotQ)
 
-      // Yaw (world Y axis for more intuitive feel)
+      // Yaw (world Y axis for intuitive feel)
       rotQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this._angularVelocity.y * dt)
       this.quaternion.premultiply(rotQ)
 
@@ -240,9 +273,12 @@ class FlightController {
       this.velocity.setLength(MAX_SPEED * 1.2)
     }
 
-    // ── Apply gravity ──
+    // ── Apply gravity (attenuated when actively controlling) ──
     if (gravityForce) {
-      this.velocity.add(gravityForce.clone().multiplyScalar(dt))
+      const gravityScale = this._isActivelyControlling
+        ? GRAVITY_ATTENUATION_WHILE_ACTIVE
+        : 1.0
+      this.velocity.add(gravityForce.clone().multiplyScalar(dt * gravityScale))
     }
 
     // ── Integrate position ──
@@ -262,7 +298,7 @@ class FlightController {
     const targetMatrix = new THREE.Matrix4().makeBasis(idealRight, idealUp, forward.negate())
     const targetQ = new THREE.Quaternion().setFromRotationMatrix(targetMatrix)
 
-    // Slerp toward it
+    // Slerp toward it — fast
     this.quaternion.slerp(targetQ, 1 - Math.pow(0.05, dt))
     this.quaternion.normalize()
   }
