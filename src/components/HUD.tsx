@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { inputManager } from '../systems/InputManager'
 import { warpSystem } from '../systems/WarpSystem'
@@ -45,6 +46,28 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
     ? worlds.get(activeWorldId)?.name ?? 'Unknown World'
     : null
 
+  // ── FPS counter ──
+  const [fps, setFps] = useState(0)
+  const framesRef = useRef(0)
+  const lastTimeRef = useRef(performance.now())
+
+  useEffect(() => {
+    let rafId: number
+    function tick() {
+      framesRef.current++
+      const now = performance.now()
+      const elapsed = now - lastTimeRef.current
+      if (elapsed >= 500) {
+        setFps(Math.round((framesRef.current / elapsed) * 1000))
+        framesRef.current = 0
+        lastTimeRef.current = now
+      }
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [])
+
   return (
     <div className="hud-overlay">
       {/* Top left — Brand */}
@@ -67,6 +90,7 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
             </>
           )}
         </div>
+        <div className="hud-fps">{fps} FPS</div>
       </div>
 
       {/* Top center — Lock-on target info */}
