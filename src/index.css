@@ -267,6 +267,298 @@ html, body, #root {
   background: rgba(232, 185, 74, 0.15);
 }
 
+/* --- HUD Flight Telemetry --- */
+
+.hud-bottom-left {
+  position: absolute;
+  bottom: var(--space-xl);
+  left: var(--space-lg);
+}
+
+.hud-bottom-right {
+  position: absolute;
+  bottom: var(--space-xl);
+  right: var(--space-lg);
+}
+
+.hud-mode {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud-mode-icon {
+  font-size: var(--text-base);
+}
+
+.hud-mode-label {
+  font-weight: 600;
+}
+
+.hud-speed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 100px;
+}
+
+.hud-speed-bar-track {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hud-speed-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(107, 63, 160, 0.6), rgba(232, 185, 74, 0.8));
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+.hud-speed-value {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.05em;
+}
+
+.hud-speed-unit {
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+.hud-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.hud-control-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+}
+
+.hud-control-row kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  line-height: 1;
+}
+
+/* Crosshair */
+.hud-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.hud-crosshair-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.1);
+}
+
+.hud-crosshair-dot--charging {
+  background: rgba(140, 180, 255, 0.6);
+  box-shadow: 0 0 10px rgba(140, 180, 255, 0.4);
+  animation: crosshair-pulse 0.5s ease-in-out infinite;
+}
+
+@keyframes crosshair-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.5); }
+}
+
+/* ── Lock-on Target Info ── */
+
+.hud-top-center {
+  position: absolute;
+  top: var(--space-xl);
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  animation: fade-in var(--duration-fast) var(--ease-out-expo);
+}
+
+.hud-target-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-xs) var(--space-lg);
+  background: rgba(80, 120, 200, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(140, 180, 255, 0.15);
+  border-radius: var(--radius-md);
+}
+
+.hud-target-name {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgba(160, 195, 255, 0.9);
+  letter-spacing: 0.03em;
+}
+
+.hud-target-distance {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(140, 180, 255, 0.5);
+  letter-spacing: 0.05em;
+}
+
+/* ── Warp Charge Ring ── */
+
+.hud-warp-charge-ring {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud-charge-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Lock-on Diamond ── */
+
+.hud-lock-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud-lock-diamond {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(140, 180, 255, 0.6);
+  transform: rotate(45deg);
+  animation: lock-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes lock-pulse {
+  0%, 100% {
+    border-color: rgba(140, 180, 255, 0.4);
+    box-shadow: 0 0 4px rgba(140, 180, 255, 0.1);
+  }
+  50% {
+    border-color: rgba(140, 180, 255, 0.8);
+    box-shadow: 0 0 10px rgba(140, 180, 255, 0.3);
+  }
+}
+
+/* ── Mod Slot Indicators ── */
+
+.hud-mod-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: var(--space-sm);
+}
+
+.hud-mod-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+}
+
+.hud-mod-slot kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  line-height: 1;
+}
+
+/* ── Touch Joystick Overlay ── */
+
+.touch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.touch-joystick-base {
+  position: fixed;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 21;
+}
+
+.touch-joystick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-top: -15px;
+  margin-left: -15px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+  transition: transform 0.05s linear;
+}
+
 /* --- Donation Modal --- */
 .modal-backdrop {
   position: fixed;

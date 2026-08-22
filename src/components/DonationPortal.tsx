@@ -68,11 +68,11 @@ export function DonationPortal({ onActivate }: DonationPortalProps) {
           <MeshDistortMaterial
             color="#e8b94a"
             emissive="#e8b94a"
-            emissiveIntensity={hovered ? 2.5 : 1.5}
+            emissiveIntensity={hovered ? 1.8 : 1.0}
             roughness={0.1}
             metalness={0.8}
-            distort={hovered ? 0.4 : 0.25}
-            speed={3}
+            distort={hovered ? 0.35 : 0.2}
+            speed={2}
             toneMapped={false}
           />
         </mesh>
@@ -87,6 +87,7 @@ export function DonationPortal({ onActivate }: DonationPortalProps) {
             transparent
             opacity={hovered ? 0.25 : 0.12}
             side={THREE.BackSide}
+            depthWrite={false}
             toneMapped={false}
           />
         </mesh>
@@ -115,6 +116,7 @@ export function DonationPortal({ onActivate }: DonationPortalProps) {
             emissiveIntensity={2}
             transparent
             opacity={hovered ? 0.7 : 0.4}
+            depthWrite={false}
             toneMapped={false}
           />
         </mesh>
@@ -128,6 +130,7 @@ export function DonationPortal({ onActivate }: DonationPortalProps) {
             emissiveIntensity={1.5}
             transparent
             opacity={hovered ? 0.5 : 0.25}
+            depthWrite={false}
             toneMapped={false}
           />
         </mesh>

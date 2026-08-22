@@ -42,6 +42,18 @@ interface UniverseState {
   /** The Y.Doc for the active world (null = not in a world) */
   activeWorldDoc: Y.Doc | null;
 
+  /** Player flight position (scene coordinates) */
+  playerPosition: Vec3;
+
+  /** Player flight velocity */
+  playerVelocity: Vec3;
+
+  /** Player flight rotation (quaternion) */
+  playerRotation: { x: number; y: number; z: number; w: number };
+
+  /** Player speed (magnitude of velocity) */
+  playerSpeed: number;
+
   /** Connection status */
   connected: boolean;
 
@@ -58,6 +70,9 @@ interface UniverseState {
 
   /** Initialize or update the active world doc */
   applyWorldUpdate: (worldId: string, update: Uint8Array, isFullSync: boolean) => void;
+
+  /** Update player flight state (position, velocity, rotation) */
+  updatePlayerState: (pos: Vec3, vel: Vec3, rot: { x: number; y: number; z: number; w: number }, speed: number) => void;
 
   /** Update camera position (triggers sector subscription changes) */
   setCameraPosition: (pos: Vec3) => void;
@@ -125,6 +140,10 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
   universeDoc: null,
   activeWorldId: null,
   activeWorldDoc: null,
+  playerPosition: { x: 0, y: 2, z: 10 },
+  playerVelocity: { x: 0, y: 0, z: 0 },
+  playerRotation: { x: 0, y: 0, z: 0, w: 1 },
+  playerSpeed: 0,
   connected: false,
   _worldDocUpdateHandler: null,
 
@@ -180,6 +199,10 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
     if (isNewDoc) {
       useWorldStore.getState().loadFromDoc(doc!);
     }
+  },
+
+  updatePlayerState: (pos, vel, rot, speed) => {
+    set({ playerPosition: pos, playerVelocity: vel, playerRotation: rot, playerSpeed: speed });
   },
 
   setCameraPosition: (pos) => {

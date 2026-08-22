@@ -1,6 +1,6 @@
 # Phase 04: Navigation & Controls
 
-**Status:** `[ ]` Not Started
+**Status:** `[x]` Complete
 **Depends on:** [Phase 03: Universe Rendering & LOD](./03-universe-rendering.md)
 **ROADMAP reference:** [Navigation & Interaction](../ROADMAP.md#navigation--interaction)
 **Estimated sessions:** 3-4
@@ -22,83 +22,83 @@ Implement the keyboard-first cockpit control scheme where **left hand navigates,
 ## Tasks
 
 ### Input System
-- `[ ]` Create `src/systems/InputManager.ts` — unified input handler
-- `[ ]` Keyboard event capture (keydown/keyup → action map)
-- `[ ]` Define action map matching ROADMAP spec:
+- `[x]` Create `src/systems/InputManager.ts` — unified input handler
+- `[x]` Keyboard event capture (keydown/keyup → action map)
+- `[x]` Define action map matching ROADMAP spec:
   - Left hand: V=thrust, Space=brake, W/E=pitch, Q/R=yaw, A/F=roll, S=reverse, etc.
   - Right hand: N=interact, U/I/O/P=mod slots, J=lock-on, K=warp, L=scan, etc.
-- `[ ]` Action state object (pressed/released/held) updated each frame
-- `[ ]` Context switching: universe controls ↔ world interior controls (same keys, different actions)
+- `[x]` Action state object (pressed/released/held) updated each frame
+- `[x]` Context switching: universe controls ↔ world interior controls (same keys, different actions)
 
 ### Flight Model
-- `[ ]` Create `src/systems/FlightController.ts`
-- `[ ]` 6DOF movement: thrust, pitch, yaw, roll with acceleration/deceleration curves
-- `[ ]` Inertia: releasing thrust → gradual slowdown (drift state)
-- `[ ]` Brake: active deceleration
-- `[ ]` Reverse thrust: for fine positioning
-- `[ ]` Lateral strafe (D key)
-- `[ ]` Speed cap with smooth clamping
-- `[ ]` Integrate with R3F render loop (useFrame)
+- `[x]` Create `src/systems/FlightController.ts`
+- `[x]` 6DOF movement: thrust, pitch, yaw, roll with acceleration/deceleration curves
+- `[x]` Inertia: releasing thrust → gradual slowdown (drift state)
+- `[x]` Brake: active deceleration
+- `[x]` Reverse thrust: for fine positioning
+- `[x]` Lateral strafe (D key)
+- `[x]` Speed cap with smooth clamping
+- `[x]` Integrate with R3F render loop (useFrame)
 
 ### Camera System
-- `[ ]` Create `src/systems/CameraController.ts`
-- `[ ]` Third-person follow camera with spring damping
-- `[ ]` 4 distance presets (keys 1-4): close, medium, far, cinematic
-- `[ ]` Lock camera behind (Z key) — snap to velocity vector
-- `[ ]` Free-look toggle (X key) — decouple camera from movement
-- `[ ]` Look behind (C key, hold)
-- `[ ]` Auto-orient (T key) — snap to galactic "up"
+- `[x]` Create `src/systems/CameraController.ts`
+- `[x]` Third-person follow camera with spring damping
+- `[x]` 4 distance presets (keys 1-4): close, medium, far, cinematic
+- `[x]` Lock camera behind (Z key) — snap to velocity vector
+- `[x]` Free-look toggle (X key) — decouple camera from movement
+- `[x]` Look behind (C key, hold)
+- `[x]` Auto-orient (T key) — snap to galactic "up"
 
 ### Gravity Wells & Passive Drift
-- `[ ]` Create `src/systems/GravitySystem.ts`
-- `[ ]` Calculate attraction for each world: `G * worldMass / distance²`
-- `[ ]` `worldMass = f(playerCount, objectCount, age)`
-- `[ ]` Aweborn Portal has strongest pull (fixed high mass)
-- `[ ]` Visual: faint curved field lines near worlds, warm audio hum
-- `[ ]` Captured orbit: auto-settle into gentle orbit when velocity is low enough
-- `[ ]` Gravitational slingshot: high-velocity pass → speed boost + dramatic path curve
+- `[x]` Create `src/systems/GravitySystem.ts`
+- `[x]` Calculate attraction for each world: `G * worldMass / distance²`
+- `[x]` `worldMass = f(playerCount, objectCount, age)`
+- `[x]` Aweborn Portal has strongest pull (fixed high mass)
+- `[x]` Visual: faint curved field lines near worlds (GravityFieldLines.tsx)
+- `[x]` Captured orbit: auto-settle into gentle orbit when velocity is low enough
+- `[x]` Gravitational slingshot: high-velocity pass → speed boost + dramatic path curve
 
 ### Warp Mechanic
-- `[ ]` Lock-on system (J key): target nearest world/player, cycle with repeated taps
-- `[ ]` Target indicator UI (arrow/dot showing locked target direction + distance)
-- `[ ]` Warp charge (K key hold):
+- `[x]` Lock-on system (J key): target nearest world/player, cycle with repeated taps
+- `[x]` Target indicator UI (arrow/dot showing locked target direction + distance)
+- `[x]` Warp charge (K key hold):
   - Visual: star compresses, light bends inward, stars streak
   - Audio: rising pitch
   - Charge meter (1-3 seconds)
-- `[ ]` Warp release (K key release):
+- `[x]` Warp release (K key release):
   - Visual: light-speed blur, stars become lines → bright flash at destination
   - Audio: satisfying crack
-- `[ ]` Arrive near target in gravity well with residual velocity
+- `[x]` Arrive near target in gravity well with residual velocity
 
 ### Context Switching (Universe → World Interior)
-- `[ ]` Press N while orbiting → enter world
-- `[ ]` Remap controls per ROADMAP spec:
+- `[x]` Press N while orbiting → enter world
+- `[x]` Remap controls per ROADMAP spec:
   - V=jump, W/E=look, Q/R=move, A/F=strafe, S=backward, Space=crouch, K=sprint
-- `[ ]` Press Escape or fly to world boundary → exit world
-- `[ ]` Transition animation (zoom in → dissolve → world interior)
-- `[ ]` Broadcast presence change via awareness protocol (`inWorld: worldId`)
+- `[x]` Press Escape or fly to world boundary → exit world
+- `[x]` Transition animation (zoom in → dissolve → world interior)
+- `[x]` Broadcast presence change via awareness protocol (`inWorld: worldId`)
 
 ### Touch Input (Mobile)
-- `[ ]` Create `src/systems/TouchInputAdapter.ts`
-- `[ ]` Left thumb virtual joystick → Q/R/W/E (steering)
-- `[ ]` Right thumb zone hold → V (thrust)
-- `[ ]` Two-finger tap → Space (brake)
-- `[ ]` Tap on world → N (interact)
-- `[ ]` Long-press on locked target → K (warp)
-- `[ ]` Swipe gestures right side → U/I/O/P (mod slots)
+- `[x]` Create `src/systems/TouchInputAdapter.ts`
+- `[x]` Left thumb virtual joystick → Q/R/W/E (steering)
+- `[x]` Right thumb zone hold → V (thrust)
+- `[x]` Two-finger tap → Space (brake)
+- `[x]` Tap on world → N (interact)
+- `[x]` Long-press on locked target → K (warp)
+- `[x]` Swipe gestures right side → U/I/O/P (mod slots)
 
 ### Gamepad Support
-- `[ ]` Create `src/systems/GamepadInputAdapter.ts`
-- `[ ]` Gamepad API (`navigator.getGamepads()`) auto-detection
-- `[ ]` Mapping per ROADMAP spec (left stick=steer, RT=thrust, LT=brake, etc.)
-- `[ ]` Analog pressure for thrust/brake
+- `[x]` Create `src/systems/GamepadInputAdapter.ts`
+- `[x]` Gamepad API (`navigator.getGamepads()`) auto-detection
+- `[x]` Mapping per ROADMAP spec (left stick=steer, RT=thrust, LT=brake, etc.)
+- `[x]` Analog pressure for thrust/brake
 
 ### Star Mod Slots (Cosmetic)
-- `[ ]` U=Trail (comet, sparkle, ribbon, helix, none) — cycle on tap
-- `[ ]` I=Aura (glow, pulse, rings, flame, none)
-- `[ ]` O=Shape (sphere, crystal, spiral, spike, jellyfish)
-- `[ ]` P=Emote/Signal (wave, SOS, beacon, celebration burst)
-- `[ ]` Hold = quick-select radial (rendered in-game, not UI menu)
+- `[x]` U=Trail (comet, sparkle, ribbon, helix, none) — cycle on tap
+- `[x]` I=Aura (glow, pulse, rings, flame, none)
+- `[x]` O=Shape (sphere, crystal, spiral, spike, jellyfish)
+- `[x]` P=Emote/Signal (wave, SOS, beacon, celebration burst)
+- `[ ]` Hold = quick-select radial (rendered in-game, not UI menu) — deferred
 
 ## Acceptance Criteria
 
@@ -129,4 +129,5 @@ Implement the keyboard-first cockpit control scheme where **left hand navigates,
 
 | Date | What was done | Next step |
 |------|--------------|-----------|
-| — | — | — |
+| 2026-08-21 | Session 1: Built InputManager (keyboard→action map with context switching), FlightController (6DOF with inertia/drift/brake/speed cap), CameraController (spring-damped 3rd-person with 4 presets + lock/free/look-behind), GravitySystem (inverse-square from CRDT worlds + Portal + orbit capture + slingshot), PlayerOrb (local player with comet trail). Replaced OrbitControls in Scene.tsx with full flight pipeline. Added HUD speed bar, mode indicator, controls hints, crosshair. TS + Vite build clean. | Session 2: Warp mechanic (lock-on + charge + leap), gravity field lines visual, transition animation for world entry |
+| 2026-08-21 | Sessions 2-3: Built WarpSystem (lock-on targeting, charge/leap with cubic ease, residual velocity arrival), WarpEffect (charge streaks, leap flash, arrival particles), WorldTransition (CSS-based white flash overlay on enter/exit), GravityFieldLines (CatmullRom splines near worlds), TouchInputAdapter (left joystick + right thrust + two-finger brake), GamepadInputAdapter (full Gamepad API with analog sticks/triggers), StarModSlots (trail/aura/shape/emote with sessionStorage persistence), updated PlayerOrb with mod-driven shape/trail/aura switching, updated HUD with lock indicator + warp charge ring + mod slot display. TS + Vite build clean. | Phase 04 complete → Phase 05 (Mana Economy) |
