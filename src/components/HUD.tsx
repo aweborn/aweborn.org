@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
-import { inputManager } from '../systems/InputManager'
 import { warpSystem } from '../systems/WarpSystem'
 import { starModSlots } from '../systems/StarModSlots'
 
@@ -31,7 +30,6 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
   const worlds = useUniverseStore((s) => s.worlds)
 
   const isInWorld = activeWorldId !== null
-  const context = inputManager.getContext()
 
   // Get warp state
   const warp = warpSystem.getState()

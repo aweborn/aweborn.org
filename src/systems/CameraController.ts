@@ -21,12 +21,14 @@ import { inputManager } from './InputManager'
 
 // ── Distance Presets ─────────────────────────────────────────────────
 
-export enum CameraPreset {
-  Close = 0,
-  Medium = 1,
-  Far = 2,
-  Cinematic = 3,
-}
+export const CameraPreset = {
+  Close: 0,
+  Medium: 1,
+  Far: 2,
+  Cinematic: 3,
+} as const
+
+export type CameraPreset = (typeof CameraPreset)[keyof typeof CameraPreset]
 
 const DISTANCES: Record<CameraPreset, number> = {
   [CameraPreset.Close]: 3.5,
@@ -57,7 +59,7 @@ const LOOK_BEHIND_SPEED = 6.0
 
 class CameraController {
   /** Current distance preset */
-  private _preset = CameraPreset.Medium
+  private _preset: CameraPreset = CameraPreset.Medium
   /** Current actual camera distance (lerps toward target) */
   private _currentDistance = DISTANCES[CameraPreset.Medium]
   /** Current actual camera height offset */

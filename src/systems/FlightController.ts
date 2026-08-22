@@ -73,7 +73,6 @@ class FlightController {
   private _right = new THREE.Vector3()
   private _up = new THREE.Vector3()
   private _thrustDir = new THREE.Vector3()
-  private _euler = new THREE.Euler()
 
   /** Whether the controller is active (disabled in world interior) */
   private _enabled = true

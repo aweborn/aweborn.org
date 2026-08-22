@@ -3,7 +3,6 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useUniverseStore } from '../stores/universeStore'
 import { flightController } from '../systems/FlightController'
-import type { WorldEntry } from '@aweborn/shared/crdt-schema'
 
 /**
  * Gravity field lines — faint curved lines bending toward nearby worlds.

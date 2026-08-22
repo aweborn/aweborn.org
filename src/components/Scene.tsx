@@ -2,7 +2,6 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Preload } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
-import * as THREE from 'three'
 import { Environment } from './Environment'
 import { DonationPortal } from './DonationPortal'
 import { UniverseWorlds } from './UniverseWorlds'
@@ -81,7 +80,7 @@ function FlightSystem() {
     }
   }, [isInWorld])
 
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     // Process input edge events at frame start
     inputManager.beginFrame()
 
