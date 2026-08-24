@@ -29,14 +29,8 @@ const THRUST_ACCEL = 8.0
 const REVERSE_ACCEL = 4.0
 /** Lateral strafe acceleration (units/s²) */
 const STRAFE_ACCEL = 5.0
-/** Active brake deceleration (units/s²) */
-const BRAKE_DECEL = 12.0
-/** Passive drift deceleration — moderate so ship slows when idle (units/s²) */
-const DRIFT_DECEL = 0.6
 /** Maximum speed (units/s) — soft cap via asymptotic damping */
 const MAX_SPEED = 20.0
-/** Speed above which extra drag kicks in for soft clamping */
-const SOFT_CAP_START = 16.0
 
 /** Angular velocity for pitch/yaw (rad/s) — target rate */
 const TURN_RATE = 2.5
@@ -83,7 +77,6 @@ class FlightController {
   private _forward = new THREE.Vector3()
   private _right = new THREE.Vector3()
   private _up = new THREE.Vector3()
-  private _thrustDir = new THREE.Vector3()
 
   /** Whether the controller is active (disabled in world interior) */
   private _enabled = true
