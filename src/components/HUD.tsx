@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { memo, useEffect, useRef, useState, useCallback } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { inputManager } from '../systems/InputManager'
 import { warpSystem } from '../systems/WarpSystem'
@@ -32,14 +32,13 @@ type ActionKey = keyof ReturnType<typeof inputManager.getActions>
  */
 const KEY_TO_ACTION_MAP: Record<string, ActionKey> = {
   Q: 'yawLeft',
-  W: 'pitchUp',
-  E: 'pitchDown',
+  W: 'thrust',
+  E: 'pitchUp',
   R: 'yawRight',
-  A: 'rollLeft',
+  A: 'rollRight',
   S: 'reverse',
-  D: 'strafe',
-  F: 'rollRight',
-  V: 'thrust',
+  D: 'pitchDown',
+  F: 'rollLeft',
   T: 'autoOrient',
   Z: 'lockBehind',
   X: 'freeLook',
@@ -64,14 +63,13 @@ const KEY_TO_ACTION_MAP: Record<string, ActionKey> = {
 
 const KEY_LABELS: Record<string, string> = {
   Q: 'Yaw ←',
-  W: 'Pitch ↑',
-  E: 'Pitch ↓',
+  W: 'Thrust',
+  E: 'Pitch ↑',
   R: 'Yaw →',
-  A: 'Roll ←',
+  A: 'Roll →',
   S: 'Reverse',
-  D: 'Strafe',
-  F: 'Roll →',
-  V: 'Thrust',
+  D: 'Pitch ↓',
+  F: 'Roll ←',
   T: 'Auto-orient',
   Z: 'Lock behind',
   X: 'Free look',
@@ -95,7 +93,7 @@ const KEY_LABELS: Record<string, string> = {
 /**
  * A single key cap that lights up when its corresponding action is active.
  */
-function KeyCap({ keyName, pressed, wide }: { keyName: string; pressed: boolean; wide?: boolean }) {
+const KeyCap = memo(function KeyCap({ keyName, pressed, wide }: { keyName: string; pressed: boolean; wide?: boolean }) {
   return (
     <div
       className={`hud-keycap${pressed ? ' hud-keycap--active' : ''}${wide ? ' hud-keycap--wide' : ''}`}
@@ -104,7 +102,7 @@ function KeyCap({ keyName, pressed, wide }: { keyName: string; pressed: boolean;
       {keyName}
     </div>
   )
-}
+})
 
 /**
  * HUD overlay — displays flight telemetry, warp status, mod slots,
@@ -135,6 +133,7 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set())
   const framesRef = useRef(0)
   const lastTimeRef = useRef(performance.now())
+  const prevKeysRef = useRef<string>('')
 
   useEffect(() => {
     let rafId: number
@@ -158,7 +157,13 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
           active.add(key)
         }
       }
-      setPressedKeys(active)
+
+      // Only trigger React re-render when pressed keys actually change
+      const serialized = Array.from(active).sort().join(',')
+      if (serialized !== prevKeysRef.current) {
+        prevKeysRef.current = serialized
+        setPressedKeys(active)
+      }
 
       rafId = requestAnimationFrame(tick)
     }
@@ -285,12 +290,11 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
               <KeyCap keyName="D" pressed={isPressed('D')} />
               <KeyCap keyName="F" pressed={isPressed('F')} />
             </div>
-            {/* ZXCV row */}
+            {/* ZXC row */}
             <div className="hud-key-row hud-key-row--offset-2">
               <KeyCap keyName="Z" pressed={isPressed('Z')} />
               <KeyCap keyName="X" pressed={isPressed('X')} />
               <KeyCap keyName="C" pressed={isPressed('C')} />
-              <KeyCap keyName="V" pressed={isPressed('V')} />
             </div>
             {/* Space */}
             <div className="hud-key-row hud-key-row--space">

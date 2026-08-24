@@ -88,8 +88,8 @@ export default function App() {
         onClose={handleCloseDonation}
       />
 
-      {/* CRDT dev overlay — dev only, toggle with backtick */}
-      {import.meta.env.DEV && <CRDTDevOverlay />}
+      {/* CRDT overlay — world index (shown in all environments for now) */}
+      <CRDTDevOverlay />
     </>
   )
 }

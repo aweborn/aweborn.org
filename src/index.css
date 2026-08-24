@@ -352,144 +352,19 @@ html, body, #root {
 
 /* ── Radar Minimap ── */
 
+/* ── 3D Radar (Canvas) ── */
+
 .radar-container {
   position: relative;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at center,
-    rgba(10, 15, 30, 0.8) 0%,
-    rgba(5, 10, 20, 0.9) 100%
-  );
-  border: 1px solid rgba(100, 140, 200, 0.15);
-  overflow: hidden;
+  width: 160px;
+  height: 160px;
   margin-bottom: var(--space-md);
-  box-shadow:
-    0 0 12px rgba(0, 10, 40, 0.4),
-    inset 0 0 20px rgba(0, 20, 60, 0.2);
 }
 
-/* Range rings */
-.radar-ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(100, 140, 200, 0.06);
-  pointer-events: none;
-}
-
-.radar-ring--outer {
-  width: 100px;
-  height: 100px;
-  top: 10px;
-  left: 10px;
-}
-
-.radar-ring--mid {
-  width: 66px;
-  height: 66px;
-  top: 27px;
-  left: 27px;
-}
-
-.radar-ring--inner {
-  width: 33px;
-  height: 33px;
-  top: 43.5px;
-  left: 43.5px;
-}
-
-/* Cross hairs */
-.radar-crosshair {
-  position: absolute;
-  background: rgba(100, 140, 200, 0.04);
-  pointer-events: none;
-}
-
-.radar-crosshair--h {
+.radar-canvas {
   width: 100%;
-  height: 1px;
-  top: 50%;
-}
-
-.radar-crosshair--v {
-  width: 1px;
   height: 100%;
-  left: 50%;
-}
-
-/* Sweep line */
-.radar-sweep {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1px;
-  height: 50%;
-  transform-origin: 0 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(100, 200, 140, 0.3) 0%,
-    transparent 100%
-  );
-  pointer-events: none;
-}
-
-/* Player center dot */
-.radar-player {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(180, 210, 255, 0.9);
-  border-radius: 50%;
-  box-shadow: 0 0 4px rgba(180, 210, 255, 0.4);
-  pointer-events: none;
-}
-
-/* Forward direction tick */
-.radar-forward-tick {
-  position: absolute;
-  width: 2px;
-  height: 6px;
-  top: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(180, 210, 255, 0.3);
-  border-radius: 1px;
-  pointer-events: none;
-}
-
-/* Blips */
-.radar-blip {
-  position: absolute;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  transition: left 100ms linear, top 100ms linear;
-}
-
-.radar-blip--portal {
-  box-shadow: 0 0 6px rgba(255, 204, 68, 0.5);
-  z-index: 2;
-}
-
-.radar-blip--offmap {
-  opacity: 0.7;
-}
-
-.radar-blip-arrow {
-  position: absolute;
-  top: -4px;
-  left: 50%;
-  width: 0;
-  height: 0;
-  transform: translateX(-50%);
-  border-left: 3px solid transparent;
-  border-right: 3px solid transparent;
-  border-bottom: 4px solid rgba(255, 204, 68, 0.6);
-  transform-origin: 50% 200%;
+  display: block;
 }
 
 /* ── Live Keyboard Layout ── */

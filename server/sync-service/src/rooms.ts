@@ -292,6 +292,11 @@ export class RoomManager {
           }
           break;
         }
+        case "presence": {
+          // Relay presence to all other universe clients
+          this.relayPresence(ws, message.data);
+          break;
+        }
         default:
           console.warn(`[rooms] unknown message type: ${message.type}`);
       }
@@ -456,6 +461,19 @@ export class RoomManager {
     }
   }
 
+  /**
+   * Relay a presence message to all other universe clients.
+   * The data is opaque JSON — the server just forwards it.
+   */
+  private relayPresence(sender: WebSocket, data: Uint8Array): void {
+    const msg = this.encodeMessage("presence", data);
+    for (const [, client] of this.universeClients) {
+      if (client.ws !== sender && client.ws.readyState === 1) {
+        client.ws.send(msg);
+      }
+    }
+  }
+
   // ── Wire Protocol ────────────────────────────────────────────────
   //
   // Simple binary protocol:
@@ -480,6 +498,7 @@ export class RoomManager {
     "update-sectors": 0x06,
     "join-world": 0x07,
     "leave-world": 0x08,
+    "presence": 0x09,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

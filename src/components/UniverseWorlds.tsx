@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect } from 'react'
+import { useRef, useMemo, useEffect, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Float, Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -27,8 +27,8 @@ import {
 // ── Scale constants ──────────────────────────────────────────────────
 const SCENE_RADIUS = 14       // Max distance from origin in the scene
 const CRDT_SCALE = 500        // Approximate range of CRDT positions
-const CLOSE_DIST = 5          // Full mesh LOD
-const MEDIUM_DIST = 12        // Billboard LOD
+const CLOSE_DIST = 30         // Full mesh LOD — nearly always visible
+const MEDIUM_DIST = 50         // Billboard LOD — only extremely distant
 
 /** Map a CRDT world position into the scene's coordinate space. */
 function worldToScene(pos: { x: number; y: number; z: number }): THREE.Vector3 {
@@ -390,111 +390,7 @@ function AwebornPortal() {
   )
 }
 
-// ── Landmark Worlds (converted FloatingIslands) ──────────────────────
-//
-// These are permanent "worlds" in the universe — the old decorative
-// floating islands reborn as data-driven landmarks. They aren't in
-// the CRDT; they're hardcoded fixtures that give the universe character.
 
-interface LandmarkData {
-  name: string
-  position: [number, number, number]
-  scale: number
-  rockColor: string
-  crystalColor: string
-}
-
-const LANDMARKS: LandmarkData[] = [
-  { name: 'The Spire',     position: [-8, 2, -12], scale: 1.2, rockColor: '#1a1a4e', crystalColor: '#e8b94a' },
-  { name: 'Drift Rock',    position: [6, -1, -10], scale: 0.8, rockColor: '#1a1a4e', crystalColor: '#6b3fa0' },
-  { name: 'Deep Anchor',   position: [-4, -3, -18], scale: 1.5, rockColor: '#1a1a4e', crystalColor: '#2d5fa8' },
-  { name: 'Far Beacon',    position: [10, 4, -20], scale: 0.6, rockColor: '#1a1a4e', crystalColor: '#e8b94a' },
-  { name: 'Nebula\'s Eye', position: [-12, 5, -25], scale: 1.0, rockColor: '#1a1a4e', crystalColor: '#a84073' },
-]
-
-function LandmarkIsland({ data }: { data: LandmarkData }) {
-  const ref = useRef<THREE.Group>(null!)
-  const crystalColor = useMemo(() => new THREE.Color(data.crystalColor), [data.crystalColor])
-
-  useFrame((state) => {
-    if (ref.current) {
-      ref.current.rotation.y = state.clock.elapsedTime * 0.05
-      // Gentle bob
-      ref.current.position.y = data.position[1] + Math.sin(state.clock.elapsedTime * 0.4) * 0.15
-    }
-  })
-
-  return (
-    <Float speed={1.0} rotationIntensity={0.2} floatIntensity={0.6}>
-      <group ref={ref} position={data.position} scale={data.scale}>
-        {/* Main rock body */}
-        <mesh>
-          <dodecahedronGeometry args={[1, 1]} />
-          <meshStandardMaterial
-            color={data.rockColor}
-            roughness={0.85}
-            metalness={0.1}
-            emissive="#1a0a30"
-            emissiveIntensity={0.15}
-          />
-        </mesh>
-
-        {/* Main crystal */}
-        <mesh position={[0, 0.8, 0]} rotation={[0.3, 0, 0.2]}>
-          <octahedronGeometry args={[0.35, 0]} />
-          <meshStandardMaterial
-            color={crystalColor}
-            roughness={0.1}
-            metalness={0.9}
-            emissive={crystalColor}
-            emissiveIntensity={0.5}
-            transparent
-            opacity={0.85}
-            toneMapped={false}
-          />
-        </mesh>
-
-        {/* Smaller crystal */}
-        <mesh position={[0.5, 0.5, 0.3]} rotation={[0.5, 0.8, 0]}>
-          <octahedronGeometry args={[0.15, 0]} />
-          <meshStandardMaterial
-            color={crystalColor}
-            roughness={0.15}
-            metalness={0.8}
-            emissive={crystalColor}
-            emissiveIntensity={0.6}
-            transparent
-            opacity={0.8}
-            toneMapped={false}
-          />
-        </mesh>
-
-        {/* Label */}
-        <Html
-          position={[0, 1.5, 0]}
-          center
-          distanceFactor={10}
-          style={{ pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap' }}
-        >
-          <div style={{
-            color: '#aaa',
-            fontSize: '10px',
-            fontFamily: 'Inter, system-ui, sans-serif',
-            fontWeight: 500,
-            textShadow: '0 0 8px rgba(0,0,0,0.9)',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase' as const,
-          }}>
-            {data.name}
-          </div>
-        </Html>
-
-        {/* Soft point light from crystal */}
-        <pointLight color={crystalColor} intensity={1.0} distance={4} decay={2} />
-      </group>
-    </Float>
-  )
-}
 
 // ── Main Component ───────────────────────────────────────────────────
 
@@ -502,8 +398,19 @@ export function UniverseWorlds() {
   const worlds = useUniverseStore((s) => s.worlds)
   const { camera } = useThree()
 
-  // Split worlds into LOD buckets based on distance from camera
-  const { close, medium, far } = useMemo(() => {
+  // LOD state — recomputed every N frames via useFrame (not useMemo,
+  // because camera.position is a mutable Vector3 whose reference never
+  // changes, so React can't detect when it moves).
+  const [close, setClose] = useState<WorldEntry[]>([])
+  const [medium, setMedium] = useState<WorldEntry[]>([])
+  const [far, setFar] = useState<WorldEntry[]>([])
+  const frameCount = useRef(0)
+
+  useFrame(() => {
+    // Throttle LOD recalc to every 10 frames (~6 times/sec at 60fps)
+    frameCount.current++
+    if (frameCount.current % 10 !== 0) return
+
     const c: WorldEntry[] = []
     const m: WorldEntry[] = []
     const f: WorldEntry[] = []
@@ -521,18 +428,15 @@ export function UniverseWorlds() {
       }
     }
 
-    return { close: c, medium: m, far: f }
-  }, [worlds, camera.position])
+    setClose(c)
+    setMedium(m)
+    setFar(f)
+  })
 
   return (
     <group>
       {/* Aweborn Portal — always at origin, always Close LOD */}
       <AwebornPortal />
-
-      {/* Landmark islands — permanent universe fixtures */}
-      {LANDMARKS.map((lm) => (
-        <LandmarkIsland key={lm.name} data={lm} />
-      ))}
 
       {/* Close LOD — full mesh per world */}
       {close.map((w) => (

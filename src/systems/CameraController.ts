@@ -146,29 +146,24 @@ class CameraController {
     }
 
     // ── Compute ideal camera position ──
-    // Camera sits behind and above the player
+    // Camera sits behind and above the player (in player-local space)
     const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(orientQuat)
-    const up = new THREE.Vector3(0, 1, 0)
+    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(orientQuat)
 
     this._idealPosition.copy(playerPos)
       .addScaledVector(backward, this._currentDistance)
-      .addScaledVector(up, this._currentHeight)
+      .addScaledVector(localUp, this._currentHeight)
 
     // Apply look-behind: interpolate ideal position to the front
     if (this._lookBehindBlend > 0.01) {
       const frontPosition = playerPos.clone()
         .addScaledVector(backward, -this._currentDistance)
-        .addScaledVector(up, this._currentHeight)
+        .addScaledVector(localUp, this._currentHeight)
       this._idealPosition.lerp(frontPosition, this._lookBehindBlend)
     }
 
-    // ── Spring physics for position ──
-    this._displacement.copy(this._idealPosition).sub(camera.position)
-    this._springForce.copy(this._displacement).multiplyScalar(SPRING_STIFFNESS)
-    this._springForce.addScaledVector(this._springVelocity, -SPRING_DAMPING)
-
-    this._springVelocity.addScaledVector(this._springForce, dt)
-    camera.position.addScaledVector(this._springVelocity, dt)
+    // ── Snap camera to ideal position (no spring lag) ──
+    camera.position.copy(this._idealPosition)
 
     // ── Camera look target ──
     // Look slightly ahead of the player
@@ -181,6 +176,8 @@ class CameraController {
       this._lookTarget.lerp(behindTarget, this._lookBehindBlend)
     }
 
+    // Set camera up to player's local up so lookAt doesn't flip
+    camera.up.copy(localUp)
     camera.lookAt(this._lookTarget)
   }
 
@@ -210,14 +207,15 @@ class CameraController {
    */
   snapToTarget(camera: THREE.Camera, playerPos: THREE.Vector3, playerQuat: THREE.Quaternion): void {
     const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerQuat)
-    const up = new THREE.Vector3(0, 1, 0)
+    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(playerQuat)
 
     camera.position.copy(playerPos)
       .addScaledVector(backward, this._currentDistance)
-      .addScaledVector(up, this._currentHeight)
+      .addScaledVector(localUp, this._currentHeight)
 
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(playerQuat)
     this._lookTarget.copy(playerPos).addScaledVector(forward, 2)
+    camera.up.copy(localUp)
     camera.lookAt(this._lookTarget)
 
     this._springVelocity.set(0, 0, 0)

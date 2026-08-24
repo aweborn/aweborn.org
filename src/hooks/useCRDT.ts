@@ -18,6 +18,7 @@ const MSG_TYPES: Record<string, number> = {
   "update-sectors": 0x06,
   "join-world": 0x07,
   "leave-world": 0x08,
+  "presence": 0x09,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -79,6 +80,7 @@ export interface SyncConnection {
 
 export type UniverseUpdateHandler = (type: string, data: Uint8Array) => void;
 export type WorldUpdateHandler = (type: string, worldId: string, data: Uint8Array) => void;
+export type PresenceHandler = (data: Uint8Array) => void;
 
 /**
  * React hook that manages a WebSocket connection to the sync-service.
@@ -92,16 +94,19 @@ export type WorldUpdateHandler = (type: string, worldId: string, data: Uint8Arra
 export function useSyncConnection(
   sectorKeys: string[],
   onUniverseUpdate?: UniverseUpdateHandler,
-  onWorldUpdate?: WorldUpdateHandler
+  onWorldUpdate?: WorldUpdateHandler,
+  onPresence?: PresenceHandler,
 ): SyncConnection {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const onUniverseUpdateRef = useRef(onUniverseUpdate);
   const onWorldUpdateRef = useRef(onWorldUpdate);
+  const onPresenceRef = useRef(onPresence);
 
   // Keep handler refs current
   onUniverseUpdateRef.current = onUniverseUpdate;
   onWorldUpdateRef.current = onWorldUpdate;
+  onPresenceRef.current = onPresence;
 
   const send = useCallback(
     (type: string, data: Uint8Array, worldId?: string) => {
@@ -179,6 +184,9 @@ export function useSyncConnection(
           if (msg.worldId) {
             onWorldUpdateRef.current?.(msg.type, msg.worldId, msg.data);
           }
+          break;
+        case "presence":
+          onPresenceRef.current?.(msg.data);
           break;
       }
     });

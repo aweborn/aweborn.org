@@ -1,7 +1,7 @@
 import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { usePresence } from '../hooks/usePresence'
+import { usePresence, getPresenceState } from '../hooks/usePresence'
 
 /**
  * Renders other players as glowing orbs drifting through the universe.
@@ -13,15 +13,12 @@ import { usePresence } from '../hooks/usePresence'
  * Positions are interpolated (lerp) between broadcasts for smooth motion.
  */
 
-const SCENE_RADIUS = 14
-const CRDT_SCALE = 500
 const TRAIL_LENGTH = 12      // Number of trail particles per player
 const TRAIL_FADE_RATE = 0.08 // How fast older trail points fade
 
-/** Map a CRDT position to scene coordinates (same as UniverseWorlds). */
-function toScene(pos: { x: number; y: number; z: number }): THREE.Vector3 {
-  const scale = SCENE_RADIUS / CRDT_SCALE
-  return new THREE.Vector3(pos.x * scale, pos.y * scale + 1, pos.z * scale - 8)
+/** Presence positions are already in scene coordinates (from FlightController). */
+function toVec3(pos: { x: number; y: number; z: number }): THREE.Vector3 {
+  return new THREE.Vector3(pos.x, pos.y, pos.z)
 }
 
 // ── Single Player Star ───────────────────────────────────────────────
@@ -154,7 +151,8 @@ export function PlayerStars() {
   const { players } = usePresence()
   const starDataRef = useRef(new Map<string, PlayerStarData>())
 
-  // Sync star data with presence updates
+  // Structural sync: create/remove star entries when players join/leave.
+  // This useMemo only re-runs on structural changes, NOT position updates.
   const activeStars = useMemo(() => {
     const data = starDataRef.current
     const active: PlayerStarData[] = []
@@ -162,7 +160,7 @@ export function PlayerStars() {
     for (const [id, presence] of players) {
       let star = data.get(id)
       if (!star) {
-        const pos = toScene(presence.position)
+        const pos = toVec3(presence.position)
         star = {
           id,
           color: presence.color,
@@ -173,10 +171,6 @@ export function PlayerStars() {
         }
         data.set(id, star)
       }
-
-      // Update target position
-      star.targetPosition.copy(toScene(presence.position))
-      star.color = presence.color
       active.push(star)
     }
 
@@ -187,6 +181,24 @@ export function PlayerStars() {
 
     return active
   }, [players])
+
+  // Position sync: read latest positions imperatively at 60fps.
+  // This does NOT trigger React re-renders.
+  useFrame(() => {
+    const livePresence = getPresenceState()
+    const data = starDataRef.current
+    for (const [id, star] of data) {
+      const presence = livePresence.get(id)
+      if (presence) {
+        star.targetPosition.set(
+          presence.position.x,
+          presence.position.y,
+          presence.position.z,
+        )
+        star.color = presence.color
+      }
+    }
+  })
 
   return (
     <group>

@@ -27,16 +27,18 @@ export type InputContext = 'universe' | 'world'
  */
 export interface ActionState {
   // ── Navigation (Left Hand) ──
-  thrust: boolean        // V
+  thrust: boolean        // W
   brake: boolean         // Space
-  pitchUp: boolean       // W
-  pitchDown: boolean     // E
+  pitchUp: boolean       // (unmapped — available for rebind)
+  pitchDown: boolean     // (unmapped — available for rebind)
   yawLeft: boolean       // Q
   yawRight: boolean      // R
   rollLeft: boolean      // A
   rollRight: boolean     // F
   reverse: boolean       // S
-  strafe: boolean        // D
+  strafe: boolean        // (unmapped — available for rebind)
+  moveUp: boolean        // E
+  moveDown: boolean      // D
 
   // ── Camera ──
   cameraClose: boolean   // 1
@@ -80,16 +82,15 @@ export interface ActionEvents {
  */
 const KEY_TO_ACTION: Record<string, keyof ActionState> = {
   // Left hand — navigation
-  KeyV: 'thrust',
+  KeyW: 'thrust',
   Space: 'brake',
-  KeyW: 'pitchUp',
-  KeyE: 'pitchDown',
   KeyQ: 'yawLeft',
   KeyR: 'yawRight',
-  KeyA: 'rollLeft',
-  KeyF: 'rollRight',
+  KeyA: 'rollRight',
+  KeyF: 'rollLeft',
   KeyS: 'reverse',
-  KeyD: 'strafe',
+  KeyE: 'pitchUp',
+  KeyD: 'pitchDown',
 
   // Camera
   Digit1: 'cameraClose',
@@ -141,6 +142,8 @@ function createEmptyState(): ActionState {
     rollRight: false,
     reverse: false,
     strafe: false,
+    moveUp: false,
+    moveDown: false,
     cameraClose: false,
     cameraMedium: false,
     cameraFar: false,

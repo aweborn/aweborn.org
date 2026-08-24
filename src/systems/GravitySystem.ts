@@ -25,10 +25,10 @@ import type { WorldEntry } from '@aweborn/shared/crdt-schema'
  * Gravitational constant — controls overall pull strength.
  * This is a game-feel constant, not real physics.
  */
-const G = 0.8
+const G = 2.5
 
 /** Maximum distance at which gravity is calculated (optimization). */
-const GRAVITY_RANGE = 15.0
+const GRAVITY_RANGE = 25.0
 
 /** Minimum distance to prevent infinite force at zero distance. */
 const MIN_DISTANCE = 0.5

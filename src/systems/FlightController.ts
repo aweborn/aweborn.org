@@ -48,7 +48,7 @@ const ROLL_RATE = 2.8
  * 0.0 = no gravity during input, 1.0 = full gravity always.
  * At 0.2, gravity is a gentle nudge you can easily overpower.
  */
-const GRAVITY_ATTENUATION_WHILE_ACTIVE = 0.2
+const GRAVITY_ATTENUATION_WHILE_ACTIVE = 0.5
 
 // ── Flight State ─────────────────────────────────────────────────────
 
@@ -108,6 +108,7 @@ class FlightController {
     // Detect if the player is actively pressing any control key
     this._isActivelyControlling =
       actions.thrust || actions.brake || actions.reverse || actions.strafe ||
+      actions.moveUp || actions.moveDown ||
       actions.pitchUp || actions.pitchDown ||
       actions.yawLeft || actions.yawRight ||
       actions.rollLeft || actions.rollRight
@@ -181,14 +182,8 @@ class FlightController {
       // Snap angular velocity to target — instant response on key press
       this._angularVelocity.set(targetPitch, targetYaw, targetRoll)
     } else {
-      // Decay angular velocity over ~100ms (damping 0.3 → near-zero in ~6 frames)
-      const damping = Math.pow(0.3, dt * 60)
-      this._angularVelocity.multiplyScalar(damping)
-
-      // Kill tiny residual to avoid micro-drift
-      if (this._angularVelocity.lengthSq() < 0.001) {
-        this._angularVelocity.set(0, 0, 0)
-      }
+      // Instant stop — no inertia after key release
+      this._angularVelocity.set(0, 0, 0)
     }
 
     // Apply angular velocity to quaternion
@@ -199,8 +194,8 @@ class FlightController {
       rotQ.setFromAxisAngle(this._right, this._angularVelocity.x * dt)
       this.quaternion.premultiply(rotQ)
 
-      // Yaw (world Y axis for intuitive feel)
-      rotQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this._angularVelocity.y * dt)
+      // Yaw (local Y axis — no gimbal lock at any pitch angle)
+      rotQ.setFromAxisAngle(this._up, this._angularVelocity.y * dt)
       this.quaternion.premultiply(rotQ)
 
       // Roll (local forward axis)
@@ -217,60 +212,37 @@ class FlightController {
   }
 
   private _updateMovement(dt: number, actions: Readonly<ActionState>, gravityForce?: THREE.Vector3): void {
-    // ── Thrust ──
+    // ── Thrust — instant velocity in facing direction ──
     if (actions.thrust) {
-      this._thrustDir.copy(this._forward).multiplyScalar(THRUST_ACCEL * dt)
-      this.velocity.add(this._thrustDir)
+      this.velocity.copy(this._forward).multiplyScalar(THRUST_ACCEL)
     }
 
-    // ── Reverse thrust ──
+    // ── Reverse thrust — instant velocity backward ──
     if (actions.reverse) {
-      this._thrustDir.copy(this._forward).multiplyScalar(-REVERSE_ACCEL * dt)
-      this.velocity.add(this._thrustDir)
+      this.velocity.copy(this._forward).multiplyScalar(-REVERSE_ACCEL)
     }
 
-    // ── Lateral strafe ──
+    // ── Lateral strafe — add strafe component ──
     if (actions.strafe) {
-      this._thrustDir.copy(this._right).multiplyScalar(STRAFE_ACCEL * dt)
-      this.velocity.add(this._thrustDir)
+      this.velocity.addScaledVector(this._right, STRAFE_ACCEL)
     }
 
-    // ── Brake (active deceleration) ──
+    // ── Vertical movement — instant velocity along local up ──
+    if (actions.moveUp) {
+      this.velocity.addScaledVector(this._up, THRUST_ACCEL)
+    }
+    if (actions.moveDown) {
+      this.velocity.addScaledVector(this._up, -THRUST_ACCEL)
+    }
+
+    // ── Brake — instant stop ──
     if (actions.brake) {
-      const speed = this.velocity.length()
-      if (speed > 0.01) {
-        const decel = Math.min(BRAKE_DECEL * dt, speed)
-        this.velocity.addScaledVector(
-          this.velocity.clone().normalize(),
-          -decel,
-        )
-      }
+      this.velocity.set(0, 0, 0)
     }
 
-    // ── Passive drift deceleration ──
-    if (!actions.thrust && !actions.reverse && !actions.brake) {
-      const speed = this.velocity.length()
-      if (speed > 0.01) {
-        const decel = Math.min(DRIFT_DECEL * dt, speed)
-        this.velocity.addScaledVector(
-          this.velocity.clone().normalize(),
-          -decel,
-        )
-      }
-    }
-
-    // ── Soft speed cap ──
-    const speed = this.velocity.length()
-    if (speed > SOFT_CAP_START) {
-      const overshoot = speed - SOFT_CAP_START
-      const range = MAX_SPEED - SOFT_CAP_START
-      // Asymptotic damping: the closer to MAX_SPEED, the stronger the drag
-      const dragFactor = 1 - (overshoot / range) * 0.5
-      this.velocity.multiplyScalar(Math.max(0.5, dragFactor))
-    }
-    // Hard cap as safety net
-    if (this.velocity.length() > MAX_SPEED * 1.2) {
-      this.velocity.setLength(MAX_SPEED * 1.2)
+    // ── Hard speed cap ──
+    if (this.velocity.length() > MAX_SPEED) {
+      this.velocity.setLength(MAX_SPEED)
     }
 
     // ── Apply gravity (attenuated when actively controlling) ──

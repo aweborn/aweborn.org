@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSyncConnection } from "../hooks/useCRDT";
-import { usePresence } from "../hooks/usePresence";
+import { usePresence, handleWebSocketPresence, setPresenceSender } from "../hooks/usePresence";
 import { useUniverseStore } from "../stores/universeStore";
 import { useWorldStore } from "../stores/worldStore";
 import type { WorldEntry } from "@aweborn/shared/crdt-schema";
@@ -66,7 +66,8 @@ export function CRDTDevOverlay() {
   const { connected, send, createWorld, joinWorld: syncJoinWorld, leaveWorld: syncLeaveWorld } = useSyncConnection(
     sectorKeys,
     onUniverseUpdate,
-    onWorldUpdate
+    onWorldUpdate,
+    handleWebSocketPresence,
   );
 
   // Wire world doc update handler: send local world changes to the server
@@ -76,6 +77,12 @@ export function CRDTDevOverlay() {
     });
     return () => setWorldDocUpdateHandler(null);
   }, [send, setWorldDocUpdateHandler]);
+
+  // Wire presence sender: allows the presence manager to send via WebSocket
+  useEffect(() => {
+    setPresenceSender(send);
+    return () => setPresenceSender(null);
+  }, [send]);
 
   // Toggle with backtick key
   useEffect(() => {
