@@ -33,9 +33,6 @@ const FULL_CHARGE_TIME = 2.5
 /** Arrival offset from target (units). 0 = snap to center. */
 const ARRIVAL_OFFSET = 0
 
-/** Residual velocity after warp (fraction of max speed). */
-const RESIDUAL_VELOCITY_FACTOR = 0.3
-
 /** Warp leap animation duration (seconds). */
 const WARP_LEAP_DURATION = 0.6
 
