@@ -120,6 +120,23 @@ function FlightSystem() {
       )
     }
 
+    // ── Project locked target to screen space (for crosshair tracking) ──
+    const warpLockPos = warpState.lockedTargetPosition
+    if (warpLockPos && (warpState.phase === 'locked' || warpState.phase === 'charging')) {
+      const projected = warpLockPos.clone().project(camera)
+      // projected.x/y are in NDC (-1 to 1), convert to CSS percentages
+      const screenX = (projected.x * 0.5 + 0.5) * 100
+      const screenY = (-projected.y * 0.5 + 0.5) * 100
+      // Only show if target is in front of the camera (z < 1)
+      if (projected.z < 1) {
+        warpSystem.setTargetScreenPos({ x: screenX, y: screenY })
+      } else {
+        warpSystem.setTargetScreenPos(null)
+      }
+    } else {
+      warpSystem.setTargetScreenPos(null)
+    }
+
     // ── Update stores ──
     const pos = flightController.position
     const vel = flightController.velocity
@@ -141,8 +158,13 @@ function FlightSystem() {
       activeWorldId,
     )
 
-    // ── World entry: press N near a world ──
+    // ── Gravity toggle (G key) ──
     const events = inputManager.getEvents()
+    if (events.justPressed.has('gravityToggle')) {
+      flightController.toggleGravity()
+    }
+
+    // ── World entry: press N near a world ──
     if (events.justPressed.has('interact') && gravResult.nearestWorld && gravResult.nearestDistance < 3.0) {
       useUniverseStore.getState().enterWorld(gravResult.nearestWorld.id)
     }
@@ -249,8 +271,8 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
       {/* Fog — different for universe vs world interior */}
       <fog attach="fog" args={[
         isInWorld ? '#050510' : '#050510',
-        isInWorld ? 15 : 8,
-        isInWorld ? 50 : 60,
+        isInWorld ? 15 : 30,
+        isInWorld ? 50 : 250,
       ]} />
 
       {/* Universe view — star map (hidden when inside a world) */}
@@ -295,7 +317,7 @@ export function Scene({ onPortalActivate, onProgress }: SceneProps) {
   return (
     <div className="canvas-container">
       <Canvas
-        camera={{ position: [0, 2, 10], fov: 60, near: 0.1, far: 200 }}
+        camera={{ position: [0, 2, 60], fov: 60, near: 0.1, far: 500 }}
         dpr={[1, 2]}
         gl={{
           antialias: true,

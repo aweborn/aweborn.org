@@ -28,10 +28,10 @@ import type { WorldEntry } from '@aweborn/shared/crdt-schema'
 const G = 2.5
 
 /** Maximum distance at which gravity is calculated (optimization). */
-const GRAVITY_RANGE = 25.0
+const GRAVITY_RANGE = 80.0
 
 /** Minimum distance to prevent infinite force at zero distance. */
-const MIN_DISTANCE = 0.5
+const MIN_DISTANCE = 2.0
 
 /**
  * Fixed mass for the Aweborn Portal (origin).
@@ -39,24 +39,8 @@ const MIN_DISTANCE = 0.5
  */
 const PORTAL_MASS = 25.0
 
-/** Portal position in scene coordinates (matches UniverseWorlds). */
-const PORTAL_POSITION = new THREE.Vector3(0, 1, -8)
-
-/** Scene scaling constants (must match UniverseWorlds.tsx) */
-const SCENE_RADIUS = 14
-const CRDT_SCALE = 500
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-/** Map a CRDT world position into scene coordinates (same as UniverseWorlds). */
-function worldToScene(pos: { x: number; y: number; z: number }): THREE.Vector3 {
-  const scale = SCENE_RADIUS / CRDT_SCALE
-  return new THREE.Vector3(
-    pos.x * scale,
-    pos.y * scale + 1,
-    pos.z * scale - 8,
-  )
-}
+/** Portal position (origin of the universe). */
+const PORTAL_POSITION = new THREE.Vector3(0, 0, 0)
 
 /**
  * Calculate world mass from its properties.
@@ -122,8 +106,7 @@ class GravitySystem {
 
     // ── World gravity ──
     for (const world of worlds.values()) {
-      const worldScenePos = worldToScene(world.resolvedPosition)
-      this._toWorld.copy(worldScenePos).sub(playerPos)
+      this._toWorld.set(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z).sub(playerPos)
       const dist = Math.max(this._toWorld.length(), MIN_DISTANCE)
 
       // Track nearest

@@ -48,6 +48,7 @@ export interface ActionState {
   lockBehind: boolean    // Z
   freeLook: boolean      // X
   lookBehind: boolean    // C
+  gravityToggle: boolean // G
   autoOrient: boolean    // T
 
   // ── Interaction (Right Hand) ──
@@ -100,6 +101,7 @@ const KEY_TO_ACTION: Record<string, keyof ActionState> = {
   KeyZ: 'lockBehind',
   KeyX: 'freeLook',
   KeyC: 'lookBehind',
+  KeyG: 'gravityToggle',
   KeyT: 'autoOrient',
 
   // Right hand — interaction
@@ -122,7 +124,7 @@ const KEY_TO_ACTION: Record<string, keyof ActionState> = {
 const PREVENT_DEFAULT_KEYS = new Set([
   'Space',    // Prevent page scroll
   'KeyW', 'KeyE', 'KeyQ', 'KeyR', 'KeyA', 'KeyF', 'KeyS', 'KeyD',
-  'KeyV', 'KeyN', 'KeyJ', 'KeyK', 'KeyL',
+  'KeyN', 'KeyJ', 'KeyK', 'KeyL', 'KeyG',
   'KeyU', 'KeyI', 'KeyO', 'KeyP',
   'KeyZ', 'KeyX', 'KeyC', 'KeyT',
   'Digit1', 'Digit2', 'Digit3', 'Digit4',
@@ -151,6 +153,7 @@ function createEmptyState(): ActionState {
     lockBehind: false,
     freeLook: false,
     lookBehind: false,
+    gravityToggle: false,
     autoOrient: false,
     interact: false,
     lockOn: false,

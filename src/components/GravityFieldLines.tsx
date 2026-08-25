@@ -14,18 +14,7 @@ import { flightController } from '../systems/FlightController'
 
 const LINES_PER_WORLD = 6
 const POINTS_PER_LINE = 12
-const GRAVITY_VISUAL_RANGE = 12
-const SCENE_RADIUS = 14
-const CRDT_SCALE = 500
-
-function worldToScene(pos: { x: number; y: number; z: number }): THREE.Vector3 {
-  const scale = SCENE_RADIUS / CRDT_SCALE
-  return new THREE.Vector3(
-    pos.x * scale,
-    pos.y * scale + 1,
-    pos.z * scale - 8,
-  )
-}
+const GRAVITY_VISUAL_RANGE = 40
 
 /** Generate field line control points for a world. */
 function generateFieldLinePoints(
@@ -84,7 +73,7 @@ export function GravityFieldLines() {
     }
 
     for (const world of worlds.values()) {
-      const worldPos = worldToScene(world.resolvedPosition)
+      const worldPos = new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
       const dist = worldPos.distanceTo(playerPos)
 
       // Skip if too far

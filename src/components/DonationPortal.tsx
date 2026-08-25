@@ -48,7 +48,7 @@ export function DonationPortal({ onActivate }: DonationPortalProps) {
       speed={1.5}
       rotationIntensity={0.2}
       floatIntensity={1.2}
-      position={[0, 0.5, -6]}
+      position={[0, 0, 0]}
     >
       <group
         ref={groupRef}

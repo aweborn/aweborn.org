@@ -23,14 +23,10 @@ const DPR = 2                 // Device pixel ratio for sharp rendering
 const HALF = CANVAS_SIZE / 2  // Center point
 
 /** How many scene units the radar covers (radius) */
-const RADAR_RANGE = 25
+const RADAR_RANGE = 80
 
-/** Scene scaling constants (must match UniverseWorlds.tsx) */
-const SCENE_RADIUS = 14
-const CRDT_SCALE = 500
-
-/** Portal position in scene coordinates */
-const PORTAL_SCENE_POS = new THREE.Vector3(0, 1, -8)
+/** Portal position (origin of the universe) */
+const PORTAL_SCENE_POS = new THREE.Vector3(0, 0, 0)
 
 /** Max stalk height in pixels */
 const MAX_STALK_PX = 28
@@ -54,17 +50,8 @@ const COLOR_OTHER_PLAYER = 'rgba(140, 240, 255, 0.90)'
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-/** Temp vector for worldToScene conversion (avoid alloc in hot loop) */
+/** Temp vector for position conversion (avoid alloc in hot loop) */
 const _scenePos = new THREE.Vector3()
-
-function worldToScene(pos: { x: number; y: number; z: number }): THREE.Vector3 {
-  const scale = SCENE_RADIUS / CRDT_SCALE
-  return _scenePos.set(
-    pos.x * scale,
-    pos.y * scale + 1,
-    pos.z * scale - 8,
-  )
-}
 
 /** Temp quaternion/vector for transforms (avoid alloc in hot loop) */
 const _invQuat = new THREE.Quaternion()
@@ -219,7 +206,7 @@ export const RadarMinimap = memo(function RadarMinimap() {
 
     // Worlds
     for (const world of worlds.values()) {
-      const scenePos = worldToScene(world.resolvedPosition)
+      const scenePos = _scenePos.set(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
       const dist = scenePos.distanceTo(pos)
       const local = toLocalFrame(scenePos, pos, quat)
 

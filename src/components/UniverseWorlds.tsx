@@ -24,21 +24,9 @@ import {
  * Ghost worlds use the ethereal wireframe shader instead of the solid glow.
  */
 
-// ── Scale constants ──────────────────────────────────────────────────
-const SCENE_RADIUS = 14       // Max distance from origin in the scene
-const CRDT_SCALE = 500        // Approximate range of CRDT positions
-const CLOSE_DIST = 30         // Full mesh LOD — nearly always visible
-const MEDIUM_DIST = 50         // Billboard LOD — only extremely distant
-
-/** Map a CRDT world position into the scene's coordinate space. */
-function worldToScene(pos: { x: number; y: number; z: number }): THREE.Vector3 {
-  const scale = SCENE_RADIUS / CRDT_SCALE
-  return new THREE.Vector3(
-    pos.x * scale,
-    pos.y * scale + 1,       // Lift above fog plane
-    pos.z * scale - 8,       // Push into scene depth
-  )
-}
+// ── Scale constants ──────────────────────────────────────────────────────────
+const CLOSE_DIST = 100         // Full mesh LOD
+const MEDIUM_DIST = 200        // Billboard LOD
 
 /** Deterministic hash from string → [0, 1) */
 function hashString(s: string): number {
@@ -58,7 +46,7 @@ function WorldOrbClose({ world }: { world: WorldEntry }) {
   const ghostMatRef = useRef<THREE.ShaderMaterial>(null!)
 
   const color = useMemo(() => new THREE.Color(world.color), [world.color])
-  const scenePos = useMemo(() => worldToScene(world.resolvedPosition), [world.resolvedPosition])
+  const scenePos = useMemo(() => new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z), [world.resolvedPosition])
   const offset = useMemo(() => hashString(world.id) * Math.PI * 2, [world.id])
   const size = world.solidified ? 0.55 : 0.4
 
@@ -219,7 +207,7 @@ const billboardTexture = new THREE.CanvasTexture(billboardCanvas)
 
 function WorldBillboard({ world }: { world: WorldEntry }) {
   const ref = useRef<THREE.Sprite>(null!)
-  const scenePos = useMemo(() => worldToScene(world.resolvedPosition), [world.resolvedPosition])
+  const scenePos = useMemo(() => new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z), [world.resolvedPosition])
   const color = useMemo(() => new THREE.Color(world.color), [world.color])
   const offset = useMemo(() => hashString(world.id) * Math.PI * 2, [world.id])
 
@@ -260,10 +248,9 @@ function WorldPoints({ worlds }: { worlds: WorldEntry[] }) {
     const tmpColor = new THREE.Color()
 
     worlds.forEach((w, i) => {
-      const sp = worldToScene(w.resolvedPosition)
-      pos[i * 3] = sp.x
-      pos[i * 3 + 1] = sp.y
-      pos[i * 3 + 2] = sp.z
+      pos[i * 3] = w.resolvedPosition.x
+      pos[i * 3 + 1] = w.resolvedPosition.y
+      pos[i * 3 + 2] = w.resolvedPosition.z
 
       tmpColor.set(w.color)
       col[i * 3] = tmpColor.r
@@ -330,7 +317,7 @@ function AwebornPortal() {
   })
 
   return (
-    <group ref={groupRef} position={[0, 1, -8]}>
+    <group ref={groupRef} position={[0, 0, 0]}>
       {/* Bright core */}
       <mesh ref={innerRef} material={glowMat}>
         <sphereGeometry args={[0.8, 48, 48]} />
@@ -416,7 +403,7 @@ export function UniverseWorlds() {
     const f: WorldEntry[] = []
 
     for (const world of worlds.values()) {
-      const sp = worldToScene(world.resolvedPosition)
+      const sp = new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
       const dist = sp.distanceTo(camera.position)
 
       if (dist < CLOSE_DIST) {

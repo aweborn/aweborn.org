@@ -11,8 +11,8 @@ import { useFrame } from '@react-three/fiber'
  * omnidirectional column of light.
  */
 
-/** Portal position — must match GravitySystem and UniverseWorlds */
-const PORTAL_POS = new THREE.Vector3(0, 1, -8)
+/** Portal position (origin of the universe) */
+const PORTAL_POS = new THREE.Vector3(0, 0, 0)
 
 /** Beam height in scene units */
 const BEAM_HEIGHT = 60

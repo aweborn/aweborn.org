@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState, useCallback } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { inputManager } from '../systems/InputManager'
+import { flightController } from '../systems/FlightController'
 import { warpSystem } from '../systems/WarpSystem'
 import { starModSlots } from '../systems/StarModSlots'
 import { RadarMinimap } from './RadarMinimap'
@@ -43,6 +44,7 @@ const KEY_TO_ACTION_MAP: Record<string, ActionKey> = {
   Z: 'lockBehind',
   X: 'freeLook',
   C: 'lookBehind',
+  G: 'gravityToggle',
   U: 'modTrail',
   I: 'modAura',
   O: 'modShape',
@@ -74,6 +76,7 @@ const KEY_LABELS: Record<string, string> = {
   Z: 'Lock behind',
   X: 'Free look',
   C: 'Look behind',
+  G: 'Gravity',
   U: 'Trail mod',
   I: 'Aura mod',
   O: 'Shape mod',
@@ -222,12 +225,17 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
             <div className="hud-speed-bar-track">
               <div
                 className="hud-speed-bar-fill"
-                style={{ width: `${Math.min(speed / 20 * 100, 100)}%` }}
+                style={{ width: `${Math.min(speed / 60 * 100, 100)}%` }}
               />
             </div>
             <div className="hud-speed-value">
               {speed.toFixed(1)} <span className="hud-speed-unit">u/s</span>
             </div>
+          </div>
+
+          {/* Gravity mode indicator */}
+          <div className={`hud-gravity-mode ${flightController.isGravityEnabled() ? 'hud-gravity-mode--neutral' : 'hud-gravity-mode--drive'}`}>
+            <kbd>G</kbd> {flightController.isGravityEnabled() ? 'NEUTRAL' : 'DRIVE'}
           </div>
 
           {/* Mod slot indicators */}
@@ -295,6 +303,7 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
               <KeyCap keyName="Z" pressed={isPressed('Z')} />
               <KeyCap keyName="X" pressed={isPressed('X')} />
               <KeyCap keyName="C" pressed={isPressed('C')} />
+              <KeyCap keyName="G" pressed={isPressed('G')} />
             </div>
             {/* Space */}
             <div className="hud-key-row hud-key-row--space">
@@ -340,7 +349,17 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
 
       {/* Center — Crosshair (subtle) + Warp charge ring */}
       {!isInWorld && (
-        <div className="hud-crosshair">
+        <div
+          className="hud-crosshair"
+          style={
+            (isLocked || isWarping) && warp.targetScreenPos
+              ? {
+                  left: `${warp.targetScreenPos.x}%`,
+                  top: `${warp.targetScreenPos.y}%`,
+                }
+              : undefined
+          }
+        >
           {isWarping ? (
             <div className="hud-warp-charge-ring">
               <svg viewBox="0 0 40 40" className="hud-charge-svg">

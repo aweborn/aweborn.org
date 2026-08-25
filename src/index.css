@@ -481,6 +481,7 @@ html, body, #root {
   left: 50%;
   transform: translate(-50%, -50%);
   pointer-events: none;
+  transition: left 0.08s linear, top 0.08s linear;
 }
 
 .hud-crosshair-dot {
@@ -621,6 +622,66 @@ html, body, #root {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 2px;
   line-height: 1;
+}
+
+/* ── Gravity Mode Indicator ── */
+
+.hud-gravity-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-xs);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.hud-gravity-mode kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.hud-gravity-mode--drive {
+  color: rgba(100, 200, 220, 0.85);
+  background: rgba(100, 200, 220, 0.06);
+  border: 1px solid rgba(100, 200, 220, 0.15);
+}
+
+.hud-gravity-mode--drive kbd {
+  color: rgba(100, 200, 220, 0.9);
+  background: rgba(100, 200, 220, 0.1);
+  border: 1px solid rgba(100, 200, 220, 0.2);
+}
+
+.hud-gravity-mode--neutral {
+  color: rgba(230, 180, 80, 0.9);
+  background: rgba(230, 180, 80, 0.08);
+  border: 1px solid rgba(230, 180, 80, 0.2);
+  animation: gravity-pulse 2s ease-in-out infinite;
+}
+
+.hud-gravity-mode--neutral kbd {
+  color: rgba(230, 180, 80, 0.95);
+  background: rgba(230, 180, 80, 0.12);
+  border: 1px solid rgba(230, 180, 80, 0.25);
+}
+
+@keyframes gravity-pulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
 }
 
 /* ── Touch Joystick Overlay ── */

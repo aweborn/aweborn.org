@@ -22,7 +22,7 @@ import type { WorldEntry } from '@aweborn/shared/crdt-schema'
 // ── Tuning Constants ─────────────────────────────────────────────────
 
 /** Maximum lock-on range (scene units). */
-const LOCK_ON_RANGE = 60
+const LOCK_ON_RANGE = 200
 
 /** Minimum charge to trigger warp (0-1). Prevents accidental warps. */
 const MIN_CHARGE_THRESHOLD = 0.25
@@ -30,8 +30,8 @@ const MIN_CHARGE_THRESHOLD = 0.25
 /** Full charge time in seconds. */
 const FULL_CHARGE_TIME = 2.5
 
-/** Arrival offset from target (units). Don't land inside the world. */
-const ARRIVAL_OFFSET = 4.0
+/** Arrival offset from target (units). 0 = snap to center. */
+const ARRIVAL_OFFSET = 0
 
 /** Residual velocity after warp (fraction of max speed). */
 const RESIDUAL_VELOCITY_FACTOR = 0.3
@@ -39,9 +39,28 @@ const RESIDUAL_VELOCITY_FACTOR = 0.3
 /** Warp leap animation duration (seconds). */
 const WARP_LEAP_DURATION = 0.6
 
-/** Scene scaling constants (must match UniverseWorlds.tsx) */
-const SCENE_RADIUS = 14
-const CRDT_SCALE = 500
+/** Portal position (origin of the universe). */
+const PORTAL_POSITION = new THREE.Vector3(0, 0, 0)
+
+/**
+ * Synthetic WorldEntry for the Aweborn Portal so it can participate
+ * in the lock-on / warp system like any other world.
+ */
+const PORTAL_ENTRY: WorldEntry = {
+  id: '__aweborn_portal__',
+  name: 'AWEBORN',
+  creator: 'system',
+  intendedPosition: { x: 0, y: 0, z: 0 },
+  resolvedPosition: { x: 0, y: 0, z: 0 },
+  resolvedAt: 0,
+  color: '#e8b94a',
+  sector: '0:0:0',
+  solidified: true,
+  solidifiedAt: 0,
+  playerCount: 0,
+  lastActive: 0,
+  createdAt: 0,
+}
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -59,17 +78,10 @@ export interface WarpState {
   leapProgress: number
   /** All candidate worlds sorted by distance. */
   candidates: { world: WorldEntry; distance: number; scenePos: THREE.Vector3 }[]
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function worldToScene(pos: { x: number; y: number; z: number }): THREE.Vector3 {
-  const scale = SCENE_RADIUS / CRDT_SCALE
-  return new THREE.Vector3(
-    pos.x * scale,
-    pos.y * scale + 1,
-    pos.z * scale - 8,
-  )
+  /** Whether auto-lock mode is active. */
+  autoLock: boolean
+  /** Screen-space position of the locked target (0-1 normalized, null if no lock). */
+  targetScreenPos: { x: number; y: number } | null
 }
 
 // ── Warp System ──────────────────────────────────────────────────────
@@ -85,6 +97,32 @@ class WarpSystem {
   private _leapStartQuat = new THREE.Quaternion()
   private _candidates: { world: WorldEntry; distance: number; scenePos: THREE.Vector3 }[] = []
 
+  /**
+   * Screen-space position of the locked target, set externally by the
+   * FlightSystem which has access to the camera for 3D→2D projection.
+   * Values are in CSS percentages (0-100).
+   */
+  private _targetScreenPos: { x: number; y: number } | null = null
+
+  /**
+   * Auto-lock mode — when true, the system automatically locks onto
+   * the nearest world whenever idle, making warp the first interaction.
+   * Defaults to true for beginner onboarding.
+   */
+  private _autoLock = true
+
+  /**
+   * Tracks whether the very first auto-lock has fired.
+   * On first spawn, we always lock to the Aweborn Portal (donation target).
+   */
+  private _firstSpawnDone = false
+
+  /**
+   * Brief cooldown after arrival before auto-lock re-engages,
+   * so the player has a moment to orient.
+   */
+  private _autoLockCooldown = 0
+  private static readonly AUTO_LOCK_COOLDOWN_TIME = 0.3
   /**
    * Update the warp system for one frame.
    *
@@ -105,9 +143,32 @@ class WarpSystem {
 
     switch (this._phase) {
       case 'idle':
-        // J pressed → lock onto nearest world
+        // Tick down auto-lock cooldown
+        if (this._autoLockCooldown > 0) {
+          this._autoLockCooldown -= delta
+        }
+
+        // J pressed → cycle to next candidate (or lock nearest if not auto-locked)
         if (events.justPressed.has('lockOn') && this._candidates.length > 0) {
           this._lockOn(this._candidates[0])
+        }
+
+        // Auto-lock: automatically lock onto nearest candidate when idle
+        if (this._autoLock && this._autoLockCooldown <= 0 && this._candidates.length > 0) {
+          if (!this._firstSpawnDone) {
+            // First spawn → always lock onto the Aweborn Portal
+            const portalCandidate = this._candidates.find((c) => c.world.id === PORTAL_ENTRY.id)
+            if (portalCandidate) {
+              this._lockOn(portalCandidate)
+              this._firstSpawnDone = true
+            } else {
+              // Portal not in range yet (unlikely), fall back to nearest
+              this._lockOn(this._candidates[0])
+              this._firstSpawnDone = true
+            }
+          } else {
+            this._lockOn(this._candidates[0])
+          }
         }
         break
 
@@ -198,6 +259,8 @@ class WarpSystem {
       chargeProgress: this._chargeProgress,
       leapProgress: this._leapProgress,
       candidates: this._candidates,
+      autoLock: this._autoLock,
+      targetScreenPos: this._targetScreenPos,
     }
   }
 
@@ -206,12 +269,28 @@ class WarpSystem {
     this._cancelLock()
   }
 
+  /**
+   * Set the screen-space position of the locked target.
+   * Called by FlightSystem each frame after projecting the 3D position.
+   * @param pos  Normalized screen coords (x: 0-100%, y: 0-100%), or null to clear.
+   */
+  setTargetScreenPos(pos: { x: number; y: number } | null): void {
+    this._targetScreenPos = pos
+  }
+
   // ── Private ──
 
   private _updateCandidates(playerPos: THREE.Vector3, worlds: Map<string, WorldEntry>): void {
     this._candidates = []
+
+    // Include the Aweborn Portal as a warp-able target
+    const portalDist = PORTAL_POSITION.distanceTo(playerPos)
+    if (portalDist < LOCK_ON_RANGE) {
+      this._candidates.push({ world: PORTAL_ENTRY, distance: portalDist, scenePos: PORTAL_POSITION.clone() })
+    }
+
     for (const world of worlds.values()) {
-      const scenePos = worldToScene(world.resolvedPosition)
+      const scenePos = new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
       const distance = scenePos.distanceTo(playerPos)
       if (distance < LOCK_ON_RANGE) {
         this._candidates.push({ world, distance, scenePos })
@@ -271,17 +350,17 @@ class WarpSystem {
   private _arrive(): void {
     this._phase = 'arriving'
 
-    // Set residual velocity toward the target (drift into gravity well)
-    if (this._lockedTargetPosition) {
-      const dir = this._lockedTargetPosition.clone().sub(flightController.position).normalize()
-      flightController.velocity.copy(dir).multiplyScalar(20 * RESIDUAL_VELOCITY_FACTOR)
-    }
+    // Full brake — beginner-friendly: snap to destination and stop completely
+    flightController.brake()
 
     // Reset lock state
     this._lockedTarget = null
     this._lockedTargetPosition = null
     this._chargeProgress = 0
     this._leapProgress = 0
+
+    // Start auto-lock cooldown so player has a moment to orient
+    this._autoLockCooldown = WarpSystem.AUTO_LOCK_COOLDOWN_TIME
   }
 
   private _easeInOutCubic(t: number): number {

@@ -24,13 +24,13 @@ import { inputManager, type ActionState } from './InputManager'
 // ── Tuning Constants ─────────────────────────────────────────────────
 
 /** Forward thrust acceleration (units/s²) */
-const THRUST_ACCEL = 8.0
+const THRUST_ACCEL = 25.0
 /** Reverse thrust acceleration (units/s²) */
-const REVERSE_ACCEL = 4.0
+const REVERSE_ACCEL = 12.0
 /** Lateral strafe acceleration (units/s²) */
-const STRAFE_ACCEL = 5.0
+const STRAFE_ACCEL = 15.0
 /** Maximum speed (units/s) — soft cap via asymptotic damping */
-const MAX_SPEED = 20.0
+const MAX_SPEED = 60.0
 
 /** Angular velocity for pitch/yaw (rad/s) — target rate */
 const TURN_RATE = 2.5
@@ -55,13 +55,14 @@ export interface FlightState {
   isBraking: boolean
   isThrusting: boolean
   isActivelyControlling: boolean
+  gravityEnabled: boolean
 }
 
 // ── Flight Controller ────────────────────────────────────────────────
 
 class FlightController {
   /** World-space position */
-  readonly position = new THREE.Vector3(0, 2, 10)
+  readonly position = new THREE.Vector3(0, 2, 60)
   /** World-space velocity */
   readonly velocity = new THREE.Vector3()
   /** Orientation quaternion */
@@ -83,6 +84,13 @@ class FlightController {
 
   /** Whether the player is actively pressing any control key this frame */
   private _isActivelyControlling = false
+
+  /**
+   * Whether gravity is enabled ("NEUTRAL" mode).
+   * When false ("DRIVE" mode, default), gravity does not affect the player.
+   * Beginners start in DRIVE — no gravitational drift.
+   */
+  private _gravityEnabled = false
 
   /**
    * Update flight physics for one frame.
@@ -130,6 +138,7 @@ class FlightController {
       isBraking: actions.brake,
       isThrusting: actions.thrust,
       isActivelyControlling: this._isActivelyControlling,
+      gravityEnabled: this._gravityEnabled,
     }
   }
 
@@ -152,6 +161,27 @@ class FlightController {
     if (quaternion) this.quaternion.copy(quaternion)
     this.velocity.set(0, 0, 0)
     this._angularVelocity.set(0, 0, 0)
+  }
+
+  /** Full brake — zero all velocity and angular velocity. */
+  brake(): void {
+    this.velocity.set(0, 0, 0)
+    this._angularVelocity.set(0, 0, 0)
+  }
+
+  /** Toggle gravity on/off (NEUTRAL ↔ DRIVE). */
+  toggleGravity(): void {
+    this._gravityEnabled = !this._gravityEnabled
+  }
+
+  /** Whether gravity is enabled (NEUTRAL mode). */
+  isGravityEnabled(): boolean {
+    return this._gravityEnabled
+  }
+
+  /** Set gravity enabled state directly. */
+  setGravityEnabled(enabled: boolean): void {
+    this._gravityEnabled = enabled
   }
 
   // ── Private ──
@@ -238,8 +268,8 @@ class FlightController {
       this.velocity.setLength(MAX_SPEED)
     }
 
-    // ── Apply gravity (attenuated when actively controlling) ──
-    if (gravityForce) {
+    // ── Apply gravity (only in NEUTRAL mode, attenuated when actively controlling) ──
+    if (gravityForce && this._gravityEnabled) {
       const gravityScale = this._isActivelyControlling
         ? GRAVITY_ATTENUATION_WHILE_ACTIVE
         : 1.0

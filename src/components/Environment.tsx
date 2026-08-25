@@ -165,17 +165,7 @@ export function Environment() {
       {/* Directional fill */}
       <directionalLight position={[5, 8, 5]} intensity={0.2} color="#eef0f6" />
 
-      {/* Ground fog effect - subtle plane */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -6, 0]}>
-        <planeGeometry args={[100, 100]} />
-        <meshStandardMaterial
-          color="#0a0a2e"
-          transparent
-          opacity={0.5}
-          emissive="#1a0a30"
-          emissiveIntensity={0.3}
-        />
-      </mesh>
+
     </group>
   )
 }
