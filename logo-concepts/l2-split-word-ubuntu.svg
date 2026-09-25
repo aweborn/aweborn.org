@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" width="640" height="180">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="180" fill="url(#bg)" rx="16"/>
+
+  <!-- O2 Mark (scaled 0.88) -->
+  <circle cx="80" cy="87" r="48" fill="#d4d4d8"/>
+  <circle cx="141" cy="104" r="30" fill="#a1a1aa"/>
+  <circle cx="130" cy="65" r="18" fill="#ffffff"/>
+
+  <!-- "awe" bold + "born" light — split word -->
+  <text x="195" y="108" font-family="Ubuntu, 'Segoe UI', system-ui, sans-serif" font-size="48" fill="#f8fafc" letter-spacing="2">
+    <tspan font-weight="500">awe</tspan><tspan font-weight="300" fill="#94a3b8">born</tspan>
+  </text>
+</svg>

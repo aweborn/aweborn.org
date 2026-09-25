@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <!-- Subtle glow at contact points -->
+    <radialGradient id="contactGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Glow at contact points (the "reflection" / energy created by connection) -->
+  <circle cx="175" cy="218" r="18" fill="url(#contactGlow)"/>
+  <circle cx="224" cy="210" r="16" fill="url(#contactGlow)"/>
+  <circle cx="202" cy="262" r="20" fill="url(#contactGlow)"/>
+
+  <!-- Largest sphere (bottom right) -->
+  <circle cx="238" cy="260" r="70" fill="#e2e8f0" opacity="0.9"/>
+  
+  <!-- Medium sphere (bottom left) -->
+  <circle cx="162" cy="268" r="56" fill="#cbd5e1" opacity="0.87"/>
+  
+  <!-- Smallest sphere (top, nestled on the other two) -->
+  <circle cx="192" cy="172" r="42" fill="#f8fafc" opacity="0.95"/>
+</svg>

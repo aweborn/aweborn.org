@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 350 280" width="350" height="280">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="350" height="280" fill="url(#bg)" rx="16"/>
+
+  <!-- O2 Mark (scaled 0.75, centered horizontally) -->
+  <circle cx="155" cy="98" r="41" fill="#d4d4d8"/>
+  <circle cx="207" cy="112" r="26" fill="#a1a1aa"/>
+  <circle cx="197" cy="79" r="16" fill="#ffffff"/>
+
+  <!-- "aweborn" centered below -->
+  <text x="175" y="210" text-anchor="middle" font-family="Ubuntu, 'Segoe UI', system-ui, sans-serif" font-size="42" font-weight="300" fill="#e2e8f0" letter-spacing="5">aweborn</text>
+</svg>

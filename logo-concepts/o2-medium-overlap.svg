@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    O2: MEDIUM OVERLAP (~18%)
+    Fibonacci radii: 21, 34, 55
+    Tangent triangle scaled to 82% → ~18% overlap
+    Rotated 15° for dynamism
+    
+    Circles clearly merge into a single form.
+    More cohesive as a logo mark.
+  -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Largest (r=55) — left-center -->
+  <circle cx="177" cy="198" r="55" fill="#d4d4d8"/>
+  <!-- Medium (r=34) — lower-right -->
+  <circle cx="247" cy="217" r="34" fill="#a1a1aa"/>
+  <!-- Smallest (r=21) — upper-right -->
+  <circle cx="234" cy="173" r="21" fill="#ffffff"/>
+</svg>

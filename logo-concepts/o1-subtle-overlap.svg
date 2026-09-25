@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    O1: SUBTLE OVERLAP (~10%)
+    Fibonacci radii: 21, 34, 55
+    Tangent triangle scaled to 90% → ~10% overlap
+    Rotated 15° for dynamism
+    
+    All three form a single connected shape.
+    Die-cut friendly — one continuous outline.
+  -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Largest (r=55) — left-center -->
+  <circle cx="175" cy="197" r="55" fill="#d4d4d8"/>
+  <!-- Medium (r=34) — lower-right -->
+  <circle cx="252" cy="218" r="34" fill="#a1a1aa"/>
+  <!-- Smallest (r=21) — upper-right -->
+  <circle cx="238" cy="171" r="21" fill="#ffffff"/>
+</svg>

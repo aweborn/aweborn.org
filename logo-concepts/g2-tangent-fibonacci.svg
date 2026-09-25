@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    G2: TANGENT FIBONACCI CIRCLES
+    ═════════════════════════════
+    Radii: Fibonacci — 21, 34, 55
+    Constraint: All three circles are mutually tangent (touching).
+    
+    Distance between centers = sum of radii:
+      Large↔Medium:  55 + 34 = 89  (Fibonacci!)
+      Large↔Small:   55 + 21 = 76
+      Medium↔Small:  34 + 21 = 55  (Fibonacci!)
+    
+    Two of the three inter-center distances are themselves Fibonacci.
+    The triangle formed by centers has sides 55, 76, 89.
+    
+    Rotated 15° from horizontal for visual dynamism.
+    Centered by area-weighted centroid.
+    
+    The circles NEED each other to define the shape —
+    remove one and the composition collapses.
+  -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Largest (r=55) — center-left -->
+  <circle cx="172" cy="197" r="55" fill="#d4d4d8" opacity="1"/>
+  <!-- Medium (r=34) — right -->
+  <circle cx="258" cy="220" r="34" fill="#a1a1aa" opacity="1"/>
+  <!-- Smallest (r=21) — upper-right -->
+  <circle cx="242" cy="167" r="21" fill="#ffffff" opacity="1"/>
+</svg>

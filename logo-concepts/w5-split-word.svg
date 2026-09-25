@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" width="600" height="200">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="200" fill="url(#g1)" rx="20"/>
+
+  <!-- "awe" in slightly different weight/emphasis -->
+  <text x="50" y="122" font-family="system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="400" fill="#f8fafc" letter-spacing="2">awe</text>
+  <!-- "born" in lighter weight -->
+  <text x="188" y="122" font-family="system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="200" fill="#cbd5e1" letter-spacing="2">born</text>
+
+  <!-- Three spheres nestled between "awe" and "born" — rising from the junction -->
+  <circle cx="185" cy="65" r="18" fill="#e2e8f0" opacity="0.9"/>
+  <circle cx="162" cy="54" r="12" fill="#cbd5e1" opacity="0.87"/>
+  <circle cx="202" cy="42" r="9" fill="#f8fafc" opacity="0.95"/>
+</svg>

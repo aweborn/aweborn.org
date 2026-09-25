@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" width="600" height="200">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="200" fill="url(#g1)" rx="20"/>
+
+  <!-- "aweb" -->
+  <text x="50" y="125" font-family="system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="300" fill="#e2e8f0" letter-spacing="3">aweb</text>
+
+  <!-- The "o" is replaced by the smallest sphere -->
+  <circle cx="290" cy="108" r="18" fill="#f8fafc" opacity="0.95"/>
+
+  <!-- "rn" continues after -->
+  <text x="315" y="125" font-family="system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="300" fill="#e2e8f0" letter-spacing="3">rn</text>
+
+  <!-- Medium sphere floats above-left of the "o" -->
+  <circle cx="265" cy="62" r="14" fill="#cbd5e1" opacity="0.87"/>
+
+  <!-- Large sphere floats above-right -->
+  <circle cx="318" cy="50" r="20" fill="#e2e8f0" opacity="0.88"/>
+
+  <!-- Subtle arc connecting the three -->
+  <ellipse cx="290" cy="75" rx="40" ry="18" fill="none" stroke="#94a3b8" stroke-width="0.6" opacity="0.15" transform="rotate(-5 290 75)"/>
+</svg>

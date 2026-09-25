@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background for viewing (would be transparent in final) -->
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Three spheres in triangular cluster, tangent to each other -->
+  <!-- Largest sphere (bottom right) r=72 -->
+  <circle cx="235" cy="245" r="72" fill="#e2e8f0" opacity="0.92"/>
+  
+  <!-- Medium sphere (bottom left) r=58 -->
+  <circle cx="148" cy="258" r="58" fill="#cbd5e1" opacity="0.88"/>
+  
+  <!-- Smallest sphere (top center) r=44 -->
+  <circle cx="178" cy="168" r="44" fill="#f8fafc" opacity="0.95"/>
+</svg>

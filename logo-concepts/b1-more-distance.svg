@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Subtle orbital arcs -->
+  <!-- <ellipse cx="200" cy="225" rx="120" ry="48" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.18" transform="rotate(-12 200 225)"/>
+  <ellipse cx="200" cy="215" rx="95" ry="40" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.12" transform="rotate(30 200 215)"/> -->
+
+  <!-- Large: r=68 -->
+  <circle cx="260" cy="258" r="68" fill="#e2e8f0" opacity="1"/>
+  <!-- Medium: r=52 (pushed left a bit more) -->
+  <circle cx="160" cy="225" r="52" fill="gray" opacity="1"/>
+  <!-- Small: r=32 (smaller, pulled higher and more separated from medium) -->
+  <circle cx="210" cy="180" r="32" fill="white" opacity="1"/>
+</svg>

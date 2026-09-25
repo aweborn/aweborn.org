@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    G3: GOLDEN SPIRAL
+    ═════════════════
+    Angular distribution: Golden Angle (137.5°)
+    Radii: Golden Ratio — 22, 36, 58 (each × φ ≈ 1.618)
+    Distance from center: Golden spiral growth — 55, 66, 79
+      Growth factor per golden angle step: φ^(137.5/360) ≈ 1.2016
+    Start angle: -90°
+    
+    Every dimension — angle, size, distance — follows the golden ratio.
+    Like a nautilus shell or galaxy arm: self-similar at every scale.
+  -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Largest (r=58) at 185°, d=79 from center -->
+  <circle cx="121" cy="193" r="58" fill="#d4d4d8" opacity="1"/>
+  <!-- Medium (r=36) at 47.5°, d=66 from center -->
+  <circle cx="245" cy="249" r="36" fill="#a1a1aa" opacity="1"/>
+  <!-- Smallest (r=22) at -90°, d=55 from center -->
+  <circle cx="200" cy="145" r="22" fill="#ffffff" opacity="1"/>
+</svg>

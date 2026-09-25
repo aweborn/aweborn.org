@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    G4: INVERSE SPIRAL — "The Smallest Reaches Furthest"
+    ════════════════════════════════════════════════════
+    Angular distribution: Golden Angle (137.5°)
+    Radii: Golden Ratio — 55, 36, 22 (largest closest, smallest farthest)
+    Distances from center: 45, 65, 95 (inverse — smallest is farthest out)
+    Start angle: -40°
+    
+    Positions:
+      Largest (r=55, d=45):  235°→ (-40°)   = upper-right
+      Medium  (r=36, d=65):  97.5°           = bottom-center
+      Smallest(r=22, d=95):  235°            = upper-left
+    
+    The smallest circle orbits the farthest from the group —
+    "the smallest but strong in many other ways."
+    It reaches where the others cannot.
+  -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Largest (r=55) — closest to center, upper-right -->
+  <circle cx="235" cy="171" r="55" fill="#d4d4d8" opacity="1"/>
+  <!-- Medium (r=36) — middle distance, bottom-center -->
+  <circle cx="192" cy="264" r="36" fill="#a1a1aa" opacity="1"/>
+  <!-- Smallest (r=22) — farthest from center, upper-left -->
+  <circle cx="146" cy="122" r="22" fill="#ffffff" opacity="1"/>
+</svg>

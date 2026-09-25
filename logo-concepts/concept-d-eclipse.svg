@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Three spheres in ascending diagonal — eclipse / alignment -->
+  <!-- Largest (bottom left) -->
+  <circle cx="145" cy="270" r="75" fill="#e2e8f0" opacity="0.88"/>
+  
+  <!-- Medium (center) -->
+  <circle cx="210" cy="205" r="55" fill="#cbd5e1" opacity="0.9"/>
+  
+  <!-- Smallest (top right) — brightest -->
+  <circle cx="262" cy="152" r="40" fill="#f8fafc" opacity="0.95"/>
+</svg>

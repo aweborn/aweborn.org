@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Single wider orbital arc -->
+  <ellipse cx="198" cy="225" rx="135" ry="55" fill="none" stroke="#94a3b8" stroke-width="0.8" opacity="0.15" transform="rotate(-8 198 225)"/>
+
+  <!-- Large: r=70 -->
+  <circle cx="265" cy="255" r="70" fill="#e2e8f0" opacity="0.9"/>
+  <!-- Medium: r=42 (clear step down from large) -->
+  <circle cx="138" cy="260" r="42" fill="#cbd5e1" opacity="0.87"/>
+  <!-- Small: r=30 (even step down, pulled high and centered — equidistant from both) -->
+  <circle cx="200" cy="120" r="30" fill="#f8fafc" opacity="0.95"/>
+</svg>

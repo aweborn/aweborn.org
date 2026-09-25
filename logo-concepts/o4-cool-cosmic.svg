@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    O4: MEDIUM OVERLAP + COOL COSMIC TONES
+    Same geometry, cosmic palette for the brand's space theme.
+  -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Largest — slate blue -->
+  <circle cx="177" cy="198" r="55" fill="#7c8db5"/>
+  <!-- Medium — soft lavender -->
+  <circle cx="247" cy="217" r="34" fill="#a894bd"/>
+  <!-- Smallest — bright ice -->
+  <circle cx="234" cy="173" r="21" fill="#d4e4f7"/>
+</svg>

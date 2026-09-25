@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    O3: MEDIUM OVERLAP + WARM TONES
+    Same geometry as O2, with muted distinct colors.
+    Shows how this works for colored merch: patches, enamel pins, stickers.
+  -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Largest — warm stone -->
+  <circle cx="177" cy="198" r="55" fill="#c9b8a8"/>
+  <!-- Medium — dusty blue -->
+  <circle cx="247" cy="217" r="34" fill="#8fa3b8"/>
+  <!-- Smallest — soft gold -->
+  <circle cx="234" cy="173" r="21" fill="#e8d5a0"/>
+</svg>

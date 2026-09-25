@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!--
+    G1: PURE PHYLLOTAXIS
+    ════════════════════
+    Angular distribution: Golden Angle (137.5077°)
+    Radii: Fibonacci sequence — 21, 34, 55
+    Distance from center: 80 (equal for all)
+    Start angle: -90° (smallest at top)
+    
+    Angles:
+      Smallest:  -90°
+      Medium:    -90° + 137.5° = 47.5°
+      Largest:   -90° + 275.0° = 185°
+    
+    The golden angle ensures no two circles "shadow" each other —
+    maximum exposure, maximum individuality within unity.
+  -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#g1)" rx="40"/>
+
+  <!-- Largest (r=55) at 185° from center -->
+  <circle cx="120" cy="193" r="55" fill="#d4d4d8" opacity="1"/>
+  <!-- Medium (r=34) at 47.5° from center -->
+  <circle cx="254" cy="259" r="34" fill="#a1a1aa" opacity="1"/>
+  <!-- Smallest (r=21) at -90° (top) from center -->
+  <circle cx="200" cy="120" r="21" fill="#ffffff" opacity="1"/>
+</svg>
