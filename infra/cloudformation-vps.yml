@@ -82,6 +82,12 @@ Resources:
         curl -fsSL https://get.docker.com | sh
         usermod -aG docker ubuntu
 
+        # ── Install Tailscale ─────────────────────────────────────
+        curl -fsSL https://tailscale.com/install.sh | sh
+        # To auto-join the Tailnet on boot, set the TAILSCALE_AUTHKEY
+        # parameter and uncomment the next line:
+        # tailscale up --authkey="${TAILSCALE_AUTHKEY}" --hostname=aweborn-vps
+
         # ── Install k3s (without Traefik — we use Caddy) ────────
         curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
 
@@ -99,10 +105,12 @@ Resources:
         # Build Docker images
         docker build -t ghcr.io/aweborn/sync-service:latest /home/ubuntu/aweborn/server/sync-service
         docker build -t ghcr.io/aweborn/genai-service:latest /home/ubuntu/aweborn/server/genai-service
+        docker build -t ghcr.io/aweborn/agent-runner:latest /home/ubuntu/aweborn/server/agent-runner
 
         # Import images into k3s containerd
         docker save ghcr.io/aweborn/sync-service:latest | k3s ctr images import -
         docker save ghcr.io/aweborn/genai-service:latest | k3s ctr images import -
+        docker save ghcr.io/aweborn/agent-runner:latest | k3s ctr images import -
 
         # ── Deploy k3s manifests ─────────────────────────────────
         k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/namespace.yaml
@@ -110,6 +118,7 @@ Resources:
         k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/sync-service-deployment.yaml
         k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/genai-service-deployment.yaml
         k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/caddy-pvc.yaml
+        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/agent-runner-deployment.yaml
         k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/caddy-ingress.yaml
 
         echo "=== Aweborn VPS bootstrap complete at $(date) ==="

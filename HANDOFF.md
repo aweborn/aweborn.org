@@ -25,6 +25,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
      → sync.aweborn.org → Lightsail VPS (k3s) → Caddy → sync-service (WSS CRDT sync)
      → api.aweborn.org  → Lightsail VPS (k3s) → Caddy → genai-service (HTTPS REST)
                         ↘ API Gateway → Lambda → Stripe API (webhooks only)
+     → Tailnet          → Lightsail VPS (k3s) → agent-runner (cron LLM agents, HTTP API)
 ```
 
 - **Frontend**: Vite + React 19 + TypeScript + React Three Fiber (Three.js r185) + Stripe Elements
@@ -34,6 +35,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 - **CI/CD**: `.github/workflows/deploy.yml` — auto-deploys frontend on push to `main` via OIDC auth
 - **Domain**: `aweborn.org` + `www.aweborn.org`, Hosted Zone ID `Z077908710IGH7R1XO587`
 - **VPS**: `sync.aweborn.org` + `api.aweborn.org` → Lightsail (Ubuntu 22.04 + k3s + Caddy auto-TLS)
+- **Tailscale**: VPS joined as `aweborn-vps` on Tailnet (100.118.138.70) — agent-runner accessible via Tailnet only
 
 ## Key files
 
@@ -53,7 +55,8 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `src/index.css` | Full design system — tokens, glass effects, animations, payment form styles, success animation |
 | `server/sync-service/src/index.ts` | WebSocket + Yjs CRDT sync server |
 | `server/genai-service/src/index.ts` | Gen AI API proxy (placeholder, all routes return 501) |
-| `server/docker-compose.yml` | Local dev: runs both services with hot-reload |
+| `server/agent-runner/src/index.ts` | Cron-scheduled LLM agent runner with HTTP API (port 3002, Tailnet-only) |
+| `server/docker-compose.yml` | Local dev: runs all three services with hot-reload |
 | `infra/k3s/` | Kubernetes manifests for k3s deployment (namespace, deployments, Caddy ingress, secrets) |
 | `infra/k3s/deploy.sh` | Build → push → apply deployment script |
 | `.env.production` | `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY`, `VITE_SYNC_URL` |
@@ -146,7 +149,12 @@ sudo k3s kubectl -n aweborn get pods
 # View service logs
 sudo k3s kubectl -n aweborn logs deployment/sync-service
 sudo k3s kubectl -n aweborn logs deployment/genai-service
+sudo k3s kubectl -n aweborn logs deployment/agent-runner
 sudo k3s kubectl -n aweborn logs daemonset/caddy
+
+# Agent runner API (via Tailnet)
+curl http://aweborn-vps:3002/health
+curl http://aweborn-vps:3002/agents
 
 # Update services after code changes (on VPS)
 cd /home/ubuntu/aweborn && git pull

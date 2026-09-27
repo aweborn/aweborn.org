@@ -48,6 +48,10 @@ if $DO_BUILD; then
     -t "$REGISTRY/genai-service:$TAG" \
     "$REPO_ROOT/server/genai-service"
 
+  docker build \
+    -t "$REGISTRY/agent-runner:$TAG" \
+    "$REPO_ROOT/server/agent-runner"
+
   echo "✅ Images built"
 fi
 
@@ -63,9 +67,14 @@ if $DO_VPS; then
     -t "$REGISTRY/genai-service:$TAG" \
     "$REPO_ROOT/server/genai-service"
 
+  docker build \
+    -t "$REGISTRY/agent-runner:$TAG" \
+    "$REPO_ROOT/server/agent-runner"
+
   echo "📦 Importing images into k3s containerd…"
   docker save "$REGISTRY/sync-service:$TAG" | sudo k3s ctr images import -
   docker save "$REGISTRY/genai-service:$TAG" | sudo k3s ctr images import -
+  docker save "$REGISTRY/agent-runner:$TAG" | sudo k3s ctr images import -
 
   echo "✅ Images built and imported into k3s"
 fi
@@ -76,6 +85,7 @@ if $DO_PUSH; then
 
   docker push "$REGISTRY/sync-service:$TAG"
   docker push "$REGISTRY/genai-service:$TAG"
+  docker push "$REGISTRY/agent-runner:$TAG"
 
   echo "✅ Images pushed"
 fi
@@ -95,11 +105,13 @@ if $DO_APPLY; then
   $KUBECTL apply -f "$SCRIPT_DIR/sync-service-deployment.yaml"
   $KUBECTL apply -f "$SCRIPT_DIR/genai-service-deployment.yaml"
   $KUBECTL apply -f "$SCRIPT_DIR/caddy-pvc.yaml"
+  $KUBECTL apply -f "$SCRIPT_DIR/agent-runner-deployment.yaml"
   $KUBECTL apply -f "$SCRIPT_DIR/caddy-ingress.yaml"
 
   echo "⏳ Waiting for rollout…"
   $KUBECTL -n aweborn rollout status deployment/sync-service --timeout=120s
   $KUBECTL -n aweborn rollout status deployment/genai-service --timeout=120s
+  $KUBECTL -n aweborn rollout status deployment/agent-runner --timeout=120s
   $KUBECTL -n aweborn rollout status daemonset/caddy --timeout=120s
 
   echo "✅ All deployments rolled out"

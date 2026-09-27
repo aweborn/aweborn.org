@@ -34,3 +34,22 @@ services:
       - ./genai-service/src:/app/src
     command: ["npx", "tsx", "watch", "src/index.ts"]
     restart: unless-stopped
+
+  agent-runner:
+    build:
+      context: ./agent-runner
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - DATA_DIR=/app/data
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+    volumes:
+      - ./agent-runner/src:/app/src
+      - ./data/agent-runner:/app/data
+    command: ["npx", "tsx", "watch", "src/index.ts"]
+    user: root
+    restart: unless-stopped
