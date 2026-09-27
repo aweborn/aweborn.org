@@ -27,22 +27,28 @@ const svgSource = readFileSync(join(rootDir, 'aweborn-logo.svg'), 'utf-8');
 const squareSizes = [16, 32, 48, 180, 192, 512, 1024];
 
 // For square exports, we need to make the SVG square first
-// The logo viewBox is "100 120 200 160" — wider than tall
-// We'll pad it to square for icon use
+// Tight bounding box of the three circles:
+//   Largest:  cx=177 cy=198 r=55 → x: 122-232, y: 143-253
+//   Medium:   cx=247 cy=217 r=34 → x: 213-281, y: 183-251
+//   Smallest: cx=234 cy=173 r=21 → x: 213-255, y: 152-194
+//   Tight BB: x: 122-281 (w=159), y: 143-253 (h=110)
+//   Center: (201.5, 198)
 function makeSquareSvg(svgStr, size) {
-  // Parse the viewBox
-  // Original: viewBox="100 120 200 160"
-  // Width=200, Height=160, so we need to pad height
-  const vbWidth = 200;
-  const vbHeight = 160;
-  const maxDim = Math.max(vbWidth, vbHeight);
-  
-  // Center the content in a square viewBox
-  const newX = 100 - (maxDim - vbWidth) / 2;
-  const newY = 120 - (maxDim - vbHeight) / 2;
-  
+  // Use the tight bounding box + 4px padding on each side
+  const pad = 4;
+  const minX = 122, maxX = 281, minY = 143, maxY = 253;
+  const bbW = maxX - minX; // 159
+  const bbH = maxY - minY; // 110
+  const squareDim = Math.max(bbW, bbH) + pad * 2; // 167
+
+  // Center the content in the square
+  const cx = (minX + maxX) / 2; // 201.5
+  const cy = (minY + maxY) / 2; // 198
+  const newX = cx - squareDim / 2;
+  const newY = cy - squareDim / 2;
+
   return svgStr
-    .replace(/viewBox="[^"]*"/, `viewBox="${newX} ${newY} ${maxDim} ${maxDim}"`)
+    .replace(/viewBox="[^"]*"/, `viewBox="${newX} ${newY} ${squareDim} ${squareDim}"`)
     .replace(/width="[^"]*"/, `width="${size}"`)
     .replace(/height="[^"]*"/, `height="${size}"`);
 }
