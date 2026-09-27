@@ -1,23 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="118 114.5 167 167" width="100%" height="100%">
-  <!--
-    Aweborn Logo Mark — Final
-    ═════════════════════════
-    Three overlapping Fibonacci circles.
-    Radii: 21, 34, 55 (consecutive Fibonacci numbers)
-    Arrangement: Mutually tangent triangle, scaled to 82%, rotated 15°
-    
-    34/21 = 1.619 ≈ φ
-    55/34 = 1.618 ≈ φ
-    
-    Tangent distances: 55 (F₁₀), 76, 89 (F₁₁)
-    
-    Three individuals. Different scales. Mathematically bound.
-  -->
-
-  <!-- Largest (r=55) -->
-  <circle cx="177" cy="198" r="55" fill="#d4d4d8"/>
-  <!-- Medium (r=34) -->
-  <circle cx="247" cy="217" r="34" fill="#a1a1aa"/>
-  <!-- Smallest (r=21) -->
-  <circle cx="234" cy="173" r="21" fill="#ffffff"/>
+  <circle cx="177" cy="198" r="55" fill="#5b8cb8"/>
+  <circle cx="247" cy="217" r="34" fill="#a480b8"/>
+  <circle cx="234" cy="173" r="21" fill="#e8c860"/>
 </svg>

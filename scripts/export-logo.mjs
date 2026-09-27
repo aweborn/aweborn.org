@@ -20,8 +20,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
 const publicDir = join(rootDir, 'public');
 
-// Read the source SVG
+// Read the source SVG (monochrome — used for full-size logo)
 const svgSource = readFileSync(join(rootDir, 'aweborn-logo.svg'), 'utf-8');
+
+// Favicon-optimized colors (F1: steel blue → lilac → gold)
+// All mid-tones — visible on any tab bar color (light, dark, custom)
+const faviconSvgSource = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 120 200 160" width="200" height="160">
+  <circle cx="177" cy="198" r="55" fill="#5b8cb8"/>
+  <circle cx="247" cy="217" r="34" fill="#a480b8"/>
+  <circle cx="234" cy="173" r="21" fill="#e8c860"/>
+</svg>`;
 
 // Standard export sizes (square)
 const squareSizes = [16, 32, 48, 180, 192, 512, 1024];
@@ -74,7 +82,9 @@ async function exportAll() {
 
   // Square PNG exports
   for (const size of squareSizes) {
-    const squareSvg = makeSquareSvg(svgSource, size);
+    // Use F1 colors for icons, monochrome for the 1024px master
+    const source = size === 1024 ? svgSource : faviconSvgSource;
+    const squareSvg = makeSquareSvg(source, size);
     const filename = size === 1024 
       ? 'aweborn-logo.png'
       : size === 180 
@@ -90,26 +100,25 @@ async function exportAll() {
       .png()
       .toFile(outputPath);
     
-    console.log(`  ✓ ${filename} (${size}×${size})`);
+    console.log(`  ✓ ${filename} (${size}×${size}) ${size === 1024 ? '[monochrome]' : '[F1 colors]'}`);
   }
 
-  // OG image (1200×630)
+  // OG image (1200×630) — stays monochrome
   const ogSvg = makeOgSvg();
   await sharp(Buffer.from(ogSvg))
     .resize(1200, 630)
     .png()
     .toFile(join(publicDir, 'og-image.png'));
-  console.log('  ✓ og-image.png (1200×630)');
+  console.log('  ✓ og-image.png (1200×630) [monochrome]');
 
-  // Favicon SVG (copy the logo SVG to public/favicon.svg)
-  // Make a version optimized for favicon use (square viewBox)
-  const faviconSvg = makeSquareSvg(svgSource, 32)
+  // Favicon SVG — uses F1 colors
+  const faviconSvg = makeSquareSvg(faviconSvgSource, 32)
     .replace(/width="[^"]*"/, 'width="100%"')
     .replace(/height="[^"]*"/, 'height="100%"');
   
   const { writeFileSync } = await import('fs');
   writeFileSync(join(publicDir, 'favicon.svg'), faviconSvg);
-  console.log('  ✓ favicon.svg');
+  console.log('  ✓ favicon.svg [F1 colors]');
 
   console.log('\n✨ All exports complete!');
 }
