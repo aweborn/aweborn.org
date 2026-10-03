@@ -1,6 +1,6 @@
 # Aweborn.org — Implementation Plan
 
-> **Parent:** [Master Plan](../PLAN.md) · **Design Bible:** [ROADMAP.md](./ROADMAP.md) · **Architecture:** [HANDOFF.md](./HANDOFF.md)
+> **Parent:** [Master Plan](./MASTER_PLAN.md) · **Design Bible:** [ROADMAP.md](./ROADMAP.md) · **Architecture:** [HANDOFF.md](./HANDOFF.md)
 
 ## What Is This
 
