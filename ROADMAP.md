@@ -39,6 +39,15 @@
     + [Warp Mechanic (K Key)](#warp-mechanic-k-key)
     + [Context Switching: Universe → World Interior](#context-switching-universe-%E2%86%92-world-interior)
     + [Input Translation Layers](#input-translation-layers)
+- [Physical Portals: NFC Trading Cards & the Worlidex](#physical-portals-nfc-trading-cards--the-worlidex)
+    + [The Card](#the-card)
+    + [The Tap → Teleport Flow](#the-tap--teleport-flow)
+    + [The Worlidex](#the-worlidex)
+    + [First Discovery Rewards](#first-discovery-rewards)
+    + [Card Programs: Curated Sets & Print-Your-World](#card-programs-curated-sets--print-your-world)
+    + [Cards & the Mana Economy](#cards--the-mana-economy)
+    + [Chip, URL & Security Model](#chip-url--security-model)
+    + [Card Invariants](#card-invariants)
 - [The Mana Mechanic: The Frontier of Dreams](#the-mana-mechanic-the-frontier-of-dreams)
     + [The Universal Mana Pool](#the-universal-mana-pool)
     + [Mana Sources](#mana-sources)
@@ -64,7 +73,7 @@ Aweborn is transitioning from a solitary cosmic experience into a massively mult
 
 ### Architecture Concepts: The Hybrid P2P / Client-Server Model
 
-- **Stateful Server with In-Memory CRDTs (Lightsail VPS):** The universe is persistent and authoritative. A stateful Node.js server (running on a $10/mo AWS Lightsail instance or equivalent VPS) holds the active Yjs `Y.Doc`s in RAM. When players send CRDT diffs, they merge in-memory with near-zero compute cost and broadcast to all connected clients over native WebSockets. The server flushes state to durable storage (Postgres/SQLite/DynamoDB) lazily — every ~60 seconds or when the last player leaves a world — reducing database writes by ~99.9% compared to a serverless approach.
+- **Stateful Server with In-Memory CRDTs (Lightsail VPS):** The universe is persistent and authoritative. A stateful Node.js server (running on a $10/mo AWS Lightsail instance or equivalent VPS) holds the active Yjs `Y.Doc`s in RAM. When players send CRDT diffs, they merge in-memory with near-zero compute cost and broadcast to all connected clients over native WebSockets. The server flushes state to durable storage (SQLite on the VPS; Postgres/DynamoDB only if scale demands) lazily — every ~60 seconds or when the last player leaves a world — reducing database writes by ~99.9% compared to a serverless approach.
 - **Scaling Path:** Start with a single Lightsail instance. When load demands it, add nodes and hash `worldId` to route players joining the same world to the same server. Redis pub/sub for cross-node coordination if needed. This is the only architecture a non-profit can afford for real-time multiplayer.
 - **Lambda for Non-Realtime Work:** Stripe webhook processing, donation ledger writes, and frontier expansion calculations are bursty and infrequent — perfect for serverless. Lambda handles these while the VPS handles everything real-time.
 - **Dual-Mode Transport (Seamless Offline/Online):** Yjs is transport-agnostic, allowing the client to use two channels simultaneously:
@@ -124,6 +133,8 @@ This gives us **universal NFC support** on any modern phone with NFC hardware.
 ```
 
 Perfect for non-profit events: hand out branded Aweborn NFC stickers at fundraisers, conferences, or meetups. Each sticker is a portal into a shared cosmic world.
+
+> **See also:** [Physical Portals: NFC Trading Cards & the Worlidex](#physical-portals-nfc-trading-cards--the-worlidex) — the collectible evolution of this idea. Join links (`/join/…`) connect you to a *session*; trading cards (`/w/<uuid>`) teleport you to a *world* and add it to your Worlidex.
 
 ##### Offline Mode: SDP-in-URL-Hash
 
@@ -299,7 +310,7 @@ Without building friend lists, chat lobbies, or matchmaking, social behavior eme
 
 #### Player Presence Data
 
-Player presence uses the Yjs awareness protocol (`y-webrtc` has this built in). It's ephemeral — broadcast to nearby peers, disappears on disconnect. No storage cost.
+Player presence is ephemeral — broadcast to nearby peers, disappears on disconnect. No storage cost. *Original design: Yjs awareness protocol (`y-webrtc`). As built (Aug 2026): custom presence messages over BroadcastChannel + the sync-service WebSocket relay (msg `0x09`); WebRTC DataChannels will augment this in Phase 06.*
 
 ```js
 // ~40 bytes per player — ephemeral, not persisted
@@ -547,6 +558,148 @@ The keyboard layout is the source of truth. All other input methods map to it:
 | L (scan) | Enhanced: info overlay follows gaze |
 | V, N, K | Unchanged — still keyboard |
 
+## Physical Portals: NFC Trading Cards & the Worlidex
+
+> **Origin:** Grew out of Alex's hands-on NFC work (cloning LF/HF fobs with the Chameleon Ultra + magic cards — see portfolio post *"Cloning an NFC Fob"*), the NFC sticker idea above, and the Aug 24, 2026 note: *"Eventually we'll make a cool world index that enables players to warp to worlds they've seen before."* Cataloged Oct 3, 2026. Implementation plan: [phases/08-nfc-trading-cards.md](./phases/08-nfc-trading-cards.md).
+
+Aweborn worlds become **physical trading cards**. Each card has a world's portrait on the front, the same Aweborn back on every card, and an NFC chip inside holding a single URL: `https://aweborn.org/w/<world-uuid>`. Tap a phone to the card and the browser (or installed PWA) opens, and your star **teleports to that world's coordinates** in the universe. The world is added to your **Worlidex**, your personal index of discovered worlds, so you can warp back to it from anywhere.
+
+It's a sci-fi token that links the real world to the virtual one. Cards are cheap to make, but people value them for reasons that have nothing to do with money: the art, the collecting, the gifting, the memory of an event. That makes them a natural fundraiser for the non-profit. They're **low stakes on purpose**. A card is a key to a place, not an asset.
+
+#### The Card
+
+| Element | Spec |
+|---------|------|
+| **Front** | Unique per world: world portrait art, world name, creator, universe coordinates `(x, y, z)` + sector, set name + set number (e.g., *Origin Set · 3/12*) |
+| **Back** | **Static. Identical on every card ever printed.** An Aweborn logo design, so the backs of a stack look uniform, like a real TCG deck back |
+| **Chip** | NFC NTAG (see [Chip, URL & Security Model](#chip-url--security-model)), one NDEF URI record, locked read-only after encoding |
+| **Identity** | The card *is* the world ID. There are **no per-card serial numbers** (explicitly decided: not needed) |
+| **Digital twin** | The same front art appears as the world's entry in the Worlidex, so physical and digital cards look identical |
+
+#### The Tap → Teleport Flow
+
+```
+1. Phone touches card
+2. OS reads NDEF URI record (iOS background tag reading / Android tag dispatch; no app, no Web NFC API)
+3. Browser or installed PWA opens https://aweborn.org/w/<uuid>[?a=<arrival>]
+4. App boots → reads world ID from the path → looks up the WorldEntry by ID
+   (the client only subscribes to nearby sectors, so this needs a direct lookup by ID)
+5. Teleport: warp-arrival effect plays, player star placed at the world's resolvedPosition
+6. Arrival mode applied (default: captured orbit around the world's sun)
+7. Worlidex: entry added (method = "card") if new → First Discovery reward fires
+```
+
+**Arrival modes (configurable per card, default = orbit):**
+
+| Mode | URL | Behavior |
+|------|-----|----------|
+| **Orbit** (default) | `/w/<uuid>` | Warp-arrive in the world's gravity well, settle into a captured orbit. Player presses **N** to enter. They see the world from outside first, which is the awe moment |
+| **Inside** | `/w/<uuid>?a=in` | Skip the universe and drop straight into the world interior (best for event/venue cards where the world *is* the destination) |
+
+The arrival mode is chosen when the card is designed, and it's encoded in the URL. Once the tag is locked the mode can't change. Unknown or missing params fall back to orbit.
+
+**Teleport vs. Warp:** the normal warp (K) requires lock-on and arrives with momentum. A card teleport can be **any distance, from anywhere, with no lock-on**. It's a jump between physical and virtual space. It reuses the warp arrival visuals (flash, residual particles) so it feels native to the game.
+
+**Edge cases:**
+- **Fresh visitor / first-ever load:** the card *is* their onboarding. Their first view of Aweborn is arriving at a specific world instead of the origin (relates to the open "Universe Entry Point" question).
+- **Offline tap:** the PWA (Phase 06) opens from cache. If the world snapshot is cached, teleport to it. If not, add a *pending* Worlidex entry and show "This world awaits. Come back online to arrive." Resolve on reconnect.
+- **Ghost world:** teleport works the same. The player arrives at a Ghost (wireframe) world. This also nudges people toward funding it (see [Cards & the Mana Economy](#cards--the-mana-economy)).
+- **Desktop / no NFC:** the URL works in any browser. It's just a link.
+
+#### The Worlidex
+
+The Worlidex is the player's **personal, persistent index of every world they've discovered**. It's how a player remembers the universe, and it replaces the temporary `CRDTDevOverlay` world list.
+
+```js
+// One Worlidex entry per discovered world (per player)
+{
+  worldId: "3f9c2a1e-…-uuidv4",
+  state: "sighted" | "visited",   // see open question on discovery thresholds
+  discoveredAt: 1727971200000,
+  method: "flight" | "card" | "link" | "warp",  // how you first found it (a card-found entry gets a tactile badge)
+  visitCount: 4,
+  lastVisitedAt: 1727999999000,
+  pending: false                  // true = tapped offline, not yet resolved
+}
+```
+
+- **Any discovery counts.** Flying in manually, tapping a card, or opening a shared link all add entries. Cards are just the most magical way to fill it.
+- **Worlidex Warp.** From anywhere in the universe, choose a Worlidex entry and warp straight there. This is the in-game version of tapping the card again. It uses the warp charge/leap visuals.
+- **Collector view.** Entries are shown as cards using the same art as the physical card. Collections are grouped by set (Origin Set, event sets, print-your-world). Per-set progress ("7 / 12 discovered") gives people a reason to collect without any scarcity mechanics.
+- **Card-found badge.** Entries discovered by a physical card tap (`method: "card"`) get a subtle tactile mark in the UI, a nod to the real-world artifact. This is decoration, not proof of ownership.
+- **Persistence requires identity.** The current `playerId` lives in `sessionStorage` and is lost when the tab closes. The Worlidex needs at least a device-persistent identity, and eventually cross-device identity (see open questions).
+
+#### First Discovery Rewards
+
+The first time a player discovers a world, by any method:
+
+1. **Awe → universal pool.** This fires the existing `first-world-visit` awe event (500 mana). Per the awe rules, that mana flows into the **universal pool**, not to the individual. Tapping a new card makes the universe richer for everyone.
+2. **Discovery moment (personal).** A card-reveal animation: the world's card flips from the static Aweborn back to its front art and slides into the Worlidex. This is the personal reward and the dopamine hit.
+3. **Worlidex entry.** The world can now be warped to from anywhere, forever.
+4. **Shared-awe still applies.** Tapping cards together at an event (several players discovering at once) gets the 2× shared-awe multiplier.
+
+Repeat taps of an already-discovered world just teleport, with no new reward (awe exhaustion applies as usual). Any further personal reward (cosmetics, discovery-count badges) has to follow the **cosmetic-only** rule. See open questions.
+
+#### Card Programs: Curated Sets & Print-Your-World
+
+Both programs exist side by side:
+
+| Program | Who | What |
+|---------|-----|------|
+| **Curated Sets** | Aweborn (the non-profit) | Official numbered sets, e.g., the **Origin Set** (the Aweborn Portal + the first worlds ever created), seasonal sets, landmark worlds. Sold as fundraisers and given away at events |
+| **Print-Your-World (on demand)** | Any player | Order a print run of cards for *your* world, to hand out, trade, gift, or sell at your own table |
+| **Organizations & Events** | Companies, conferences, cities, schools | Build a world that represents a venue (conference hall, campus, city), then print event cards. Attendees tap and explore the space virtually. The card doubles as a souvenir and a way back in |
+
+**Distribution:** sold (fundraiser) **and** given free (outreach at events and meetups). Low stakes, high delight.
+
+**Example (events):** a conference prints 2,000 cards for its venue world with `?a=in`. Attendees tap at the badge desk and land inside a virtual version of the conference hall. Every first tap adds 500 mana of awe to the universal pool, and shared-awe doubles it when people tap together. The conference just expanded the Living Frontier for everyone.
+
+#### Cards & the Mana Economy
+
+- **Card sales are donations.** Proceeds above production and fulfillment cost go through the existing Stripe → Lambda → mana pipeline: `$1 → 1,000 mana`, Frontier expands, and the golden solidification wave plays.
+- **Print-your-world as patronage (idea).** Ordering cards of your own **Ghost** world could put the order's surplus toward solidifying that world specifically (a targeted Patron donation that creates an Oasis). Printing your world makes it real. *(Open question: automatic, opt-in, or not at all.)*
+- **Free giveaway cards still generate value.** Every first tap is awe into the pool. A free card at a meetup is a small, permanent contribution to the universe.
+- **No pay-to-win.** Owning a card grants nothing a free player can't get by flying to the world. Cards are a shortcut, a souvenir, and a key to a collection, never power.
+
+#### Chip, URL & Security Model
+
+**URL format:** `https://aweborn.org/w/<uuidv4>`, namespaced under `/w/` so it's easy to route and never collides with future top-level pages.
+
+**World IDs migrate to UUIDv4.** Today the sync-service generates 5-character random IDs (`generateWorldId()` in `server/sync-service/src/rooms.ts`, about 60M combinations, collision-prone at scale, and guessable). Cards make IDs permanent and printed, so they must be globally unique and unguessable: `crypto.randomUUID()`. The `/world/{worldId}` WebSocket route regex already accepts hyphens.
+
+**Payload size (fits every common chip):**
+
+| Part | Bytes |
+|------|-------|
+| NDEF URI prefix code `0x04` (= `https://`) | 1 |
+| `aweborn.org/w/` | 14 |
+| UUIDv4 | 36 |
+| Optional `?a=in` | 5 |
+| NDEF/TLV overhead | ~7 |
+| **Total** | **~58–63 bytes** |
+
+| Chip | User memory | Verdict |
+|------|------------|---------|
+| **NTAG213** | 144 bytes | ✅ **Recommended.** Cheapest, universal, plenty of room |
+| NTAG215 | 504 bytes | ✅ Works (amiibo chip), costs more for no benefit here |
+| NTAG216 | 888 bytes | ✅ Overkill |
+| NTAG 424 DNA | — | Future option only (see below) |
+
+**Security model: intentionally open.**
+- A card holds a public URL. Anyone can read it, copy it to another tag in seconds (as the fob-cloning work showed, plain NTAG/Ultralight has no crypto), or just text the link. **That's fine.** A cloned card or shared link gives exactly what the original gives: a teleport and a discovery. Nothing is scarce, so there's nothing to steal.
+- **Lock tags read-only after encoding** (NTAG lock bits). This doesn't stop cloning. It stops *vandalism*, where someone rewrites a card at an event to point somewhere malicious.
+- **No per-card serials, no proof-of-ownership.** Decided: not needed for a low-stakes non-profit collectible.
+- **Upgrade path, if ever needed:** NTAG 424 DNA with SUN (Secure Unique NFC), where every tap produces a signed, single-use URL suffix the server can verify. It's only worth it if a future product (e.g., limited physical editions with in-game meaning) actually needs unclonability. Not planned.
+
+#### Card Invariants
+
+These must hold forever, because printed cards can't be patched:
+
+1. **A world ID never changes and never gets reused.** (Pre-launch 5-char IDs are migrated *before* the first card is printed.)
+2. **`/w/<uuid>` resolves forever.** Worlds are never hard-deleted (consistent with *The Museum of Everything*). If a world is ever removed for moderation reasons, the URL still resolves to a graceful "this world has faded" landing at its last coordinates.
+3. **The card stores the ID, not coordinates.** Coordinates printed on the front are decorative. The teleport always uses the live `resolvedPosition`. Only worlds with a server-resolved position (`resolvedAt > 0`) can be printed.
+4. **The `/w/` route and `?a=` param semantics are a permanent public API.** New params may be added, but existing ones can never change meaning.
+
 ## The Mana Mechanic: The Frontier of Dreams
 
 Mana is the creative energy of the universe. It does not buy objects — it **expands reality itself.** The universe has a physical boundary called the **Living Frontier**: a sphere of light whose radius is a direct function of the global mana pool. Inside the Frontier, worlds are solid, colorful, and alive with physics. Outside it lies the **Deep Dark** — infinite, dim, unpowered space where creations exist only as translucent **Ghosts** (wireframes of light).
@@ -589,7 +742,7 @@ Y.Map("universe") {
 | **Donation Afterglow** | **BOOST** | For 24hr after any donation, regen rate is boosted — the universe is "energized" | 2x-5x multiplier, decaying |
 | **Solar Tidal Cycle** | **RHYTHM** | Mana flow follows the player's local sunrise/sunset. High flow during daylight, low flow at night. Quietly nudges healthy real-world sleep/activity cycles — the game doesn't want you lost in it at 3am. | ±50% flow modifier |
 
-**No recycling.** Mana spent on frontier expansion and solidification is gone forever. The frontier can contract if mana drains below thresholds (worlds at the edge revert to Ghost state — they aren't destroyed, just dimmed). Every act of generosity permanently contributes to the universe's high-water mark.
+**No recycling.** Mana spent on frontier expansion and solidification is gone forever. **The frontier never contracts** (resolved Aug 19, 2026). It's a high-water mark: if mana generation slows, the frontier simply stops expanding, and solidified worlds never revert to Ghosts. Every act of generosity permanently contributes to the universe's high-water mark.
 
 ##### Awe Generation — How Wonder Creates Energy
 
@@ -703,7 +856,7 @@ These actions draw mana from the universal pool and require a solidified world. 
 
 #### Draw Mechanics — Fairness + Donor Empowerment
 
-Each player has a **flow rate** — the maximum speed at which they can draw mana from the universal pool. The base pipe is the same diameter for everyone. But **donors get a wider pipe** — with exponentially diminishing returns that converge at a cap.
+Each player has a **flow rate** — the maximum speed at which they can draw mana from the universal pool. **The pipe is the same diameter for everyone, donor or not** (resolved Aug 19, 2026: donor advantages are cosmetic only; see below).
 
 ```
 flowRate = baseRate * activityMultiplier * solarModifier * diminishingReturns
@@ -771,7 +924,7 @@ Player donates $10 via Stripe
   → Lambda receives webhook (payment_intent.succeeded)
   → Lambda calculates: $10 × 1,000 = 10,000 mana
   → Lambda atomically adds to universe.mana.pool
-  → Lambda updates donor's lifetimeDonations (for flow rate bonus)
+  → Lambda updates donor's lifetimeDonations (for cosmetic unlocks — not flow rate)
   → Lambda writes donation event to manaLedger
   → Lambda sets donationMultiplier boost (24hr afterglow)
   → VPS receives CRDT update, recalculates frontierRadius
@@ -843,3 +996,14 @@ The offline experience is still rich and beautiful: Ghost worlds have their own 
 - **⬜ World Interiors:** What can players actually do inside a world? (place objects, sculpt, draw, just hang out?)
 - **⬜ Universe Entry Point:** What does a brand-new player see when they first open aweborn.org? How do they orient?
 - **⬜ Mana Tuning:** Finalize dollar-to-mana ratio, solar cycle parameters
+- **⬜ Discovery threshold (Worlidex):** Does a world enter the Worlidex when *sighted* (close LOD range / scanned with L) or only when *visited* (entered with N / card tap)? Proposal: two states, *sighted* (can warp to) and *visited* (full card art revealed).
+- **⬜ Worlidex Warp rules:** Free? Cooldown? Charge time scaling with distance? Proposal: free, standard K charge animation, no cooldown (movement never costs mana).
+- **⬜ Worlidex key binding:** The keyboard layout has no free slot. Proposal: `;` tap = Map/Compass (existing), hold = open Worlidex.
+- **⬜ Player identity persistence:** The Worlidex needs a persistent player. Proposal: v1 = device-persistent ID (localStorage + IndexedDB) synced to the server; v2 = optional cross-device linking (passkey or email magic link, optionally tied to Stripe donor identity).
+- **⬜ Personal discovery rewards:** Beyond awe-to-pool + the Worlidex entry, is there a personal reward (cosmetic badges at discovery milestones, set-completion flair)? Must stay cosmetic-only.
+- **⬜ Print-your-world → patronage:** Should a card order for a Ghost world fund that world's solidification automatically, opt-in, or not at all?
+- **⬜ Card format:** TCG standard (63×88 mm, fits sleeves/binders) vs. CR80 credit-card size (85.6×54 mm, cheapest NFC PVC stock). Proposal: TCG size for collector feel.
+- **⬜ QR fallback:** Include a small QR code (same URL) on the card front for phones without NFC / desktop? (The back must stay identical on every card, and a QR is unique per world, so it can only go on the front.)
+- **⬜ Card art pipeline:** How is a world's portrait produced — player-taken in-game snapshot, automatic server-side render, or AI-generated (Phase 07)?
+- **⬜ Print + encode vendor:** Which vendor prints full-color NFC cards and encodes + locks a unique URL per card at small minimums? Or encode in-house with a USB NFC writer?
+- **⬜ Product name:** "Aweborn Cards", "Worldcards", "Star Cards", "Portal Cards"…? (Worlidex is settled.)

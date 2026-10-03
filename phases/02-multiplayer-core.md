@@ -1,6 +1,6 @@
 # Phase 02: Multiplayer Core (CRDT + WebSocket)
 
-**Status:** `[x]` Complete
+**Status:** `[x]` Complete† (10+ concurrent connection stress test deferred)
 **Depends on:** [Phase 01: Foundation & VPS Setup](./01-foundation.md)
 **ROADMAP reference:** [The Two-Layer CRDT Architecture & Persistence](../ROADMAP.md#the-two-layer-crdt-architecture--persistence)
 **Estimated sessions:** 4-6 (actual: 3)
@@ -17,7 +17,7 @@ Implement the two-layer CRDT architecture (Universe CRDT + per-World CRDTs) with
 | World CRDT | One Y.Doc per world (meta, physics, objects, terrain, chat) | Loaded on demand, flushed when dormant |
 | Persistence | SQLite on VPS disk (start simple) → Postgres later if needed | Lightest-weight option, no external DB service |
 | Flush strategy | Every 60 seconds + on last player leave | 99.9% fewer writes than per-operation |
-| Awareness | Yjs awareness protocol for ephemeral presence | Built into y-webrtc, zero storage cost |
+| Awareness | Yjs awareness protocol for ephemeral presence | Built into y-webrtc, zero storage cost. *As built: custom presence messages — BroadcastChannel (same browser) + sync-service WebSocket relay (msg `0x09`, cross-browser, Aug 24). Yjs awareness is not used.* |
 | Conflict resolution | Yjs default (higher clientID wins on concurrent writes) | Deterministic, no clock sync needed |
 
 ## Tasks
@@ -63,7 +63,7 @@ Implement the two-layer CRDT architecture (Universe CRDT + per-World CRDTs) with
 - `[x]` Implement world enter/exit flow (join world room, load world CRDT)
 
 ### Client: Player Presence
-- `[x]` Implement Yjs awareness protocol for player positions
+- `[x]` Implement ~~Yjs awareness protocol~~ presence for player positions — *BroadcastChannel in Phase 02; WebSocket relay added Aug 24, 2026 (`usePresence.ts` ↔ `rooms.ts relayPresence`)*
 - `[x]` Broadcast: `{ id, position, velocity, inWorld, color }` at ~20Hz
 - `[x]` Receive and interpolate other players' positions
 - `[x]` Handle player join/leave events

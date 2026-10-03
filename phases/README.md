@@ -26,12 +26,13 @@ Every new agent session should follow this sequence:
 | Phase | Name | Status | Plan | Description |
 |-------|------|--------|------|-------------|
 | **01** | Foundation & Infrastructure | ✅ Complete | [01-foundation.md](./01-foundation.md) | VPS (Lightsail + k3s), sync-service, genai-service, client CRDT hook |
-| **02** | Multiplayer Core | 🟡 In Progress | [02-multiplayer-core.md](./02-multiplayer-core.md) | Universe CRDT, World CRDTs, sector rooms, player presence |
-| **03** | Universe Rendering & LOD | 🔴 Not Started | [03-universe-rendering.md](./03-universe-rendering.md) | Data-driven worlds, LOD tiers, Ghost/Solid visuals |
-| **04** | Navigation & Controls | 🔴 Not Started | [04-navigation-controls.md](./04-navigation-controls.md) | Keyboard flight, gravity wells, warp, world entry/exit |
+| **02** | Multiplayer Core | ✅ Complete† | [02-multiplayer-core.md](./02-multiplayer-core.md) | Universe CRDT, World CRDTs, sector rooms, player presence |
+| **03** | Universe Rendering & LOD | ✅ Complete† | [03-universe-rendering.md](./03-universe-rendering.md) | Data-driven worlds, LOD tiers, Ghost/Solid visuals |
+| **04** | Navigation & Controls | ✅ Complete† | [04-navigation-controls.md](./04-navigation-controls.md) | Keyboard flight, gravity wells, warp, world entry/exit, radar, cross-browser presence |
 | **05** | Mana Economy & Donations | 🔴 Not Started | [05-mana-economy.md](./05-mana-economy.md) | Mana pool, Living Frontier, Ghost/Solid states, donation→mana pipeline |
 | **06** | Offline & Mesh Networking | 🔴 Not Started | [06-offline-mesh.md](./06-offline-mesh.md) | PWA, WebRTC P2P, QR signaling, sneakernet sync |
-| **07** | World Creation & Gen AI | 🔴 Not Started | [07-genai-creation.md](./07-genai-creation.md) | Building tools, physics, gen AI integration, polish |
+| **07** | World Creation & Gen AI | 🔴 Not Started | [07-genai-creation.md](./07-genai-creation.md) | Interior movement & physics, building tools, gen AI integration, polish |
+| **08** | NFC Trading Cards & the Worlidex | 🔴 Not Started | [08-nfc-trading-cards.md](./08-nfc-trading-cards.md) | `/w/<uuid>` teleport links, Worlidex (personal world index + warp), physical NFC cards, print-your-world |
 
 ### Status Legend
 
@@ -40,15 +41,20 @@ Every new agent session should follow this sequence:
 | 🔴 Not Started | No work done yet |
 | 🟡 In Progress | Active development |
 | ✅ Complete | All acceptance criteria pass |
+| ✅ Complete† | All tasks shipped; some acceptance criteria explicitly **deferred** (stress tests / on-device verification), tracked in the phase file |
 | ⏸️ Blocked | Waiting on external dependency or decision |
 
 ---
 
 ## Active Phase
 
-> **➡️ Phase 02 — Multiplayer Core**
+> **➡️ Phase 05 — Mana Economy & Donations**
 >
-> Foundation is live. sync-service and genai-service running on Lightsail with k3s + Caddy auto-TLS. Next: implement the two-layer CRDT architecture and player presence.
+> Phases 01–04 are live: k3s VPS, two-layer CRDT multiplayer with SQLite persistence, LOD universe, 6DOF flight with gravity wells + warp, radar, and cross-browser presence. Stripe donations are in live mode. Next: the universal mana pool, Living Frontier, awe tracking, and the donation → mana → solidification-wave pipeline.
+>
+> **Parallel track:** Phase 08 milestones 8A (teleport links + UUIDv4 migration) and 8B (Worlidex) are unblocked.
+>
+> **Deferred verification debt:** Phase 02 (10+ concurrent connections), Phase 03 (1000+ worlds @ 60fps), Phase 04 (on-device touch + physical gamepad).
 
 ---
 
@@ -56,14 +62,19 @@ Every new agent session should follow this sequence:
 
 ```
 Phase 01 (Foundation) ✅
-  └─► Phase 02 (Multiplayer Core)
-        ├─► Phase 03 (Universe & LOD)       ─┐
-        ├─► Phase 04 (Navigation)            ─┤
-        ├─► Phase 05 (Mana & Economy)        ─┼─► Phase 07 (World Creation & GenAI)
-        └─► Phase 06 (Offline & Mesh) ◄──────┘
+  └─► Phase 02 (Multiplayer Core) ✅
+        ├─► Phase 03 (Universe & LOD) ✅
+        │     └─► Phase 04 (Navigation) ✅
+        │           ├─► Phase 05 (Mana & Economy)  ─► Phase 07 (World Creation & GenAI)
+        │           │                                 (also needs Phase 01 genai-service, Phase 04 controls)
+        │           └─► Phase 08 (NFC Cards & Worlidex)
+        │                 8A Teleport links ─► 8B Worlidex ─► (Phase 05 awe hook)
+        │                 8A ─► 8C Physical curated set ─► 8D Print-your-world (needs Phase 05 donations)
+        │                 Offline card taps use Phase 06 PWA
+        └─► Phase 06 (Offline & Mesh)   (independent of 03–05; can run any time)
 ```
 
-Phases 03, 04, 05, and 06 can be **partially parallelized** after Phase 02. Phase 07 requires all others.
+Dependencies above match each phase file's **Depends on** line. Phase 06 can run in parallel with 05/07/08. Phase 07 needs Phase 05 (mana validation) and Phase 01 (genai-service), but its first section (Interior Movement & Physics) needs only Phase 04 and can start now. Phase 08 milestones 8A/8B can start now.
 
 ---
 
@@ -85,6 +96,14 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 | Awe generation | Awe ∝ object cost, per-player exhaustion curve | Aug 19, 2026 |
 | Object removal | 3-tier governance: Creator / Placer / Co-Creator | Aug 19, 2026 |
 | Frontier radius formula | r ∝ ∛(Mana) — cubic root of mana pool | Aug 19, 2026 |
+| NFC trading cards | Physical cards teleport to a world via `aweborn.org/w/<uuidv4>`; static Aweborn back; per-card arrival mode (default orbit) | Oct 3, 2026 |
+| World ID format | Migrate 5-char random IDs → UUIDv4 before any card is printed | Oct 3, 2026 |
+| Card security | No per-card serials, no anti-clone (low stakes); tags locked read-only to prevent rewrites | Oct 3, 2026 |
+| Worlidex | Personal persistent index of discovered worlds; warp to any entry from anywhere; first discovery = awe to universal pool | Oct 3, 2026 |
+| Card programs | Curated sets + print-your-world on demand; sold as fundraiser and given free | Oct 3, 2026 |
+| TokBot integration scope | TokBot + backend archived; gen-AI features absorbed into aweborn.org (Phase 07), token economy → mana (Phase 05) | Aug 20, 2026 |
+| Player presence transport (interim) | WebSocket relay through sync-service; WebRTC P2P remains the scale target (Phase 06) | Aug 24, 2026 |
+| Landmark islands | Landmark islands ("The Spire", etc.) removed from the universe per Alex | Aug 23, 2026 |
 
 ---
 
@@ -93,9 +112,11 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 | Question | Relevant Phase | Notes |
 |----------|---------------|-------|
 | What can players do inside a world? | Phase 07 | Place objects, sculpt terrain, hang out — specifics TBD |
-| New player onboarding flow | Phase 07 | Drop in at origin? Tutorial? |
+| New player onboarding flow | Phase 07 / 08 | Drop in at origin? Tutorial? Note: players arriving via an NFC card or `/w/` link start at a world, not the origin (Phase 08) |
 | Mana tuning (dollar-to-mana ratio) | Phase 05 | Current design: $1 = 1,000 mana. Needs playtesting |
-| TokBot integration scope | TBD | Separate mobile app — include in plan or keep independent? |
+| Worlidex details (discovery threshold, warp rules, key binding) | Phase 08 | Proposals in [08-nfc-trading-cards.md](./08-nfc-trading-cards.md#open-questions-mirrored-in-roadmap) |
+| Persistent player identity | Phase 08 | `playerId` is sessionStorage today; Worlidex needs persistence |
+| Card format, art pipeline, vendor, product name | Phase 08 | See Phase 08 open questions |
 
 ---
 
@@ -106,9 +127,10 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 | Package | Purpose | When Used |
 |---------|---------|-----------|
 | `yjs` | Core CRDT library | Always — the data layer |
-| `y-websocket` | WebSocket transport provider | Online mode — connects to stateful server |
+| Custom binary room protocol | WebSocket transport (`src/hooks/useCRDT.ts` ↔ `server/sync-service/src/rooms.ts`): `[type][worldId len][worldId][Yjs update]`, msgs `0x01`–`0x09` (universe/world sync+update, create-world, update-sectors, join/leave-world, presence) | Online mode — **what actually ships** (replaced the y-websocket passthrough in Phase 02) |
+| `y-websocket` | Still in `package.json` (client + server) but not imported anywhere | Candidate for removal |
 | `y-webrtc` | WebRTC transport provider | P2P mode — Phase 06 (offline/mesh) |
 
 ---
 
-*Last updated: 2026-08-20*
+*Last updated: 2026-10-03*

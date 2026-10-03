@@ -18,23 +18,23 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 | QR signaling | QWBP (55-100 bytes) | Reliable scanning, fits small QR codes |
 | NFC | NDEF URL records (OS-handled, not Web NFC API) | Works on both iOS and Android natively |
 | Reconnect strategy | Yjs auto-merge + server spatial resolution | CRDT guarantees no conflicts |
-| Dual-mode | Online (y-websocket to VPS) + Offline (y-webrtc P2P) simultaneously | Seamless transition |
+| Dual-mode | Online (custom WebSocket room protocol to VPS) + Offline (y-webrtc P2P) simultaneously | Seamless transition. *Note: the online path is not y-websocket (see phases/README Technical Notes), so reconnect/state-vector sync must go through the `universe-sync` / `world-sync` messages.* |
 
 ## Tasks
 
 ### Service Worker & PWA
 - `[ ]` Create `public/sw.js` — Service Worker for offline caching
 - `[ ]` Cache strategy: cache-first for static assets, network-first for API calls
-- `[ ]` Add `manifest.json` for PWA (installable on mobile)
+- `[ ]` Add `manifest.json` for PWA (installable on mobile) — *icons already exist from the Sep 2026 logo work: `public/icon-192.png`, `icon-512.png`, `apple-touch-icon.png`*
 - `[ ]` Offline detection: `navigator.onLine` + `online`/`offline` events
 - `[ ]` IndexedDB: persist Yjs Y.Doc state locally for offline access
 - `[ ]` Test: load aweborn.org → go offline → app still works
 
 ### WebRTC P2P (y-webrtc)
-- `[ ]` Install `y-webrtc` and configure alongside `y-websocket`
+- `[ ]` Install `y-webrtc` and configure alongside the existing WebSocket room protocol (`useCRDT.ts`)
 - `[ ]` Dual provider setup: Yjs doc syncs over both WebSocket AND WebRTC
 - `[ ]` P2P connection management (discover peers on same LAN via signaling)
-- `[ ]` Ephemeral data over DataChannels (avatar positions, voice)
+- `[ ]` Ephemeral data over DataChannels (avatar positions, voice) — *replaces/augments the current WebSocket presence relay (msg `0x09`) for scale*
 - `[ ]` Graceful fallback: WebRTC fails → WebSocket only, and vice versa
 
 ### QR Code Signaling (QWBP)
@@ -56,14 +56,18 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - `[ ]` Pipe Yjs CRDT updates through the DataChannel
 
 ### NFC URL Support (Tap-to-Join)
+
+> **Scope note:** This section covers *session* join links (`/join/…`, `/j#<sdp>`). World teleport links on NFC **trading cards** (`/w/<uuidv4>`) plus the Worlidex live in [Phase 08](./08-nfc-trading-cards.md). Phase 08 depends on this phase's Service Worker for offline card taps. Share the URL-parsing boot code between `Join.tsx` and Phase 08's `TeleportSystem`.
+
 - `[ ]` Online mode: `aweborn.org/join/<worldId>` — deep link route
 - `[ ]` Create `src/pages/Join.tsx` — handles join URL, connects to world
 - `[ ]` Offline mode: `aweborn.org/j#<base64-QWBP-offer>` — SDP in URL hash
 - `[ ]` Join page reads `window.location.hash`, extracts SDP, generates answer
 - `[ ]` Documentation: how to write join URLs to NFC stickers
+- `[ ]` Offline card tap (Phase 08): if `/w/<uuid>` is opened offline, serve cached app and queue a *pending* Worlidex entry
 
 ### Offline Reconnect
-- `[ ]` On reconnect: y-websocket auto-syncs local state to VPS
+- `[ ]` On reconnect: re-run `universe-sync` / `world-sync` state-vector exchange over the room protocol to push local state to the VPS
 - `[ ]` Server validates structural changes, resolves collisions
 - `[ ]` Offline creations sync as Ghost worlds
 - `[ ]` If offline creation collides with online creation → server nudges it to nearest open space

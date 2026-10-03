@@ -1,6 +1,6 @@
 # Phase 03: Universe Rendering & LOD
 
-**Status:** `[x]` Complete
+**Status:** `[x]` Complete† (1000+ worlds @ 60fps stress test deferred)
 **Depends on:** [Phase 02: Multiplayer Core](./02-multiplayer-core.md)
 **ROADMAP reference:** [Universe Visual Design & World Building](../ROADMAP.md#universe-visual-design--world-building)
 **Estimated sessions:** 3-4 (actual: 1)
@@ -20,6 +20,8 @@ Transform the decorative cosmic scene into a **data-driven universe** where ever
 | Player rendering | Glowing orbs with comet trails | Matches ROADMAP visual spec |
 | Ghost worlds | Wireframe shader + ethereal glow | Visually distinct from solid worlds |
 
+> **Current LOD thresholds (as coded in `UniverseWorlds.tsx`, Oct 2026):** Close `< 100` units · Medium `100–200` · Far `200+`. The table above is the ROADMAP target; the session-1 build used `5 / 12` (see tasks below); on Aug 23, 2026 Alex asked for Close to be raised to "practically within the same sector — almost always seeing entire worlds when in view," producing the current values. Tune here, not in ROADMAP.
+
 ## Tasks
 
 ### Data-Driven World Rendering
@@ -36,7 +38,7 @@ Transform the decorative cosmic scene into a **data-driven universe** where ever
 
 ### Player-Star Rendering
 - `[x]` Create `src/components/PlayerStars.tsx`
-- `[x]` Render other players as glowing orbs (BroadcastChannel presence → positions)
+- `[x]` Render other players as glowing orbs (BroadcastChannel presence → positions) — *extended Aug 24, 2026 with cross-browser presence via sync-service WebSocket relay; BroadcastChannel remains as same-browser fallback*
 - `[x]` Comet trails — per-vertex alpha fading particle trail
 - `[x]` Smooth position interpolation (lerp toward latest broadcast)
 
@@ -46,11 +48,14 @@ Transform the decorative cosmic scene into a **data-driven universe** where ever
 - `[x]` Visual distinction: Ghost (translucent wireframe), Oasis (brighter core), Solid (full glow)
 - `[x]` Ghost shader applied to non-solidified worlds in Close LOD
 
-### Landmark Worlds (converted FloatingIslands)
-- `[x]` Convert FloatingIslands from Environment.tsx into permanent landmark worlds
-- `[x]` 5 landmarks: The Spire, Drift Rock, Deep Anchor, Far Beacon, Nebula's Eye
-- `[x]` Crystal-topped rock aesthetics preserved with labels
-- `[x]` Removed from Environment.tsx → rendered in UniverseWorlds.tsx
+### Landmark Worlds (converted FloatingIslands) — *REMOVED Aug 23, 2026*
+
+> Alex: "You can remove those little models like 'The Spire'." Landmarks no longer exist in code (a stale comment remains in `Environment.tsx`). Kept here for history.
+
+- `[x]` ~~Convert FloatingIslands from Environment.tsx into permanent landmark worlds~~
+- `[x]` ~~5 landmarks: The Spire, Drift Rock, Deep Anchor, Far Beacon, Nebula's Eye~~
+- `[x]` ~~Crystal-topped rock aesthetics preserved with labels~~
+- `[x]` Removed from Environment.tsx → ~~rendered in UniverseWorlds.tsx~~ (later removed entirely)
 
 ### World Interior View
 - `[x]` Create `src/components/WorldInterior.tsx` — scene inside a world
@@ -73,7 +78,7 @@ Transform the decorative cosmic scene into a **data-driven universe** where ever
 - [x] Ghost worlds are visually distinct (wireframe + glow)
 - [x] World entry/exit switches between universe and interior view
 - [x] Aweborn Portal at origin is the brightest star
-- [x] Landmark worlds (converted FloatingIslands) visible with labels
+- [x] ~~Landmark worlds (converted FloatingIslands) visible with labels~~ *(criterion retired — landmarks removed Aug 23, 2026)*
 
 ## Files Changed
 
@@ -94,3 +99,5 @@ Transform the decorative cosmic scene into a **data-driven universe** where ever
 | Date | What was done | Next step |
 |------|--------------|-----------|
 | 2026-08-20 | Built LOD rendering (Close/Medium/Far tiers), custom glow+ghost shaders, Aweborn Portal at origin, landmark islands (converted FloatingIslands per user request), PlayerStars with comet trails, WorldInterior with CRDT-driven 3D objects + sky dome + ground grid, Scene universe↔interior switching. TypeScript + Vite build pass clean. Visual verification: portal + landmarks + worlds visible, interior shows 3D objects with colored sky. | **Phase 03 COMPLETE** → Begin Phase 04 (Navigation & Controls) |
+| 2026-08-23 | (During Phase 04 polish) Raised LOD thresholds so nearby worlds render in full (Close 100 / Medium 200); removed landmark islands per Alex. | — |
+| 2026-10-03 | Plan reconciliation: annotated superseded items (LOD values, landmarks, BroadcastChannel presence). | Stress test still deferred |

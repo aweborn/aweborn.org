@@ -16,7 +16,7 @@
 
 ## Project overview
 
-An immersive 3D donation experience for Aweborn, a non-profit. Users explore a cosmic scene (React Three Fiber) and donate via Stripe. Deployed live at `https://aweborn.org`.
+An immersive, multiplayer 3D cosmic universe for Aweborn, a non-profit. Players fly through space as glowing stars (React Three Fiber), see each other in real time, create and enter worlds synced via CRDTs, and donate via Stripe. Deployed live at `https://aweborn.org`. Phases 01–04 are complete; see [phases/README.md](./phases/README.md) for current status.
 
 ## Architecture
 
@@ -51,7 +51,15 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `src/components/FallbackScene.tsx` | 2D fallback for no-WebGL — includes browser-specific fix instructions |
 | `src/components/CanvasErrorBoundary.tsx` | React error boundary for R3F Canvas crashes |
 | `src/hooks/usePaymentIntent.ts` | Hook — calls `POST /create-payment-intent`, returns `clientSecret` for embedded Elements |
-| `src/hooks/useCRDT.ts` | Hook — connects to sync-service via y-websocket, returns `{ doc, connected, synced }` |
+| `src/hooks/useCRDT.ts` | Hook — connects to sync-service using the custom binary room protocol (msgs `0x01`–`0x09`); returns `{ connected, send, createWorld, updateSectors, joinWorld, leaveWorld }` |
+| `src/hooks/usePresence.ts` | Player presence: BroadcastChannel (same browser) + WebSocket relay (cross-browser); `playerId` in sessionStorage |
+| `src/stores/universeStore.ts` / `worldStore.ts` | Stores backed by the Universe CRDT / active World CRDT |
+| `src/systems/` | InputManager, FlightController, CameraController, GravitySystem, WarpSystem, Touch/Gamepad adapters, StarModSlots |
+| `src/components/UniverseWorlds.tsx` | LOD world rendering + Aweborn Portal |
+| `src/components/RadarMinimap.tsx` / `PortalBeacon.tsx` | 3D radar, home indicator |
+| `src/components/CRDTDevOverlay.tsx` | Dev panel / temporary world index (shown in production until the Worlidex, Phase 08) |
+| `shared/crdt-schema.ts` | Shared CRDT types + spatial helpers (client + server) |
+| `server/sync-service/src/rooms.ts` | Room manager: sector rooms, world rooms, world creation, spatial resolver, presence relay |
 | `src/index.css` | Full design system — tokens, glass effects, animations, payment form styles, success animation |
 | `server/sync-service/src/index.ts` | WebSocket + Yjs CRDT sync server |
 | `server/genai-service/src/index.ts` | Gen AI API proxy (placeholder, all routes return 501) |
@@ -140,8 +148,14 @@ aws cloudformation deploy \
 ## VPS management
 
 ```bash
-# SSH into VPS
-ssh -i ~/.ssh/lightsail-default.pem ubuntu@$(aws cloudformation describe-stacks --stack-name aweborn-vps --query 'Stacks[0].Outputs[?OutputKey==`StaticIpAddress`].OutputValue' --output text)
+# SSH into VPS — Tailnet only (public port 22 closed 2026-10-03)
+ssh -i ~/.ssh/lightsail-default.pem ubuntu@aweborn-vps
+# Break-glass if Tailscale is down: Lightsail console → aweborn-vps → "Connect using SSH"
+# (browser SSH is the only public source allowed on port 22, via the lightsail-connect alias)
+# Tailscale key expiry is disabled for aweborn-vps (verified 2026-10-03) — keep it that way, or the VPS drops off the Tailnet
+# Drift: the SSH rule was applied with `aws lightsail put-instance-public-ports`, and the deployed
+# stack template predates the Sep 26 UserData additions (Tailscale, agent-runner). The repo template is
+# the source of truth — never update the stack from an older copy (it would reopen port 22).
 
 # Check pod status
 sudo k3s kubectl -n aweborn get pods

@@ -28,7 +28,7 @@ Implement the mana economy — the creative energy system that powers the Living
 ## Tasks
 
 ### Universal Mana Pool (Universe CRDT)
-- `[ ]` Add mana fields to Universe CRDT:
+- `[ ]` Add mana fields to Universe CRDT (*note: a `ManaState` type without `solarCycle` already exists in `shared/crdt-schema.ts`; extend it rather than redefining*):
   ```typescript
   interface ManaState {
     pool: number;
@@ -70,6 +70,7 @@ Implement the mana economy — the creative energy system that powers the Living
 - `[ ]` Shared-awe multiplier: 2x when near other players
 - `[ ]` Diminishing novelty: exponential decay on revisits
 - `[ ]` Client reports awe events → server validates → adds to pool
+- `[ ]` Expose a discovery hook (`onFirstDiscovery(worldId, method)`) so [Phase 08](./08-nfc-trading-cards.md)'s Worlidex + NFC card taps can fire `first-world-visit` awe
 
 ### Living Frontier & Solidification
 - `[ ]` Server calculates `frontierRadius` from mana pool (cube root formula)
@@ -98,6 +99,7 @@ Implement the mana economy — the creative energy system that powers the Living
 - `[ ]` VPS receives mana update → recalculates `frontierRadius`
 - `[ ]` VPS broadcasts frontier expansion to all connected clients
 - `[ ]` Trigger solidification wave visual for all online players
+- `[ ]` Keep the pipeline product-agnostic so [Phase 08](./08-nfc-trading-cards.md) NFC card order surplus can flow in as donations (and optionally as targeted patronage for the card's world)
 
 ### Server: Mana Draw Validation
 - `[ ]` Validate draw requests for solidified-world actions:
@@ -110,6 +112,9 @@ Implement the mana economy — the creative energy system that powers the Living
 - `[ ]` Ghost creation requires **no validation** (free, unlimited)
 
 ### Mana Costs Implementation
+
+> ⚠️ **Unresolved conflict (flagged 2026-10-03):** this phase's key deviation says costs are pegged to real compute cost + ~7%, but the numbers below are the ROADMAP's fixed game-design values, and most of these actions (placing an object, changing gravity) have ~zero compute cost. Decide before implementing: (a) compute-pegged pricing applies **only to AI generation** (Phase 07) while non-compute actions keep fixed ROADMAP prices, or (b) non-compute actions become free/near-free. Proposal: (a).
+
 - `[ ]` Object placement in solidified worlds (10-500 mana by complexity)
 - `[ ]` Physics changes (gravity: 500, friction/bounce: 200, water: 300)
 - `[ ]` Avatar customization (trail: 50, aura: 50, shape: 100, color: 25)
@@ -152,3 +157,4 @@ Implement the mana economy — the creative energy system that powers the Living
 | Date | What was done | Next step |
 |------|--------------|-----------|
 | — | — | — |
+| 2026-10-03 | Plan reconciliation: noted existing `ManaState` type; flagged the compute-pegged vs fixed-cost conflict. No implementation yet. | Resolve cost-model question, then start Universal Mana Pool |

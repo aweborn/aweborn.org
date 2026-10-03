@@ -1,7 +1,7 @@
 # Phase 07: World Creation & Gen AI
 
 **Status:** `[ ]` Not Started
-**Depends on:** [Phase 01: Foundation & Infra](./01-foundation.md) (genai-service container), [Phase 05: Mana Economy](./05-mana-economy.md) (mana cost validation)
+**Depends on:** [Phase 01: Foundation & Infra](./01-foundation.md) (genai-service container), [Phase 05: Mana Economy](./05-mana-economy.md) (mana cost validation), [Phase 04: Navigation & Controls](./04-navigation-controls.md) (interior control mapping)
 **ROADMAP reference:** [Open Design Questions — World Interiors](../ROADMAP.md#open-design-questions)
 **Estimated sessions:** 5-7
 
@@ -73,6 +73,19 @@ interface GenerateResult {
 ```
 
 ## Tasks
+
+### Interior Movement & Physics
+
+> Added during the 2026-10-03 reconciliation. Phase 04 remapped the action map for world interiors, but the player cannot actually move inside a world yet. Building tools are useless without this, so do it first. Mana is **not** required; this can start before Phase 05.
+
+- `[ ]` Create `src/systems/InteriorController.ts`: first/third-person movement using the Phase 04 interior action map (V=jump/jetpack, W/E=look, Q/R=move, A/F=strafe, S=back, Space=crouch, K=sprint)
+- `[ ]` Read per-world physics from World CRDT `Y.Map("physics")` (gravity vector, friction, air resistance, bounce, water level) and apply to player movement
+- `[ ]` Choose physics engine (e.g., Rapier via `@react-three/rapier`) vs. custom kinematic controller — decide and log
+- `[ ]` Collision with ground grid + placed objects (Solid worlds only; Ghost worlds = no collision, per ROADMAP)
+- `[ ]` Camera for interiors (reuse `CameraController` presets where possible)
+- `[ ]` Broadcast interior position via presence (`inWorld: worldId`) so players see each other inside worlds
+- `[ ]` Touch + gamepad mappings for interior mode
+- `[ ]` Event-sourced physics objects (kick/push → velocity written to CRDT) per ROADMAP "Event-Sourced Physics"
 
 ### Research: API Costs & Mana Formula
 - `[ ]` Research current pricing for each modality:
@@ -195,6 +208,7 @@ interface GenerateResult {
     manaSpent: number;      // How much mana this cost
   }
   ```
+  > **Schema note (2026-10-03):** the shipped `PlacedObject` in `shared/crdt-schema.ts` uses flat fields (`x, y, z, rotX…, scaleX…, material, placedBy, placedAt`). Either extend `PlacedObject` with the AI fields below or migrate existing objects to this nested shape. Decide before implementing.
 - `[ ]` Render AI-generated assets in WorldInterior (load GLB, apply textures, play audio)
 - `[ ]` Spatial audio for music/voice objects (proximity-based volume)
 
