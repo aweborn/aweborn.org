@@ -44,11 +44,24 @@ Resources:
       # KeyPairName: aweborn-ssh
       Networking:
         Ports:
-          # SSH — default, restrict to your IP in production
+          # SSH — closed to the public internet (2026-10-03).
+          # Day-to-day access is over the Tailnet: `ssh ubuntu@aweborn-vps`.
+          # Tailscale rides WireGuard over outbound UDP, so it is not
+          # affected by this firewall.
+          # Break-glass: only the Lightsail browser SSH console (AWS-auth'd)
+          # may reach port 22 publicly, via the `lightsail-connect` alias.
+          # Applied to the live instance 2026-10-03 via
+          # `aws lightsail put-instance-public-ports` (not a stack update),
+          # because CloudFormation flagged a UserData update on this
+          # resource. The stack's recorded state still lists 0.0.0.0/0 —
+          # always deploy THIS template, never an older copy.
           - FromPort: 22
             ToPort: 22
             Protocol: tcp
-            AccessFrom: '0.0.0.0/0'
+            Cidrs: []
+            Ipv6Cidrs: []
+            CidrListAliases:
+              - lightsail-connect
             AccessType: public
           # HTTP — for Caddy ACME challenge + redirect
           - FromPort: 80
@@ -63,7 +76,7 @@ Resources:
             AccessFrom: '0.0.0.0/0'
             AccessType: public
           # k3s API — intentionally NOT exposed to public internet.
-          # Access via SSH tunnel: ssh -L 6443:localhost:6443 ubuntu@<ip>
+          # Access via SSH tunnel: ssh -L 6443:localhost:6443 ubuntu@aweborn-vps
       UserData: |
         #!/bin/sh
         # Cloud-init runs this with /bin/sh — re-exec under bash for pipefail support
@@ -179,10 +192,8 @@ Outputs:
     Value: https://api.aweborn.org
 
   SSHCommand:
-    Description: SSH command to connect to the VPS
-    Value: !Sub
-      - 'ssh ubuntu@${IP}'
-      - IP: !GetAtt VPSStaticIp.IpAddress
+    Description: SSH command to connect to the VPS (Tailnet only; public port 22 is closed)
+    Value: 'ssh ubuntu@aweborn-vps'
 
   BootstrapLogCommand:
     Description: Command to check bootstrap progress on the VPS
