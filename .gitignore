@@ -29,3 +29,6 @@ server/data/
 *.njsproj
 *.sln
 *.sw?
+
+# Card art exploration: per-candidate renders (regenerate with scripts/cards/render-preview.mjs <art> <dir>)
+cards/explore/origin-*/
