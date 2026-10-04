@@ -16,8 +16,7 @@ export const C = {
   name: "#f4f4f5",
   strong: "#e4e4e7",
   label: "#d4d4d8",
-  muted: "#a1a1aa",
-  faint: "#71717a",
+  muted: "#acacb4", // secondary text: "by", data line, tap hint (7.9:1, AAA)
   hairline: "#3f3f46",
   divider: "#27272a",
   mark: ["#5b8cb8", "#a480b8", "#e8c860"], // f1 favicon palette, same as the back
@@ -44,10 +43,15 @@ export function worldUrl(id, arrival) {
  * @param {string} [w.artSvg]   OR vector art: SVG markup in a 55 × 45 coordinate space
  * @param {object} [opts]
  * @param {"jost"|"jetbrains"} [opts.numbers]  typeface for data lines (default: monospaced Jost)
+ * @param {Partial<typeof C>} [opts.colors]    palette overrides (exploration)
+ * @param {number} [opts.smallWght]           weight of the small secondary text ("by", data, hint)
+ * @param {boolean} [opts.enforceAAA]        default true; false only to render failing palettes for comparison
  * @returns {{ svg: string, url: string, qr: { modules: number, moduleSize: number, version: number } }}
  */
-export function renderFront(w, { numbers = "jost" } = {}) {
-  const data = numbers === "jetbrains" ? { font: "mono", wght: 400 } : { font: "jost", wght: 400, mono: true };
+export function renderFront(w, { numbers = "jost", colors = {}, smallWght = 450, enforceAAA = true } = {}) {
+  const c = { ...C, ...colors };
+  if (enforceAAA) assertTextContrast(c);
+  const data = numbers === "jetbrains" ? { font: "mono", wght: smallWght } : { font: "jost", wght: smallWght, mono: true };
   if (!w.artSvg && !w.artHref?.startsWith("data:")) {
     throw new Error("Provide artSvg, or artHref as a data: URI (self-contained SVG)");
   }
@@ -57,31 +61,31 @@ export function renderFront(w, { numbers = "jost" } = {}) {
   const url = worldUrl(w.id, w.arrival);
 
   // Header: set number (right) first, so the name can shrink to fit beside it.
-  const setNo = outline(w.setNumber ?? "", { ...data, size: 2.2, x: 61.5, y: 12.2, anchor: "end", fill: C.faint });
+  const setNo = outline(w.setNumber ?? "", { ...data, size: 2.2, x: 61.5, y: 12.2, anchor: "end", fill: c.muted });
   const name = outline(w.name, {
-    font: "jost", wght: 500, size: 4.4, x: 7.5, y: 12.2, fill: C.name,
+    font: "jost", wght: 500, size: 4.4, x: 7.5, y: 12.2, fill: c.name,
     maxWidth: 61.5 - setNo.width - 7.5 - 2.5,
   });
 
   // Creator line: "by " muted + creator emphasized
-  const by = outline("by ", { font: "jost", wght: 400, size: 2.7, x: 7.5, y: 65.6, fill: C.muted });
+  const by = outline("by ", { font: "jost", wght: smallWght, size: 2.7, x: 7.5, y: 65.6, fill: c.muted });
   const creator = outline(w.creator, {
-    font: "jost", wght: 500, size: 2.7, x: 7.5 + by.width, y: 65.6, fill: C.strong, maxWidth: 54 - by.width,
+    font: "jost", wght: 500, size: 2.7, x: 7.5 + by.width, y: 65.6, fill: c.strong, maxWidth: 54 - by.width,
   });
   const loc = outline(`${w.coords} · SECTOR ${w.sector}`, {
-    ...data, size: 2.1, x: 7.5, y: 70, fill: C.faint, maxWidth: 54,
+    ...data, size: 2.1, x: 7.5, y: 70, fill: c.muted, maxWidth: 54,
   });
 
   // Footer
   const setName = outline(w.setName.toUpperCase(), {
-    font: "jost", wght: 500, size: 2.3, tracking: 0.18, x: 14.6, y: 80, fill: C.label, maxWidth: 34,
+    font: "jost", wght: 500, size: 2.3, tracking: 0.18, x: 14.6, y: 80, fill: c.label, maxWidth: 34,
   });
   const hint = outline("Tap or scan · aweborn.org", {
-    font: "jost", wght: 400, size: 2.0, x: 14.6, y: 83.4, fill: C.faint, maxWidth: 34,
+    font: "jost", wght: smallWght, size: 2.0, x: 14.6, y: 83.4, fill: c.muted, maxWidth: 34,
   });
 
   // QR fallback: 10 mm symbol inside a 12 mm light tile (1 mm quiet zone)
-  const qr = qrPath(url, { x: 51, y: 76, size: 10, ecc: "M", fill: C.qrInk });
+  const qr = qrPath(url, { x: 51, y: 76, size: 10, ecc: "M", fill: c.qrInk });
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="69mm" height="94mm" viewBox="0 0 69 94">
   <!--
@@ -93,13 +97,13 @@ export function renderFront(w, { numbers = "jost" } = {}) {
   <defs>
     <clipPath id="art-window"><rect x="7" y="15" width="55" height="45" rx="1.5"/></clipPath>
     <linearGradient id="art-fade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="70%" stop-color="${C.bg}" stop-opacity="0"/>
-      <stop offset="100%" stop-color="${C.bg}" stop-opacity="0.55"/>
+      <stop offset="70%" stop-color="${c.bg}" stop-opacity="0"/>
+      <stop offset="100%" stop-color="${c.bg}" stop-opacity="0.55"/>
     </linearGradient>
   </defs>
 
   <!-- Full-bleed background -->
-  <rect width="69" height="94" fill="${C.bg}"/>
+  <rect width="69" height="94" fill="${c.bg}"/>
 
   <!-- Header -->
   ${name.svg}
@@ -111,26 +115,26 @@ export function renderFront(w, { numbers = "jost" } = {}) {
     ${art}
     <rect x="7" y="15" width="55" height="45" fill="url(#art-fade)"/>
   </g>
-  <rect x="7" y="15" width="55" height="45" rx="1.5" fill="none" stroke="${C.hairline}" stroke-width="0.25"/>
+  <rect x="7" y="15" width="55" height="45" rx="1.5" fill="none" stroke="${c.hairline}" stroke-width="0.25"/>
 
   <!-- Creator + location -->
   ${by.svg}
   ${creator.svg}
   ${loc.svg}
 
-  <line x1="7" y1="73.5" x2="62" y2="73.5" stroke="${C.divider}" stroke-width="0.2"/>
+  <line x1="7" y1="73.5" x2="62" y2="73.5" stroke="${c.divider}" stroke-width="0.2"/>
 
   <!-- Footer: mark + set name + tap hint -->
   <g transform="translate(9.8 80.6) scale(0.034) translate(-201.5 -198)">
-    <circle cx="177" cy="198" r="55" fill="${C.mark[0]}"/>
-    <circle cx="247" cy="217" r="34" fill="${C.mark[1]}"/>
-    <circle cx="234" cy="173" r="21" fill="${C.mark[2]}"/>
+    <circle cx="177" cy="198" r="55" fill="${c.mark[0]}"/>
+    <circle cx="247" cy="217" r="34" fill="${c.mark[1]}"/>
+    <circle cx="234" cy="173" r="21" fill="${c.mark[2]}"/>
   </g>
   ${setName.svg}
   ${hint.svg}
 
   <!-- QR fallback → ${url} -->
-  <rect x="50" y="75" width="12" height="12" rx="0.8" fill="${C.qrBg}"/>
+  <rect x="50" y="75" width="12" height="12" rx="0.8" fill="${c.qrBg}"/>
   ${qr.svg}
 </svg>
 `;
@@ -152,4 +156,27 @@ export function assertSelfContained(svg) {
     if (!href.startsWith("data:") && !href.startsWith("#")) problems.push(`external href: ${href.slice(0, 60)}`);
   }
   if (problems.length) throw new Error(`SVG is not self-contained: ${problems.join(", ")}`);
+}
+
+/** Text colours on the card front (each must reach WCAG AAA against `bg`). */
+export const TEXT_COLORS = ["name", "strong", "label", "muted"];
+
+/** WCAG 2.x contrast ratio between two #rrggbb colours. */
+export function contrast(a, b) {
+  const lum = (h) => {
+    const [r, g, bl] = [1, 3, 5]
+      .map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Throw if any text colour is below WCAG AAA (7:1). Card type is ~6 pt, so the large-text allowance never applies. */
+export function assertTextContrast(c) {
+  const fails = TEXT_COLORS.map((k) => [k, contrast(c[k], c.bg)]).filter(([, r]) => r < 7);
+  if (fails.length) {
+    throw new Error(`Text below WCAG AAA (7:1) on ${c.bg}: ${fails.map(([k, r]) => `${k} ${c[k]} = ${r.toFixed(2)}:1`).join(", ")}`);
+  }
 }
