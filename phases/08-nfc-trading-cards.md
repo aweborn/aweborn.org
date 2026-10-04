@@ -1,6 +1,6 @@
 # Phase 08: NFC Trading Cards & the Worlidex
 
-**Status:** `[ ]` Not Started
+**Status:** `[~]` In Progress: card art done (2026-10-04); **Milestone 8A is the current priority**
 **Depends on:** [Phase 04: Navigation & Controls](./04-navigation-controls.md) (warp visuals, orbit capture, world entry). Milestone-level dependencies on [Phase 05](./05-mana-economy.md) (awe + donation→mana) and [Phase 06](./06-offline-mesh.md) (PWA/offline tap) are listed below.
 **ROADMAP reference:** [Physical Portals: NFC Trading Cards & the Worlidex](../ROADMAP.md#physical-portals-nfc-trading-cards--the-worlidex)
 **Estimated sessions:** 7-10 (software) + vendor lead time for physical cards
@@ -42,6 +42,25 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 ## Milestone 8A — Teleport Links (`/w/<uuid>`)
 
 > No physical cards needed. Can start right after Phase 04. Unblocks everything else.
+
+### ▶ Resume here (Milestone 8A)
+
+> **Set 2026-10-04 by Alex:** 8A is the top priority. DTB RFID (card vendor) has our pilot request (50–100 cards, TCG 63×88, NTAG213, quotes at 100/1k/5k) and will reply soon. Cards can't be encoded until IDs are final.
+>
+> **State at sign-off**
+> - Card art is **final and pushed** (`e7b4224`): front template `scripts/cards/lib/front.mjs`, back `scripts/cards/lib/back.mjs` → `cards/templates/back.svg`, previews via `node scripts/cards/render-preview.mjs`.
+> - The Origin card uses a **placeholder** UUID `7c1e4b2a-9d3f-4e8a-b5c6-0f2d8a91e347` in `scripts/cards/render-preview.mjs`. Replace it with the portal's real world ID once registered (below), then re-render.
+> - **Uncommitted, unrelated work in `src/`** (slingshot / flight / gravity: `FlightController.ts`, `GravitySystem.ts`, `PlayerOrb.tsx`, `Scene.tsx`, `HUD.tsx`, `TouchInputAdapter.ts`, `index.css`, new `SlingshotArc.tsx`). Ask Alex whether to commit, stash, or finish it before touching those files.
+>
+> **Suggested order**
+> 1. `generateWorldId()` → `crypto.randomUUID()` (`server/sync-service/src/rooms.ts`, ~line 558, used at ~197). Add a `parseRoomPath()` UUID test (`shared/crdt-schema.ts`).
+> 2. Migration script for existing 5-char IDs in `server/data/universe.db` (Universe CRDT `worlds` keys + `WorldEntry.id` + world doc keys). Back up the DB first; check prod VPS data too.
+> 3. Register **Origin** (the portal) as a real `WorldEntry` at `(0, 0, 0)` with a permanent UUID. Today it's hard-coded `PORTAL_POSITION` in `src/systems/GravitySystem.ts` and `src/systems/WarpSystem.ts` (`world: null`). Keep the portal visuals/behavior; just give it an ID that resolves.
+> 4. `GET /worlds/:id` in sync-service (+ CORS, "faded" response for removed worlds).
+> 5. Client `/w/<uuid>` boot parse + `?a=` + `TeleportSystem.ts` (orbit default). CloudFront already serves `index.html` for unknown paths.
+> 6. Put Origin's real UUID into the card, re-render, and verify the QR decodes to the live URL that teleports.
+>
+> **Open decision to raise first:** migrate the legacy 5-char IDs (recommended: pre-launch) vs keep them resolvable.
 
 ### World ID Migration → UUIDv4
 - `[ ]` Replace `generateWorldId()` in `server/sync-service/src/rooms.ts` with `crypto.randomUUID()`

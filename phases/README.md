@@ -32,7 +32,7 @@ Every new agent session should follow this sequence:
 | **05** | Mana Economy & Donations | 🔴 Not Started | [05-mana-economy.md](./05-mana-economy.md) | Mana pool, Living Frontier, Ghost/Solid states, donation→mana pipeline |
 | **06** | Offline & Mesh Networking | 🔴 Not Started | [06-offline-mesh.md](./06-offline-mesh.md) | PWA, WebRTC P2P, QR signaling, sneakernet sync |
 | **07** | World Creation & Gen AI | 🔴 Not Started | [07-genai-creation.md](./07-genai-creation.md) | Interior movement & physics, building tools, gen AI integration, polish |
-| **08** | NFC Trading Cards & the Worlidex | 🔴 Not Started | [08-nfc-trading-cards.md](./08-nfc-trading-cards.md) | `/w/<uuid>` teleport links, Worlidex (personal world index + warp), physical NFC cards, print-your-world |
+| **08** | NFC Trading Cards & the Worlidex | 🟡 In Progress | [08-nfc-trading-cards.md](./08-nfc-trading-cards.md) | `/w/<uuid>` teleport links, Worlidex (personal world index + warp), physical NFC cards, print-your-world |
 
 ### Status Legend
 
@@ -48,11 +48,11 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **➡️ Phase 05 — Mana Economy & Donations**
+> **➡️ PRIORITY: Phase 08, Milestone 8A (Teleport Links + UUIDv4 migration)**
 >
-> Phases 01–04 are live: k3s VPS, two-layer CRDT multiplayer with SQLite persistence, LOD universe, 6DOF flight with gravity wells + warp, radar, and cross-browser presence. Stripe donations are in live mode. Next: the universal mana pool, Living Frontier, awe tracking, and the donation → mana → solidification-wave pipeline.
+> **Why now (set 2026-10-04):** the card vendor (DTB RFID) has our pilot request and will quote soon. No card can be encoded or printed until world IDs are permanent UUIDv4s and `/w/<uuid>` resolves, and that includes the Origin card, which needs the portal registered as a real world. Card art (front + back) is **done**. Start at **[▶ Resume here](./08-nfc-trading-cards.md#-resume-here-milestone-8a)** in the Phase 08 file.
 >
-> **Parallel track:** Phase 08 milestones 8A (teleport links + UUIDv4 migration) and 8B (Worlidex) are unblocked.
+> **Paused:** Phase 05 (Mana Economy & Donations): universal mana pool, Living Frontier, awe tracking, donation → mana pipeline. Resume after 8A.
 >
 > **Deferred verification debt:** Phase 02 (10+ concurrent connections), Phase 03 (1000+ worlds @ 60fps), Phase 04 (on-device touch + physical gamepad).
 
@@ -133,4 +133,4 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 
 ---
 
-*Last updated: 2026-10-03*
+*Last updated: 2026-10-04*
