@@ -76,7 +76,7 @@ const KEY_LABELS: Record<string, string> = {
   Z: 'Lock behind',
   X: 'Free look',
   C: 'Look behind',
-  G: 'Gravity',
+  G: 'Toggle mode',
   U: 'Trail mod',
   I: 'Aura mod',
   O: 'Shape mod',
@@ -225,7 +225,7 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
             <div className="hud-speed-bar-track">
               <div
                 className="hud-speed-bar-fill"
-                style={{ width: `${Math.min(speed / 60 * 100, 100)}%` }}
+                style={{ width: `${Math.min(speed / (flightController.isGravityEnabled() ? 25 : 60) * 100, 100)}%` }}
               />
             </div>
             <div className="hud-speed-value">
@@ -235,7 +235,7 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
 
           {/* Gravity mode indicator */}
           <div className={`hud-gravity-mode ${flightController.isGravityEnabled() ? 'hud-gravity-mode--neutral' : 'hud-gravity-mode--drive'}`}>
-            <kbd>G</kbd> {flightController.isGravityEnabled() ? 'NEUTRAL' : 'DRIVE'}
+            <kbd>G</kbd> {flightController.isGravityEnabled() ? '◉ NEUTRAL' : '⬡ DRIVE'}
           </div>
 
           {/* Mod slot indicators */}

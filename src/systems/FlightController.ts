@@ -4,14 +4,21 @@
  * 6DOF flight physics for the player's star-orb. Reads from the
  * InputManager and produces position/velocity/rotation each frame.
  *
- * Key physics:
- *  - Steering is near-instant (fast slerp, sub-100ms response)
- *  - Releasing keys → rotation stops within 1-2 frames (no drift)
- *  - Thrust builds speed via acceleration (not instant)
- *  - Releasing thrust → moderate deceleration (not ice-skating)
- *  - Brake actively decelerates
- *  - Speed is soft-clamped (asymptotic approach, never hard-stop)
- *  - Gravity is attenuated to 20% when actively pressing keys
+ * Two navigation modes:
+ *
+ *  DRIVE (default, gravity disabled):
+ *   - Oracle movement — unaffected by gravity entirely
+ *   - Instant velocity on key press (snappy, direct)
+ *   - Hard speed cap at 60 u/s
+ *   - Beginner-friendly: no gravitational drift
+ *
+ *  NEUTRAL (gravity enabled):
+ *   - Full gravitational physics — no attenuation
+ *   - Acceleration-based thrust (build speed over time)
+ *   - Very light space drag (coast with momentum)
+ *   - Soft speed cap at ~60 u/s (via asymptotic drag)
+ *   - Enables slingshot gameplay around gravity wells
+ *   - Rewards skilled players with speed and mana
  *
  * Usage:
  *   flightController.update(delta, gravityForce)
@@ -23,28 +30,49 @@ import { inputManager, type ActionState } from './InputManager'
 
 // ── Tuning Constants ─────────────────────────────────────────────────
 
-/** Forward thrust acceleration (units/s²) */
-const THRUST_ACCEL = 25.0
-/** Reverse thrust acceleration (units/s²) */
-const REVERSE_ACCEL = 12.0
-/** Lateral strafe acceleration (units/s²) */
-const STRAFE_ACCEL = 15.0
-/** Maximum speed (units/s) — soft cap via asymptotic damping */
-const MAX_SPEED = 60.0
+// ── Shared ──
 
 /** Angular velocity for pitch/yaw (rad/s) — target rate */
 const TURN_RATE = 2.5
 /** Angular velocity for roll (rad/s) — target rate */
 const ROLL_RATE = 2.8
 
+// ── DRIVE mode (oracle / gravity-free) ──
+
+/** Forward thrust — instant velocity magnitude (units/s) */
+const DRIVE_THRUST_SPEED = 12.0
+/** Reverse — instant velocity magnitude (units/s) */
+const DRIVE_REVERSE_SPEED = 12.0
+/** Strafe — additive velocity magnitude (units/s) */
+const DRIVE_STRAFE_SPEED = 12.0
+/** Hard speed cap in DRIVE mode (units/s) */
+const DRIVE_MAX_SPEED = 60.0
+
+// ── NEUTRAL mode (full gravity / slingshot physics) ──
+
+/** Thrust acceleration in NEUTRAL (units/s²) — builds speed over time */
+const NEUTRAL_THRUST_ACCEL = 10.0
+/** Reverse acceleration in NEUTRAL (units/s²) */
+const NEUTRAL_REVERSE_ACCEL = 5.0
+/** Strafe acceleration in NEUTRAL (units/s²) */
+const NEUTRAL_STRAFE_ACCEL = 6.0
+/** Brake deceleration in NEUTRAL (units/s²) — gradual, not instant */
+const NEUTRAL_BRAKE_DECEL = 20.0
 /**
- * How much gravity is reduced while the player is actively steering.
- * 0.0 = no gravity during input, 1.0 = full gravity always.
- * At 0.2, gravity is a gentle nudge you can easily overpower.
+ * Drag coefficient for NEUTRAL mode (per-second exponential decay).
+ * At 0.4, a coasting player loses ~33% speed per second — gentle enough
+ * to maintain slingshot momentum, strong enough to eventually settle.
  */
-const GRAVITY_ATTENUATION_WHILE_ACTIVE = 0.5
+const NEUTRAL_DRAG = 0.15
+/**
+ * Soft speed cap in NEUTRAL mode (units/s).
+ * Low from thrusters alone — slingshots are the way to go fast.
+ */
+const NEUTRAL_MAX_SPEED = 80.0
 
 // ── Flight State ─────────────────────────────────────────────────────
+
+export type NavigationMode = 'drive' | 'neutral'
 
 export interface FlightState {
   position: THREE.Vector3
@@ -56,6 +84,7 @@ export interface FlightState {
   isThrusting: boolean
   isActivelyControlling: boolean
   gravityEnabled: boolean
+  navigationMode: NavigationMode
 }
 
 // ── Flight Controller ────────────────────────────────────────────────
@@ -93,6 +122,13 @@ class FlightController {
   private _gravityEnabled = false
 
   /**
+   * Slingshot turn dampening (0-1). 0 = normal turning, 1 = max reduction.
+   * Smoothly interpolates toward the target value.
+   */
+  private _slingshotTurnDampen = 0
+  private _slingshotTurnDampenTarget = 0
+
+  /**
    * Update flight physics for one frame.
    *
    * @param delta  Time step in seconds (from useFrame)
@@ -103,6 +139,10 @@ class FlightController {
 
     // Clamp delta to prevent huge jumps on tab-refocus
     const dt = Math.min(delta, 0.05)
+
+    // Smooth slingshot turn dampening interpolation (~0.3s transition)
+    const dampenRate = 8.0 // Higher = faster transition
+    this._slingshotTurnDampen += (this._slingshotTurnDampenTarget - this._slingshotTurnDampen) * Math.min(dampenRate * dt, 1.0)
 
     const actions = inputManager.getActions()
 
@@ -139,6 +179,7 @@ class FlightController {
       isThrusting: actions.thrust,
       isActivelyControlling: this._isActivelyControlling,
       gravityEnabled: this._gravityEnabled,
+      navigationMode: this._gravityEnabled ? 'neutral' : 'drive',
     }
   }
 
@@ -184,20 +225,36 @@ class FlightController {
     this._gravityEnabled = enabled
   }
 
+  /**
+   * Set slingshot turn dampening target.
+   * 0 = normal turning, 1 = maximum steering reduction.
+   * Value is smoothly interpolated each frame.
+   */
+  setSlingshotTurnDampen(factor: number): void {
+    this._slingshotTurnDampenTarget = Math.max(0, Math.min(1, factor))
+  }
+
   // ── Private ──
 
   private _updateRotation(dt: number, actions: Readonly<ActionState>): void {
+    // Apply slingshot turn dampening in NEUTRAL mode
+    const dampenMultiplier = this._gravityEnabled
+      ? 1.0 - this._slingshotTurnDampen * 0.6 // Up to 60% reduction
+      : 1.0 // DRIVE mode: unaffected
+    const turnRate = TURN_RATE * dampenMultiplier
+    const rollRate = ROLL_RATE * dampenMultiplier
+
     // Build target angular velocity from input
     let targetPitch = 0
     let targetYaw = 0
     let targetRoll = 0
 
-    if (actions.pitchUp) targetPitch += TURN_RATE
-    if (actions.pitchDown) targetPitch -= TURN_RATE
-    if (actions.yawLeft) targetYaw += TURN_RATE
-    if (actions.yawRight) targetYaw -= TURN_RATE
-    if (actions.rollLeft) targetRoll += ROLL_RATE
-    if (actions.rollRight) targetRoll -= ROLL_RATE
+    if (actions.pitchUp) targetPitch += turnRate
+    if (actions.pitchDown) targetPitch -= turnRate
+    if (actions.yawLeft) targetYaw += turnRate
+    if (actions.yawRight) targetYaw -= turnRate
+    if (actions.rollLeft) targetRoll += rollRate
+    if (actions.rollRight) targetRoll -= rollRate
 
     const hasInput = Math.abs(targetPitch) > 0.01 || Math.abs(targetYaw) > 0.01 || Math.abs(targetRoll) > 0.01
 
@@ -235,27 +292,43 @@ class FlightController {
   }
 
   private _updateMovement(dt: number, actions: Readonly<ActionState>, gravityForce?: THREE.Vector3): void {
+    if (this._gravityEnabled) {
+      this._updateNeutralMovement(dt, actions, gravityForce)
+    } else {
+      this._updateDriveMovement(dt, actions)
+    }
+  }
+
+  /**
+   * DRIVE mode — Oracle / gravity-free movement.
+   * Instant velocity on key press. No gravity. Hard speed cap.
+   * Designed for beginners and casual navigation.
+   */
+  private _updateDriveMovement(dt: number, actions: Readonly<ActionState>): void {
+    // Zero velocity each frame — player must hold keys to move (no coasting)
+    this.velocity.set(0, 0, 0)
+
     // ── Thrust — instant velocity in facing direction ──
     if (actions.thrust) {
-      this.velocity.copy(this._forward).multiplyScalar(THRUST_ACCEL)
+      this.velocity.copy(this._forward).multiplyScalar(DRIVE_THRUST_SPEED)
     }
 
     // ── Reverse thrust — instant velocity backward ──
     if (actions.reverse) {
-      this.velocity.copy(this._forward).multiplyScalar(-REVERSE_ACCEL)
+      this.velocity.copy(this._forward).multiplyScalar(-DRIVE_REVERSE_SPEED)
     }
 
     // ── Lateral strafe — add strafe component ──
     if (actions.strafe) {
-      this.velocity.addScaledVector(this._right, STRAFE_ACCEL)
+      this.velocity.addScaledVector(this._right, DRIVE_STRAFE_SPEED)
     }
 
     // ── Vertical movement — instant velocity along local up ──
     if (actions.moveUp) {
-      this.velocity.addScaledVector(this._up, THRUST_ACCEL)
+      this.velocity.addScaledVector(this._up, DRIVE_THRUST_SPEED)
     }
     if (actions.moveDown) {
-      this.velocity.addScaledVector(this._up, -THRUST_ACCEL)
+      this.velocity.addScaledVector(this._up, -DRIVE_THRUST_SPEED)
     }
 
     // ── Brake — instant stop ──
@@ -264,16 +337,70 @@ class FlightController {
     }
 
     // ── Hard speed cap ──
-    if (this.velocity.length() > MAX_SPEED) {
-      this.velocity.setLength(MAX_SPEED)
+    if (this.velocity.length() > DRIVE_MAX_SPEED) {
+      this.velocity.setLength(DRIVE_MAX_SPEED)
     }
 
-    // ── Apply gravity (only in NEUTRAL mode, attenuated when actively controlling) ──
-    if (gravityForce && this._gravityEnabled) {
-      const gravityScale = this._isActivelyControlling
-        ? GRAVITY_ATTENUATION_WHILE_ACTIVE
-        : 1.0
-      this.velocity.add(gravityForce.clone().multiplyScalar(dt * gravityScale))
+    // ── No gravity in DRIVE ──
+
+    // ── Integrate position ──
+    this.position.addScaledVector(this.velocity, dt)
+  }
+
+  /**
+   * NEUTRAL mode — Full gravitational physics with slingshot mechanics.
+   * Acceleration-based thrust (build speed over time). Full gravity.
+   * Light space drag lets players coast with momentum from slingshots.
+   * Rewards skilled players with higher speeds and mana generation.
+   */
+  private _updateNeutralMovement(dt: number, actions: Readonly<ActionState>, gravityForce?: THREE.Vector3): void {
+    // ── Thrust — acceleration-based (additive, builds speed) ──
+    if (actions.thrust) {
+      this.velocity.addScaledVector(this._forward, NEUTRAL_THRUST_ACCEL * dt)
+    }
+
+    // ── Reverse thrust — acceleration backward ──
+    if (actions.reverse) {
+      this.velocity.addScaledVector(this._forward, -NEUTRAL_REVERSE_ACCEL * dt)
+    }
+
+    // ── Lateral strafe — acceleration sideways ──
+    if (actions.strafe) {
+      this.velocity.addScaledVector(this._right, NEUTRAL_STRAFE_ACCEL * dt)
+    }
+
+    // ── Vertical movement — acceleration along local up ──
+    if (actions.moveUp) {
+      this.velocity.addScaledVector(this._up, NEUTRAL_THRUST_ACCEL * dt)
+    }
+    if (actions.moveDown) {
+      this.velocity.addScaledVector(this._up, -NEUTRAL_THRUST_ACCEL * dt)
+    }
+
+    // ── Brake — gradual deceleration (physics-y feel, not instant) ──
+    if (actions.brake) {
+      const speed = this.velocity.length()
+      if (speed > 0.1) {
+        const decelAmount = Math.min(NEUTRAL_BRAKE_DECEL * dt, speed)
+        this.velocity.multiplyScalar(1 - decelAmount / speed)
+      } else {
+        this.velocity.set(0, 0, 0)
+      }
+    }
+
+    // ── Apply gravity — full strength, no attenuation ──
+    if (gravityForce) {
+      this.velocity.add(gravityForce.clone().multiplyScalar(dt))
+    }
+
+    // ── Space drag — exponential decay for natural feel ──
+    // Allows coasting with slingshot momentum while preventing infinite speed
+    const dragFactor = Math.pow(1 - NEUTRAL_DRAG, dt)
+    this.velocity.multiplyScalar(dragFactor)
+
+    // ── Soft speed cap (safety net) ──
+    if (this.velocity.length() > NEUTRAL_MAX_SPEED) {
+      this.velocity.setLength(NEUTRAL_MAX_SPEED)
     }
 
     // ── Integrate position ──
