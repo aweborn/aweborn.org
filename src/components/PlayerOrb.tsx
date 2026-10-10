@@ -13,8 +13,10 @@ import { starModSlots, type TrailStyle, type AuraStyle, type ShapeStyle } from '
  * Only visible in universe view (hidden when inside a world).
  */
 
-const TRAIL_LENGTH = 24
-const TRAIL_SPACING_FRAMES = 2
+const TRAIL_LENGTH = 32
+const TRAIL_SPACING_FRAMES = 1
+const SPEED_LINE_COUNT = 24
+const SPEED_LINE_LIFETIME = 0.8 // seconds — long enough to actually see
 
 interface PlayerOrbProps {
   color: string
@@ -113,7 +115,8 @@ const TRAIL_VERTEX = /* glsl */ `
   void main() {
     vAlpha = alpha;
     vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = max(2.0, 10.0 / -mvPos.z);
+    float baseSize = max(15.0, 25.0 / -mvPos.z);
+    gl_PointSize = baseSize * (0.5 + alpha * 1.5); // near player = up to 2x larger
     gl_Position = projectionMatrix * mvPos;
   }
 `
@@ -122,7 +125,19 @@ export function PlayerOrb({ color }: PlayerOrbProps) {
   const groupRef = useRef<THREE.Group>(null!)
   const trailRef = useRef<THREE.Points>(null!)
   const auraRef = useRef<THREE.Mesh>(null!)
+  const speedLinesRef = useRef<THREE.Points>(null!)
   const frameCount = useRef(0)
+
+  // ── Slingshot pulse state ──
+  const slingshotPulse = useRef(0) // 1.0 = just triggered, decays to 0
+  const speedLineTimer = useRef(0) // countdown timer for speed lines
+  const speedLineOffsets = useRef<Float32Array | null>(null)
+
+  // Expose pulse trigger to module scope
+  useEffect(() => {
+    _pulseRef = { slingshotPulse, speedLineTimer }
+    return () => { _pulseRef = null }
+  }, [])
 
   const orbColor = useMemo(() => new THREE.Color(color), [color])
 
@@ -140,6 +155,40 @@ export function PlayerOrb({ color }: PlayerOrbProps) {
     geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1))
     return geo
   }, [])
+
+  // ── Speed line geometry ──
+  const speedLineGeo = useMemo(() => {
+    const geo = new THREE.BufferGeometry()
+    const positions = new Float32Array(SPEED_LINE_COUNT * 3)
+    const alphas = new Float32Array(SPEED_LINE_COUNT)
+    const offsets = new Float32Array(SPEED_LINE_COUNT)
+    for (let i = 0; i < SPEED_LINE_COUNT; i++) {
+      offsets[i] = Math.random() * Math.PI * 2
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1))
+    geo.setAttribute('offset', new THREE.BufferAttribute(offsets, 1))
+    speedLineOffsets.current = offsets
+    return geo
+  }, [])
+
+  const speedLineMat = useMemo(() => new THREE.ShaderMaterial({
+    vertexShader: TRAIL_VERTEX,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColor;
+      varying float vAlpha;
+      void main() {
+        float d = length(gl_PointCoord - vec2(0.5));
+        if (d > 0.5) discard;
+        float glow = pow(1.0 - d * 2.0, 1.5);
+        gl_FragColor = vec4(uColor * glow * 4.0, vAlpha * glow);
+      }
+    `,
+    uniforms: { uColor: { value: new THREE.Color(0.5, 0.9, 1.0) } },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }), [])
 
   // ── Trail shader material (rebuilt when trail style changes) ──
   const trailMatRef = useRef<THREE.ShaderMaterial>(null!)
@@ -162,13 +211,24 @@ export function PlayerOrb({ color }: PlayerOrbProps) {
     Array.from({ length: TRAIL_LENGTH }, () => new THREE.Vector3()),
   )
   const trailAlphas = useRef(new Array<number>(TRAIL_LENGTH).fill(0))
+  const trailSeeded = useRef(false)
+
+  // HMR safety: extend arrays if TRAIL_LENGTH increased
+  if (trailPositions.current.length < TRAIL_LENGTH) {
+    while (trailPositions.current.length < TRAIL_LENGTH) {
+      trailPositions.current.push(new THREE.Vector3())
+      trailAlphas.current.push(0)
+    }
+  }
 
   useEffect(() => () => {
     trailGeo.dispose()
+    speedLineGeo.dispose()
+    speedLineMat.dispose()
     if (trailMatRef.current) trailMatRef.current.dispose()
-  }, [trailGeo])
+  }, [trailGeo, speedLineGeo, speedLineMat])
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const flightState = flightController.getState()
     const modState = starModSlots.getState()
     const time = state.clock.elapsedTime
@@ -186,6 +246,16 @@ export function PlayerOrb({ color }: PlayerOrbProps) {
     if (groupRef.current) {
       groupRef.current.position.copy(flightState.position)
       groupRef.current.quaternion.copy(flightState.quaternion)
+
+      // ── Slingshot pulse: smooth scale burst + decay ──
+      if (slingshotPulse.current > 0.01) {
+        const pulseScale = 1.0 + slingshotPulse.current * 0.15 // up to 1.15× (subtle, no flicker)
+        groupRef.current.scale.setScalar(pulseScale)
+        slingshotPulse.current *= Math.pow(0.1, delta) // smooth decay (~0.5s)
+      } else {
+        groupRef.current.scale.setScalar(1.0)
+        slingshotPulse.current = 0
+      }
     }
 
     // ── Update aura effect ──
@@ -225,18 +295,29 @@ export function PlayerOrb({ color }: PlayerOrbProps) {
 
     // ── Update trail ──
     frameCount.current++
+
+    // Seed all trail positions to current pos on first frame so they
+    // don't sit at (0,0,0) — that makes the trail invisible when the
+    // player spawns far from the origin.
+    if (!trailSeeded.current) {
+      for (let i = 0; i < TRAIL_LENGTH; i++) {
+        trailPositions.current[i].copy(flightState.position)
+      }
+      trailSeeded.current = true
+    }
+
     if (frameCount.current % TRAIL_SPACING_FRAMES === 0 && modState.trail !== 'none') {
       for (let i = TRAIL_LENGTH - 1; i > 0; i--) {
         trailPositions.current[i].copy(trailPositions.current[i - 1])
-        trailAlphas.current[i] = trailAlphas.current[i - 1] * 0.86
+        trailAlphas.current[i] = trailAlphas.current[i - 1] * 0.95 // gentle decay = longer visible trail
       }
       trailPositions.current[0].copy(flightState.position)
 
-      // Trail brightness varies by style
-      let alphaScale = 0.9
-      if (modState.trail === 'sparkle') alphaScale = 0.7
-      if (modState.trail === 'helix') alphaScale = 0.8
-      trailAlphas.current[0] = Math.min(flightState.speed / 8, 1.0) * alphaScale
+      // Trail brightness varies by style — higher floor so it's always visible
+      let alphaScale = 1.0
+      if (modState.trail === 'sparkle') alphaScale = 0.85
+      if (modState.trail === 'helix') alphaScale = 0.9
+      trailAlphas.current[0] = Math.min(0.55 + flightState.speed / 4, 1.0) * alphaScale
     }
 
     // Write trail to buffer
@@ -251,6 +332,35 @@ export function PlayerOrb({ color }: PlayerOrbProps) {
       }
       trailGeo.attributes.position.needsUpdate = true
       trailGeo.attributes.alpha.needsUpdate = true
+    }
+
+    // ── Update speed lines ──
+    speedLineTimer.current = Math.max(0, speedLineTimer.current - delta)
+    if (speedLinesRef.current) {
+      speedLinesRef.current.visible = speedLineTimer.current > 0.01
+      if (speedLineTimer.current > 0.01) {
+        const vel = flightState.velocity.clone().normalize()
+        const right = new THREE.Vector3().crossVectors(vel, new THREE.Vector3(0, 1, 0)).normalize()
+        const up = new THREE.Vector3().crossVectors(right, vel).normalize()
+        const positions = speedLineGeo.attributes.position as THREE.BufferAttribute
+        const alphas = speedLineGeo.attributes.alpha as THREE.BufferAttribute
+        const offsets = speedLineOffsets.current!
+        const progress = 1 - speedLineTimer.current / SPEED_LINE_LIFETIME
+
+        for (let i = 0; i < SPEED_LINE_COUNT; i++) {
+          const angle = offsets[i]
+          const spread = 1.5 + Math.sin(offsets[i] * 3.7) * 0.8
+          const streak = progress * 5.0 + offsets[i] * 0.8
+          const pos = flightState.position.clone()
+            .addScaledVector(vel, -streak) // behind the player
+            .addScaledVector(right, Math.cos(angle) * spread)
+            .addScaledVector(up, Math.sin(angle) * spread)
+          positions.setXYZ(i, pos.x, pos.y, pos.z)
+          alphas.setX(i, (1 - progress) * 0.85)
+        }
+        positions.needsUpdate = true
+        alphas.needsUpdate = true
+      }
     }
   })
 
@@ -270,11 +380,11 @@ export function PlayerOrb({ color }: PlayerOrbProps) {
 
         {/* Outer aura — style driven by mod slot */}
         <mesh ref={auraRef}>
-          <sphereGeometry args={[0.3, 14, 14]} />
+          <sphereGeometry args={[0.35, 14, 14]} />
           <meshBasicMaterial
             color={orbColor}
             transparent
-            opacity={0.2}
+            opacity={0.35}
             depthWrite={false}
             toneMapped={false}
             blending={THREE.AdditiveBlending}
@@ -296,11 +406,34 @@ export function PlayerOrb({ color }: PlayerOrbProps) {
         </mesh>
 
         {/* Point light */}
-        <pointLight color={orbColor} intensity={1.5} distance={5} decay={2} />
+        <pointLight color={orbColor} intensity={3.0} distance={8} decay={2} />
       </group>
 
-      {/* Trail — shader varies by mod slot */}
-      <points ref={trailRef} geometry={trailGeo} material={trailMatRef.current} />
+      {/* Trail — shader varies by mod slot (frustumCulled=false because
+           positions update every frame and the bounding sphere goes stale) */}
+      <points ref={trailRef} geometry={trailGeo} material={trailMatRef.current} frustumCulled={false} />
+
+      {/* Speed lines — burst on slingshot exit */}
+      <points ref={speedLinesRef} geometry={speedLineGeo} material={speedLineMat} visible={false} frustumCulled={false} />
     </>
   )
+}
+
+// ── Module-level slingshot pulse trigger ──
+
+interface PulseRef {
+  slingshotPulse: React.MutableRefObject<number>
+  speedLineTimer: React.MutableRefObject<number>
+}
+let _pulseRef: PulseRef | null = null
+
+/**
+ * Trigger the slingshot speed boost VFX on the player orb.
+ * Call from Scene.tsx when a slingshot event fires.
+ */
+export function triggerSlingshotPulse(): void {
+  if (_pulseRef) {
+    _pulseRef.slingshotPulse.current = 1.0
+    _pulseRef.speedLineTimer.current = SPEED_LINE_LIFETIME
+  }
 }

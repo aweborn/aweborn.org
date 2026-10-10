@@ -13,6 +13,7 @@
  */
 
 import { inputManager } from './InputManager'
+import { flightController } from './FlightController'
 
 // ── Tuning ───────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ export class TouchInputAdapter {
   private _joystickElement: HTMLDivElement | null = null
   private _joystickKnob: HTMLDivElement | null = null
   private _overlayElement: HTMLDivElement | null = null
+  private _modeToggleButton: HTMLButtonElement | null = null
 
   /** Check if the device supports touch. */
   static isSupported(): boolean {
@@ -185,8 +187,20 @@ export class TouchInputAdapter {
     this._joystickKnob = document.createElement('div')
     this._joystickKnob.className = 'touch-joystick-knob'
 
+    // ── Mode toggle button ──
+    this._modeToggleButton = document.createElement('button')
+    this._modeToggleButton.className = 'touch-mode-toggle'
+    this._modeToggleButton.textContent = '⬡ DRIVE'
+    this._modeToggleButton.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      flightController.toggleGravity()
+      this._updateModeToggle()
+    })
+
     this._joystickElement.appendChild(this._joystickKnob)
     this._overlayElement.appendChild(this._joystickElement)
+    this._overlayElement.appendChild(this._modeToggleButton)
     document.body.appendChild(this._overlayElement)
   }
 
@@ -196,6 +210,7 @@ export class TouchInputAdapter {
       this._overlayElement = null
       this._joystickElement = null
       this._joystickKnob = null
+      this._modeToggleButton = null
     }
   }
 
@@ -214,6 +229,18 @@ export class TouchInputAdapter {
   private _updateJoystick(dx: number, dy: number): void {
     if (!this._joystickKnob) return
     this._joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`
+  }
+
+  /** Update the mode toggle button label to reflect current state. */
+  private _updateModeToggle(): void {
+    if (!this._modeToggleButton) return
+    if (flightController.isGravityEnabled()) {
+      this._modeToggleButton.textContent = '◉ NEUTRAL'
+      this._modeToggleButton.classList.add('touch-mode-toggle--neutral')
+    } else {
+      this._modeToggleButton.textContent = '⬡ DRIVE'
+      this._modeToggleButton.classList.remove('touch-mode-toggle--neutral')
+    }
   }
 }
 

@@ -719,6 +719,41 @@ html, body, #root {
   transition: transform 0.05s linear;
 }
 
+/* Mode toggle button (touch overlay) */
+.touch-mode-toggle {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 25;
+  pointer-events: auto;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(20, 20, 40, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(140, 200, 255, 0.9);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  touch-action: manipulation;
+}
+
+.touch-mode-toggle:active {
+  transform: scale(0.95);
+  background: rgba(40, 40, 80, 0.7);
+}
+
+.touch-mode-toggle--neutral {
+  color: rgba(232, 185, 74, 0.9);
+  border-color: rgba(232, 185, 74, 0.2);
+  box-shadow: 0 0 8px rgba(232, 185, 74, 0.1);
+}
+
 /* --- Donation Modal --- */
 .modal-backdrop {
   position: fixed;

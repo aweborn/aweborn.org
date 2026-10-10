@@ -2,13 +2,15 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Preload } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
+import * as THREE from 'three'
 import { Environment } from './Environment'
 import { DonationPortal } from './DonationPortal'
 import { UniverseWorlds } from './UniverseWorlds'
 import { PlayerStars } from './PlayerStars'
-import { PlayerOrb } from './PlayerOrb'
+import { PlayerOrb, triggerSlingshotPulse } from './PlayerOrb'
 import { WarpEffect } from './WarpEffect'
 import { GravityFieldLines } from './GravityFieldLines'
+import { SlingshotArc } from './SlingshotArc'
 import { PortalBeacon } from './PortalBeacon'
 import { WorldTransition } from './WorldTransition'
 import { WorldInterior } from './WorldInterior'
@@ -23,6 +25,18 @@ import { starModSlots } from '../systems/StarModSlots'
 import { touchInputAdapter } from '../systems/TouchInputAdapter'
 import { gamepadInputAdapter } from '../systems/GamepadInputAdapter'
 import { TouchInputAdapter } from '../systems/TouchInputAdapter'
+
+// ── Module-level slingshot visual state ──
+// Shared between FlightSystem (writer) and SlingshotArc/UniverseView (reader)
+// These update every frame in useFrame, so they can't be React props.
+export let _slingshotActive = false
+export let _slingshotWorldPos: THREE.Vector3 | null = null
+
+/**
+ * Slingshot impulse multiplier — scales the velocity burst on slingshot exit.
+ * Higher = more dramatic speed boost. Applied once per slingshot pass.
+ */
+const SLINGSHOT_IMPULSE_MULTIPLIER = .1
 
 interface SceneProps {
   onPortalActivate: () => void
@@ -81,6 +95,16 @@ function FlightSystem() {
     }
   }, [isInWorld])
 
+  /**
+   * Fixed physics timestep (seconds).
+   * Physics runs at 60Hz regardless of framerate for deterministic behavior.
+   * Camera and visuals still update every render frame for smoothness.
+   */
+  const PHYSICS_DT = 1 / 60
+  const MAX_SUBSTEPS = 4 // safety cap to prevent spiral-of-death at very low fps
+  const physicsAccumulator = useRef(0)
+  const lastSlingshotWorld = useRef<string | null>(null)
+
   useFrame((_state, delta) => {
     // Process input edge events at frame start
     inputManager.beginFrame()
@@ -90,23 +114,72 @@ function FlightSystem() {
 
     if (isInWorld) return // Flight is disabled inside worlds
 
-    // ── Gravity ──
-    const gravResult = gravitySystem.calculate(
+    // ── Fixed-timestep physics accumulator ──
+    // Accumulate frame time, then step physics in fixed increments.
+    // This ensures gravity, thrust, and slingshot behavior is identical
+    // regardless of whether the player is at 30fps or 144fps.
+    physicsAccumulator.current += Math.min(delta, 0.1) // clamp to prevent huge jumps on tab-refocus
+    let substeps = 0
+    let gravResult = gravitySystem.calculate(
       flightController.position,
       flightController.velocity,
       worlds,
     )
 
-    // ── Warp system ──
-    warpSystem.update(delta, flightController.position, worlds)
+    while (physicsAccumulator.current >= PHYSICS_DT && substeps < MAX_SUBSTEPS) {
+      // Recalculate gravity each substep (position changes between steps)
+      gravResult = gravitySystem.calculate(
+        flightController.position,
+        flightController.velocity,
+        worlds,
+      )
 
-    // ── Flight physics (skip if warping — warp system handles position) ──
-    const warpState = warpSystem.getState()
-    if (warpState.phase !== 'leaping') {
-      flightController.update(delta, gravResult.force)
+      // ── Approach drag (NEUTRAL only) ──
+      // Dampen only the approach component of velocity when heading toward a world.
+      // Preserves tangential speed so slingshot passes still work.
+      if (flightController.isGravityEnabled() && gravResult.approachDragFactor > 0.01 && gravResult.nearestWorldPosition) {
+        const toWorld = gravResult.nearestWorldPosition.clone().sub(flightController.position).normalize()
+        const approachSpeed = flightController.velocity.dot(toWorld)
+        if (approachSpeed > 0) {
+          // Only remove a fraction of the approach component
+          const dampen = approachSpeed * gravResult.approachDragFactor * PHYSICS_DT * 2.0
+          flightController.velocity.addScaledVector(toWorld, -dampen)
+        }
+      }
+
+      // ── Gravity well dead zone (NEUTRAL only) ──
+      // Snap to zero at near-zero speed right at the center,
+      // but ONLY when the player isn't thrusting (so they can escape).
+      const actions = inputManager.getActions()
+      if (flightController.isGravityEnabled() && gravResult.nearestDistance < 2.5 && !actions.thrust) {
+        const speed = flightController.velocity.length()
+        if (speed < 0.5) {
+          flightController.velocity.set(0, 0, 0)
+          gravResult.force.set(0, 0, 0)
+        }
+      }
+
+      // ── Slingshot turn dampening (NEUTRAL only) ──
+      if (gravResult.slingshotEvent && flightController.isGravityEnabled()) {
+        flightController.setSlingshotTurnDampen(1.0)
+      } else {
+        flightController.setSlingshotTurnDampen(0.0)
+      }
+
+      // Warp system (uses its own dt-based logic)
+      warpSystem.update(PHYSICS_DT, flightController.position, worlds)
+
+      // Flight physics (skip if warping — warp system handles position)
+      const warpState = warpSystem.getState()
+      if (warpState.phase !== 'leaping') {
+        flightController.update(PHYSICS_DT, gravResult.force)
+      }
+
+      physicsAccumulator.current -= PHYSICS_DT
+      substeps++
     }
 
-    // ── Camera ──
+    // ── Camera (per-frame for smooth visuals) ──
     if (!hasSnapped.current) {
       cameraController.snapToTarget(camera, flightController.position, flightController.quaternion)
       hasSnapped.current = true
@@ -121,6 +194,7 @@ function FlightSystem() {
     }
 
     // ── Project locked target to screen space (for crosshair tracking) ──
+    const warpState = warpSystem.getState()
     const warpLockPos = warpState.lockedTargetPosition
     if (warpLockPos && (warpState.phase === 'locked' || warpState.phase === 'charging')) {
       const projected = warpLockPos.clone().project(camera)
@@ -162,6 +236,31 @@ function FlightSystem() {
     const events = inputManager.getEvents()
     if (events.justPressed.has('gravityToggle')) {
       flightController.toggleGravity()
+    }
+
+    // ── Slingshot event (velocity impulse + VFX + mana hook) ──
+    if (gravResult.slingshotEvent && flightController.isGravityEnabled()) {
+      const { worldId, speed, boostFactor } = gravResult.slingshotEvent
+
+      // Direct velocity impulse — this is what makes the slingshot FEEL fast.
+      // Only apply once per slingshot (not every substep).
+      if (lastSlingshotWorld.current !== worldId) {
+        lastSlingshotWorld.current = worldId
+        const velDir = flightController.velocity.clone().normalize()
+        const impulse = speed * (boostFactor - 1.0) * SLINGSHOT_IMPULSE_MULTIPLIER
+        flightController.velocity.addScaledVector(velDir, impulse)
+        console.log(`[SLINGSHOT] world=${worldId} speed=${speed.toFixed(1)} boost=${boostFactor.toFixed(2)}× impulse=+${impulse.toFixed(1)}`)
+      }
+
+      triggerSlingshotPulse()
+      _slingshotActive = true
+      _slingshotWorldPos = gravResult.nearestWorldPosition
+      // TODO: Phase 2 — dispatch to mana system:
+      // manaSystem.onSlingshotEvent(gravResult.slingshotEvent)
+    } else {
+      _slingshotActive = false
+      lastSlingshotWorld.current = null
+      // Keep worldPos alive briefly for fade-out (SlingshotArc handles its own fade)
     }
 
     // ── World entry: press N near a world ──
@@ -206,6 +305,9 @@ function UniverseView({ onPortalActivate, playerColor }: { onPortalActivate: () 
 
       {/* Gravity field lines — faint curved lines near worlds */}
       <GravityFieldLines />
+
+      {/* Slingshot arc — reads shared state directly in useFrame */}
+      <SlingshotArc />
 
       {/* Other players as glowing orbs */}
       <PlayerStars />
