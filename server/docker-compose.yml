@@ -4,17 +4,19 @@
 services:
   sync-service:
     build:
-      context: ./sync-service
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: server/sync-service/Dockerfile
+      target: builder # has dev deps (tsx) for hot-reload
     ports:
       - "1234:1234"
     environment:
       - PORT=1234
       - HOST=0.0.0.0
+      - DB_PATH=/data/universe.db
     volumes:
-      - ./sync-service/src:/app/src
-      - ./data:/app/data
-      - ../shared:/shared
+      - ./sync-service/src:/app/server/sync-service/src
+      - ./data:/data
+      - ../shared:/app/shared
     # Override CMD with tsx watch for hot-reload in dev
     command: ["npx", "tsx", "watch", "src/index.ts"]
     # Run as root in dev so we can write to the volume-mounted data dir

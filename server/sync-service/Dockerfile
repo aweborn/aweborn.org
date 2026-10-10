@@ -1,44 +1,46 @@
-# ── Build stage ────────────────────────────────────────────────────────
+# Aweborn sync-service
+#
+# Build context is the REPO ROOT (the service imports ../../../shared):
+#   docker build -f server/sync-service/Dockerfile -t ghcr.io/aweborn/sync-service:latest .
+#
+# Layout inside the image mirrors the repo so relative imports resolve:
+#   /app/shared/...                  (compiled → dist/shared/...)
+#   /app/server/sync-service/...     (compiled → dist/server/sync-service/...)
+
+# ── Build stage (also used by docker compose for hot-reload dev) ──────
 FROM node:22-alpine AS builder
 
 # Build tools for native modules (better-sqlite3 → node-gyp)
 RUN apk add --no-cache python3 make g++
 
-WORKDIR /app
+WORKDIR /app/server/sync-service
 
-COPY package.json package-lock.json* ./
+COPY server/sync-service/package.json server/sync-service/package-lock.json ./
 RUN npm ci
 
-COPY tsconfig.json ./
-COPY src/ ./src/
+COPY server/sync-service/tsconfig.json ./
+COPY server/sync-service/src ./src
+COPY server/sync-service/scripts ./scripts
+COPY shared /app/shared
 
-# shared/ types are COPYed from the build context (see docker build -f ... context)
-# For docker compose dev mode, this is volume-mounted instead.
-# The tsc build is only run in production (via CI/deploy script).
-# For now, skip tsc — dev uses tsx watch with volume mounts.
+RUN npx tsc
 
 # ── Production stage ──────────────────────────────────────────────────
-FROM node:22-alpine
+FROM node:22-alpine AS production
 
-# Build tools for native modules (needed at install time)
-RUN apk add --no-cache python3 make g++
+WORKDIR /app/server/sync-service
 
-WORKDIR /app
-
-# Create non-root user
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -G appgroup
 
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev && npm cache clean --force
-
-# Copy source for tsx (dev) or compiled dist (production)
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/tsconfig.json ./
+# Reuse the compiled native module from the builder; drop dev deps.
+COPY --from=builder /app/server/sync-service/package.json /app/server/sync-service/package-lock.json ./
+COPY --from=builder /app/server/sync-service/node_modules ./node_modules
+RUN npm prune --omit=dev && npm cache clean --force
+COPY --from=builder /app/server/sync-service/dist ./dist
 
 USER appuser
 EXPOSE 1234
-ENV PORT=1234 HOST=0.0.0.0 NODE_ENV=production
-
-CMD ["node", "dist/index.js"]
+# DB_PATH must point at a persistent volume (see infra/k3s/sync-service-deployment.yaml)
+ENV PORT=1234 HOST=0.0.0.0 NODE_ENV=production DB_PATH=/data/universe.db
+CMD ["node", "dist/server/sync-service/src/index.js"]

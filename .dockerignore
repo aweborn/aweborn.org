@@ -1,0 +1,15 @@
+# Applies to builds that use the repo root as context
+# (currently: server/sync-service/Dockerfile). Keep the context small.
+**/node_modules
+**/dist
+**/.git
+.git
+server/data
+cards
+logo-concepts
+public
+src
+phases
+*.png
+*.svg
+*.md

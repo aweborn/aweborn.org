@@ -7,6 +7,9 @@ metadata:
     app: sync-service
 spec:
   replicas: 1
+  # SQLite has a single writer: never run old + new pods at the same time.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: sync-service
@@ -15,6 +18,24 @@ spec:
       labels:
         app: sync-service
     spec:
+      # Time for SIGTERM → rooms.shutdown() to flush all docs to SQLite.
+      terminationGracePeriodSeconds: 30
+      volumes:
+        # World data lives on the VPS disk, outside k8s lifecycle: survives
+        # redeploys, pod/namespace deletion. (local-path PVCs use
+        # reclaimPolicy Delete, which would erase every world.)
+        - name: sync-data
+          hostPath:
+            path: /var/lib/aweborn/sync-data
+            type: DirectoryOrCreate
+      initContainers:
+        # hostPath dirs are created root-owned; the app runs as uid 1001.
+        - name: fix-data-perms
+          image: busybox:1.36
+          command: ["sh", "-c", "chown -R 1001:1001 /data"]
+          volumeMounts:
+            - name: sync-data
+              mountPath: /data
       containers:
         - name: sync-service
           image: ghcr.io/aweborn/sync-service:latest
@@ -27,6 +48,11 @@ spec:
               value: "1234"
             - name: HOST
               value: "0.0.0.0"
+            - name: DB_PATH
+              value: /data/universe.db
+          volumeMounts:
+            - name: sync-data
+              mountPath: /data
           resources:
             requests:
               memory: "64Mi"

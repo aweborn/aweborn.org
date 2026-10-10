@@ -40,9 +40,11 @@ fi
 if $DO_BUILD; then
   echo "🔨 Building Docker images…"
 
+  # sync-service builds from the repo root (it needs shared/)
   docker build \
+    -f "$REPO_ROOT/server/sync-service/Dockerfile" \
     -t "$REGISTRY/sync-service:$TAG" \
-    "$REPO_ROOT/server/sync-service"
+    "$REPO_ROOT"
 
   docker build \
     -t "$REGISTRY/genai-service:$TAG" \
@@ -60,8 +62,9 @@ if $DO_VPS; then
   echo "🔨 Building Docker images on VPS…"
 
   docker build \
+    -f "$REPO_ROOT/server/sync-service/Dockerfile" \
     -t "$REGISTRY/sync-service:$TAG" \
-    "$REPO_ROOT/server/sync-service"
+    "$REPO_ROOT"
 
   docker build \
     -t "$REGISTRY/genai-service:$TAG" \
