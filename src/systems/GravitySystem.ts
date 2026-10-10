@@ -34,6 +34,16 @@ const GRAVITY_RANGE = 120.0
 const MIN_DISTANCE = 2.0
 
 /**
+ * Maximum gravitational acceleration (units/s²), per body and in total.
+ *
+ * Invariant: this stays BELOW FlightController's NEUTRAL_THRUST_ACCEL (10),
+ * so holding thrust away from any well always escapes it. Without this cap,
+ * G=10 produced ~62 u/s² next to the Portal and players got stuck forever.
+ * G still shapes how far out the pull is felt; this only caps the core.
+ */
+const MAX_GRAVITY_ACCEL = 8.0
+
+/**
  * Approach drag range — within this distance, head-on approaches are slowed.
  * Creates the "slowing down as you approach" feel that makes slingshot exits zippier.
  */
@@ -162,9 +172,12 @@ class GravitySystem {
       // Skip if too far
       if (dist > GRAVITY_RANGE) continue
 
-      let strength = G * body.mass / (dist * dist)
+      const strength = Math.min(G * body.mass / (dist * dist), MAX_GRAVITY_ACCEL)
 
-      // ── Slingshot boost ──
+      // ── Slingshot detection ──
+      // The boost factor is reported via slingshotEvent and applied as a
+      // forward velocity impulse in Scene.tsx. It must NOT scale the inward
+      // pull: doing so (up to ~21×) bent fast passes into the well and trapped them.
       if (speed > SLINGSHOT_MIN_SPEED && dist < SLINGSHOT_RANGE) {
         const velDir = playerVel.clone().normalize()
         const toBodyDir = this._toWorld.clone().normalize()
@@ -174,7 +187,6 @@ class GravitySystem {
           const tangentiality = 1.0 - dot / 0.5
           const speedFactor = Math.min(speed / 15.0, 20.0)
           const boost = 1.0 + speedFactor * proximity * (0.5 + tangentiality * 0.5)
-          strength *= boost
           slingshotEvent = { worldId: body.id, speed, boostFactor: boost }
         }
       }
@@ -203,6 +215,11 @@ class GravitySystem {
           approachDragFactor = Math.max(approachDragFactor, drag)
         }
       }
+    }
+
+    // Cap the combined pull too (overlapping wells must not out-pull thrust)
+    if (this._totalForce.length() > MAX_GRAVITY_ACCEL) {
+      this._totalForce.setLength(MAX_GRAVITY_ACCEL)
     }
 
     const inOrbitRange = orbitTarget !== null

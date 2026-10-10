@@ -19,7 +19,8 @@ const ARC_FADE_IN_SPEED = 8.0  // How fast the arc appears
 const ARC_FADE_OUT_SPEED = 2.5 // How fast it disappears (slower = lingers)
 
 export function SlingshotArc() {
-  const lineRef = useRef<THREE.Line>(null!)
+  // Built once and rendered via <primitive>: JSX `<line>` collides with SVG's <line> type.
+  const lineRef = useRef<THREE.Line | null>(null)
   const opacity = useRef(0)
   // Cache the last known world position so the arc can fade out smoothly
   const lastWorldPos = useRef<THREE.Vector3 | null>(null)
@@ -39,6 +40,14 @@ export function SlingshotArc() {
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     return geo
   }, [])
+
+  const line = useMemo(() => {
+    const l = new THREE.Line(geometry, material)
+    l.frustumCulled = false
+    l.visible = false
+    return l
+  }, [geometry, material])
+  lineRef.current = line
 
   useEffect(() => () => {
     material.dispose()
@@ -136,5 +145,5 @@ export function SlingshotArc() {
     positions.needsUpdate = true
   })
 
-  return <line ref={lineRef} geometry={geometry} material={material} frustumCulled={false} />
+  return <primitive object={line} />
 }
