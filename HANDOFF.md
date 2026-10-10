@@ -171,8 +171,21 @@ curl http://aweborn-vps:3002/health
 curl http://aweborn-vps:3002/agents
 
 # Update services after code changes (on VPS)
+# NOTE: CI only deploys the FRONTEND. Server changes must be deployed by hand,
+# or the live site runs new client code against an old server (this happened:
+# sync-service was stuck on the Phase 01 build until 2026-10-10).
 cd /home/ubuntu/aweborn && git pull
 ./infra/k3s/deploy.sh --vps --apply
+
+# Deploy ONLY sync-service (builds from repo root; brief downtime, Recreate strategy)
+cd /home/ubuntu/aweborn && git pull --ff-only
+sudo docker build -f server/sync-service/Dockerfile -t ghcr.io/aweborn/sync-service:latest .
+sudo docker save ghcr.io/aweborn/sync-service:latest | sudo k3s ctr images import -
+sudo k3s kubectl apply -f infra/k3s/sync-service-deployment.yaml
+sudo k3s kubectl -n aweborn rollout restart deployment/sync-service
+
+# World data (SQLite) lives on the host, outside k8s: /var/lib/aweborn/sync-data/universe.db
+# Back it up before migrations:  sudo sqlite3 ... or copy while the pod is scaled to 0
 
 # Check bootstrap log (first boot only)
 sudo cat /var/log/aweborn-bootstrap.log
