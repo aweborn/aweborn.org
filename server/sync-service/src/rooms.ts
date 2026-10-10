@@ -9,6 +9,7 @@
  * to SQLite, and integration with the spatial resolver.
  */
 
+import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import type { WebSocket } from "ws";
 import type { WorldEntry, Vec3 } from "../../../shared/crdt-schema.js";
@@ -553,13 +554,9 @@ export class RoomManager {
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /**
- * Generate a short, URL-safe world ID (5 chars, ~60M combinations).
+ * Generate a permanent world ID (lowercase UUIDv4).
+ * Printed NFC cards encode `/w/<worldId>`, so IDs must never change.
  */
 function generateWorldId(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  for (let i = 0; i < 5; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return id;
+  return randomUUID();
 }

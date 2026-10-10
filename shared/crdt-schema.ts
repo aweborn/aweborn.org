@@ -224,6 +224,18 @@ export interface PlayerPresence {
 export type RoomType = "universe" | "world";
 
 /**
+ * World IDs are lowercase UUIDv4 (`crypto.randomUUID()`), e.g.
+ * `3f2b8c1e-7a4d-4e9b-9c2a-1d5e6f7a8b9c`. They are permanent: printed NFC
+ * cards encode `https://aweborn.org/w/<worldId>` and can never be patched.
+ */
+export const WORLD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** Whether a string is a valid world ID (lowercase UUIDv4). */
+export function isWorldId(id: string): boolean {
+  return WORLD_ID_PATTERN.test(id);
+}
+
+/**
  * Parse a WebSocket URL path into room routing info.
  */
 export function parseRoomPath(url: string): { type: RoomType; id: string; sectors?: string[] } | null {

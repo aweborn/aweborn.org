@@ -63,10 +63,10 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 > **Open decision to raise first:** migrate the legacy 5-char IDs (recommended: pre-launch) vs keep them resolvable.
 
 ### World ID Migration → UUIDv4
-- `[ ]` Replace `generateWorldId()` in `server/sync-service/src/rooms.ts` with `crypto.randomUUID()`
-- `[ ]` Decide: migrate existing 5-char worlds in `server/data/universe.db` (rewrite IDs in Universe CRDT + world docs), or keep legacy IDs resolvable. **Recommended: migrate now, pre-launch**
+- `[x]` Replace `generateWorldId()` in `server/sync-service/src/rooms.ts` with `crypto.randomUUID()` (2026-10-10)
+- `[x]` Decide: migrate existing 5-char worlds in `server/data/universe.db` (rewrite IDs in Universe CRDT + world docs), or keep legacy IDs resolvable. **Decided 2026-10-10: migrate now, pre-launch**
 - `[ ]` Write a one-off migration script (Universe CRDT `worlds` map keys + `WorldEntry.id` + persisted world doc keys)
-- `[ ]` Verify `parseRoomPath()` in `shared/crdt-schema.ts` accepts UUIDs (regex `[a-zA-Z0-9_-]+`, which it already does) and add a test
+- `[x]` Verify `parseRoomPath()` in `shared/crdt-schema.ts` accepts UUIDs and add a test → `shared/crdt-schema.test.ts` (`node --test shared/crdt-schema.test.ts`); added shared `isWorldId()` / `WORLD_ID_PATTERN` (lowercase UUIDv4)
 - `[ ]` Update ROADMAP/HANDOFF examples that show `k7x9m`-style IDs (note the deviation in this file's log)
 - `[ ]` Register the **Aweborn Portal as a real world entry** ("Origin") at `(0, 0, 0)` with a permanent UUIDv4, so the Origin card's `/w/<uuid>` resolves. Today the portal is a hard-coded scene object (`PORTAL_POSITION`, `world: null`), not a CRDT world
 
