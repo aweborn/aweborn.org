@@ -98,7 +98,7 @@ The 3D scene renders behind the modal throughout — no page redirects.
 ## Deployment instructions
 
 1. **Set your Stripe publishable key** — edit `.env.production` and ensure the live key is present (starts with `pk_live_`).
-2. **Deploy the CloudFormation stack**:
+2. **Deploy the CloudFormation stack** (first-time creation only; for updates see [Infrastructure stacks](#infrastructure-stacks), which keeps the existing Stripe key):
    ```bash
    aws cloudformation deploy \
      --template-file infra/cloudformation.yml \
@@ -251,6 +251,33 @@ A failed or stale backup fails the workflow, and GitHub emails the admins. Check
 3. Reuses `TS_OAUTH_CLIENT_ID` / `TS_AUDIENCE` and the existing `tag:ci` → `aweborn-vps:22` grant.
 
 GitHub disables scheduled workflows after 60 days without repo activity. If commits ever pause that long, re-enable it under Actions → Backup.
+
+## Infrastructure stacks
+
+The repo is the source of truth for AWS. Every stack maps to one template:
+
+| Stack | Template | Notes |
+|-------|----------|-------|
+| `aweborn-website` | `infra/cloudformation.yml` | S3, CloudFront, ACM, Route53, Stripe Lambda + API. `StripeSecretKey` is NoEcho |
+| `aweborn-vps` | `infra/cloudformation-vps.yml` | Lightsail VPS. **Check for replacement before any apply**: a replaced instance loses the hostPath world DB |
+| `aweborn-backups` | `infra/cloudformation-backups.yml` | Backup bucket + put-only role |
+| `aweborn-ci` | `infra/cloudformation-ci.yml` | Read-only role for the infra check below |
+
+**Automatic, read-only check** (`.github/workflows/infra.yml`, runs `infra/cfn-preview.sh`):
+- On every push to `main` that touches a template, it validates each template and previews a change set (repo vs deployed). The change sets are deleted, never executed.
+- Mondays (and on demand), it also detects **drift**: edits made in the console or CLI behind CloudFormation's back.
+- ✅ in sync → pass. 🟡 undeployed in-place changes → pass with a warning. 🛑 a pending **replacement/removal**, or drift → **fail** (GitHub emails you). ❌ invalid → fail.
+- Its role is explicitly denied `ExecuteChangeSet` / `UpdateStack` / `DeleteStack`, object reads, and the Stripe Lambda's config. So drift on that one Lambda is not checked.
+
+**Applying is manual and deliberate:**
+```bash
+infra/cfn-preview.sh aweborn-website            # 1. read exactly what will change (same report as CI)
+aws cloudformation deploy --stack-name aweborn-website \
+  --template-file infra/cloudformation.yml --capabilities CAPABILITY_NAMED_IAM
+# 2. No --parameter-overrides: deploy keeps every current parameter value,
+#    including the Stripe key. Only pass a parameter you mean to change.
+```
+Fix drift by putting the live value into the template (then apply), or by reverting the manual change. Don't leave drift in place.
 
 ## Future Roadmap
 

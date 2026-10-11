@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Aweborn CI: a READ-ONLY role for .github/workflows/infra.yml, which checks
+  that every CloudFormation stack matches its repo template (change-set
+  preview) and that nothing drifted (detect drift). The role can create and
+  delete change sets but can never execute one, update, create or delete a
+  stack, read the backup objects, or read the Stripe Lambda's environment.
+
+  Deploy (by hand; this stack is itself checked by the workflow):
+    aws cloudformation deploy --stack-name aweborn-ci \
+      --template-file infra/cloudformation-ci.yml --capabilities CAPABILITY_NAMED_IAM
+    gh variable set AWS_INFRA_PREVIEW_ROLE_ARN -R aweborn/aweborn.org --body <RoleArn>
+
+Parameters:
+  GitHubSubject:
+    Type: String
+    # Immutable OIDC subject format (numeric owner/repo IDs); main only.
+    Default: "repo:aweborn@261697435/aweborn.org@1329275111:ref:refs/heads/main"
+  HostedZoneId:
+    Type: String
+    Default: Z077908710IGH7R1XO587
+
+Resources:
+  InfraPreviewRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aweborn-github-infra-preview
+      Description: Read-only CloudFormation preview + drift detection for the aweborn stacks (main only)
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Ref GitHubSubject
+      Policies:
+        - PolicyName: cfn-preview-and-drift
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: TemplateChecks
+                Effect: Allow
+                Action:
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:DescribeStackDriftDetectionStatus
+                Resource: "*"
+              - Sid: PreviewAndDriftOnOurStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:ListStackResources
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DetectStackDrift
+                  - cloudformation:DetectStackResourceDrift
+                  - cloudformation:DescribeStackResourceDrifts
+                Resource:
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aweborn-website/*"
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aweborn-vps/*"
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aweborn-backups/*"
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aweborn-ci/*"
+
+              # Drift detection reads each live resource with THESE permissions.
+              # Config-level reads only: no object data, no function env.
+              - Sid: DriftReadS3Config
+                Effect: Allow
+                Action:
+                  - s3:GetBucket*
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetLifecycleConfiguration
+                  - s3:GetReplicationConfiguration
+                  - s3:GetAccelerateConfiguration
+                  - s3:GetIntelligentTieringConfiguration
+                  - s3:GetAnalyticsConfiguration
+                  - s3:GetMetricsConfiguration
+                  - s3:GetInventoryConfiguration
+                Resource:
+                  - arn:aws:s3:::aweborn-website-content
+                  - !Sub "arn:aws:s3:::aweborn-backups-${AWS::AccountId}"
+              - Sid: DriftReadIam
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRoleTags
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/aweborn-*"
+              - Sid: DriftReadEdgeAndDns
+                Effect: Allow
+                Action:
+                  - cloudfront:GetDistribution
+                  - cloudfront:GetDistributionConfig
+                  - cloudfront:GetOriginAccessControl
+                  - cloudfront:GetOriginAccessControlConfig
+                  - cloudfront:ListTagsForResource
+                  - acm:DescribeCertificate
+                  - acm:ListTagsForCertificate
+                  - route53:GetChange
+                  - lightsail:GetInstance
+                  - lightsail:GetInstances
+                  - lightsail:GetInstancePortStates
+                  - lightsail:GetStaticIp
+                  - lightsail:GetStaticIps
+                  - lambda:GetPolicy
+                Resource: "*"
+              - Sid: DriftReadRoute53
+                Effect: Allow
+                Action:
+                  - route53:GetHostedZone
+                  - route53:ListResourceRecordSets
+                Resource: !Sub "arn:aws:route53:::hostedzone/${HostedZoneId}"
+              - Sid: DriftReadApiGateway
+                Effect: Allow
+                Action: apigateway:GET
+                Resource: !Sub "arn:aws:apigateway:${AWS::Region}::/apis*"
+
+              # Belt and braces: explicit denies win over anything above.
+              - Sid: NeverApply
+                Effect: Deny
+                Action:
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:SetStackPolicy
+                  - cloudformation:UpdateTerminationProtection
+                Resource: "*"
+              - Sid: NeverReadSecretsOrData
+                Effect: Deny
+                Action:
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - s3:GetObject*
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt InfraPreviewRole.Arn

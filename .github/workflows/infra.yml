@@ -1,0 +1,65 @@
+name: Infra check
+
+# Keeps the repo the source of truth for AWS infrastructure, READ-ONLY.
+# For every CloudFormation stack (infra/cfn-preview.sh):
+#   • validate the repo template
+#   • preview a change set: what the repo has that the deployed stack doesn't
+#   • weekly + on demand: detect drift (console/CLI edits outside CloudFormation)
+# Nothing is ever applied: the role (infra/cloudformation-ci.yml) is denied
+# ExecuteChangeSet/UpdateStack. Apply by hand after reading the report
+# (HANDOFF.md → Infrastructure stacks).
+#
+# Result:  ✅ in sync → pass
+#          🟡 undeployed in-place changes → pass with a warning (go apply them)
+#          🛑 replacement pending / drift, ❌ invalid → FAIL (GitHub emails you)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/cloudformation*.yml"
+      - "infra/cfn-preview.sh"
+      - ".github/workflows/infra.yml"
+  schedule:
+    - cron: "17 13 * * 1" # Mondays 13:17 UTC, with drift detection
+  workflow_dispatch:
+
+concurrency:
+  group: infra-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write # AWS OIDC, read-only role
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check configuration
+        env:
+          ROLE: ${{ vars.AWS_INFRA_PREVIEW_ROLE_ARN }}
+        run: |
+          [[ -n "$ROLE" ]] || { echo "::error title=Infra check not configured::Set repo variable AWS_INFRA_PREVIEW_ROLE_ARN (HANDOFF.md → Infrastructure stacks)"; exit 1; }
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_PREVIEW_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Preview repo vs deployed${{ github.event_name != 'push' && ' + drift' || '' }}
+        run: |
+          args=()
+          [[ "$GITHUB_EVENT_NAME" != "push" ]] && args+=(--drift)
+          set +e
+          infra/cfn-preview.sh "${args[@]}"
+          rc=$?
+          set -e
+          case $rc in
+            0) echo "All stacks in sync." ;;
+            3) echo "::warning title=Undeployed infra changes::The repo has CloudFormation changes that aren't deployed yet. See the job summary, then apply them (HANDOFF.md → Infrastructure stacks)." ;;
+            2) echo "::error title=Infra needs attention::A pending change REPLACES a resource, or live resources drifted from the stack. See the job summary."; exit 1 ;;
+            *) echo "::error title=Infra check failed::See the log."; exit 1 ;;
+          esac
