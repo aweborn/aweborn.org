@@ -171,18 +171,14 @@ curl http://aweborn-vps:3002/health
 curl http://aweborn-vps:3002/agents
 
 # Update services after code changes (on VPS)
-# NOTE: CI only deploys the FRONTEND. Server changes must be deployed by hand,
-# or the live site runs new client code against an old server (this happened:
-# sync-service was stuck on the Phase 01 build until 2026-10-10).
+# sync-service deploys automatically from CI (see "CI server deploys" below).
+# Other services are still manual:
 cd /home/ubuntu/aweborn && git pull
 ./infra/k3s/deploy.sh --vps --apply
 
-# Deploy ONLY sync-service (builds from repo root; brief downtime, Recreate strategy)
-cd /home/ubuntu/aweborn && git pull --ff-only
-sudo docker build -f server/sync-service/Dockerfile -t ghcr.io/aweborn/sync-service:latest .
-sudo docker save ghcr.io/aweborn/sync-service:latest | sudo k3s ctr images import -
-sudo k3s kubectl apply -f infra/k3s/sync-service-deployment.yaml
-sudo k3s kubectl -n aweborn rollout restart deployment/sync-service
+# Deploy ONLY sync-service by hand (same script CI runs: pull main → build →
+# smoke test → roll out → verify → auto-rollback). ~30s downtime (Recreate).
+~/aweborn/infra/k3s/deploy-sync-service.sh
 
 # World data (SQLite) lives on the host, outside k8s: /var/lib/aweborn/sync-data/universe.db
 # Back it up before migrations:  sudo sqlite3 ... or copy while the pod is scaled to 0
@@ -190,6 +186,31 @@ sudo k3s kubectl -n aweborn rollout restart deployment/sync-service
 # Check bootstrap log (first boot only)
 sudo cat /var/log/aweborn-bootstrap.log
 ```
+
+## CI server deploys
+
+`.github/workflows/deploy.yml` on push to `main`:
+
+1. **changes**: did `server/sync-service/**`, `shared/**`, or the sync-service k3s files change?
+2. **deploy-server** (only if yes, or manual "Run workflow" with *deploy_server*): tests + typecheck, then joins the Tailnet as an **ephemeral** node tagged `tag:ci` (Tailscale workload identity federation, no long-lived Tailscale secret), then SSHes to `aweborn-vps` with a deploy-only key that runs `infra/k3s/deploy-sync-service.sh`.
+3. **deploy-frontend**: S3 + CloudFront. Runs after the server deploy succeeds or is skipped. **Never after a failed server deploy**, so a new client never ships against an old server.
+
+**Deploy key** (secret `VPS_SSH_KEY`): on the VPS it's locked down in `~/.ssh/authorized_keys` with `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command=".../deploy-sync-service.sh"`. It can only connect from the Tailnet and can only run the deploy script, which only deploys `origin/main`. No shell, no forwarding. To rotate: generate a new ed25519 key, replace that line, `gh secret set VPS_SSH_KEY`.
+
+**Tailscale (one-time setup, admin console):**
+
+1. Access controls: define the tag and allow CI to reach only the VPS's SSH port:
+   ```jsonc
+   "hosts":     { "aweborn-vps": "100.118.138.70" },
+   "tagOwners": { "tag:ci": ["autogroup:admin"] },
+   // in "grants":
+   { "src": ["tag:ci"], "dst": ["aweborn-vps"], "ip": ["tcp:22"] }
+   ```
+   If the policy still has the default allow-all rule, `tag:ci` can reach everything. Scope that rule to your users (e.g. `"src": ["autogroup:member"]`) so the grant above is CI's only access.
+2. Settings → Trust credentials → add **OpenID Connect** for GitHub: issuer `https://token.actions.githubusercontent.com`, subject `repo:aweborn/aweborn.org:ref:refs/heads/main`, scope **auth_keys (write)**, tag `tag:ci`.
+3. GitHub secrets: `TS_OAUTH_CLIENT_ID` (the credential's client ID) and `TS_AUDIENCE` (its audience).
+
+Until those secrets exist, **deploy-server** skips with a warning and the frontend still deploys.
 
 ## Future Roadmap
 

@@ -1,12 +1,115 @@
-name: Deploy Website
+name: Deploy
+
+# Push to main → (if server code changed) deploy sync-service to the VPS over an
+# ephemeral Tailscale node → deploy the frontend to S3/CloudFront.
+# The server always goes first so a new client never talks to an old server.
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      deploy_server:
+        description: Force a sync-service deploy even if server files didn't change
+        type: boolean
+        default: false
+
+# Never run two production deploys at once; queue instead of cancelling.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            server:
+              - 'server/sync-service/**'
+              - 'shared/**'
+              - 'infra/k3s/sync-service-deployment.yaml'
+              - 'infra/k3s/deploy-sync-service.sh'
+              - '.dockerignore'
+
+  deploy-server:
+    needs: changes
+    if: needs.changes.outputs.server == 'true' || inputs.deploy_server
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write # Tailscale workload identity federation (no long-lived secret)
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/sync-service/package-lock.json
+
+      - name: Test + typecheck sync-service
+        run: |
+          node --test shared/crdt-schema.test.ts
+          cd server/sync-service
+          npm ci
+          npx tsc --noEmit
+
+      - name: Check deploy credentials
+        id: creds
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [[ -z "$TS_OAUTH_CLIENT_ID" || -z "$TS_AUDIENCE" || -z "$VPS_SSH_KEY" ]]; then
+            echo "::warning title=sync-service NOT deployed::Missing TS_OAUTH_CLIENT_ID / TS_AUDIENCE / VPS_SSH_KEY secrets. See HANDOFF.md → CI server deploys."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Join Tailnet (ephemeral node, tag:ci)
+        if: steps.creds.outputs.ready == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+
+      - name: Deploy sync-service on VPS
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          # Host key of aweborn-vps (public; pinned so we never trust-on-first-use).
+          VPS_KNOWN_HOST: aweborn-vps ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE7Q5wnApGOQP6ThcuEKn03NQ3/rzzg+U8rYq0NcGpiT
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOST" > ~/.ssh/known_hosts
+          # The key is restricted on the VPS to a forced command that runs
+          # infra/k3s/deploy-sync-service.sh; no shell, no forwarding.
+          ssh -T -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o ConnectTimeout=20 \
+            ubuntu@aweborn-vps
+
+  deploy-frontend:
+    needs: [changes, deploy-server]
+    # Run when the server deploy succeeded or wasn't needed; never after a failed one.
+    if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
