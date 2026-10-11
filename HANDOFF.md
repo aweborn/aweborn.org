@@ -247,7 +247,7 @@ Prod world data (`/var/lib/aweborn/sync-data/universe.db`) is backed up in two l
 
 A failed or stale backup fails the workflow, and GitHub emails the admins. Check the on-box job with `sudo k3s kubectl -n aweborn get cronjob,jobs -l app=sync-backup` and `ls -la /var/lib/aweborn/backups/sync/hourly`.
 
-**Restore** (on the VPS): `~/aweborn/infra/backup/restore-sync-db.sh <snapshot.db.gz>`. It verifies the snapshot first (`--check` = verify only), scales sync-service to 0, moves the current DB aside to `sync-data/pre-restore-<ts>/` (never deletes it), installs the snapshot, scales back up and checks `/health`. From S3: `aws s3 cp s3://aweborn-backups-<account>/sync/YYYY/MM/<file> .`, `scp` it to the VPS, then run the same script.
+**Restore** (on the VPS): `~/aweborn/infra/backup/restore-sync-db.sh <snapshot.db.gz>`. It verifies the snapshot first (`--check` = verify only), scales sync-service to 0, moves the current DB aside to `sync-data/pre-restore-<ts>/` (never deletes it), installs the snapshot, scales back up and checks `/health`. **From S3** (e.g. after a rebuild), run on your Mac: `infra/restore-from-s3.sh` (newest backup; `--list` to see them, or pass an S3 key). It downloads the backup, gets the box's host keys + a short-lived SSH cert from the Lightsail API (no trust-on-first-use, no local key), waits for the bootstrap, checks/updates CI's `VPS_KNOWN_HOST` pin, copies the backup to `~/restore/` on the box, runs `--check`, then asks you to type `restore` before running the on-box script above.
 
 **One-time setup:**
 1. `aws cloudformation deploy --stack-name aweborn-backups --template-file infra/cloudformation-backups.yml --capabilities CAPABILITY_NAMED_IAM`, then `gh variable set AWS_BACKUP_ROLE_ARN -R aweborn/aweborn.org --body <RoleArn output>`.
@@ -306,12 +306,12 @@ The website (S3/CloudFront) stays up throughout; sync and gen-AI are down until 
 5. Wait for the bootstrap (~10–15 min). Watch it from the Lightsail browser console: `sudo tail -f /var/log/aweborn-bootstrap.log`.
 
 **After the box is up:**
-6. **Update the pinned host key.** `VPS_KNOWN_HOST` in `.github/workflows/deploy.yml` and `backup.yml` holds the old box's ed25519 key. CI fails closed until you replace it (correct behaviour; never switch to trust-on-first-use). Get the new key from the box itself (`sudo cat /etc/ssh/ssh_host_ed25519_key.pub` via the Lightsail browser console), not by scanning over the network. Commit + push. This is the only repo edit a rebuild needs.
+6. **Update the pinned host key.** `VPS_KNOWN_HOST` in `.github/workflows/deploy.yml` and `backup.yml` holds the old box's ed25519 key. CI fails closed until you replace it (correct behaviour; never switch to trust-on-first-use). Get the new key from the box itself (`sudo cat /etc/ssh/ssh_host_ed25519_key.pub` via the Lightsail browser console) or the Lightsail API (`infra/restore-from-s3.sh` does this for you in step 8), not by scanning over the network. Commit + push. This is the only repo edit a rebuild needs.
 7. The restricted CI keys (deploy + backup) were installed by the bootstrap from `infra/vps/ci-authorized-keys`. Check with `sudo ~/aweborn/infra/vps/install-ci-keys.sh --check`.
-8. Set the real k8s secrets (`aweborn-secrets`, see VPS management) and restore the world DB from S3 with `infra/backup/restore-sync-db.sh` (see [Backups](#backups)).
+8. Set the real k8s secrets (`aweborn-secrets`, see VPS management). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6's host key check and offers to update both workflow files (then commit + push).
 9. Verify: both `/health` endpoints, `infra/cfn-preview.sh aweborn-vps` (in sync, IMDS hardened), `gh workflow run backup.yml` passes.
 
-The rebuild path is **not yet rehearsed end to end**. `rebuild-vps.sh` was dry-run against the live stack (preview + refusal, answered "no"), and the join was tested on throwaway instances.
+The rebuild path is **not yet rehearsed end to end**. `rebuild-vps.sh` was dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.
 
 **Rotate the OAuth secret** (yearly, or at once if user-data or the stack parameters might have leaked): Tailscale admin → Settings → OAuth clients → create a new client (Auth Keys write, `tag:server`), run `infra/set-tailscale-secret.sh` with it, then revoke the old client. Running servers are unaffected (they use their node keys, not the secret).
 
