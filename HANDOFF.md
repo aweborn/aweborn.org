@@ -214,7 +214,7 @@ sudo cat /var/log/aweborn-bootstrap.log
    - The VPS runs `infra/k3s/deploy-services.sh` and deploys in the order sync-service → genai-service → agent-runner → caddy. It stops at the first failure.
 3. **deploy-frontend**: S3 + CloudFront. Runs after the server deploy succeeds or is skipped. **Never after a failed server deploy**, so a new client never ships against an old server.
 
-**Deploy key** (secret `VPS_SSH_KEY`): on the VPS it's locked down in `~/.ssh/authorized_keys` with `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command=".../deploy-services.sh"`. It can only connect from the Tailnet and can only run the deploy script. That script accepts only known service names and only deploys `origin/main`. No shell, no forwarding. To rotate: generate a new ed25519 key, replace that line, `gh secret set VPS_SSH_KEY`.
+**Deploy key** (secret `VPS_SSH_KEY`): on the VPS it's locked down in `~/.ssh/authorized_keys` with `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command=".../deploy-services.sh"`. It can only connect from the Tailnet and can only run the deploy script. That script accepts only known service names and only deploys `origin/main`. No shell, no forwarding. The public key line lives in `infra/vps/ci-authorized-keys` and is installed by `infra/vps/install-ci-keys.sh`, which runs in the bootstrap and refuses any line that isn't locked down like this. To rotate: generate a new ed25519 key, replace its line in `infra/vps/ci-authorized-keys`, push, run `sudo ~/aweborn/infra/vps/install-ci-keys.sh` on the VPS (after `git pull`), then `gh secret set VPS_SSH_KEY`.
 
 **Tailscale (one-time setup, admin console):**
 
@@ -251,7 +251,7 @@ A failed or stale backup fails the workflow, and GitHub emails the admins. Check
 
 **One-time setup:**
 1. `aws cloudformation deploy --stack-name aweborn-backups --template-file infra/cloudformation-backups.yml --capabilities CAPABILITY_NAMED_IAM`, then `gh variable set AWS_BACKUP_ROLE_ARN -R aweborn/aweborn.org --body <RoleArn output>`.
-2. Backup key (secret `VPS_BACKUP_SSH_KEY`), restricted on the VPS to `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command="/home/ubuntu/aweborn/infra/backup/backup-fetch.sh"`. It can only stream `latest.*`. To rotate: new ed25519 key, replace that line, `gh secret set VPS_BACKUP_SSH_KEY`.
+2. Backup key (secret `VPS_BACKUP_SSH_KEY`), restricted on the VPS to `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command="/home/ubuntu/aweborn/infra/backup/backup-fetch.sh"`. It can only stream `latest.*`. Its line lives in `infra/vps/ci-authorized-keys` (installed by `infra/vps/install-ci-keys.sh`). To rotate: new ed25519 key, replace its line there, push, `git pull` + `sudo ~/aweborn/infra/vps/install-ci-keys.sh` on the VPS, `gh secret set VPS_BACKUP_SSH_KEY`.
 3. Reuses `TS_OAUTH_CLIENT_ID` / `TS_AUDIENCE` and the `tag:ci` → `tag:server:22` grant.
 
 GitHub disables scheduled workflows after 60 days without repo activity. If commits ever pause that long, re-enable it under Actions → Backup.
@@ -296,7 +296,7 @@ A server built from `infra/cloudformation-vps.yml` joins the Tailnet **by itself
 
 **After the box is up:**
 3. **Update the pinned host key.** `VPS_KNOWN_HOST` in `.github/workflows/deploy.yml` and `backup.yml` holds the old box's ed25519 key. CI fails closed until you replace it (correct behaviour; never switch to trust-on-first-use). Get the new key from the box itself (`sudo cat /etc/ssh/ssh_host_ed25519_key.pub` via the Lightsail browser console), not by scanning over the network.
-4. Re-add the restricted CI keys to `~ubuntu/.ssh/authorized_keys` (deploy key and backup key; see the `from=...,restrict,command=...` lines above). The bootstrap doesn't do this yet.
+4. The restricted CI keys (deploy + backup) are installed by the bootstrap from `infra/vps/ci-authorized-keys`. Check with `sudo ~/aweborn/infra/vps/install-ci-keys.sh --check`.
 5. Set real k8s secrets (`aweborn-secrets`) and restore the world DB from the latest backup (see [Backups](#backups)).
 6. `infra/cfn-preview.sh aweborn-vps` shows in sync, with IMDS hardened.
 

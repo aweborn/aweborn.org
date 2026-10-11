@@ -169,6 +169,12 @@ Resources:
         git clone https://github.com/aweborn/aweborn.org.git /home/ubuntu/aweborn
         chown -R ubuntu:ubuntu /home/ubuntu/aweborn
 
+        # ── Restricted CI SSH keys (deploy + backup) ────────────
+        # From infra/vps/ci-authorized-keys (public keys). Tailnet-only,
+        # forced command; the script refuses anything less. Done before the
+        # deploy below so CI can reach the box even if that step fails.
+        REPO_DIR=/home/ubuntu/aweborn bash /home/ubuntu/aweborn/infra/vps/install-ci-keys.sh
+
         # ── Namespace + placeholder secret (only if none exists) ─
         # Never overwrite a real secret; set real values with
         # kubectl create secret ... (see infra/k3s/secrets.example.yaml).
