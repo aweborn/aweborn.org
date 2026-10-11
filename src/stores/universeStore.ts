@@ -17,6 +17,7 @@ import type {
 import {
   positionToSector,
   adjacentSectorKeys,
+  ORIGIN_WORLD_ID,
 } from "@aweborn/shared/crdt-schema";
 import { useWorldStore } from "./worldStore";
 
@@ -121,11 +122,16 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
 
 /**
  * Refresh the worlds map from the universe doc.
+ *
+ * Origin (the portal) is skipped: it's a real CRDT entry so links resolve,
+ * but the portal is rendered and simulated by dedicated code (AwebornPortal,
+ * GravitySystem, WarpSystem, RadarMinimap). Including it would double it.
  */
 function refreshWorlds(doc: Y.Doc): Map<string, WorldEntry> {
   const worlds = new Map<string, WorldEntry>();
   const worldsMap = doc.getMap("worlds");
   worldsMap.forEach((value, key) => {
+    if (key === ORIGIN_WORLD_ID) return;
     const worldMap = value as Y.Map<unknown>;
     worlds.set(key, ymapToWorldEntry(worldMap));
   });

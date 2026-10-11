@@ -45,6 +45,8 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 ### ▶ Resume here (Milestone 8A)
 
+> **Update 2026-10-10:** steps 1–5 done (see session log). Origin's permanent ID is `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7`. Remaining: step 6 (card UUID + re-render + QR verify), share-link bonus. The notes below are the original 2026-10-04 plan.
+
 > **Set 2026-10-04 by Alex:** 8A is the top priority. DTB RFID (card vendor) has our pilot request (50–100 cards, TCG 63×88, NTAG213, quotes at 100/1k/5k) and will reply soon. Cards can't be encoded until IDs are final.
 >
 > **State at sign-off**
@@ -68,24 +70,24 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[x]` Write a one-off migration script (Universe CRDT `worlds` map keys + `WorldEntry.id` + persisted world doc keys) → `server/sync-service/scripts/migrate-world-ids.ts` (`--dry-run`, auto-backup, mapping JSON, verify, idempotent). Ran on local `server/data/universe.db` 2026-10-10: 8/8 worlds migrated; world content verified unchanged (terrain seed + objects)
 - `[x]` **Deploy the current sync-service to prod with a persistent volume** (done 2026-10-10). Prod had been running the Phase 01 y-websocket passthrough since Aug 21. Dockerfile now builds from the repo root and runs `tsc`; `shared/package.json` marks shared as ESM; k3s mounts hostPath `/var/lib/aweborn/sync-data` at `/data` (`DB_PATH=/data/universe.db`), Recreate strategy. Verified: public `wss://sync.aweborn.org` serves the new protocol, DB survives pod deletion. Prod started with an empty universe (nothing to migrate)
 - `[x]` Verify `parseRoomPath()` in `shared/crdt-schema.ts` accepts UUIDs and add a test → `shared/crdt-schema.test.ts` (`node --test shared/crdt-schema.test.ts`); added shared `isWorldId()` / `WORLD_ID_PATTERN` (lowercase UUIDv4)
-- `[ ]` Update ROADMAP/HANDOFF examples that show `k7x9m`-style IDs (note the deviation in this file's log)
-- `[ ]` Register the **Aweborn Portal as a real world entry** ("Origin") at `(0, 0, 0)` with a permanent UUIDv4, so the Origin card's `/w/<uuid>` resolves. Today the portal is a hard-coded scene object (`PORTAL_POSITION`, `world: null`), not a CRDT world
+- `[x]` Update ROADMAP/HANDOFF examples that show `k7x9m`-style IDs (note the deviation in this file's log). HANDOFF updated 2026-10-10; ROADMAP left as-is (design bible, not edited); deviation logged below
+- `[x]` Register the **Aweborn Portal as a real world entry** ("Origin") at `(0, 0, 0)` with a permanent UUIDv4 → **`5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7`** (`ORIGIN_WORLD_ID` in `shared/crdt-schema.ts`). The server seeds it idempotently (`ensureOriginWorld`); the client hides it from `worlds` because the portal keeps its dedicated render/gravity/warp code (2026-10-10)
 
 ### World Lookup by ID
-- `[ ]` sync-service: `GET /worlds/:id` → `WorldEntry` (or 404), CORS for aweborn.org
-- `[ ]` Return `resolvedPosition`, `name`, `color`, `solidified`, `sector`
-- `[ ]` Graceful response for a removed world ("this world has faded") instead of a 404 (Card Invariant #2)
+- `[x]` sync-service: `GET /worlds/:id` → `WorldEntry` (or 404), CORS for aweborn.org (+ localhost, `CORS_ORIGINS` env)
+- `[x]` Return `resolvedPosition`, `name`, `color`, `solidified`, `sector` (as `position`, plus `isOrigin`)
+- `[~]` Graceful response for a removed world ("this world has faded"). v1: server returns 404 `not_found`, client shows "This world has faded". No tombstones yet (worlds are never hard-deleted by design)
 
 ### Client Route & Teleport
-- `[ ]` Parse `window.location.pathname` for `/w/<uuid>` on boot (no router library needed yet)
-- `[ ]` Parse `?a=` arrival param: `in` → inside, anything else / missing → orbit
-- `[ ]` Create `src/systems/TeleportSystem.ts`: fetch world → set player position near `resolvedPosition` → subscribe to that world's sector rooms
-- `[ ]` Orbit arrival: place player in the gravity well and hand off to `GravitySystem` captured-orbit logic
-- `[ ]` Inside arrival: trigger the existing world-entry transition directly (`WorldTransition`)
-- `[ ]` Reuse `WarpEffect` arrival flash + particles for the teleport moment
-- `[ ]` Handle tap while already playing (PWA already open): teleport from current position
-- `[ ]` Unknown/invalid UUID → friendly message, spawn at origin
-- `[ ]` After arrival, `history.replaceState` back to `/` (optional; decide whether URL should persist)
+- `[x]` Parse `window.location.pathname` for `/w/<uuid>` on boot (`parseTeleportLink()` in shared, no router)
+- `[x]` Parse `?a=` arrival param: `in` → inside, anything else / missing → orbit (`in` on Origin falls back to orbit)
+- `[x]` Create `src/systems/TeleportSystem.ts`: fetch world → set player position near `resolvedPosition` (universe doc is not sector-filtered, so no extra subscription needed)
+- `[x]` Orbit arrival: player placed 2.5u from the world (inside the orbit-capture band), facing it; Origin at 6u
+- `[x]` Inside arrival: calls `enterWorld` after the arrival flash (700 ms)
+- `[x]` Reuse `WarpEffect` arrival flash + particles for the teleport moment
+- `[~]` Handle tap while already playing (PWA already open): the OS opens the URL as a fresh navigation, which the boot path handles. `teleportToId()` is ready for in-app use (Worlidex warp, share links)
+- `[x]` Unknown/invalid UUID → friendly toast (`TeleportToast.tsx`), normal spawn
+- `[x]` After arrival, `history.replaceState` back to `/` (decided: clear it, so reloads don't re-teleport)
 
 ### Share Links (bonus)
 - `[ ]` "Copy world link" in scan/info (L) panel → `https://aweborn.org/w/<uuid>`
@@ -261,3 +263,4 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | 2026-10-10 | **8A steps 1–2.** New world IDs are UUIDv4 (`crypto.randomUUID()`); shared `isWorldId()` + `shared/crdt-schema.test.ts`. Decided: migrate legacy IDs pre-launch. Wrote `server/sync-service/scripts/migrate-world-ids.ts` (Yjs ops on the existing universe doc so stale clients merge the delete; renames world doc rows; backup + mapping + verify). Local DB: 8 worlds migrated, server boots, client sees only UUID keys and joins a migrated world with original content. **Prod finding:** the VPS sync-service is still the Phase 01 passthrough (no persistence), so nothing to migrate there, but prod needs a real sync-service deploy with a volume before `/w/` can work. Added that task. Also: `scripts/tsconfig.json` for Node-run scripts. | Step 3: register Origin at `(0,0,0)`; schedule the prod sync-service deploy |
 | 2026-10-10 | **Prod sync-service deployed for real.** Fixed the Dockerfile (repo-root context, `tsc`, prune), added `shared/package.json` (`type: module`; without it the in-image build emitted CJS and crashed, caught by a pre-rollout smoke test), hostPath volume + init chown + Recreate in `infra/k3s/sync-service-deployment.yaml`, updated `deploy.sh`, docker-compose, HANDOFF. Verified over public WSS + restart persistence. Multiplayer world creation/presence should now work on aweborn.org for the first time. | Alex: smoke-test aweborn.org (create a world, reload, second browser). Then step 3: Origin |
 | 2026-10-10 | **CI deploys every VPS service.** `infra/k3s/deploy-services.sh` is now the single deploy path, used by CI, by hand, and by bootstrap. CI runs per-service path filters, connects over ephemeral Tailscale, and the forced-command key passes a validated service list. Each service is built, smoke-tested, rolled out, soaked, and rolled back on failure. Caddy is validated first and restarts only if its config changed. agent-runner switched to Recreate. `secrets.yaml` became `secrets.example.yaml`, and no automation applies it anymore (it would have clobbered the Stripe key). CloudFormation bootstrap now calls the same script. Verified with a full CI run (38101674034): all 4 services were on `90bd381` and healthy, and the secret was intact. | Step 3: Origin. Still open: nightly backup of prod `universe.db` |
+| 2026-10-10 | **8A steps 3–5: teleport links work.** Origin registered with permanent ID `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7` (new; replaces the card placeholder). `GET/HEAD /worlds/:id` on sync-service (400 invalid / 404 not found / 200, 30 s cache, CORS allowlist). Client: `parseTeleportLink()`, `TeleportSystem`, `TeleportToast`, camera snap + WarpEffect arrival burst, auto-lock skips the portal after a teleport. **Deviations:** Origin hidden from client `worlds` (portal has its own code paths); 404 doubles as "faded"; portal gravity body id is now `ORIGIN_WORLD_ID`; ROADMAP's `k7x9m` example left as-is (not edited). **Bug fixed:** entering a world from the dev overlay (N) never joined the server room, so world content never loaded and Escape never left; `CRDTDevOverlay` now syncs join/leave with `activeWorldId`. Verified locally: Origin, orbit, `?a=in` (objects loaded), invalid link toast. | Step 6: Origin UUID into the card + re-render + QR check. Then backup service for prod `universe.db` |

@@ -235,6 +235,68 @@ export function isWorldId(id: string): boolean {
   return WORLD_ID_PATTERN.test(id);
 }
 
+// ── Origin (the Aweborn Portal) ──────────────────────────────────────
+
+/**
+ * Permanent world ID of **Origin**, the Aweborn Portal at (0, 0, 0).
+ * Printed on the Origin NFC card (`/w/<ORIGIN_WORLD_ID>`). NEVER change it.
+ */
+export const ORIGIN_WORLD_ID = "5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7";
+
+/** Origin's fixed position: the center of the universe. */
+export const ORIGIN_POSITION: Readonly<Vec3> = Object.freeze({ x: 0, y: 0, z: 0 });
+
+/**
+ * Origin's WorldEntry. The server seeds it into the Universe CRDT so
+ * `/worlds/:id` and `/w/<id>` resolve it like any world, and the spatial
+ * resolver keeps other worlds clear of the portal. Clients render and
+ * simulate the portal specially (it has no interior).
+ */
+export const ORIGIN_WORLD_ENTRY: Readonly<WorldEntry> = Object.freeze({
+  id: ORIGIN_WORLD_ID,
+  name: "Origin",
+  creator: "system",
+  intendedPosition: { ...ORIGIN_POSITION },
+  resolvedPosition: { ...ORIGIN_POSITION },
+  resolvedAt: 0,
+  color: "#e8b94a",
+  sector: "0:0:0",
+  solidified: true,
+  solidifiedAt: 0,
+  playerCount: 0,
+  lastActive: 0,
+  createdAt: 0,
+});
+
+// ── Teleport links (/w/<worldId>) ────────────────────────────────────
+
+/** How a teleport link drops the player: orbiting the world, or inside it. */
+export type ArrivalMode = "orbit" | "in";
+
+/**
+ * Parse a teleport link path + query: `/w/<worldId>[?a=in]`.
+ * This is a permanent public format (printed on NFC cards).
+ *
+ * - `null`: not a teleport link (any other path).
+ * - `{ worldId: null }`: looks like a link but the ID is malformed.
+ * - `a=in` → inside; anything else or missing → orbit.
+ */
+export function parseTeleportLink(
+  pathname: string,
+  search = ""
+): { worldId: string | null; arrival: ArrivalMode } | null {
+  const m = pathname.match(/^\/w\/([^/]*)\/?$/);
+  if (!m) return null;
+  let id: string;
+  try {
+    id = decodeURIComponent(m[1]).toLowerCase();
+  } catch {
+    id = ""; // malformed %-encoding
+  }
+  const arrival: ArrivalMode = new URLSearchParams(search).get("a") === "in" ? "in" : "orbit";
+  return { worldId: isWorldId(id) ? id : null, arrival };
+}
+
 /**
  * Parse a WebSocket URL path into room routing info.
  */

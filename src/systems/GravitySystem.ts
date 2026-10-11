@@ -18,6 +18,7 @@
 
 import * as THREE from 'three'
 import type { WorldEntry } from '@aweborn/shared/crdt-schema'
+import { ORIGIN_POSITION, ORIGIN_WORLD_ID } from '@aweborn/shared/crdt-schema'
 
 // ── Tuning Constants ─────────────────────────────────────────────────
 
@@ -67,8 +68,8 @@ const SLINGSHOT_RANGE = 15.0
  */
 const PORTAL_MASS = 25.0
 
-/** Portal position (origin of the universe). */
-const PORTAL_POSITION = new THREE.Vector3(0, 0, 0)
+/** Portal position (Origin, the center of the universe). */
+const PORTAL_POSITION = new THREE.Vector3(ORIGIN_POSITION.x, ORIGIN_POSITION.y, ORIGIN_POSITION.z)
 
 /**
  * Calculate world mass from its properties.
@@ -147,9 +148,10 @@ class GravitySystem {
 
     // ── Build unified gravity body list ──
     // Portal is treated as just another body — no special cases.
+    // (Origin is kept out of `worlds` by the store, so it's added only here.)
     type GravityBody = { id: string; position: THREE.Vector3; mass: number; world: WorldEntry | null }
     const bodies: GravityBody[] = [
-      { id: '__aweborn_portal__', position: PORTAL_POSITION, mass: PORTAL_MASS, world: null },
+      { id: ORIGIN_WORLD_ID, position: PORTAL_POSITION, mass: PORTAL_MASS, world: null },
     ]
     for (const world of worlds.values()) {
       const pos = new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)

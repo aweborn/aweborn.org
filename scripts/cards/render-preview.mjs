@@ -26,7 +26,7 @@ const DPI = 300;
 // portal as a real world entry with a permanent UUIDv4 so /w/<uuid> resolves.
 // The name is deliberately open-ended: the world can grow into its identity.
 const sample = {
-  id: "7c1e4b2a-9d3f-4e8a-b5c6-0f2d8a91e347", // placeholder UUIDv4: replace with the portal's real world ID after Milestone 8A
+  id: "5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7", // Origin = ORIGIN_WORLD_ID (shared/crdt-schema.ts). Permanent: printed cards encode it
   name: "Origin",
   creator: "aweborn",
   coords: "(0, 0, 0)",

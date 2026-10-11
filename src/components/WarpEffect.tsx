@@ -118,8 +118,9 @@ export function WarpEffect() {
     const warp = warpSystem.getState()
     const playerPos = flightController.position
 
-    // ── Detect phase transitions ──
-    if (warp.phase === 'arriving' && prevPhase.current === 'leaping') {
+    // ── Detect phase transitions (warp arrival, or a teleport-link arrival) ──
+    const teleportArrival = warpSystem.consumeArrivalEffect()
+    if (teleportArrival || (warp.phase === 'arriving' && prevPhase.current === 'leaping')) {
       arrivalTimer.current = 0.8 // Start arrival particle animation
       // Initialize arrival particles at player position
       const posArr = arrivalGeo.attributes.position.array as Float32Array

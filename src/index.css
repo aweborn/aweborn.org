@@ -1394,3 +1394,120 @@ html, body, #root {
     gap: var(--space-xs);
   }
 }
+
+/* ── Teleport notice (Phase 08: /w/<uuid> links) ───────────────────── */
+.teleport-toast {
+  --teleport-color: var(--color-accent-primary);
+  position: fixed;
+  /* Sits below the top-center warp lock-on indicator. */
+  top: calc(6.5rem + env(safe-area-inset-top, 0px));
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: min(28rem, calc(100vw - 2 * var(--space-md)));
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-md);
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-card), 0 0 40px color-mix(in srgb, var(--teleport-color) 25%, transparent);
+  color: var(--color-text-primary);
+  transform: translateX(-50%);
+  animation: teleport-toast-in 0.7s var(--ease-out-expo) both;
+  pointer-events: auto;
+}
+
+.teleport-toast--error {
+  --teleport-color: var(--color-nebula-pink);
+}
+
+.teleport-toast--pending {
+  padding-right: var(--space-lg);
+}
+
+.teleport-toast__orb {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff 0%, var(--teleport-color) 45%, transparent 72%);
+  box-shadow: 0 0 18px var(--teleport-color);
+  animation: teleport-orb-pulse 2.4s ease-in-out infinite;
+}
+
+.teleport-toast__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.teleport-toast__title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.teleport-toast__detail {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.teleport-toast__close {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease;
+}
+
+.teleport-toast__close:hover,
+.teleport-toast__close:focus-visible {
+  background: var(--glass-highlight);
+  color: var(--color-text-primary);
+}
+
+.teleport-toast__spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--glass-border);
+  border-top-color: var(--color-accent-primary);
+  border-radius: 50%;
+  animation: teleport-spin 0.9s linear infinite;
+}
+
+@keyframes teleport-toast-in {
+  from { opacity: 0; transform: translate(-50%, -12px) scale(0.96); filter: blur(4px); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); filter: blur(0); }
+}
+
+@keyframes teleport-orb-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50%      { transform: scale(1.12); opacity: 1; }
+}
+
+@keyframes teleport-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .teleport-toast,
+  .teleport-toast__orb,
+  .teleport-toast__spinner {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}

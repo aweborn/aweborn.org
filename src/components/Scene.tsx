@@ -21,6 +21,7 @@ import { flightController } from '../systems/FlightController'
 import { cameraController } from '../systems/CameraController'
 import { gravitySystem } from '../systems/GravitySystem'
 import { warpSystem } from '../systems/WarpSystem'
+import { teleportSystem } from '../systems/TeleportSystem'
 import { starModSlots } from '../systems/StarModSlots'
 import { touchInputAdapter } from '../systems/TouchInputAdapter'
 import { gamepadInputAdapter } from '../systems/GamepadInputAdapter'
@@ -179,8 +180,8 @@ function FlightSystem() {
       substeps++
     }
 
-    // ── Camera (per-frame for smooth visuals) ──
-    if (!hasSnapped.current) {
+    // ── Camera (per-frame for smooth visuals; snap on first frame + after teleports) ──
+    if (!hasSnapped.current || teleportSystem.consumeSnapRequest()) {
       cameraController.snapToTarget(camera, flightController.position, flightController.quaternion)
       hasSnapped.current = true
     } else {

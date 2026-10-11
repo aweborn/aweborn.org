@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
 import { HUD } from './components/HUD'
 import { DonationModal } from './components/DonationModal'
 import { CRDTDevOverlay } from './components/CRDTDevOverlay'
+import { TeleportToast } from './components/TeleportToast'
+import { teleportSystem } from './systems/TeleportSystem'
 
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
 import { FallbackScene } from './components/FallbackScene'
@@ -33,6 +35,12 @@ export default function App() {
   const handleLoadComplete = useCallback(() => {
     setIsLoaded(true)
   }, [])
+
+  // Teleport links (/w/<worldId>, from NFC cards / QR codes): resolve once on boot.
+  // Starts during the loading screen so the lookup overlaps asset loading.
+  useEffect(() => {
+    if (webglSupported) void teleportSystem.handleBootLink()
+  }, [webglSupported])
 
   const handlePortalActivate = useCallback(() => {
     setShowDonationModal(true)
@@ -81,6 +89,9 @@ export default function App() {
           onPromptClick={handlePortalActivate}
         />
       )}
+
+      {/* Teleport link arrival / error notice */}
+      {isLoaded && <TeleportToast />}
 
       {/* Donation modal */}
       <DonationModal

@@ -5,7 +5,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { isWorldId, parseRoomPath } from "./crdt-schema.ts";
+import {
+  isWorldId,
+  parseRoomPath,
+  parseTeleportLink,
+  ORIGIN_WORLD_ID,
+  ORIGIN_WORLD_ENTRY,
+} from "./crdt-schema.ts";
 
 test("crypto.randomUUID() produces valid world IDs", () => {
   for (let i = 0; i < 1000; i++) assert.ok(isWorldId(randomUUID()));
@@ -35,4 +41,42 @@ test("parseRoomPath routes /universe with sectors", () => {
 test("parseRoomPath rejects unknown paths", () => {
   assert.equal(parseRoomPath("/w/abc"), null);
   assert.equal(parseRoomPath("/"), null);
+});
+
+// Printed cards encode these URLs forever: this format must not change.
+test("Origin has a permanent, valid world ID at (0,0,0)", () => {
+  assert.equal(ORIGIN_WORLD_ID, "5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7");
+  assert.ok(isWorldId(ORIGIN_WORLD_ID));
+  assert.equal(ORIGIN_WORLD_ENTRY.id, ORIGIN_WORLD_ID);
+  assert.deepEqual(ORIGIN_WORLD_ENTRY.resolvedPosition, { x: 0, y: 0, z: 0 });
+  assert.equal(ORIGIN_WORLD_ENTRY.sector, "0:0:0");
+});
+
+test("parseTeleportLink: /w/<uuid> defaults to orbit", () => {
+  const id = randomUUID();
+  assert.deepEqual(parseTeleportLink(`/w/${id}`), { worldId: id, arrival: "orbit" });
+  assert.deepEqual(parseTeleportLink(`/w/${id}/`), { worldId: id, arrival: "orbit" });
+  assert.deepEqual(parseTeleportLink(`/w/${id}`, "?a=orbit"), { worldId: id, arrival: "orbit" });
+  assert.deepEqual(parseTeleportLink(`/w/${id}`, "?a=bogus"), { worldId: id, arrival: "orbit" });
+});
+
+test("parseTeleportLink: ?a=in arrives inside", () => {
+  const id = randomUUID();
+  assert.deepEqual(parseTeleportLink(`/w/${id}`, "?a=in"), { worldId: id, arrival: "in" });
+});
+
+test("parseTeleportLink: uppercase IDs are normalized", () => {
+  assert.deepEqual(parseTeleportLink(`/w/${ORIGIN_WORLD_ID.toUpperCase()}`), {
+    worldId: ORIGIN_WORLD_ID,
+    arrival: "orbit",
+  });
+});
+
+test("parseTeleportLink: malformed IDs are flagged, other paths ignored", () => {
+  assert.deepEqual(parseTeleportLink("/w/k7x9m"), { worldId: null, arrival: "orbit" });
+  assert.deepEqual(parseTeleportLink("/w/%E0%A4%A"), { worldId: null, arrival: "orbit" });
+  assert.deepEqual(parseTeleportLink("/w/"), { worldId: null, arrival: "orbit" });
+  assert.equal(parseTeleportLink("/"), null);
+  assert.equal(parseTeleportLink(`/world/${randomUUID()}`), null);
+  assert.equal(parseTeleportLink(`/w/${randomUUID()}/extra`), null);
 });

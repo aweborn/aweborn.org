@@ -18,6 +18,7 @@ import * as THREE from 'three'
 import { inputManager } from './InputManager'
 import { flightController } from './FlightController'
 import type { WorldEntry } from '@aweborn/shared/crdt-schema'
+import { ORIGIN_POSITION, ORIGIN_WORLD_ENTRY } from '@aweborn/shared/crdt-schema'
 
 // ── Tuning Constants ─────────────────────────────────────────────────
 
@@ -36,28 +37,15 @@ const ARRIVAL_OFFSET = 0
 /** Warp leap animation duration (seconds). */
 const WARP_LEAP_DURATION = 0.6
 
-/** Portal position (origin of the universe). */
-const PORTAL_POSITION = new THREE.Vector3(0, 0, 0)
+/** Portal position (Origin, the center of the universe). */
+const PORTAL_POSITION = new THREE.Vector3(ORIGIN_POSITION.x, ORIGIN_POSITION.y, ORIGIN_POSITION.z)
 
 /**
- * Synthetic WorldEntry for the Aweborn Portal so it can participate
- * in the lock-on / warp system like any other world.
+ * The Aweborn Portal's WorldEntry (Origin), so it can participate in the
+ * lock-on / warp system like any other world. The store keeps Origin out of
+ * `worlds`, so it's added here exactly once.
  */
-const PORTAL_ENTRY: WorldEntry = {
-  id: '__aweborn_portal__',
-  name: 'AWEBORN',
-  creator: 'system',
-  intendedPosition: { x: 0, y: 0, z: 0 },
-  resolvedPosition: { x: 0, y: 0, z: 0 },
-  resolvedAt: 0,
-  color: '#e8b94a',
-  sector: '0:0:0',
-  solidified: true,
-  solidifiedAt: 0,
-  playerCount: 0,
-  lastActive: 0,
-  createdAt: 0,
-}
+const PORTAL_ENTRY: WorldEntry = ORIGIN_WORLD_ENTRY
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -120,6 +108,10 @@ class WarpSystem {
    */
   private _autoLockCooldown = 0
   private static readonly AUTO_LOCK_COOLDOWN_TIME = 0.3
+
+  /** Set by requestArrivalEffect(), cleared by consumeArrivalEffect(). */
+  private _arrivalEffectRequested = false
+
   /**
    * Update the warp system for one frame.
    *
@@ -264,6 +256,29 @@ class WarpSystem {
   /** Cancel any active warp state. */
   cancel(): void {
     this._cancelLock()
+  }
+
+  /**
+   * Ask WarpEffect to play the arrival flash + particles at the player's
+   * position (e.g. after a teleport link). Consumed once per request.
+   */
+  requestArrivalEffect(): void {
+    this._arrivalEffectRequested = true
+  }
+
+  /** Used by WarpEffect: true once per requestArrivalEffect(). */
+  consumeArrivalEffect(): boolean {
+    const requested = this._arrivalEffectRequested
+    this._arrivalEffectRequested = false
+    return requested
+  }
+
+  /**
+   * Skip the "first spawn locks onto the portal" onboarding rule, e.g. when a
+   * teleport link spawned the player at a world: lock the nearest instead.
+   */
+  skipFirstSpawnLock(): void {
+    this._firstSpawnDone = true
   }
 
   /**

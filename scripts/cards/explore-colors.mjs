@@ -24,7 +24,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const artPath = path.resolve(root, process.argv[2] ?? "cards/samples/origin-tunnel.jpg");
 const artHref = `data:image/jpeg;base64,${(await readFile(artPath)).toString("base64")}`;
 const sample = {
-  id: "7c1e4b2a-9d3f-4e8a-b5c6-0f2d8a91e347", name: "Origin", creator: "aweborn",
+  id: "5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7", name: "Origin", creator: "aweborn",
   coords: "(0, 0, 0)", sector: "0:0:0", setName: "Origin Set", setNumber: "", arrival: "orbit", artHref,
 };
 

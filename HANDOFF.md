@@ -61,7 +61,8 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `shared/crdt-schema.ts` | Shared CRDT types + spatial helpers (client + server) |
 | `server/sync-service/src/rooms.ts` | Room manager: sector rooms, world rooms, world creation, spatial resolver, presence relay |
 | `src/index.css` | Full design system — tokens, glass effects, animations, payment form styles, success animation |
-| `server/sync-service/src/index.ts` | WebSocket + Yjs CRDT sync server |
+| `server/sync-service/src/index.ts` | WebSocket + Yjs CRDT sync server; also `GET /worlds/:id` (see [Teleport links](#teleport-links)) |
+| `src/systems/TeleportSystem.ts` / `src/components/TeleportToast.tsx` | `/w/<uuid>` teleport links: lookup, placement, arrival effect, toast |
 | `server/genai-service/src/index.ts` | Gen AI API proxy (placeholder, all routes return 501) |
 | `server/agent-runner/src/index.ts` | Cron-scheduled LLM agent runner with HTTP API (port 3002, Tailnet-only) |
 | `server/docker-compose.yml` | Local dev: runs all three services with hot-reload |
@@ -70,6 +71,16 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `.env.production` | `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY`, `VITE_SYNC_URL` |
 | `infra/cloudformation.yml` | Static site AWS stack (S3, CloudFront, ACM, Route53, API GW, Lambda) |
 | `infra/cloudformation-vps.yml` | VPS AWS stack (Lightsail instance, static IP, Route53 DNS, k3s+Docker bootstrap) |
+
+## Teleport links
+
+`https://aweborn.org/w/<uuidv4>` teleports the player to a world (Phase 08 NFC cards + share links). This URL format is a **permanent public API**: printed cards can't be patched.
+
+- World IDs are lowercase UUIDv4 (`isWorldId()` in `shared/crdt-schema.ts`), e.g. `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7`.
+- **Origin** (the Aweborn Portal at `(0, 0, 0)`) is a real world with permanent ID `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7` (`ORIGIN_WORLD_ID`). The server seeds it on boot; the client hides it from `worlds` since the portal has its own rendering.
+- Arrival: default = orbit; `?a=in` = drop inside (ignored for Origin).
+- Lookup: `GET https://sync.aweborn.org/worlds/<id>` → `200 {id,name,color,solidified,sector,position,isOrigin}`, `400 invalid_id`, `404 not_found` (shown as "This world has faded"). CORS allows aweborn.org, localhost, and `CORS_ORIGINS`.
+- After handling the link, the client resets the URL to `/`. CloudFront serves `index.html` for unknown paths, so no infra is involved.
 
 ## Donation flow
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useSyncConnection } from "../hooks/useCRDT";
 import { usePresence, handleWebSocketPresence, setPresenceSender } from "../hooks/usePresence";
 import { useUniverseStore } from "../stores/universeStore";
@@ -78,6 +78,24 @@ export function CRDTDevOverlay() {
     return () => setWorldDocUpdateHandler(null);
   }, [send, setWorldDocUpdateHandler]);
 
+  // Keep the server-side world room in sync with activeWorldId, however the
+  // player got there: N key, Escape, a teleport link (?a=in), or this panel.
+  const joinedWorldRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!connected) {
+      joinedWorldRef.current = null; // the server drops rooms on disconnect
+      return;
+    }
+    const prev = joinedWorldRef.current;
+    if (prev === activeWorldId) return;
+    if (prev) {
+      syncLeaveWorld(prev);
+      resetWorld();
+    }
+    if (activeWorldId) syncJoinWorld(activeWorldId);
+    joinedWorldRef.current = activeWorldId;
+  }, [connected, activeWorldId, syncJoinWorld, syncLeaveWorld, resetWorld]);
+
   // Wire presence sender: allows the presence manager to send via WebSocket
   useEffect(() => {
     setPresenceSender(send);
@@ -105,18 +123,13 @@ export function CRDTDevOverlay() {
     setWorldName("");
   };
 
+  // Room join/leave happens in the activeWorldId effect above.
   const handleEnterWorld = (worldId: string) => {
     enterWorld(worldId);
-    // Tell server to join the world room via multiplexed protocol
-    syncJoinWorld(worldId);
   };
 
   const handleExitWorld = () => {
-    if (activeWorldId) {
-      syncLeaveWorld(activeWorldId);
-    }
     exitWorld();
-    resetWorld();
   };
 
   const handlePlaceObject = () => {

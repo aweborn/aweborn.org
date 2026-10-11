@@ -17,6 +17,7 @@ import type {
 import {
   positionToSector,
   sectorKey,
+  ORIGIN_WORLD_ENTRY,
 } from "../../../shared/crdt-schema.js";
 import { loadDoc, saveDoc } from "./persistence.js";
 
@@ -47,7 +48,22 @@ export function initUniverseDoc(): Y.Doc {
     console.log("[universe] created new universe doc with default mana state");
   }
 
+  ensureOriginWorld(doc);
   return doc;
+}
+
+/**
+ * Make sure Origin (the Aweborn Portal) exists as a real world entry.
+ * Idempotent: runs on every boot, only writes if it's missing. Its ID is
+ * printed on cards, so it is never moved, renamed, or removed.
+ */
+export function ensureOriginWorld(doc: Y.Doc): void {
+  if (doc.getMap("worlds").has(ORIGIN_WORLD_ENTRY.id)) return;
+  addWorldToUniverse(doc, {
+    ...ORIGIN_WORLD_ENTRY,
+    intendedPosition: { ...ORIGIN_WORLD_ENTRY.intendedPosition },
+    resolvedPosition: { ...ORIGIN_WORLD_ENTRY.resolvedPosition },
+  });
 }
 
 /**

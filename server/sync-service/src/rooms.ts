@@ -16,6 +16,7 @@ import type { WorldEntry, Vec3 } from "../../../shared/crdt-schema.js";
 import {
   positionToSector,
   sectorKey,
+  ORIGIN_WORLD_ID,
 } from "../../../shared/crdt-schema.js";
 import {
   initUniverseDoc,
@@ -111,6 +112,9 @@ export class RoomManager {
    * it's not already in memory.
    */
   joinWorld(ws: WebSocket, worldId: string): Y.Doc | null {
+    // Origin is the portal: a real world entry, but it has no interior.
+    if (worldId === ORIGIN_WORLD_ID) return null;
+
     let room = this.worldRooms.get(worldId);
 
     if (!room) {
@@ -385,6 +389,11 @@ export class RoomManager {
   }
 
   // ── Private helpers ──────────────────────────────────────────────
+
+  /** Public lookup by ID (used by `GET /worlds/:id`). */
+  lookupWorld(worldId: string): WorldEntry | null {
+    return this.getWorldEntry(worldId);
+  }
 
   private getWorldEntry(worldId: string): WorldEntry | null {
     const worlds = this.universeDoc.getMap("worlds");
