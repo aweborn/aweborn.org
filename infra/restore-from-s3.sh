@@ -13,8 +13,8 @@
 #      so no trust-on-first-use) and a short-lived Lightsail SSH cert (no
 #      local key file needed). SSH goes over the Tailnet only.
 #   3. Waits for the bootstrap to finish (fresh box).
-#   4. Checks CI's pinned host key (VPS_KNOWN_HOST in deploy.yml + backup.yml)
-#      against the box and offers to update both files (you commit + push).
+#   4. Checks CI's pinned host key (repo variable VPS_KNOWN_HOST, read by
+#      deploy.yml + backup.yml) against the box and offers to set it (gh).
 #   5. Copies the backup to ~/restore/ on the box and runs
 #      infra/backup/restore-sync-db.sh --check (verify only).
 #   6. You type "restore"; the on-box script then asks its own y/N, moves the
@@ -31,7 +31,7 @@ cd "$(dirname "$0")/.."
 
 STACK=aweborn-vps
 REMOTE_RESTORE='~/aweborn/infra/backup/restore-sync-db.sh'
-WORKFLOWS=(.github/workflows/deploy.yml .github/workflows/backup.yml)
+REPO=aweborn/aweborn.org   # CI host key pin lives in its repo variable VPS_KNOWN_HOST
 BOOT_WAIT_MIN=25
 
 say()  { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
@@ -127,30 +127,27 @@ done
 pk="$(awk '$2=="ssh-ed25519"{print $3}' "$WORK/known_hosts")"
 [[ -n "$pk" ]] || die "box has no ed25519 host key?"
 pin="$TSNAME ssh-ed25519 $pk"
-say "CI host key pin (VPS_KNOWN_HOST)"
-stale=()
+say "CI host key pin (repo variable VPS_KNOWN_HOST)"
 if (( TEST_TARGET )); then
   echo "  skipped (test target)"
 else
-for f in "${WORKFLOWS[@]}"; do
-  grep -qF "VPS_KNOWN_HOST: $pin" "$f" || stale+=("$f")
-done
-if (( ${#stale[@]} == 0 )); then
-  echo "  ok: deploy.yml + backup.yml already pin this box"
-else
-  echo "  STALE in: ${stale[*]} (CI deploys/backups fail closed until updated)"
-  echo "  new pin (from the Lightsail API): $pin"
-  drain_tty; read -r -p "  Update both workflow files now? [y/N] " a
-  if [[ "$a" == [yY] ]]; then
-    for f in "${WORKFLOWS[@]}"; do
-      NEWPIN="$pin" perl -pi -e 's|^(\s*VPS_KNOWN_HOST:).*|$1 $ENV{NEWPIN}|' "$f"
-    done
-    git --no-pager diff --stat -- "${WORKFLOWS[@]}"
-    echo "  Updated. Commit + push them (git commit -am 'ci: pin new VPS host key' && git push)."
+  current="$(gh variable get VPS_KNOWN_HOST -R "$REPO" 2>/dev/null || true)"
+  if [[ "$current" == "$pin" ]]; then
+    echo "  ok: CI already pins this box"
   else
-    echo "  Skipped. Do it before the next deploy/backup (HANDOFF -> Rebuilding the VPS, step 6)."
+    echo "  STALE (CI deploys/backups fail closed until updated)"
+    echo "    current: ${current:-<unset>}"
+    echo "    new    : $pin   (from the Lightsail API)"
+    drain_tty; read -r -p "  Set the repo variable to the new pin now? [y/N] " a
+    if [[ "$a" == [yY] ]]; then
+      gh variable set VPS_KNOWN_HOST -R "$REPO" --body "$pin" >/dev/null \
+        || die "gh variable set failed (gh auth status? needs repo admin)"
+      [[ "$(gh variable get VPS_KNOWN_HOST -R "$REPO")" == "$pin" ]] || die "variable did not update"
+      echo "  ok: VPS_KNOWN_HOST updated (no commit needed)"
+    else
+      echo "  Skipped. Set it before the next deploy/backup: gh variable set VPS_KNOWN_HOST -R $REPO --body '$pin'"
+    fi
   fi
-fi
 fi
 
 # ── 5. Copy + verify on the box ───────────────────────────────
@@ -180,6 +177,5 @@ curl -sf --max-time 10 https://sync.aweborn.org/health && echo || echo "  sync.a
 cat <<EOF
 
 Done. Next:
-  - Commit + push the host key pin if it was updated above.
   - gh workflow run backup.yml   (puts the restored DB back into S3; proves CI can reach the box)
 EOF

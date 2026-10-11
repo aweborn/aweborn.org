@@ -35,12 +35,14 @@ jobs:
           TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
           VPS_BACKUP_SSH_KEY: ${{ secrets.VPS_BACKUP_SSH_KEY }}
           AWS_BACKUP_ROLE_ARN: ${{ vars.AWS_BACKUP_ROLE_ARN }}
+          VPS_KNOWN_HOST: ${{ vars.VPS_KNOWN_HOST }}
         run: |
           missing=()
           [[ -n "$TS_OAUTH_CLIENT_ID" ]] || missing+=(TS_OAUTH_CLIENT_ID)
           [[ -n "$TS_AUDIENCE" ]] || missing+=(TS_AUDIENCE)
           [[ -n "$VPS_BACKUP_SSH_KEY" ]] || missing+=(VPS_BACKUP_SSH_KEY)
           [[ -n "$AWS_BACKUP_ROLE_ARN" ]] || missing+=("AWS_BACKUP_ROLE_ARN (repo variable)")
+          [[ "$VPS_KNOWN_HOST" =~ ^aweborn-vps\ ssh-ed25519\ [A-Za-z0-9+/=]+$ ]] || missing+=("VPS_KNOWN_HOST (repo variable, 'aweborn-vps ssh-ed25519 ...'; set by infra/restore-from-s3.sh)")
           if (( ${#missing[@]} )); then
             echo "::error title=Backup not configured::Missing: ${missing[*]}. See HANDOFF.md → Backups."
             exit 1
@@ -56,7 +58,10 @@ jobs:
       - name: Fetch latest snapshot from VPS
         env:
           VPS_BACKUP_SSH_KEY: ${{ secrets.VPS_BACKUP_SSH_KEY }}
-          VPS_KNOWN_HOST: aweborn-vps ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEMv6PX1yfxh5PjDbV6V8HVf2sjL8SWlN7KtQETDmKuZ
+          # Host key of aweborn-vps, pinned (never trust-on-first-use). Lives in
+          # a repo variable (admin-only) so a rebuild needs no commit:
+          # infra/restore-from-s3.sh sets it from the Lightsail API.
+          VPS_KNOWN_HOST: ${{ vars.VPS_KNOWN_HOST }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_BACKUP_SSH_KEY" > ~/.ssh/backup_key && chmod 600 ~/.ssh/backup_key

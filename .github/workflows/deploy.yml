@@ -128,9 +128,15 @@ jobs:
         if: steps.creds.outputs.ready == 'true'
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          # Host key of aweborn-vps (public; pinned so we never trust-on-first-use).
-          VPS_KNOWN_HOST: aweborn-vps ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEMv6PX1yfxh5PjDbV6V8HVf2sjL8SWlN7KtQETDmKuZ
+          # Host key of aweborn-vps, pinned (never trust-on-first-use). Lives in
+          # a repo variable (admin-only) so a rebuild needs no commit:
+          # infra/restore-from-s3.sh sets it from the Lightsail API.
+          VPS_KNOWN_HOST: ${{ vars.VPS_KNOWN_HOST }}
         run: |
+          if [[ ! "$VPS_KNOWN_HOST" =~ ^aweborn-vps\ ssh-ed25519\ [A-Za-z0-9+/=]+$ ]]; then
+            echo "::error title=No VPS host key pin::Repo variable VPS_KNOWN_HOST is missing or malformed (want 'aweborn-vps ssh-ed25519 ...'). Set it with infra/restore-from-s3.sh; see HANDOFF.md → Rebuilding the VPS."
+            exit 1
+          fi
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$VPS_KNOWN_HOST" > ~/.ssh/known_hosts
