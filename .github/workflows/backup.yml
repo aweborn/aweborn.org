@@ -1,15 +1,17 @@
 name: Backup
 
-# Daily off-box copy of prod universe.db.
-# The VPS snapshots hourly (sync-backup CronJob → /var/lib/aweborn/backups/sync).
+# Hourly off-box copy of prod universe.db (since 2026-10-11; was daily).
+# The VPS snapshots hourly at :07 (sync-backup CronJob → /var/lib/aweborn/backups/sync);
+# this runs at :37, so losing the whole box costs at most ~1h of world edits.
 # This job joins the Tailnet as an ephemeral node, pulls latest.* through a
 # read-only forced-command key, verifies it, and uploads it to the versioned
 # S3 bucket from infra/cloudformation-backups.yml with a put-only OIDC role.
-# A failed run emails the repo admins (GitHub's default for scheduled runs).
+# A failed run emails the repo admins (GitHub's default for scheduled runs);
+# if the VPS is down that means one email per hour until it's back.
 
 on:
   schedule:
-    - cron: "37 7 * * *" # 07:37 UTC daily (~3:37 AM Eastern)
+    - cron: "37 * * * *" # hourly at :37 UTC (on-box snapshot runs at :07)
   workflow_dispatch:
 
 concurrency:

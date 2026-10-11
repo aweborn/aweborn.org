@@ -91,10 +91,10 @@ if not m:
     sys.exit("tailscale-join block not found in template")
 indent = len(m.group(1))
 body = "".join(l[indent:] if l.strip() else "\n" for l in m.group(2).splitlines(True))
-leftover = set(re.findall(r'\$\{(?!!)([^}]+)\}', body)) - {"InstanceName", "TailscaleOAuthSecret"}
+leftover = set(re.findall(r'\$\{(?!!)([^}]+)\}', body)) - {"TailnetHostname", "TailscaleOAuthSecret"}
 if leftover:
     sys.exit(f"unexpected !Sub variables in block: {leftover}")
-body = body.replace("${InstanceName}", os.environ["NAME"]).replace("${TailscaleOAuthSecret}", os.environ["TS_SECRET"])
+body = body.replace("${TailnetHostname}", os.environ["NAME"]).replace("${TailscaleOAuthSecret}", os.environ["TS_SECRET"])
 # The ONE deliberate difference from prod: test nodes are ephemeral, so
 # Tailscale deletes them on its own once the instance is gone (prod servers
 # stay persistent so an outage can't drop them off the Tailnet for good).

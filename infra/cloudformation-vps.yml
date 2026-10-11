@@ -31,8 +31,19 @@ Parameters:
     Default: aweborn-vps
     AllowedPattern: '^[a-z0-9][a-z0-9-]{0,62}$'
     Description: >
-      Lightsail instance name, also used as the Tailnet hostname (MagicDNS).
-      Changing it REPLACES the instance (the stack policy blocks that).
+      Lightsail instance name. Changing it REPLACES the instance (the stack
+      policy blocks that; a rebuild uses infra/cloudformation-vps.rebuild-policy.json,
+      see HANDOFF -> Rebuilding the VPS). CloudFormation can't replace a named
+      resource under the same name, so a rebuild picks a new one (aweborn-vps-2).
+
+  TailnetHostname:
+    Type: String
+    Default: aweborn-vps
+    AllowedPattern: '^[a-z0-9][a-z0-9-]{0,62}$'
+    Description: >
+      Name the server takes on the Tailnet (MagicDNS). CI deploys, backups and
+      SSH target this name, so keep it stable across rebuilds (delete the old
+      node in the Tailscale admin console first, or the new one gets a -1 suffix).
 
   TailscaleOAuthSecret:
     Type: String
@@ -97,7 +108,7 @@ Resources:
             AccessType: public
           # k3s API — intentionally NOT exposed to public internet.
           # Access via SSH tunnel: ssh -L 6443:localhost:6443 ubuntu@aweborn-vps
-      # UserData is a !Sub string: CloudFormation fills in ${InstanceName} and
+      # UserData is a !Sub string: CloudFormation fills in ${TailnetHostname} and
       # ${TailscaleOAuthSecret}. Any OTHER ${...} must be written ${!...} or
       # CloudFormation will try to resolve it. Prefer plain $VAR in this script.
       # The rendered user-data contains the secret and IMDS serves it, so the
@@ -127,7 +138,7 @@ Resources:
         # The OAuth secret is never echoed and never put on a command line;
         # it goes through a root-only file, and every on-disk copy of the
         # user-data is deleted once we've joined.
-        TS_HOSTNAME='${InstanceName}'
+        TS_HOSTNAME='${TailnetHostname}'
         TS_KEY_FILE=$(mktemp /root/.ts-authkey.XXXXXX)   # mktemp => mode 0600
         cat > "$TS_KEY_FILE" <<'TS_SECRET_EOF'
         ${TailscaleOAuthSecret}

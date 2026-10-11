@@ -1,0 +1,25 @@
+{
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "Update:*",
+      "Resource": "*"
+    },
+    {
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": ["Update:Delete"],
+      "Resource": [
+        "LogicalResourceId/VPSInstance",
+        "LogicalResourceId/VPSStaticIp"
+      ]
+    },
+    {
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": ["Update:Replace"],
+      "Resource": ["LogicalResourceId/VPSStaticIp"]
+    }
+  ]
+}

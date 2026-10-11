@@ -243,7 +243,7 @@ Prod world data (`/var/lib/aweborn/sync-data/universe.db`) is backed up in two l
 | Layer | What | Where | Retention |
 |-------|------|-------|-----------|
 | On-box, hourly at :07 UTC | CronJob `sync-backup` runs `server/sync-service/src/backup.ts` in the sync-service image: `VACUUM INTO` (consistent while the service writes), `integrity_check`, gzip | `/var/lib/aweborn/backups/sync/{hourly,daily}/universe-<UTC>.db.gz` + `latest.db.gz` / `latest.json` | 48 hourly + 30 daily |
-| Off-box, daily at 07:37 UTC | `.github/workflows/backup.yml`: ephemeral Tailscale node pulls `latest.*` with a read-only key, verifies checksum + age (≤ 3h) + integrity, uploads with a put-only OIDC role | `s3://aweborn-backups-<account>/sync/YYYY/MM/` (versioned, private, `infra/cloudformation-backups.yml`) | 90 days |
+| Off-box, hourly at :37 UTC | `.github/workflows/backup.yml`: ephemeral Tailscale node pulls `latest.*` with a read-only key, verifies checksum + age (≤ 3h) + integrity, uploads with a put-only OIDC role | `s3://aweborn-backups-<account>/sync/YYYY/MM/` (versioned, private, `infra/cloudformation-backups.yml`) | 90 days |
 
 A failed or stale backup fails the workflow, and GitHub emails the admins. Check the on-box job with `sudo k3s kubectl -n aweborn get cronjob,jobs -l app=sync-backup` and `ls -la /var/lib/aweborn/backups/sync/hourly`.
 
@@ -286,19 +286,32 @@ Fix drift by putting the live value into the template (then apply), or by revert
 
 ## Rebuilding the VPS / Tailnet auto-join
 
-A server built from `infra/cloudformation-vps.yml` joins the Tailnet **by itself** on first boot, as a persistent `tag:server` node named after `InstanceName`. It uses the Tailscale OAuth client secret stored in the stack (NoEcho `TailscaleOAuthSecret`). After joining, the bootstrap deletes every on-disk copy of the user-data. The stack's `ImdsHardening` resource makes IMDS v2-only with hop limit 1 seconds after the instance exists, so pods can't read the user-data either. An empty or invalid secret aborts the bootstrap loudly (`/var/log/aweborn-bootstrap.log`).
+A server built from `infra/cloudformation-vps.yml` joins the Tailnet **by itself** on first boot, as a persistent `tag:server` node named `TailnetHostname` (default `aweborn-vps`, which is what CI and SSH target). That name is separate from the Lightsail `InstanceName`. It uses the Tailscale OAuth client secret stored in the stack (NoEcho `TailscaleOAuthSecret`). After joining, the bootstrap deletes every on-disk copy of the user-data. The stack's `ImdsHardening` resource makes IMDS v2-only with hop limit 1 seconds after the instance exists, so pods can't read the user-data either. An empty or invalid secret aborts the bootstrap loudly (`/var/log/aweborn-bootstrap.log`). The bootstrap also installs the restricted CI keys, k3s, and deploys every service (with placeholder secrets).
 
 **Why persistent, not ephemeral:** an ephemeral node is deleted once it's been offline a while. After a long outage the server couldn't rejoin, because the secret is scrubbed from the box, and CI deploys + backups would be locked out. Persistent nodes also keep their name and Tailnet IP. Test nodes (`infra/test-tailscale-join.sh`) *are* ephemeral, so they clean themselves up.
 
-**Before rebuilding or launching a new box:**
-1. Test the join on a throwaway instance: `infra/test-tailscale-join.sh` (asks for the secret; nano instance, ~10 min, cents).
-2. In the Tailscale admin console, **delete the old node first** if the new one reuses its name. Otherwise the new node becomes `aweborn-vps-1` and CI (which targets `aweborn-vps`) misses it.
+**Nothing on the disk is relied on** (by design, no disk snapshots). The world DB is copied off-box **hourly** (`backup.yml`, :37), so losing the box costs at most ~1h of world edits. Secrets come from their sources: the Stripe key (Alex's Drive / Stripe dashboard) and `LLM_API_KEY` (not issued yet).
+
+### If the VPS is unhealthy
+1. Lightsail console → `aweborn-vps` → **Reboot**; if that doesn't help, **Stop** then **Start** (moves it to new hardware; disk and static IP stay). Tailscale, k3s and the pods all come back by themselves.
+2. Check `https://sync.aweborn.org/health`, `https://api.aweborn.org/health`, `tailscale ping aweborn-vps`. No Tailnet? Use the Lightsail browser SSH console.
+3. Still broken (won't boot, disk/OS damaged)? Rebuild.
+
+### Rebuild (replace the instance)
+The website (S3/CloudFront) stays up throughout; sync and gen-AI are down until the new box is ready.
+1. *(Optional, ~10 min)* Prove the join still works: `infra/test-tailscale-join.sh`.
+2. If the old box still runs, take a fresh off-box backup: `gh workflow run backup.yml`.
+3. **Delete the old `aweborn-vps` node** in the Tailscale admin console (Machines). Otherwise the new box joins as `aweborn-vps-1` and CI can't find it.
+4. `infra/rebuild-vps.sh aweborn-vps-2` (any new name; CloudFormation can't replace a named resource under the same name). It previews the plan, refuses anything except replacing `VPSInstance` (+ its IMDS custom resource), shows the latest S3 backup, and asks you to type the old name. Then it applies with the one-update `infra/cloudformation-vps.rebuild-policy.json` (the static IP stays protected, so the IP and DNS don't change). CloudFormation creates the new instance, moves the static IP, then **deletes the old instance and its disk**.
+5. Wait for the bootstrap (~10–15 min). Watch it from the Lightsail browser console: `sudo tail -f /var/log/aweborn-bootstrap.log`.
 
 **After the box is up:**
-3. **Update the pinned host key.** `VPS_KNOWN_HOST` in `.github/workflows/deploy.yml` and `backup.yml` holds the old box's ed25519 key. CI fails closed until you replace it (correct behaviour; never switch to trust-on-first-use). Get the new key from the box itself (`sudo cat /etc/ssh/ssh_host_ed25519_key.pub` via the Lightsail browser console), not by scanning over the network.
-4. The restricted CI keys (deploy + backup) are installed by the bootstrap from `infra/vps/ci-authorized-keys`. Check with `sudo ~/aweborn/infra/vps/install-ci-keys.sh --check`.
-5. Set real k8s secrets (`aweborn-secrets`) and restore the world DB from the latest backup (see [Backups](#backups)).
-6. `infra/cfn-preview.sh aweborn-vps` shows in sync, with IMDS hardened.
+6. **Update the pinned host key.** `VPS_KNOWN_HOST` in `.github/workflows/deploy.yml` and `backup.yml` holds the old box's ed25519 key. CI fails closed until you replace it (correct behaviour; never switch to trust-on-first-use). Get the new key from the box itself (`sudo cat /etc/ssh/ssh_host_ed25519_key.pub` via the Lightsail browser console), not by scanning over the network. Commit + push. This is the only repo edit a rebuild needs.
+7. The restricted CI keys (deploy + backup) were installed by the bootstrap from `infra/vps/ci-authorized-keys`. Check with `sudo ~/aweborn/infra/vps/install-ci-keys.sh --check`.
+8. Set the real k8s secrets (`aweborn-secrets`, see VPS management) and restore the world DB from S3 with `infra/backup/restore-sync-db.sh` (see [Backups](#backups)).
+9. Verify: both `/health` endpoints, `infra/cfn-preview.sh aweborn-vps` (in sync, IMDS hardened), `gh workflow run backup.yml` passes.
+
+The rebuild path is **not yet rehearsed end to end**. `rebuild-vps.sh` was dry-run against the live stack (preview + refusal, answered "no"), and the join was tested on throwaway instances.
 
 **Rotate the OAuth secret** (yearly, or at once if user-data or the stack parameters might have leaked): Tailscale admin → Settings → OAuth clients → create a new client (Auth Keys write, `tag:server`), run `infra/set-tailscale-secret.sh` with it, then revoke the old client. Running servers are unaffected (they use their node keys, not the secret).
 
