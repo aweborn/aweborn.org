@@ -48,11 +48,13 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **➡️ PRIORITY: Phase 08, Milestone 8A (Teleport Links + UUIDv4 migration)**
+> **➡️ NEXT UP (set 2026-10-11): [Ops: VPS auto-joins the Tailnet](./ops-tailscale-autojoin.md)**, a small, single-session task. Start with its "Gotchas" section (credential delivery is the first decision). Then:
 >
-> **Why now (set 2026-10-04):** the card vendor (DTB RFID) has our pilot request and will quote soon. No card can be encoded or printed until world IDs are permanent UUIDv4s and `/w/<uuid>` resolves, and that includes the Origin card, which needs the portal registered as a real world. Card art (front + back) is **done**. Start at **[▶ Resume here](./08-nfc-trading-cards.md#-resume-here-milestone-8a)** in the Phase 08 file.
+> **➡️ PRIORITY: Phase 08, [Milestone 8B: The Worlidex](./08-nfc-trading-cards.md#milestone-8b--the-worlidex)**: persistent player identity first, then the data model, discovery tracking, card reveal, Worlidex UI and warp.
 >
-> **Paused:** Phase 05 (Mana Economy & Donations): universal mana pool, Living Frontier, awe tracking, donation → mana pipeline. Resume after 8A.
+> **Done 2026-10-10:** Milestone 8A. Teleport links `/w/<uuid>` are live, Origin = `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7`, and the Origin card was re-rendered with the real ID. Also shipped that day: prod world-DB backups (hourly on-box + daily S3) and the read-only infra check, with all stacks in sync and guarded (HANDOFF → Backups / Infrastructure stacks). Remaining 8A bonus: "copy world link" button.
+>
+> **Paused:** Phase 05 (Mana Economy & Donations): universal mana pool, Living Frontier, awe tracking, donation → mana pipeline. 8B's first-discovery awe hook depends on it (stub it).
 >
 > **Deferred verification debt:** Phase 02 (10+ concurrent connections), Phase 03 (1000+ worlds @ 60fps), Phase 04 (on-device touch + physical gamepad).
 
@@ -117,6 +119,7 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 | Worlidex details (discovery threshold, warp rules, key binding) | Phase 08 | Proposals in [08-nfc-trading-cards.md](./08-nfc-trading-cards.md#open-questions-mirrored-in-roadmap) |
 | Persistent player identity | Phase 08 | `playerId` is sessionStorage today; Worlidex needs persistence |
 | Card format, art pipeline, vendor, product name | Phase 08 | See Phase 08 open questions |
+| Multiple servers sharing world sync | New phase? (overlaps Phase 06) | Raised 2026-10-11. Today: one sync-service, single-writer SQLite. Options include server-to-server Yjs replication over the Tailnet, player routing, and data ownership. Needs a design session (`/grill-me`) before any code. Prerequisite: [auto-join](./ops-tailscale-autojoin.md) |
 
 ---
 
@@ -133,4 +136,4 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 
 ---
 
-*Last updated: 2026-10-04*
+*Last updated: 2026-10-11*
