@@ -19,6 +19,10 @@
 #      infra/backup/restore-sync-db.sh --check (verify only).
 #   6. You type "restore"; the on-box script then asks its own y/N, moves the
 #      current DB aside (never deletes it), installs the backup, checks /health.
+#
+# Test target (used by infra/test-dr-restore.sh): RESTORE_INSTANCE=<lightsail
+# name> RESTORE_TSNAME=<tailnet name> point it at another box; the CI pin and
+# the public health check (both about prod) are then skipped.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -61,6 +65,13 @@ echo "  $(wc -c <"$WORK/$FILE" | tr -d ' ') bytes, sha256 $(shasum -a 256 "$WORK
 params="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].Parameters' --output json)"
 INSTANCE="$(jq -r 'map(select(.ParameterKey=="InstanceName"))[0].ParameterValue // "aweborn-vps"' <<<"$params")"
 TSNAME="$(jq -r 'map(select(.ParameterKey=="TailnetHostname"))[0].ParameterValue // "aweborn-vps"' <<<"$params")"
+TEST_TARGET=0
+if [[ -n "${RESTORE_INSTANCE:-}" || -n "${RESTORE_TSNAME:-}" ]]; then
+  [[ -n "${RESTORE_INSTANCE:-}" && -n "${RESTORE_TSNAME:-}" ]] || die "set both RESTORE_INSTANCE and RESTORE_TSNAME"
+  [[ "$RESTORE_INSTANCE" != "$INSTANCE" && "$RESTORE_TSNAME" != "$TSNAME" ]] || die "test target must not be the prod box"
+  INSTANCE="$RESTORE_INSTANCE"; TSNAME="$RESTORE_TSNAME"; TEST_TARGET=1
+  echo "  TEST TARGET: $INSTANCE (Tailnet: $TSNAME); skipping CI pin + public checks"
+fi
 
 get_access() {   # writes cert, key, known_hosts into $WORK; fails until the box is up
   aws lightsail get-instance-access-details --instance-name "$INSTANCE" --protocol ssh \
@@ -109,6 +120,9 @@ pk="$(awk '$2=="ssh-ed25519"{print $3}' "$WORK/known_hosts")"
 pin="$TSNAME ssh-ed25519 $pk"
 say "CI host key pin (VPS_KNOWN_HOST)"
 stale=()
+if (( TEST_TARGET )); then
+  echo "  skipped (test target)"
+else
 for f in "${WORKFLOWS[@]}"; do
   grep -qF "VPS_KNOWN_HOST: $pin" "$f" || stale+=("$f")
 done
@@ -127,6 +141,7 @@ else
   else
     echo "  Skipped. Do it before the next deploy/backup (HANDOFF -> Rebuilding the VPS, step 6)."
   fi
+fi
 fi
 
 # ── 5. Copy + verify on the box ───────────────────────────────
@@ -147,6 +162,8 @@ EOF
 read -r -p 'Type "restore" to continue: ' ok
 [[ "$ok" == restore ]] || { echo "Not confirmed. The backup stays in ~/restore/ on the box; nothing else changed."; exit 0; }
 ssh -t "${SSH_OPTS[@]}" "ubuntu@$TSNAME" "$REMOTE_RESTORE ~/restore/$FILE"
+
+(( TEST_TARGET )) && { echo; echo "Restore finished on test target $INSTANCE."; exit 0; }
 
 say "Public check"
 curl -sf --max-time 10 https://sync.aweborn.org/health && echo || echo "  sync.aweborn.org/health did not answer yet (DNS/Caddy); retry in a minute"
