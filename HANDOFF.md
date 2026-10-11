@@ -7,9 +7,19 @@
 - [Project overview](#project-overview)
 - [Architecture](#architecture)
 - [Key files](#key-files)
+- [Teleport links](#teleport-links)
 - [Donation flow](#donation-flow)
 - [Deployment instructions](#deployment-instructions)
+- [Local dev (server services)](#local-dev-server-services)
 - [Useful commands](#useful-commands)
+- [VPS management](#vps-management)
+- [CI server deploys](#ci-server-deploys)
+- [Backups](#backups)
+- [Player identity](#player-identity)
+- [Infrastructure stacks](#infrastructure-stacks)
+- [Rebuilding the VPS / Tailnet auto-join](#rebuilding-the-vps--tailnet-auto-join)
+  * [If the VPS is unhealthy](#if-the-vps-is-unhealthy)
+  * [Rebuild (replace the instance)](#rebuild-replace-the-instance)
 - [Future Roadmap](#future-roadmap)
 
 <!-- tocstop -->
@@ -57,7 +67,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `src/systems/` | InputManager, FlightController, CameraController, GravitySystem, WarpSystem, Touch/Gamepad adapters, StarModSlots |
 | `src/components/UniverseWorlds.tsx` | LOD world rendering + Aweborn Portal |
 | `src/components/RadarMinimap.tsx` / `PortalBeacon.tsx` | 3D radar, home indicator |
-| `src/components/CRDTDevOverlay.tsx` | Dev panel / temporary world index (shown in production until the Worlidex, Phase 08) |
+| `src/components/CRDTDevOverlay.tsx` | Dev panel / temporary world list (shown in production until the World Index, Phase 08) |
 | `shared/crdt-schema.ts` | Shared CRDT types + spatial helpers (client + server) |
 | `server/sync-service/src/rooms.ts` | Room manager: sector rooms, world rooms, world creation, spatial resolver, presence relay |
 | `src/index.css` | Full design system — tokens, glass effects, animations, payment form styles, success animation |
@@ -256,6 +266,30 @@ A failed or stale backup fails the workflow, and GitHub emails the admins. Check
 
 GitHub disables scheduled workflows after 60 days without repo activity. If commits ever pause that long, re-enable it under Actions → Backup.
 
+## Player identity
+
+Anonymous-first player identity (Phase 08 I1), served by **Better Auth inside sync-service** at `https://sync.aweborn.org/api/auth/*`.
+
+- **Boot:** the client (`src/lib/player.ts`) reuses its session or silently calls `signIn.anonymous()`, then opens the universe socket. On the upgrade the server reads the session cookie (trusted origins only) and tags the socket with the player's `playerId`. World `creator` is always set by the server (client value ignored).
+- **IDs:** `playerId` (UUID, public: presence + `creator`) is our own column on Better Auth's `user` table. Better Auth's `user.id` changes when an anonymous player links a real sign-in; `playerId` is carried over (`onLinkAccount` in `server/sync-service/src/auth.ts`).
+- **Data:** tables `user`, `session`, `account`, `verification` live in **`universe.db`**, so the hourly/S3 backups and DR restore cover them. Migrations run automatically at boot.
+- **Sessions:** httpOnly cookie on `sync.aweborn.org` (same-site with `aweborn.org`), 1 year, refreshed daily; one per device.
+- **Everyone is welcome:** if auth is unreachable (offline, cookies blocked, 5 s timeout) the client plays as a per-tab `guest-…`; guest worlds get `creator = "guest"`.
+- **Secret:** `BETTER_AUTH_SECRET` in `aweborn-secrets` (key added to `infra/k3s/secrets.example.yaml`). **Keep a copy in the password manager.** Losing or rotating it signs everyone out, and anonymous players then lose their identity for good. If it's missing, weak, or the `REPLACE_ME` placeholder in production, sync-service still runs but **auth is disabled** (everyone is a guest; `/api/auth/*` returns 503; loud `[auth] ✖` log line).
+
+Set it once, **from your Mac** (k3s only exists on the VPS). It merges into the existing secret without touching the other keys, and the value goes over stdin so it never shows up in a command line or `ps`:
+
+```bash
+openssl rand -base64 32 > AWEBORN_BETTER_AUTH_SECRET.txt   # store it safely first
+printf '{"stringData":{"BETTER_AUTH_SECRET":"%s"}}' "$(tr -d '\n' < AWEBORN_BETTER_AUTH_SECRET.txt)" \
+  | ssh -i ~/.ssh/lightsail-default.pem ubuntu@aweborn-vps \
+      'sudo k3s kubectl -n aweborn patch secret aweborn-secrets --type merge --patch-file /dev/stdin'
+```
+
+Set 2026-10-11 (Alex keeps the copy). The next sync-service rollout picks it up.
+
+One-off: `server/sync-service/scripts/migrate-legacy-creators.ts` reassigns pre-identity `p-xxxxxx` creators to `"system"` (stop sync-service first; `--dry-run` supported; backs up first).
+
 ## Infrastructure stacks
 
 The repo is the source of truth for AWS. Every stack maps to one template:
@@ -308,7 +342,7 @@ The website (S3/CloudFront) stays up throughout; sync and gen-AI are down until 
 **After the box is up:**
 6. **Update the pinned host key.** CI pins the box's ed25519 host key in the repo variable `VPS_KNOWN_HOST` (read by `deploy.yml` + `backup.yml`; admin-only, changes are in the audit log). After a rebuild it still holds the old key, so CI fails closed until it's updated (correct behaviour; never switch to trust-on-first-use). `infra/restore-from-s3.sh` (step 8) takes the new key from the Lightsail API (AWS-authenticated, not a network scan) and sets the variable after you answer `y`. No commit needed. By hand: `gh variable set VPS_KNOWN_HOST -R aweborn/aweborn.org --body 'aweborn-vps ssh-ed25519 AAAA...'`. To trust the new box on your Mac: `ssh-keygen -R aweborn-vps && gh variable get VPS_KNOWN_HOST -R aweborn/aweborn.org >> ~/.ssh/known_hosts`.
 7. The restricted CI keys (deploy + backup) were installed by the bootstrap from `infra/vps/ci-authorized-keys`. Check with `sudo ~/aweborn/infra/vps/install-ci-keys.sh --check`.
-8. Set the real k8s secrets (`aweborn-secrets`, see VPS management). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6 (sets the host key pin variable).
+8. Set the real k8s secrets (`aweborn-secrets`, see VPS management). **`BETTER_AUTH_SECRET` must be the same value as before** (from the password manager), or every player is signed out and anonymous players lose their identity (see [Player identity](#player-identity)). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6 (sets the host key pin variable).
 9. Verify: both `/health` endpoints, `infra/cfn-preview.sh aweborn-vps` (in sync, IMDS hardened), `gh workflow run backup.yml` passes.
 
 **Rehearsed on prod 2026-10-11** (`aweborn-vps` → `aweborn-vps-2`, ~10 min of sync/gen-AI downtime): pre-rebuild snapshot + `backup.yml`, old node deleted in Machines, `rebuild-vps.sh`, `restore-from-s3.sh` (pin updated from the Lightsail API, restored DB fingerprint == backup), Caddy got real certs on the first try, pin committed, `backup.yml` + Deploy green, `cfn-preview.sh` in sync. Before that, `infra/test-dr-restore.sh` **passed 2026-10-11** on a throwaway box (re-run it after bootstrap/deploy changes). Earlier note, kept for history: the rebuild path was first dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.

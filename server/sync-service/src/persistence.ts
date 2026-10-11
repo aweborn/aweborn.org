@@ -56,7 +56,7 @@ export function initDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
 /**
  * Get the active database instance. Throws if not initialized.
  */
-function getDb(): Database.Database {
+export function getDb(): Database.Database {
   if (!db) {
     throw new Error("[persistence] database not initialized — call initDb() first");
   }

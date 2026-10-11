@@ -32,7 +32,7 @@ Every new agent session should follow this sequence:
 | **05** | Mana Economy & Donations | 🔴 Not Started | [05-mana-economy.md](./05-mana-economy.md) | Mana pool, Living Frontier, Ghost/Solid states, donation→mana pipeline |
 | **06** | Offline & Mesh Networking | 🔴 Not Started | [06-offline-mesh.md](./06-offline-mesh.md) | PWA, WebRTC P2P, QR signaling, sneakernet sync |
 | **07** | World Creation & Gen AI | 🔴 Not Started | [07-genai-creation.md](./07-genai-creation.md) | Interior movement & physics, building tools, gen AI integration, polish |
-| **08** | NFC Trading Cards & the Worlidex | 🟡 In Progress | [08-nfc-trading-cards.md](./08-nfc-trading-cards.md) | `/w/<uuid>` teleport links, Worlidex (personal world index + warp), physical NFC cards, print-your-world |
+| **08** | NFC Trading Cards & the World Index | 🟡 In Progress | [08-nfc-trading-cards.md](./08-nfc-trading-cards.md) | `/w/<uuid>` teleport links, World Index (personal index of discovered worlds + warp), physical NFC cards, print-your-world |
 
 ### Status Legend
 
@@ -48,7 +48,9 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **➡️ NEXT UP / PRIORITY: Phase 08, [Milestone 8B: The Worlidex](./08-nfc-trading-cards.md#milestone-8b--the-worlidex)**: persistent player identity first, then the data model, discovery tracking, card reveal, Worlidex UI and warp.
+> **➡️ NEXT UP / PRIORITY: Phase 08, [Milestone 8B: The World Index](./08-nfc-trading-cards.md#milestone-8b--the-world-index)**: persistent player identity first, then the data model, discovery tracking, card reveal, World Index UI and warp.
+>
+> **8B identity (decided 2026-10-11):** one player across tabs *and* devices. Anonymous first, then QR device linking, passkeys, email magic link, social sign-in (Google, Facebook, Apple, …) and email + password, all on one `playerId` with per-device sessions. One screen steers, the others follow. Tasks I0–I7 in [Persistent Player Identity](./08-nfc-trading-cards.md#persistent-player-identity-prerequisite). **Auth stack: Better Auth.** I1 (anonymous core) is built and verified locally. **Next:** Alex sets `BETTER_AUTH_SECRET` on the VPS (HANDOFF → Player identity), then commit + deploy + run `migrate-legacy-creators.ts` on prod. Then I1b (one screen steers) or the verified-account onramp. "Worlidex" was renamed **World Index** everywhere, including ROADMAP.
 >
 > **Done 2026-10-11:** [VPS Tailnet auto-join](./ops-tailscale-autojoin.md). New servers join as `tag:server` hands-free (OAuth secret in a NoEcho stack param, scrubbed after use, IMDS v2-only via an in-stack custom resource) and install the restricted CI keys from `infra/vps/ci-authorized-keys`. Tag-based ACL with tests. Tested on a throwaway instance, then applied to prod (HANDOFF → Rebuilding the VPS). DR follow-up: S3 backups are now hourly; `infra/rebuild-vps.sh` + `infra/restore-from-s3.sh` (+ `infra/test-dr-restore.sh` drill) **rehearsed on prod** (now instance `aweborn-vps-2`). Still to confirm: the hourly `backup.yml` cron actually fires.
 >
@@ -69,8 +71,8 @@ Phase 01 (Foundation) ✅
         │     └─► Phase 04 (Navigation) ✅
         │           ├─► Phase 05 (Mana & Economy)  ─► Phase 07 (World Creation & GenAI)
         │           │                                 (also needs Phase 01 genai-service, Phase 04 controls)
-        │           └─► Phase 08 (NFC Cards & Worlidex)
-        │                 8A Teleport links ─► 8B Worlidex ─► (Phase 05 awe hook)
+        │           └─► Phase 08 (NFC Cards & World Index)
+        │                 8A Teleport links ─► 8B World Index ─► (Phase 05 awe hook)
         │                 8A ─► 8C Physical curated set ─► 8D Print-your-world (needs Phase 05 donations)
         │                 Offline card taps use Phase 06 PWA
         └─► Phase 06 (Offline & Mesh)   (independent of 03–05; can run any time)
@@ -101,7 +103,8 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 | NFC trading cards | Physical cards teleport to a world via `aweborn.org/w/<uuidv4>`; static Aweborn back; per-card arrival mode (default orbit) | Oct 3, 2026 |
 | World ID format | Migrate 5-char random IDs → UUIDv4 before any card is printed | Oct 3, 2026 |
 | Card security | No per-card serials, no anti-clone (low stakes); tags locked read-only to prevent rewrites | Oct 3, 2026 |
-| Worlidex | Personal persistent index of discovered worlds; warp to any entry from anywhere; first discovery = awe to universal pool | Oct 3, 2026 |
+| World Index | Personal persistent index of discovered worlds; warp to any entry from anywhere; first discovery = awe to universal pool (renamed from "Worlidex" Oct 11) | Oct 3, 2026 |
+| Player identity | One player across tabs + devices. Anonymous first; QR linking + passkeys + magic link + social (Google/Facebook/Apple…) + email/password on one `playerId`; per-device revocable sessions; one screen steers; legacy `creator` IDs → `"system"` | Oct 11, 2026 |
 | Card programs | Curated sets + print-your-world on demand; sold as fundraiser and given free | Oct 3, 2026 |
 | TokBot integration scope | TokBot + backend archived; gen-AI features absorbed into aweborn.org (Phase 07), token economy → mana (Phase 05) | Aug 20, 2026 |
 | Player presence transport (interim) | WebSocket relay through sync-service; WebRTC P2P remains the scale target (Phase 06) | Aug 24, 2026 |
@@ -116,8 +119,7 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 | What can players do inside a world? | Phase 07 | Place objects, sculpt terrain, hang out — specifics TBD |
 | New player onboarding flow | Phase 07 / 08 | Drop in at origin? Tutorial? Note: players arriving via an NFC card or `/w/` link start at a world, not the origin (Phase 08) |
 | Mana tuning (dollar-to-mana ratio) | Phase 05 | Current design: $1 = 1,000 mana. Needs playtesting |
-| Worlidex details (discovery threshold, warp rules, key binding) | Phase 08 | Proposals in [08-nfc-trading-cards.md](./08-nfc-trading-cards.md#open-questions-mirrored-in-roadmap) |
-| Persistent player identity | Phase 08 | `playerId` is sessionStorage today; Worlidex needs persistence |
+| World Index details (discovery threshold, warp rules, key binding) | Phase 08 | Proposals in [08-nfc-trading-cards.md](./08-nfc-trading-cards.md#open-questions-mirrored-in-roadmap) |
 | Card format, art pipeline, vendor, product name | Phase 08 | See Phase 08 open questions |
 | Multiple servers sharing world sync | New phase? (overlaps Phase 06) | Raised 2026-10-11. Today: one sync-service, single-writer SQLite. Options include server-to-server Yjs replication over the Tailnet, player routing, and data ownership. Needs a design session (`/grill-me`) before any code. Prerequisite: [auto-join](./ops-tailscale-autojoin.md) |
 

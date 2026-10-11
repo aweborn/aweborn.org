@@ -32,6 +32,9 @@ import { resolveNewWorld } from "./resolver.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
+/** `creator` for worlds made by sockets with no session. */
+const GUEST_CREATOR = "guest";
+
 interface WorldRoom {
   doc: Y.Doc;
   clients: Set<WebSocket>;
@@ -57,6 +60,9 @@ export class RoomManager {
   /** Flush interval handle */
   private flushTimer: ReturnType<typeof setInterval> | null = null;
 
+  /** Authenticated playerId per socket (from the session cookie at upgrade). */
+  private playerIds = new WeakMap<WebSocket, string>();
+
   constructor() {
     this.universeDoc = initUniverseDoc();
     this.startFlushTimer();
@@ -70,6 +76,11 @@ export class RoomManager {
   }
 
   // ── Universe Room ────────────────────────────────────────────────
+
+  /** Record the authenticated player behind a socket. */
+  setPlayer(ws: WebSocket, playerId: string): void {
+    this.playerIds.set(ws, playerId);
+  }
 
   /**
    * Client joins the universe room, subscribing to specific sectors.
@@ -235,7 +246,7 @@ export class RoomManager {
     saveDoc(id, state, "world", entry.sector);
     worldDoc.destroy();
 
-    console.log(`[rooms] created world "${name}" (${id}) at resolved position (${resolvedPos.x.toFixed(1)}, ${resolvedPos.y.toFixed(1)}, ${resolvedPos.z.toFixed(1)})`);
+    console.log(`[rooms] created world "${name}" (${id}) by ${creator} at resolved position (${resolvedPos.x.toFixed(1)}, ${resolvedPos.y.toFixed(1)}, ${resolvedPos.z.toFixed(1)})`);
     return entry;
   }
 
@@ -264,14 +275,16 @@ export class RoomManager {
           break;
         }
         case "create-world": {
-          // Client wants to create a world
+          // Client wants to create a world. The creator is always decided by
+          // the server: the socket's player, or "guest" if it has no session.
+          // (The client-sent `creator` is ignored; it could impersonate anyone.)
           const payload = JSON.parse(new TextDecoder().decode(message.data)) as {
             name: string;
-            creator: string;
             position: Vec3;
             color: string;
           };
-          this.createWorld(payload.name, payload.creator, payload.position, payload.color);
+          const creator = this.playerIds.get(ws) ?? GUEST_CREATOR;
+          this.createWorld(payload.name, creator, payload.position, payload.color);
           break;
         }
         case "update-sectors": {

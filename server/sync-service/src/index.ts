@@ -1,14 +1,18 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { initDb, closeDb, getStats as getDbStats } from "./persistence.js";
+import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
+import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
+import { initAuth, getPlayerId, isTrustedOrigin } from "./auth.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
 
-// ── Initialize persistence & room manager ────────────────────────────
+// ── Initialize persistence, auth & room manager ─────────────────────────────
 initDb();
+const auth = await initAuth(getDb());
+const authHandler = auth ? toNodeHandler(auth) : null;
 const rooms = new RoomManager();
 
 // ── HTTP API (health, stats, world lookup) ───────────────────────────
@@ -68,8 +72,35 @@ function handleWorldLookup(req: IncomingMessage, res: ServerResponse, id: string
   );
 }
 
-// HTTP server (health checks + stats + world lookup)
+// HTTP server (health checks + stats + world lookup + auth)
 const server = createServer((req, res) => {
+  // Better Auth: /api/auth/* (credentialed CORS for trusted origins only;
+  // Better Auth also checks Origin against trustedOrigins on mutations).
+  if (req.url?.startsWith("/api/auth/")) {
+    const origin = req.headers.origin;
+    if (isTrustedOrigin(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+    res.setHeader("Vary", "Origin");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "600",
+      });
+      res.end();
+      return;
+    }
+    if (!authHandler) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "auth_disabled" }));
+      return;
+    }
+    void authHandler(req, res);
+    return;
+  }
+
   const worldMatch = req.url?.match(/^\/worlds\/([^/?#]+)\/?(?:\?.*)?$/);
   if (worldMatch && (req.method === "GET" || req.method === "HEAD")) {
     handleWorldLookup(req, res, worldMatch[1]);
@@ -110,7 +141,7 @@ const server = createServer((req, res) => {
 // ── WebSocket server ─────────────────────────────────────────────────
 const wss = new WebSocketServer({ noServer: true });
 
-wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
+wss.on("connection", (ws: WebSocket, req: IncomingMessage, playerId: string | null) => {
   const url = req.url ?? "/";
   const route = parseRoomPath(url);
 
@@ -118,6 +149,15 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     console.warn(`[ws] unknown path: ${url}`);
     ws.close(4000, "Unknown path");
     return;
+  }
+
+  // Everyone is welcome. Normally the client signs in anonymously first, so
+  // the socket carries a player. Sockets with no session (cookies blocked,
+  // old clients) still play as guests; they just have no persistent identity.
+  if (playerId) {
+    rooms.setPlayer(ws, playerId);
+  } else {
+    console.log("[ws] guest connection (no session)");
   }
 
   if (route.type === "universe") {
@@ -145,8 +185,19 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit("connection", ws, req);
+  // Only trust the session cookie on sockets opened by our own pages
+  // (defence against cross-site WebSocket hijacking).
+  const resolve = auth && isTrustedOrigin(req.headers.origin)
+    ? getPlayerId(auth, fromNodeHeaders(req.headers)).catch((err) => {
+        console.error("[ws] session lookup failed:", err);
+        return null;
+      })
+    : Promise.resolve(null);
+
+  void resolve.then((playerId) => {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req, playerId);
+    });
   });
 });
 

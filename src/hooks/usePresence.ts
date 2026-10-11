@@ -1,36 +1,9 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import type { PlayerPresence, Vec3 } from "@aweborn/shared/crdt-schema";
+import { playerReady } from "../lib/player";
 
 const BROADCAST_INTERVAL_MS = 50; // ~20Hz
 const STALE_TIMEOUT_MS = 3000; // Remove players not heard from in 3s
-
-/**
- * Generate a random player ID for this session.
- * Persisted in sessionStorage so it survives hot-reloads.
- */
-function getPlayerId(): string {
-  const key = "aweborn-player-id";
-  let id = sessionStorage.getItem(key);
-  if (!id) {
-    id = `p-${Math.random().toString(36).slice(2, 8)}`;
-    sessionStorage.setItem(key, id);
-  }
-  return id;
-}
-
-/**
- * Generate a random player color for this session.
- */
-function getPlayerColor(): string {
-  const key = "aweborn-player-color";
-  let color = sessionStorage.getItem(key);
-  if (!color) {
-    const hue = Math.floor(Math.random() * 360);
-    color = `hsl(${hue}, 80%, 65%)`;
-    sessionStorage.setItem(key, color);
-  }
-  return color;
-}
 
 // ── Singleton Presence Manager ───────────────────────────────────────
 //
@@ -45,8 +18,11 @@ interface PresenceState {
   lastSeen: Map<string, number>;
 }
 
-const _playerId = getPlayerId();
-const _playerColor = getPlayerColor();
+// Filled in once the player resolves (persistent playerId, or a guest ID).
+// Until then nothing is broadcast, so no throwaway IDs leak into presence.
+let _playerId = "";
+let _playerColor = "hsl(0, 0%, 75%)";
+let _playerResolved = false;
 
 const _state: PresenceState = {
   players: new Map(),
@@ -74,6 +50,16 @@ function notifyListeners() {
   for (const fn of _listeners) fn();
 }
 
+void playerReady.then((player) => {
+  _playerId = player.playerId;
+  _playerColor = player.color;
+  _localState.id = player.playerId;
+  _localState.color = player.color;
+  _playerResolved = true;
+  _structuralVersion++;
+  notifyListeners();
+});
+
 /** WebSocket send function, set by the component that owns the sync connection */
 let _wsSend: PresenceSendFn | null = null;
 
@@ -89,8 +75,9 @@ function startPresenceLoop() {
   _broadcastChannel = new BroadcastChannel("aweborn-presence");
   _broadcastChannel.addEventListener("message", handleLocalPresence);
 
-  // Broadcast local state at ~20Hz
+  // Broadcast local state at ~20Hz (once the player is known)
   _broadcastTimer = setInterval(() => {
+    if (!_playerResolved) return;
     _broadcastChannel?.postMessage(_localState);
     if (_wsSend) {
       const payload = new TextEncoder().encode(JSON.stringify(_localState));
@@ -115,7 +102,7 @@ function startPresenceLoop() {
     }
   }, 2000);
 
-  _broadcastChannel.postMessage(_localState);
+  if (_playerResolved) _broadcastChannel.postMessage(_localState);
 }
 
 function stopPresenceLoop() {

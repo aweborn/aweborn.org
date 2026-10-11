@@ -50,6 +50,17 @@ spec:
               value: "0.0.0.0"
             - name: DB_PATH
               value: /data/universe.db
+            # Player identity (Better Auth, Phase 08 I1). Auth tables live in
+            # universe.db, so the existing backups cover them.
+            - name: NODE_ENV
+              value: production
+            - name: BETTER_AUTH_URL
+              value: https://sync.aweborn.org
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: BETTER_AUTH_SECRET
           volumeMounts:
             - name: sync-data
               mountPath: /data

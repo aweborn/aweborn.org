@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type {
   Vec3,
 } from "@aweborn/shared/crdt-schema";
+import { playerReady } from "../lib/player";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
@@ -152,47 +153,57 @@ export function useSyncConnection(
     const sectorsParam = sectorKeys.join(",");
     const url = `${SYNC_URL}/universe?sectors=${encodeURIComponent(sectorsParam)}`;
 
-    const ws = new WebSocket(url);
-    ws.binaryType = "arraybuffer";
-    wsRef.current = ws;
+    // Open the socket only once the player is resolved, so the session
+    // cookie exists and the server attaches our playerId at upgrade.
+    // (playerReady never rejects; guests connect without a session.)
+    let cancelled = false;
+    let ws: WebSocket | null = null;
 
-    ws.addEventListener("open", () => {
-      setConnected(true);
-      console.log("[sync] connected to sync-service");
-    });
+    void playerReady.then(() => {
+      if (cancelled) return;
+      ws = new WebSocket(url);
+      ws.binaryType = "arraybuffer";
+      wsRef.current = ws;
 
-    ws.addEventListener("close", () => {
-      setConnected(false);
-      console.log("[sync] disconnected from sync-service");
-    });
+      ws.addEventListener("open", () => {
+        setConnected(true);
+        console.log("[sync] connected to sync-service");
+      });
 
-    ws.addEventListener("error", (err) => {
-      console.error("[sync] WebSocket error:", err);
-    });
+      ws.addEventListener("close", () => {
+        setConnected(false);
+        console.log("[sync] disconnected from sync-service");
+      });
 
-    ws.addEventListener("message", (event) => {
-      const msg = decodeMessage(event.data as ArrayBuffer);
-      if (!msg) return;
+      ws.addEventListener("error", (err) => {
+        console.error("[sync] WebSocket error:", err);
+      });
 
-      switch (msg.type) {
-        case "universe-sync":
-        case "universe-update":
-          onUniverseUpdateRef.current?.(msg.type, msg.data);
-          break;
-        case "world-sync":
-        case "world-update":
-          if (msg.worldId) {
-            onWorldUpdateRef.current?.(msg.type, msg.worldId, msg.data);
-          }
-          break;
-        case "presence":
-          onPresenceRef.current?.(msg.data);
-          break;
-      }
+      ws.addEventListener("message", (event) => {
+        const msg = decodeMessage(event.data as ArrayBuffer);
+        if (!msg) return;
+
+        switch (msg.type) {
+          case "universe-sync":
+          case "universe-update":
+            onUniverseUpdateRef.current?.(msg.type, msg.data);
+            break;
+          case "world-sync":
+          case "world-update":
+            if (msg.worldId) {
+              onWorldUpdateRef.current?.(msg.type, msg.worldId, msg.data);
+            }
+            break;
+          case "presence":
+            onPresenceRef.current?.(msg.data);
+            break;
+        }
+      });
     });
 
     return () => {
-      ws.close();
+      cancelled = true;
+      ws?.close();
       wsRef.current = null;
       setConnected(false);
     };

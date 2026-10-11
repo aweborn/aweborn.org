@@ -9,6 +9,7 @@
     "start": "node dist/server/sync-service/src/index.js"
   },
   "dependencies": {
+    "better-auth": "^1.7.7",
     "better-sqlite3": "^13.0.3",
     "ws": "^8.18.0",
     "y-websocket": "^2.1.0",

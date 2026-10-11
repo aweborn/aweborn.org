@@ -1,13 +1,13 @@
-# Phase 08: NFC Trading Cards & the Worlidex
+# Phase 08: NFC Trading Cards & the World Index
 
 **Status:** `[~]` In Progress: card art done (2026-10-04); **Milestone 8A is the current priority**
 **Depends on:** [Phase 04: Navigation & Controls](./04-navigation-controls.md) (warp visuals, orbit capture, world entry). Milestone-level dependencies on [Phase 05](./05-mana-economy.md) (awe + donation→mana) and [Phase 06](./06-offline-mesh.md) (PWA/offline tap) are listed below.
-**ROADMAP reference:** [Physical Portals: NFC Trading Cards & the Worlidex](../ROADMAP.md#physical-portals-nfc-trading-cards--the-worlidex)
+**ROADMAP reference:** [Physical Portals: NFC Trading Cards & the World Index](../ROADMAP.md#physical-portals-nfc-trading-cards--the-world-index)
 **Estimated sessions:** 7-10 (software) + vendor lead time for physical cards
 
 ## Goal
 
-Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card and `https://aweborn.org/w/<uuidv4>` opens. The player's star **teleports to that world**, the world is added to their **Worlidex** (personal index of discovered worlds), and a first-time discovery fires the reward. From then on the player can warp to any Worlidex world from anywhere in the universe. Cards are sold as fundraisers (proceeds become mana), given away at events, and printed on demand by players and organizations for their own worlds.
+Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card and `https://aweborn.org/w/<uuidv4>` opens. The player's star **teleports to that world**, the world is added to their **World Index** (personal index of discovered worlds), and a first-time discovery fires the reward. From then on the player can warp to any World Index world from anywhere in the universe. Cards are sold as fundraisers (proceeds become mana), given away at events, and printed on demand by players and organizations for their own worlds.
 
 ## Design Summary (from ROADMAP)
 
@@ -21,8 +21,8 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | Chip | NTAG213 (≈60-byte payload fits in its 144 bytes), NDEF URI record, **locked read-only** |
 | Per-card serials | **No.** The card is just the world ID |
 | Anti-clone | **Not needed.** Low stakes by design. NTAG 424 DNA (SUN) is a documented future option only |
-| Worlidex | Persistent personal index; any discovery method counts; warp to any entry from anywhere |
-| First discovery | `first-world-visit` awe (500 mana → **universal pool**) + card-reveal animation + Worlidex entry |
+| World Index | Persistent personal index; any discovery method counts; warp to any entry from anywhere |
+| First discovery | `first-world-visit` awe (500 mana → **universal pool**) + card-reveal animation + World Index entry |
 | Programs | Curated sets (Aweborn) **and** print-your-world on demand (players, companies, events) |
 | Money | Sold as fundraiser (proceeds → Stripe → mana pool) **and** given free at events |
 
@@ -34,7 +34,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | Route | `/w/:uuid` client-side route in the SPA | CloudFront already serves `index.html` for 403/404 (`infra/cloudformation.yml`, `CustomErrorResponses`), so no infra change is needed |
 | World lookup | New lookup-by-ID path in sync-service (HTTP `GET /worlds/:id` or WS message) | The client only subscribes to nearby sectors, so a card target can be anywhere in the universe |
 | Teleport | Set player position directly + reuse WarpSystem arrival effects | Feels native; no lock-on or charge required |
-| Worlidex storage | Server-side per-player record + local IndexedDB cache | Must survive tab closes and work offline; currently `playerId` is `sessionStorage` only |
+| World Index storage | Server-side per-player record + local IndexedDB cache | Must survive tab closes and work offline; currently `playerId` is `sessionStorage` only |
 | Card permanence | IDs immutable, worlds never hard-deleted, `/w/` + `?a=` is a permanent public API | Printed cards can't be patched |
 
 ---
@@ -85,7 +85,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[x]` Orbit arrival: player placed 2.5u from the world (inside the orbit-capture band), facing it; Origin at 6u
 - `[x]` Inside arrival: calls `enterWorld` after the arrival flash (700 ms)
 - `[x]` Reuse `WarpEffect` arrival flash + particles for the teleport moment
-- `[~]` Handle tap while already playing (PWA already open): the OS opens the URL as a fresh navigation, which the boot path handles. `teleportToId()` is ready for in-app use (Worlidex warp, share links)
+- `[~]` Handle tap while already playing (PWA already open): the OS opens the URL as a fresh navigation, which the boot path handles. `teleportToId()` is ready for in-app use (World Index warp, share links)
 - `[x]` Unknown/invalid UUID → friendly toast (`TeleportToast.tsx`), normal spawn
 - `[x]` After arrival, `history.replaceState` back to `/` (decided: clear it, so reloads don't re-teleport)
 
@@ -95,18 +95,57 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 ---
 
-## Milestone 8B — The Worlidex
+## Milestone 8B — The World Index
 
 > Depends on 8A. Awe reward hook depends on Phase 05 `AweTracker` (stub it if Phase 05 isn't done).
 
 ### Persistent Player Identity (prerequisite)
-- `[ ]` Move `playerId` from `sessionStorage` → `localStorage` (device-persistent) in `src/hooks/usePresence.ts`
-- `[ ]` Decide v1 identity scope (see Open Questions). Recommended: device-persistent ID now, cross-device linking later
+
+> **Decided 2026-10-11:** one player across tabs *and* devices. **Anonymous first** (no signup wall, so a card tap drops you straight in). Every sign-in method attaches to the same `playerId`: **(A) QR device linking**, **(B) passkeys**, **(C) email magic link**, **(D) social sign-in (Google, Facebook, Apple, …)**, **(E) email + password**. Anything beyond A doubles as recovery. Public `playerId` (seen in presence and world `creator`) is never a credential; each device holds its own private session/secret, so a lost device can be revoked. **Multi-session: one screen steers**, the others follow live.
+
+**I0. Auth stack**
+- `[x]` **Decided 2026-10-11: Better Auth** (self-hosted in sync-service, v1.7.x): anonymous, social, email/password, magic link and passkey plugins. Auth tables live in `universe.db` so the existing hourly/S3 backups and DR restore cover them. PLAN.md's "Firebase Auth: not needed" row stays true
+
+**I1. Anonymous core** (built + verified locally 2026-10-11; prod pending `BETTER_AUTH_SECRET`)
+- `[x]` Server: Better Auth in sync-service at `/api/auth/*` (`server/sync-service/src/auth.ts`): anonymous plugin, own `playerId` column (server-assigned UUID; carried over in `onLinkAccount` because Better Auth replaces the user on link), 1-year sessions refreshed daily, rate limits (anonymous sign-in 30/min/IP for venue Wi-Fi), boot-time migrations into `universe.db`. Credentialed CORS for trusted origins only
+- `[x]` WebSocket: session cookie read on upgrade (trusted origins only, against cross-site hijacking) → socket tagged with `playerId`. `creator` is always server-decided (`playerId`, or `"guest"`); client value ignored
+- `[x]` **Everyone welcome:** sessionless sockets play as guests (permanent policy, Alex 2026-10-11). Client falls back to a per-tab `guest-…` if auth is unreachable (5 s). Prod with a missing/placeholder secret disables auth (all guests) instead of going down
+- `[x]` Client: `src/lib/player.ts` (`authClient`, `playerReady`); `usePresence` uses `playerId` and broadcasts nothing until resolved; `useCRDT` opens the socket after the player resolves. **Colour derived from `playerId`** (same everywhere; future customisation option)
+- `[x]` `server/sync-service/scripts/migrate-legacy-creators.ts`: `p-xxxxxx` → `"system"` in the universe CRDT + world `meta` (tested on a DB copy; run on prod after deploy)
+- `[ ]` Prod: set `BETTER_AUTH_SECRET` (HANDOFF → Player identity), deploy, run the creator migration, verify on aweborn.org
+- `[ ]` Follow-up: Safari may cap server-set cookies at 7 days when the cookie's server IP differs from the site's (aweborn.org is on CloudFront, sync on Lightsail). If anonymous iOS players lose identity after a week away, proxy `/api/auth/*` through CloudFront on `aweborn.org`. Players who linked a real sign-in (I2–I7) can simply sign back in
+- `[ ]` **One screen steers (I1b):** server merges a player's connections into one presence. The most recent screen to take input is the driver; others become live followers (camera tracks the shared character, input ignored) with a "Play here" button to take over. Until then, two tabs of one player show as one flickering presence to others
+- `[ ]` **Smooth onramp to a verified account:** gentle, never-blocking "Save your player" prompts at meaningful moments (first world discovered/created, first card tap, returning visit), one tap into I3/I4/I6. Never a wall
+
+**I2. (A) QR device linking**
+- `[ ]` "Link a device": a signed-in device requests a short-lived (5 min), single-use link code; shows a QR (`aweborn.org/link#<code>`) + a typeable code
+- `[ ]` New device redeems the code → server issues it a *new* device credential for the same `playerId` (the old secret is never copied)
+- `[ ]` Devices list with revoke
+
+**I3. (B) Passkeys**
+- `[ ]` "Save your player": register a WebAuthn passkey (rpID `aweborn.org`) tied to `playerId`
+- `[ ]` Sign in with a passkey on a new device → new device credential
+
+**I4. (C) Email magic link**
+- `[ ]` Attach an email to the player; sign-in link is single-use, 15 min, token stored hashed
+- `[ ]` Sending via AWS SES (CloudFormation: domain identity + DKIM for `aweborn.org`); stores email only, deletable on request
+
+**I5. Merging**
+- `[ ]` A device that already has an anonymous player signs in to another player → union its World Index into the signed-in player and retire the anonymous ID (rule for its created worlds TBD)
+
+**I6. (D) Social sign-in**
+- `[ ]` Google, Apple, Facebook first (others, e.g. Discord/GitHub/Microsoft, later). OAuth/OIDC with PKCE; link to the current anonymous player on first use
+- `[ ]` Provider setup: Google Cloud OAuth client; Apple Developer Program ($99/yr) Services ID + key; Meta app + business verification/app review before public launch. Client secrets in k3s secrets, never in the repo
+- `[ ]` Privacy policy + data-deletion URL (required by Meta and Apple)
+
+**I7. (E) Email + password**
+- `[ ]` Argon2id hashing, min length + breached-password check (HIBP k-anonymity), rate limiting/lockout
+- `[ ]` Email verification + password reset (reuses the I4 SES path)
 
 ### Data Model & Storage
-- `[ ]` Add `WorlidexEntry` type to `shared/crdt-schema.ts`:
+- `[ ]` Add `WorldIndexEntry` type to `shared/crdt-schema.ts`:
   ```typescript
-  interface WorlidexEntry {
+  interface WorldIndexEntry {
     worldId: string;
     state: "sighted" | "visited";
     discoveredAt: number;
@@ -116,8 +155,8 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
     pending: boolean;   // tapped offline, not yet resolved
   }
   ```
-- `[ ]` Server: per-player Worlidex store (SQLite table alongside `universe.db`) + `GET/POST /players/:id/worlidex`
-- `[ ]` Client: `src/stores/worlidexStore.ts` with IndexedDB cache, synced to the server when online
+- `[ ]` Server: per-player World Index store (SQLite table alongside `universe.db`) + `GET/POST /players/:id/world-index`
+- `[ ]` Client: `src/stores/worldIndexStore.ts` with IndexedDB cache, synced to the server when online
 - `[ ]` Distinguish `card` vs `link` method (e.g., card URLs carry a marker param, decided at print time; see Open Questions)
 
 ### Discovery Tracking
@@ -127,17 +166,17 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[ ]` Repeat visits increment `visitCount`, no reward
 
 ### Discovery Moment (Card Reveal)
-- `[ ]` Create `src/components/CardReveal.tsx`: static Aweborn back flips to the world's front art, then slides into the Worlidex
+- `[ ]` Create `src/components/CardReveal.tsx`: static Aweborn back flips to the world's front art, then slides into the World Index
 - `[ ]` Audio cue for discovery
 
-### Worlidex UI
-- `[ ]` Create `src/components/Worlidex.tsx`: collector grid of world cards (same art as physical cards)
+### World Index UI
+- `[ ]` Create `src/components/WorldIndex.tsx`: collector grid of world cards (same art as physical cards)
 - `[ ]` Group by set, show per-set progress ("7 / 12 discovered")
 - `[ ]` Card-found badge for `method: "card"` entries (decorative only)
 - `[ ]` Key binding (proposal: hold `;`). Touch: dedicated HUD button. Gamepad: TBD
-- `[ ]` Replace the temporary `CRDTDevOverlay` world list in production with the Worlidex
+- `[ ]` Replace the temporary `CRDTDevOverlay` world list in production with the World Index
 
-### Worlidex Warp
+### World Index Warp
 - `[ ]` Select entry → warp charge (K visuals) → teleport via `TeleportSystem`
 - `[ ]` Rules per Open Questions (proposal: free, no cooldown)
 
@@ -203,9 +242,9 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - [ ] `https://aweborn.org/w/<uuidv4>` teleports a player to that world from a cold start and from an already-open session
 - [ ] Default arrival = captured orbit; `?a=in` = drops inside the world
 - [ ] All world IDs are UUIDv4; no legacy short IDs remain (or legacy is explicitly supported)
-- [ ] Worlidex persists across tab closes and page reloads
+- [ ] World Index persists across tab closes and page reloads
 - [ ] First discovery generates awe into the universal pool and shows the card-reveal moment; repeat visits don't
-- [ ] Player can warp to any Worlidex world from anywhere in the universe
+- [ ] Player can warp to any World Index world from anywhere in the universe
 - [ ] A physical NTAG213 card, locked, opens the correct world on both iOS and Android with no app installed
 - [ ] Every card in a set has an identical back
 - [ ] A player can order cards of their own world and the surplus becomes mana
@@ -215,9 +254,9 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | Question | Proposal |
 |----------|----------|
 | Discovery threshold: sighted vs visited? | Two states. Sighted = can warp to, visited = full art revealed |
-| Worlidex Warp cost/cooldown? | Free, standard K charge, no cooldown |
-| Worlidex key binding? | `;` tap = Map/Compass, hold = Worlidex |
-| Identity: device vs cross-device? | v1 device-persistent, v2 passkey/email linking |
+| World Index Warp cost/cooldown? | Free, standard K charge, no cooldown |
+| World Index key binding? | `;` tap = Map/Compass, hold = World Index |
+| Identity: device vs cross-device? | ✅ **Decided 2026-10-11:** anonymous first + QR device linking + passkeys + email magic link + social (Google/Facebook/Apple…) + email/password, all one `playerId`; per-device sessions. One screen steers. Open: auth stack (I0) |
 | Personal discovery rewards beyond awe + entry? | Cosmetic-only milestone badges / set-completion flair |
 | Distinguish card taps from shared links? | Optional marker param baked into card URLs (e.g., `?c=1`); only affects the badge, never rewards |
 | Print-your-world → patronage? | Opt-in at checkout |
@@ -233,13 +272,13 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | File | Action | Notes |
 |------|--------|-------|
 | `server/sync-service/src/rooms.ts` | MODIFY | UUIDv4 world IDs |
-| `server/sync-service/src/` (routes) | MODIFY | `GET /worlds/:id`, Worlidex endpoints |
+| `server/sync-service/src/` (routes) | MODIFY | `GET /worlds/:id`, World Index endpoints |
 | `server/sync-service/scripts/migrate-world-ids.ts` | NEW | One-off ID migration |
-| `shared/crdt-schema.ts` | MODIFY | `WorlidexEntry`, UUID test for `parseRoomPath` |
-| `src/App.tsx` | MODIFY | `/w/:uuid` boot handling, mount Worlidex |
+| `shared/crdt-schema.ts` | MODIFY | `WorldIndexEntry`, UUID test for `parseRoomPath` |
+| `src/App.tsx` | MODIFY | `/w/:uuid` boot handling, mount World Index |
 | `src/systems/TeleportSystem.ts` | NEW | Lookup → position → arrival mode |
-| `src/stores/worlidexStore.ts` | NEW | IndexedDB + server sync |
-| `src/components/Worlidex.tsx` | NEW | Collector UI + warp |
+| `src/stores/worldIndexStore.ts` | NEW | IndexedDB + server sync |
+| `src/components/WorldIndex.tsx` | NEW | Collector UI + warp |
 | `src/components/CardReveal.tsx` | NEW | Discovery moment |
 | `src/hooks/usePresence.ts` | MODIFY | Persistent `playerId` |
 | `src/components/CRDTDevOverlay.tsx` | MODIFY | Retire world list in prod |
@@ -250,7 +289,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 | Date | What was done | Next step |
 |------|--------------|-----------|
-| 2026-10-03 | Planning session: cataloged the NFC trading card + Worlidex vision in ROADMAP.md, created this phase file, linked from L0/L1 plans and Phase 05/06. Decisions: `/w/<uuidv4>` URLs (migrate IDs), per-card arrival mode (default orbit), curated + print-your-world programs, sold + free, no serials, no anti-clone, first-discovery awe + Worlidex. | Resolve open questions, then start Milestone 8A |
+| 2026-10-03 | Planning session: cataloged the NFC trading card + World Index vision in ROADMAP.md, created this phase file, linked from L0/L1 plans and Phase 05/06. Decisions: `/w/<uuidv4>` URLs (migrate IDs), per-card arrival mode (default orbit), curated + print-your-world programs, sold + free, no serials, no anti-clone, first-discovery awe + World Index. | Resolve open questions, then start Milestone 8A |
 | 2026-10-04 | Card art session: TCG 63×88 mm confirmed. Created `cards/templates/back.svg` (minimal charcoal, monochrome Fibonacci mark, wordmark), `cards/templates/front.svg` (tokenized), and `scripts/cards/render-preview.mjs` (sharp → 300 dpi PNG previews). Drafted DTB reply: 50–100 pilot within 6–8 wks, quotes at 100/1k/5k, cardstock + matte PVC, vendor-encoded vs blank NTAG213. | Send DTB reply; add a QR encoder; outline fonts for print; final sign-off on the back |
 | 2026-10-04 | Back exploration: `scripts/cards/back-variations.mjs` → `cards/explore/` (lines / colors / wordmark / type specimen sheets). Added OFL fonts in `cards/fonts/` + `fontkit` devDependency (wordmarks outlined to paths). **Back decided:** frame + ring, f1 favicon palette on charcoal, "aweborn" lowercase in Jost (Futura lineage). Front footer mark recolored to match. | Send DTB reply (ask cut tolerance, since the frame shows miscuts); QR encoder; outline front text (Jost/Outfit) |
 | 2026-10-04 | DTB reply **sent**. Real QR (`qrcode`, ECC M, v4 33×33 = 0.30 mm/module at 10 mm) + all front text outlined (Jost + JetBrains Mono). New `scripts/cards/lib/` (`outline.mjs`, `qr.mjs`, `front.mjs`); old token `cards/templates/front.svg` removed. Builds fail on any `<text>`/font/external href; previews decode the QR with `jsqr` at 300 + 150 dpi. | Await DTB quote. On the pilot, test-scan QR on the actual stock (0.30 mm modules is small; fallback: 11–12 mm symbol, or uppercase alphanumeric URLs for a v3 code). Then Milestone 8A (UUID migration) before any print |
@@ -264,4 +303,6 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | 2026-10-10 | **Prod sync-service deployed for real.** Fixed the Dockerfile (repo-root context, `tsc`, prune), added `shared/package.json` (`type: module`; without it the in-image build emitted CJS and crashed, caught by a pre-rollout smoke test), hostPath volume + init chown + Recreate in `infra/k3s/sync-service-deployment.yaml`, updated `deploy.sh`, docker-compose, HANDOFF. Verified over public WSS + restart persistence. Multiplayer world creation/presence should now work on aweborn.org for the first time. | Alex: smoke-test aweborn.org (create a world, reload, second browser). Then step 3: Origin |
 | 2026-10-10 | **CI deploys every VPS service.** `infra/k3s/deploy-services.sh` is now the single deploy path, used by CI, by hand, and by bootstrap. CI runs per-service path filters, connects over ephemeral Tailscale, and the forced-command key passes a validated service list. Each service is built, smoke-tested, rolled out, soaked, and rolled back on failure. Caddy is validated first and restarts only if its config changed. agent-runner switched to Recreate. `secrets.yaml` became `secrets.example.yaml`, and no automation applies it anymore (it would have clobbered the Stripe key). CloudFormation bootstrap now calls the same script. Verified with a full CI run (38101674034): all 4 services were on `90bd381` and healthy, and the secret was intact. | Step 3: Origin. Still open: nightly backup of prod `universe.db` |
 | 2026-10-10 | **8A steps 3–5: teleport links work.** Origin registered with permanent ID `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7` (new; replaces the card placeholder). `GET/HEAD /worlds/:id` on sync-service (400 invalid / 404 not found / 200, 30 s cache, CORS allowlist). Client: `parseTeleportLink()`, `TeleportSystem`, `TeleportToast`, camera snap + WarpEffect arrival burst, auto-lock skips the portal after a teleport. **Deviations:** Origin hidden from client `worlds` (portal has its own code paths); 404 doubles as "faded"; portal gravity body id is now `ORIGIN_WORLD_ID`; ROADMAP's `k7x9m` example left as-is (not edited). **Bug fixed:** entering a world from the dev overlay (N) never joined the server room, so world content never loaded and Escape never left; `CRDTDevOverlay` now syncs join/leave with `activeWorldId`. Verified locally: Origin, orbit, `?a=in` (objects loaded), invalid link toast. | Step 6: Origin UUID into the card + re-render + QR check. Then backup service for prod `universe.db` |
-| 2026-10-10 | **8A step 6 + shipped.** Card re-rendered with `5949dfc5-…` (QR decodes ✓ at 300/150 dpi). Pushed `0fc0f7d`; prod `GET /worlds/<origin>` returns Origin, and `https://aweborn.org/w/5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7` teleports to the portal with the toast (live browser check). **Prod world DB backups** (`8b1b64e`): hourly `sync-backup` CronJob (VACUUM INTO + integrity check + gzip, 48 hourly / 30 daily in `/var/lib/aweborn/backups/sync`), daily `backup.yml` pulls via a read-only forced-command key over Tailscale and uploads with a put-only OIDC role to versioned `aweborn-backups-111551045759` (90 days, stack `aweborn-backups`). Verified: manual job, restricted key refuses everything but `latest`, `restore-sync-db.sh --check` passes, first S3 upload round-trips to a valid DB. See HANDOFF → Backups. | Share-link bonus (copy link in L panel), or start 8B (Worlidex). Await DTB quote |
+| 2026-10-10 | **8A step 6 + shipped.** Card re-rendered with `5949dfc5-…` (QR decodes ✓ at 300/150 dpi). Pushed `0fc0f7d`; prod `GET /worlds/<origin>` returns Origin, and `https://aweborn.org/w/5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7` teleports to the portal with the toast (live browser check). **Prod world DB backups** (`8b1b64e`): hourly `sync-backup` CronJob (VACUUM INTO + integrity check + gzip, 48 hourly / 30 daily in `/var/lib/aweborn/backups/sync`), daily `backup.yml` pulls via a read-only forced-command key over Tailscale and uploads with a put-only OIDC role to versioned `aweborn-backups-111551045759` (90 days, stack `aweborn-backups`). Verified: manual job, restricted key refuses everything but `latest`, `restore-sync-db.sh --check` passes, first S3 upload round-trips to a valid DB. See HANDOFF → Backups. | Share-link bonus (copy link in L panel), or start 8B (World Index). Await DTB quote |
+| 2026-10-11 | **Rename: "Worlidex" → "World Index"** (Alex: too silly). Renamed in all plan docs (MASTER_PLAN, PLAN, HANDOFF, phases/*), plus code names: `WorldIndexEntry`, `src/components/WorldIndex.tsx`, `src/stores/worldIndexStore.ts`, `/players/:id/world-index`. "Temporary world index" (dev overlay) → "temporary world list" to avoid the clash. Historical log entries are renamed too. **8B identity design opened:** Alex wants one player across tabs *and* devices (phone/tablet = same character; moving in one tab moves it everywhere). Options presented: public `playerId` + private secret; cross-device via QR device linking / passkeys / email magic link / OAuth; tabs as single-driver + live followers. Decided: legacy `creator` session IDs (`p-xxxxxx`) → `"system"`. **Then:** Alex chose anonymous first + (A) QR linking + (B) passkeys + (C) email magic link; ROADMAP renamed too (Alex approved). Identity tasks I1–I5 written. **Then:** multi-session = one screen steers; scope adds social sign-in (Google, Facebook, Apple, …) and email + password (I6, I7), plus I0 (pick the auth stack). Global rule: ROADMAP is editable when Alex explicitly says so. | I0: choose the auth stack, then start I1 |
+| 2026-10-11 | **I0 + I1 built (local).** Better Auth 1.7.7 in sync-service (`src/auth.ts`, `/api/auth/*`, tables in `universe.db`). **Deviation from plan:** Better Auth replaces the user on account link, so `playerId` is our own column carried over in `onLinkAccount`; per-device secret scheme replaced by Better Auth sessions (1 yr, refreshed daily). WS upgrade reads the session (trusted origins only); `creator` server-decided (`playerId` / `"guest"`). Alex: colour derived from `playerId` (customisable later); sessionless guests permanently welcome + smooth onramp to a verified account. Weak/placeholder prod secret disables auth instead of crashing. `migrate-legacy-creators.ts` (tested on a copy). HANDOFF → Player identity + DR step 8 (restore the same secret). Verified: curl (sign-in, session, re-sign-in refused), WS (session → playerId, evil origin → guest, spoofed creator ignored), browser (same `playerId` across reload + new tab, no console errors), disabled-auth mode. Global rule: ROADMAP editable on Alex's explicit say-so. | Alex sets `BETTER_AUTH_SECRET` → commit + deploy → run creator migration on prod → verify. Then I1b (one screen steers) or the onramp + first sign-in method |
