@@ -17,6 +17,9 @@
 #
 # Full runbook incl. what to do after: HANDOFF -> Rebuilding the VPS.
 set -euo pipefail
+# Discard keys typed while we waited (a stray Enter used to answer the next
+# prompt with "" and silently decline; DR drill 2026-10-11).
+drain_tty() { [[ -t 0 ]] || return 0; while read -r -s -t 1 -n 256 _; do :; done; }
 cd "$(dirname "$0")/.."
 
 STACK=aweborn-vps
@@ -75,7 +78,7 @@ EOF
 bucket="aweborn-backups-$(aws sts get-caller-identity --query Account --output text)"
 aws s3 ls "s3://$bucket/sync/" --recursive 2>/dev/null | grep '\.db\.gz$' | tail -1 | sed 's/^/       /' || echo "       (could not list $bucket)"
 echo
-read -r -p "Type the OLD instance name ($OLD) to rebuild: " ok
+drain_tty; read -r -p "Type the OLD instance name ($OLD) to rebuild: " ok
 [[ "$ok" == "$OLD" ]] || { echo "Not confirmed; nothing changed."; exit 0; }
 
 aws cloudformation update-stack --stack-name "$STACK" --template-body "file://$TPL" \

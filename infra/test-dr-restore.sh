@@ -199,7 +199,8 @@ echo "  $before"
 
 # ── 3. Restore (you answer the prompts) ────────────────────────
 say "Running infra/restore-from-s3.sh against $NAME"
-RESTORE_INSTANCE="$NAME" RESTORE_TSNAME="$NAME" infra/restore-from-s3.sh $KEY_ARG
+RESTORE_INSTANCE="$NAME" RESTORE_TSNAME="$NAME" infra/restore-from-s3.sh $KEY_ARG \
+  || die "restore-from-s3.sh did not complete (exit $?: 3 = not confirmed)"
 
 # ── 4. Verify ──────────────────────────────────────────────────
 say "Verifying"

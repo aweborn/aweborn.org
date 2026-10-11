@@ -12,6 +12,9 @@
 # Rotate: revoke the old OAuth client in the Tailscale admin console, create a
 #         new one (scope auth_keys, tag tag:server), run this again.
 set -euo pipefail
+# Discard keys typed while we waited (a stray Enter used to answer the next
+# prompt with "" and silently decline; DR drill 2026-10-11).
+drain_tty() { [[ -t 0 ]] || return 0; while read -r -s -t 1 -n 256 _; do :; done; }
 cd "$(dirname "$0")/.."
 
 STACK=aweborn-vps
@@ -59,7 +62,7 @@ if jq -e '[.Changes[].ResourceChange | select(.Replacement == "True" or .Replace
   echo "REFUSING: this would replace or remove a resource. Investigate first." >&2; exit 2
 fi
 echo
-read -r -p 'Type "apply" to execute: ' ok
+drain_tty; read -r -p 'Type "apply" to execute: ' ok
 [[ "$ok" == apply ]] || { echo "Not applied."; exit 0; }
 
 aws cloudformation execute-change-set --stack-name "$STACK" --change-set-name "$CS"

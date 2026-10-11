@@ -10,6 +10,9 @@
 # sync-data/pre-restore-<ts>/ → install snapshot → scale to 1 → wait ready →
 # check /health. Nothing is deleted; undo = run this again on the pre-restore copy.
 set -euo pipefail
+# Discard keys typed while we waited (a stray Enter used to answer the next
+# prompt with "" and silently decline; DR drill 2026-10-11).
+drain_tty() { [[ -t 0 ]] || return 0; while read -r -s -t 1 -n 256 _; do :; done; }
 
 NS=aweborn
 DATA=/var/lib/aweborn/sync-data
@@ -41,7 +44,7 @@ sudo docker run --rm -v "$tmp:/restore" --entrypoint node "$image" --input-type=
 '
 [[ $CHECK_ONLY -eq 1 ]] && { log "Check only: nothing changed"; exit 0; }
 
-read -r -p "Replace the live universe.db with this snapshot? Players will be disconnected ~30s. [y/N] " ans
+drain_tty; read -r -p "Replace the live universe.db with this snapshot? Players will be disconnected ~30s. [y/N] " ans
 [[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "aborted"; exit 1; }
 
 log "Scaling sync-service to 0 (flushes docs on SIGTERM)"

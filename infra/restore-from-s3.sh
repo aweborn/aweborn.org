@@ -24,6 +24,9 @@
 # name> RESTORE_TSNAME=<tailnet name> point it at another box; the CI pin and
 # the public health check (both about prod) are then skipped.
 set -euo pipefail
+# Discard keys typed while we waited (a stray Enter used to answer the next
+# prompt with "" and silently decline; DR drill 2026-10-11).
+drain_tty() { [[ -t 0 ]] || return 0; while read -r -s -t 1 -n 256 _; do :; done; }
 cd "$(dirname "$0")/.."
 
 STACK=aweborn-vps
@@ -137,7 +140,7 @@ if (( ${#stale[@]} == 0 )); then
 else
   echo "  STALE in: ${stale[*]} (CI deploys/backups fail closed until updated)"
   echo "  new pin (from the Lightsail API): $pin"
-  read -r -p "  Update both workflow files now? [y/N] " a
+  drain_tty; read -r -p "  Update both workflow files now? [y/N] " a
   if [[ "$a" == [yY] ]]; then
     for f in "${WORKFLOWS[@]}"; do
       NEWPIN="$pin" perl -pi -e 's|^(\s*VPS_KNOWN_HOST:).*|$1 $ENV{NEWPIN}|' "$f"
@@ -165,8 +168,8 @@ with $KEY.
 The current DB is moved aside to /var/lib/aweborn/sync-data/pre-restore-<ts>/
 (not deleted). Players are disconnected for ~30s.
 EOF
-read -r -p 'Type "restore" to continue: ' ok
-[[ "$ok" == restore ]] || { echo "Not confirmed. The backup stays in ~/restore/ on the box; nothing else changed."; exit 0; }
+drain_tty; read -r -p 'Type "restore" to continue: ' ok
+[[ "$ok" == restore ]] || { echo "Not confirmed. The backup stays in ~/restore/ on the box; nothing else changed."; exit 3; }
 fresh_access
 ssh -t "${SSH_OPTS[@]}" "ubuntu@$TSNAME" "$REMOTE_RESTORE ~/restore/$FILE"
 
