@@ -17,6 +17,8 @@
 # smoke-test /health against throwaway storage → import into k3s → roll out
 # :<sha> → soak → automatic rollback on failure. Caddy: validate Caddyfile →
 # apply → restart only if config changed → HTTPS check → rollback on failure.
+# First install (fresh box, no caddy-config yet): apply → wait for pods →
+# wait for certs (warning only: they need DNS pointing at this box).
 #
 # Secrets are NEVER applied here (secrets.example.yaml is only a template).
 # Stops at the first failing service; services after it are not deployed.
