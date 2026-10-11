@@ -39,10 +39,10 @@
     + [Warp Mechanic (K Key)](#warp-mechanic-k-key)
     + [Context Switching: Universe → World Interior](#context-switching-universe-%E2%86%92-world-interior)
     + [Input Translation Layers](#input-translation-layers)
-- [Physical Portals: NFC Trading Cards & the Worlidex](#physical-portals-nfc-trading-cards--the-worlidex)
+- [Physical Portals: NFC Trading Cards & the World Index](#physical-portals-nfc-trading-cards--the-world-index)
     + [The Card](#the-card)
     + [The Tap → Teleport Flow](#the-tap--teleport-flow)
-    + [The Worlidex](#the-worlidex)
+    + [The World Index](#the-world-index)
     + [First Discovery Rewards](#first-discovery-rewards)
     + [Card Programs: Curated Sets & Print-Your-World](#card-programs-curated-sets--print-your-world)
     + [Cards & the Mana Economy](#cards--the-mana-economy)
@@ -134,7 +134,7 @@ This gives us **universal NFC support** on any modern phone with NFC hardware.
 
 Perfect for non-profit events: hand out branded Aweborn NFC stickers at fundraisers, conferences, or meetups. Each sticker is a portal into a shared cosmic world.
 
-> **See also:** [Physical Portals: NFC Trading Cards & the Worlidex](#physical-portals-nfc-trading-cards--the-worlidex) — the collectible evolution of this idea. Join links (`/join/…`) connect you to a *session*; trading cards (`/w/<uuid>`) teleport you to a *world* and add it to your Worlidex.
+> **See also:** [Physical Portals: NFC Trading Cards & the World Index](#physical-portals-nfc-trading-cards--the-world-index) — the collectible evolution of this idea. Join links (`/join/…`) connect you to a *session*; trading cards (`/w/<uuid>`) teleport you to a *world* and add it to your World Index.
 
 ##### Offline Mode: SDP-in-URL-Hash
 
@@ -558,11 +558,11 @@ The keyboard layout is the source of truth. All other input methods map to it:
 | L (scan) | Enhanced: info overlay follows gaze |
 | V, N, K | Unchanged — still keyboard |
 
-## Physical Portals: NFC Trading Cards & the Worlidex
+## Physical Portals: NFC Trading Cards & the World Index
 
 > **Origin:** Grew out of Alex's hands-on NFC work (cloning LF/HF fobs with the Chameleon Ultra + magic cards — see portfolio post *"Cloning an NFC Fob"*), the NFC sticker idea above, and the Aug 24, 2026 note: *"Eventually we'll make a cool world index that enables players to warp to worlds they've seen before."* Cataloged Oct 3, 2026. Implementation plan: [phases/08-nfc-trading-cards.md](./phases/08-nfc-trading-cards.md).
 
-Aweborn worlds become **physical trading cards**. Each card has a world's portrait on the front, the same Aweborn back on every card, and an NFC chip inside holding a single URL: `https://aweborn.org/w/<world-uuid>`. Tap a phone to the card and the browser (or installed PWA) opens, and your star **teleports to that world's coordinates** in the universe. The world is added to your **Worlidex**, your personal index of discovered worlds, so you can warp back to it from anywhere.
+Aweborn worlds become **physical trading cards**. Each card has a world's portrait on the front, the same Aweborn back on every card, and an NFC chip inside holding a single URL: `https://aweborn.org/w/<world-uuid>`. Tap a phone to the card and the browser (or installed PWA) opens, and your star **teleports to that world's coordinates** in the universe. The world is added to your **World Index**, your personal index of discovered worlds, so you can warp back to it from anywhere.
 
 It's a sci-fi token that links the real world to the virtual one. Cards are cheap to make, but people value them for reasons that have nothing to do with money: the art, the collecting, the gifting, the memory of an event. That makes them a natural fundraiser for the non-profit. They're **low stakes on purpose**. A card is a key to a place, not an asset.
 
@@ -574,7 +574,7 @@ It's a sci-fi token that links the real world to the virtual one. Cards are chea
 | **Back** | **Static. Identical on every card ever printed.** An Aweborn logo design, so the backs of a stack look uniform, like a real TCG deck back |
 | **Chip** | NFC NTAG (see [Chip, URL & Security Model](#chip-url--security-model)), one NDEF URI record, locked read-only after encoding |
 | **Identity** | The card *is* the world ID. There are **no per-card serial numbers** (explicitly decided: not needed) |
-| **Digital twin** | The same front art appears as the world's entry in the Worlidex, so physical and digital cards look identical |
+| **Digital twin** | The same front art appears as the world's entry in the World Index, so physical and digital cards look identical |
 
 #### The Tap → Teleport Flow
 
@@ -586,7 +586,7 @@ It's a sci-fi token that links the real world to the virtual one. Cards are chea
    (the client only subscribes to nearby sectors, so this needs a direct lookup by ID)
 5. Teleport: warp-arrival effect plays, player star placed at the world's resolvedPosition
 6. Arrival mode applied (default: captured orbit around the world's sun)
-7. Worlidex: entry added (method = "card") if new → First Discovery reward fires
+7. World Index: entry added (method = "card") if new → First Discovery reward fires
 ```
 
 **Arrival modes (configurable per card, default = orbit):**
@@ -602,16 +602,16 @@ The arrival mode is chosen when the card is designed, and it's encoded in the UR
 
 **Edge cases:**
 - **Fresh visitor / first-ever load:** the card *is* their onboarding. Their first view of Aweborn is arriving at a specific world instead of the origin (relates to the open "Universe Entry Point" question).
-- **Offline tap:** the PWA (Phase 06) opens from cache. If the world snapshot is cached, teleport to it. If not, add a *pending* Worlidex entry and show "This world awaits. Come back online to arrive." Resolve on reconnect.
+- **Offline tap:** the PWA (Phase 06) opens from cache. If the world snapshot is cached, teleport to it. If not, add a *pending* World Index entry and show "This world awaits. Come back online to arrive." Resolve on reconnect.
 - **Ghost world:** teleport works the same. The player arrives at a Ghost (wireframe) world. This also nudges people toward funding it (see [Cards & the Mana Economy](#cards--the-mana-economy)).
 - **Desktop / no NFC:** the URL works in any browser. It's just a link.
 
-#### The Worlidex
+#### The World Index
 
-The Worlidex is the player's **personal, persistent index of every world they've discovered**. It's how a player remembers the universe, and it replaces the temporary `CRDTDevOverlay` world list.
+The World Index is the player's **personal, persistent index of every world they've discovered**. It's how a player remembers the universe, and it replaces the temporary `CRDTDevOverlay` world list.
 
 ```js
-// One Worlidex entry per discovered world (per player)
+// One World Index entry per discovered world (per player)
 {
   worldId: "3f9c2a1e-…-uuidv4",
   state: "sighted" | "visited",   // see open question on discovery thresholds
@@ -624,18 +624,18 @@ The Worlidex is the player's **personal, persistent index of every world they've
 ```
 
 - **Any discovery counts.** Flying in manually, tapping a card, or opening a shared link all add entries. Cards are just the most magical way to fill it.
-- **Worlidex Warp.** From anywhere in the universe, choose a Worlidex entry and warp straight there. This is the in-game version of tapping the card again. It uses the warp charge/leap visuals.
+- **World Index Warp.** From anywhere in the universe, choose a World Index entry and warp straight there. This is the in-game version of tapping the card again. It uses the warp charge/leap visuals.
 - **Collector view.** Entries are shown as cards using the same art as the physical card. Collections are grouped by set (Origin Set, event sets, print-your-world). Per-set progress ("7 / 12 discovered") gives people a reason to collect without any scarcity mechanics.
 - **Card-found badge.** Entries discovered by a physical card tap (`method: "card"`) get a subtle tactile mark in the UI, a nod to the real-world artifact. This is decoration, not proof of ownership.
-- **Persistence requires identity.** The current `playerId` lives in `sessionStorage` and is lost when the tab closes. The Worlidex needs at least a device-persistent identity, and eventually cross-device identity (see open questions).
+- **Persistence requires identity.** The current `playerId` lives in `sessionStorage` and is lost when the tab closes. The World Index needs at least a device-persistent identity, and eventually cross-device identity (see open questions).
 
 #### First Discovery Rewards
 
 The first time a player discovers a world, by any method:
 
 1. **Awe → universal pool.** This fires the existing `first-world-visit` awe event (500 mana). Per the awe rules, that mana flows into the **universal pool**, not to the individual. Tapping a new card makes the universe richer for everyone.
-2. **Discovery moment (personal).** A card-reveal animation: the world's card flips from the static Aweborn back to its front art and slides into the Worlidex. This is the personal reward and the dopamine hit.
-3. **Worlidex entry.** The world can now be warped to from anywhere, forever.
+2. **Discovery moment (personal).** A card-reveal animation: the world's card flips from the static Aweborn back to its front art and slides into the World Index. This is the personal reward and the dopamine hit.
+3. **World Index entry.** The world can now be warped to from anywhere, forever.
 4. **Shared-awe still applies.** Tapping cards together at an event (several players discovering at once) gets the 2× shared-awe multiplier.
 
 Repeat taps of an already-discovered world just teleport, with no new reward (awe exhaustion applies as usual). Any further personal reward (cosmetics, discovery-count badges) has to follow the **cosmetic-only** rule. See open questions.
@@ -996,14 +996,14 @@ The offline experience is still rich and beautiful: Ghost worlds have their own 
 - **⬜ World Interiors:** What can players actually do inside a world? (place objects, sculpt, draw, just hang out?)
 - **⬜ Universe Entry Point:** What does a brand-new player see when they first open aweborn.org? How do they orient?
 - **⬜ Mana Tuning:** Finalize dollar-to-mana ratio, solar cycle parameters
-- **⬜ Discovery threshold (Worlidex):** Does a world enter the Worlidex when *sighted* (close LOD range / scanned with L) or only when *visited* (entered with N / card tap)? Proposal: two states, *sighted* (can warp to) and *visited* (full card art revealed).
-- **⬜ Worlidex Warp rules:** Free? Cooldown? Charge time scaling with distance? Proposal: free, standard K charge animation, no cooldown (movement never costs mana).
-- **⬜ Worlidex key binding:** The keyboard layout has no free slot. Proposal: `;` tap = Map/Compass (existing), hold = open Worlidex.
-- **⬜ Player identity persistence:** The Worlidex needs a persistent player. Proposal: v1 = device-persistent ID (localStorage + IndexedDB) synced to the server; v2 = optional cross-device linking (passkey or email magic link, optionally tied to Stripe donor identity).
-- **⬜ Personal discovery rewards:** Beyond awe-to-pool + the Worlidex entry, is there a personal reward (cosmetic badges at discovery milestones, set-completion flair)? Must stay cosmetic-only.
+- **⬜ Discovery threshold (World Index):** Does a world enter the World Index when *sighted* (close LOD range / scanned with L) or only when *visited* (entered with N / card tap)? Proposal: two states, *sighted* (can warp to) and *visited* (full card art revealed).
+- **⬜ World Index Warp rules:** Free? Cooldown? Charge time scaling with distance? Proposal: free, standard K charge animation, no cooldown (movement never costs mana).
+- **⬜ World Index key binding:** The keyboard layout has no free slot. Proposal: `;` tap = Map/Compass (existing), hold = open World Index.
+- **✅ Player identity persistence (decided 2026-10-11):** One player across tabs and devices. Anonymous first (no signup wall). Every sign-in method attaches to the same `playerId`: QR device linking, passkeys, email magic link, social sign-in (Google, Facebook, Apple, …) and email + password. The public `playerId` is never a credential; each device holds its own revocable session. When several screens are open, one screen steers and the others follow live. Open: auth stack (self-hosted library vs hosted provider). Tasks: Phase 08 → Persistent Player Identity.
+- **⬜ Personal discovery rewards:** Beyond awe-to-pool + the World Index entry, is there a personal reward (cosmetic badges at discovery milestones, set-completion flair)? Must stay cosmetic-only.
 - **⬜ Print-your-world → patronage:** Should a card order for a Ghost world fund that world's solidification automatically, opt-in, or not at all?
 - **⬜ Card format:** TCG standard (63×88 mm, fits sleeves/binders) vs. CR80 credit-card size (85.6×54 mm, cheapest NFC PVC stock). Proposal: TCG size for collector feel.
 - **⬜ QR fallback:** Include a small QR code (same URL) on the card front for phones without NFC / desktop? (The back must stay identical on every card, and a QR is unique per world, so it can only go on the front.)
 - **⬜ Card art pipeline:** How is a world's portrait produced — player-taken in-game snapshot, automatic server-side render, or AI-generated (Phase 07)?
 - **⬜ Print + encode vendor:** Which vendor prints full-color NFC cards and encodes + locks a unique URL per card at small minimums? Or encode in-house with a USB NFC writer?
-- **⬜ Product name:** "Aweborn Cards", "Worldcards", "Star Cards", "Portal Cards"…? (Worlidex is settled.)
+- **⬜ Product name:** "Aweborn Cards", "Worldcards", "Star Cards", "Portal Cards"…? (World Index is settled.)

@@ -24,9 +24,9 @@ Useful code from `tokbot` (e.g., Meshy AI integration) will be migrated into awe
 
 ## Physical Artifacts: NFC Trading Cards
 
-Aweborn worlds become **physical NFC trading cards**. Tap a phone to a card → `https://aweborn.org/w/<uuidv4>` opens → the player teleports to that world and it joins their **Worlidex** (personal index of discovered worlds, warpable from anywhere). Cards are a fundraising product (sales → mana pool), an outreach tool (free at events), and a print-on-demand service for players, companies, and events. This is where Aweborn reaches into the physical world.
+Aweborn worlds become **physical NFC trading cards**. Tap a phone to a card → `https://aweborn.org/w/<uuidv4>` opens → the player teleports to that world and it joins their **World Index** (personal index of discovered worlds, warpable from anywhere). Cards are a fundraising product (sales → mana pool), an outreach tool (free at events), and a print-on-demand service for players, companies, and events. This is where Aweborn reaches into the physical world.
 
-- Design: [ROADMAP.md → Physical Portals](./ROADMAP.md#physical-portals-nfc-trading-cards--the-worlidex)
+- Design: [ROADMAP.md → Physical Portals](./ROADMAP.md#physical-portals-nfc-trading-cards--the-world-index)
 - Execution: [Phase 08](./phases/08-nfc-trading-cards.md)
 
 ## Infrastructure Strategy
@@ -79,7 +79,7 @@ The VPS runs **Ubuntu 22.04 LTS + k3s** on an AWS Lightsail 2 GB instance (`infr
 | Mana-to-cost formula | Research API costs → derive conversion rate | ⬜ Pending (Phase 05 + 07 task) |
 | Gen AI providers | Meshy (3D), others TBD per modality | ⬜ Pending (Phase 07 task) |
 | NFC card print + encode vendor | In-house (pilot) vs. vendor (scale) | ⬜ Pending (Phase 08 task) |
-| Card product name | TBD ("Worlidex" is settled) | ⬜ Pending |
+| Card product name | TBD ("World Index" is settled) | ⬜ Pending |
 | Persistent player identity | Device-persistent v1 → cross-device v2 | ⬜ Pending (Phase 08 prerequisite) |
 
 *Last updated: 2026-10-03*

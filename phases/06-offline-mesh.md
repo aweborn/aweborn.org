@@ -57,14 +57,14 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 
 ### NFC URL Support (Tap-to-Join)
 
-> **Scope note:** This section covers *session* join links (`/join/…`, `/j#<sdp>`). World teleport links on NFC **trading cards** (`/w/<uuidv4>`) plus the Worlidex live in [Phase 08](./08-nfc-trading-cards.md). Phase 08 depends on this phase's Service Worker for offline card taps. Share the URL-parsing boot code between `Join.tsx` and Phase 08's `TeleportSystem`.
+> **Scope note:** This section covers *session* join links (`/join/…`, `/j#<sdp>`). World teleport links on NFC **trading cards** (`/w/<uuidv4>`) plus the World Index live in [Phase 08](./08-nfc-trading-cards.md). Phase 08 depends on this phase's Service Worker for offline card taps. Share the URL-parsing boot code between `Join.tsx` and Phase 08's `TeleportSystem`.
 
 - `[ ]` Online mode: `aweborn.org/join/<worldId>` — deep link route
 - `[ ]` Create `src/pages/Join.tsx` — handles join URL, connects to world
 - `[ ]` Offline mode: `aweborn.org/j#<base64-QWBP-offer>` — SDP in URL hash
 - `[ ]` Join page reads `window.location.hash`, extracts SDP, generates answer
 - `[ ]` Documentation: how to write join URLs to NFC stickers
-- `[ ]` Offline card tap (Phase 08): if `/w/<uuid>` is opened offline, serve cached app and queue a *pending* Worlidex entry
+- `[ ]` Offline card tap (Phase 08): if `/w/<uuid>` is opened offline, serve cached app and queue a *pending* World Index entry
 
 ### Offline Reconnect
 - `[ ]` On reconnect: re-run `universe-sync` / `world-sync` state-vector exchange over the room protocol to push local state to the VPS

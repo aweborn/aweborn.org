@@ -109,7 +109,7 @@ Implement the keyboard-first cockpit control scheme where **left hand navigates,
 - `[x]` 3D-aware radar minimap (`RadarMinimap.tsx`), real-time updates. *Camera-synchronized radar was attempted and reverted (dropped 120 → 30–70 fps); radar must never cost frame rate.*
 - `[x]` LOD Close threshold raised; landmark islands removed (see Phase 03)
 - `[x]` Cross-browser player presence via sync-service WebSocket relay (msg `0x09`)
-- `[x]` CRDT dev panel shown in production as a temporary world index (until the Worlidex, Phase 08)
+- `[x]` CRDT dev panel shown in production as a temporary world list (until the World Index, Phase 08)
 - `[x]` Stripe donation flow switched back from sandbox to live
 
 ## Acceptance Criteria
@@ -150,6 +150,6 @@ Implement the keyboard-first cockpit control scheme where **left hand navigates,
 | 2026-08-21 | Sessions 2-3: Built WarpSystem (lock-on targeting, charge/leap with cubic ease, residual velocity arrival), WarpEffect (charge streaks, leap flash, arrival particles), WorldTransition (CSS-based white flash overlay on enter/exit), GravityFieldLines (CatmullRom splines near worlds), TouchInputAdapter (left joystick + right thrust + two-finger brake), GamepadInputAdapter (full Gamepad API with analog sticks/triggers), StarModSlots (trail/aura/shape/emote with sessionStorage persistence), updated PlayerOrb with mod-driven shape/trail/aura switching, updated HUD with lock indicator + warp charge ring + mod slot display. TS + Vite build clean. | Phase 04 complete → Phase 05 (Mana Economy) |
 | 2026-08-22 | Polish: FPS monitor; diagnosed CI deploy (Node 20 vs `camera-controls` requiring Node 22); HUD keymap in keyboard layout with live key highlighting; flight retuned for control (~100ms settle); home indicator. | Continue polish |
 | 2026-08-23 | Polish: raised LOD Close threshold so worlds render in full when in view; removed landmark islands. | — |
-| 2026-08-24 | Polish: CRDT dev panel in prod (temporary world index); Stripe back to live; radar rebuilt for 3D + real-time (camera-sync attempt reverted for perf); cross-browser presence via WebSocket relay; remote positions under gravity fixed; CI unused-var fixes. Deployed. | Phase 05 |
+| 2026-08-24 | Polish: CRDT dev panel in prod (temporary world list); Stripe back to live; radar rebuilt for 3D + real-time (camera-sync attempt reverted for perf); cross-browser presence via WebSocket relay; remote positions under gravity fixed; CI unused-var fixes. Deployed. | Phase 05 |
 | 2026-10-03 | Plan reconciliation: acceptance criteria checked per verified sessions; interior movement gap moved to Phase 07. | Touch/gamepad device verification still deferred |
 | 2026-10-10 | Landed Alex's unfinished slingshot work (approach drag, slingshot exit impulse + `SlingshotArc` visual, orb pulse, touch DRIVE/NEUTRAL toggle, fixed 60Hz physics substeps). Fixed the "can't escape the well" bug: the slingshot boost was multiplying the *inward* pull up to ~21×, and with `G=10` near-body gravity (~62 u/s² at the Portal) beat max thrust (10 u/s²). Gravity is now capped at `MAX_GRAVITY_ACCEL = 8` (below thrust), per body and in total. Added `scripts/sim/gravity-escape.ts` (headless escape + flyby checks; all pass). | Playtest slingshot feel in NEUTRAL; tune `SLINGSHOT_IMPULSE_MULTIPLIER` / `G`; wire `slingshotEvent` to mana (Phase 05) |

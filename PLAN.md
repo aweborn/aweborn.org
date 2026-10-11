@@ -51,11 +51,11 @@ Tailnet (ops only)
 | 05 | Mana Economy & Donations | `[ ]` Not Started | Phase 02, 04 | 4-5 | [→ 05-mana-economy.md](./phases/05-mana-economy.md) |
 | 06 | Offline & Mesh Networking | `[ ]` Not Started | Phase 02 | 3-4 | [→ 06-offline-mesh.md](./phases/06-offline-mesh.md) |
 | 07 | World Creation & Gen AI | `[ ]` Not Started | Phase 01, 04, 05 (interior movement needs only 04) | 5-7 | [→ 07-genai-creation.md](./phases/07-genai-creation.md) |
-| 08 | NFC Trading Cards & the Worlidex | `[ ]` Not Started | Phase 04 (8A/8B); 05 + 06 for later milestones | 7-10 | [→ 08-nfc-trading-cards.md](./phases/08-nfc-trading-cards.md) |
+| 08 | NFC Trading Cards & the World Index | `[ ]` Not Started | Phase 04 (8A/8B); 05 + 06 for later milestones | 7-10 | [→ 08-nfc-trading-cards.md](./phases/08-nfc-trading-cards.md) |
 
 **Total estimated sessions: 32–44** (1 session ≈ 2-4 hours of agent-assisted work)
 
-> **➡️ Next up: Phase 05 (Mana Economy).** Phase 08 milestones 8A/8B (teleport links, Worlidex) are also unblocked and can run in parallel.
+> **➡️ Next up: Phase 05 (Mana Economy).** Phase 08 milestones 8A/8B (teleport links, World Index) are also unblocked and can run in parallel.
 >
 > **Deferred verification debt** (carried from completed phases): stress tests in Phases 02/03 (10+ connections, 1000+ worlds @ 60fps) and on-device touch/gamepad verification in Phase 04.
 
@@ -96,7 +96,7 @@ aweborn.org/
 │   │   ├── RadarMinimap.tsx       # 3D-aware radar (bottom-left)
 │   │   ├── PortalBeacon.tsx       # "Where is home" indicator
 │   │   ├── GravityFieldLines.tsx / SlingshotArc.tsx / WarpEffect.tsx / WorldTransition.tsx
-│   │   ├── CRDTDevOverlay.tsx     # Dev panel / temporary world index (in prod until Worlidex, Phase 08)
+│   │   ├── CRDTDevOverlay.tsx     # Dev panel / temporary world list (in prod until World Index, Phase 08)
 │   │   ├── DonationPortal.tsx / DonationModal.tsx   # Stripe donation flow
 │   │   ├── HUD.tsx                # Keymap (lights on press), speed, lock/warp, FPS
 │   │   └── LoadingScreen.tsx / FallbackScene.tsx / CanvasErrorBoundary.tsx
@@ -122,7 +122,7 @@ aweborn.org/
 ├── PLAN.md                        # This file
 └── phases/                        # Phase execution files (README.md = phase index)
     ├── 01-foundation.md … 07-genai-creation.md
-    └── 08-nfc-trading-cards.md    # NFC cards + Worlidex
+    └── 08-nfc-trading-cards.md    # NFC cards + World Index
 ```
 
 ## Absorbed from TokBot
@@ -135,6 +135,6 @@ The following TokBot features are now part of aweborn.org's world interior exper
 | Content studio | World building tools (objects, terrain, effects) | Phase 07 |
 | Token economy | Mana system (pegged to real compute cost) | Phase 05 |
 | Social publishing | Not in scope (aweborn.org IS the social platform) | — |
-| Firebase Auth | Not needed (anonymous + Stripe donor identity). Persistent anonymous identity is still required for the Worlidex — see Phase 08 | — |
+| Firebase Auth | Not needed (anonymous + Stripe donor identity). Persistent anonymous identity is still required for the World Index — see Phase 08 | — |
 
 Useful code to migrate from `tokbot-backend/functions/src/avatars/` (Meshy AI integration).

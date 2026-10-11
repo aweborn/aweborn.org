@@ -10,7 +10,7 @@
  *
  * Tapping a card while the app is open is a normal navigation (new page
  * load), so boot handling covers it. `teleportToId()` is the in-app entry
- * point for future share links / Worlidex warps.
+ * point for future share links / World Index warps.
  */
 
 import * as THREE from 'three'

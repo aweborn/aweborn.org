@@ -70,7 +70,7 @@ Implement the mana economy — the creative energy system that powers the Living
 - `[ ]` Shared-awe multiplier: 2x when near other players
 - `[ ]` Diminishing novelty: exponential decay on revisits
 - `[ ]` Client reports awe events → server validates → adds to pool
-- `[ ]` Expose a discovery hook (`onFirstDiscovery(worldId, method)`) so [Phase 08](./08-nfc-trading-cards.md)'s Worlidex + NFC card taps can fire `first-world-visit` awe
+- `[ ]` Expose a discovery hook (`onFirstDiscovery(worldId, method)`) so [Phase 08](./08-nfc-trading-cards.md)'s World Index + NFC card taps can fire `first-world-visit` awe
 
 ### Living Frontier & Solidification
 - `[ ]` Server calculates `frontierRadius` from mana pool (cube root formula)
