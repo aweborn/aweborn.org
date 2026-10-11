@@ -3,6 +3,7 @@ import { useSyncConnection } from "../hooks/useCRDT";
 import { usePresence, handleWebSocketPresence, setPresenceSender } from "../hooks/usePresence";
 import { useUniverseStore } from "../stores/universeStore";
 import { useWorldStore } from "../stores/worldStore";
+import { markMeaningfulMoment } from "../lib/onramp";
 import type { WorldEntry } from "@aweborn/shared/crdt-schema";
 import { adjacentSectorKeys } from "@aweborn/shared/crdt-schema";
 
@@ -120,6 +121,7 @@ export function CRDTDevOverlay() {
       z: (Math.random() - 0.5) * 500,
     };
     createWorld(worldName.trim(), playerId, position, worldColor);
+    markMeaningfulMoment("world-created");
     setWorldName("");
   };
 

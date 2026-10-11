@@ -12,6 +12,7 @@
 
 import { createAuthClient } from "better-auth/client";
 import { anonymousClient } from "better-auth/client/plugins";
+import { passkeyClient } from "@better-auth/passkey/client";
 
 const SYNC_URL: string = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 /** Auth lives on the sync-service origin (same site as aweborn.org). */
@@ -23,7 +24,7 @@ const AUTH_TIMEOUT_MS = 5_000;
 export const authClient = createAuthClient({
   baseURL: AUTH_URL,
   fetchOptions: { credentials: "include" },
-  plugins: [anonymousClient()],
+  plugins: [anonymousClient(), passkeyClient()],
 });
 
 export interface Player {
@@ -102,3 +103,120 @@ export const playerReady: Promise<Player> = withTimeout(resolvePlayer(), AUTH_TI
     console.warn("[player] auth unavailable, continuing as guest:", err);
     return guestPlayer();
   });
+
+// ── Live player state (for UI) ──────────────────────────────────────────────
+
+let currentPlayer: Player | null = null;
+const playerListeners = new Set<() => void>();
+
+function setPlayer(player: Player): void {
+  currentPlayer = player;
+  playerListeners.forEach((fn) => fn());
+}
+void playerReady.then(setPlayer);
+
+export function getPlayerSnapshot(): Player | null {
+  return currentPlayer;
+}
+export function subscribePlayer(fn: () => void): () => void {
+  playerListeners.add(fn);
+  return () => playerListeners.delete(fn);
+}
+
+/** Re-read the session (e.g. after saving with a passkey). Same playerId. */
+export async function refreshPlayer(): Promise<void> {
+  const res = await authClient.getSession({ query: { disableCookieCache: true } });
+  const player = toPlayer(res.data?.user as SessionUser | undefined);
+  if (player) setPlayer(player);
+}
+
+// ── Sign-in methods ─────────────────────────────────────────────────────────
+
+export interface AuthMethods {
+  enabled: boolean;
+  passkey: boolean;
+  google: boolean;
+  email: boolean;
+}
+const NO_METHODS: AuthMethods = { enabled: false, passkey: false, google: false, email: false };
+
+let methodsPromise: Promise<AuthMethods> | null = null;
+/** Which sign-in methods the server offers (cached for the page's life). */
+export function fetchAuthMethods(): Promise<AuthMethods> {
+  methodsPromise ??= fetch(`${AUTH_URL}/api/auth/methods`)
+    .then((r) => (r.ok ? (r.json() as Promise<AuthMethods>) : NO_METHODS))
+    .then((m) => ({
+      ...m,
+      // WebAuthn needs browser support (and a secure context).
+      passkey: m.passkey && typeof window !== "undefined" && "PublicKeyCredential" in window,
+    }))
+    .catch(() => NO_METHODS);
+  return methodsPromise;
+}
+
+/** Result of a sign-in action, phrased for players. */
+export type AuthResult = { ok: true } | { ok: false; cancelled?: boolean; message: string };
+
+const CANCEL_CODES = /CANCEL|ABORT|NOT_ALLOWED|PASSTHROUGH/i;
+
+function fail(error: { code?: string; message?: string } | null | undefined, fallback: string): AuthResult {
+  if (error?.code && CANCEL_CODES.test(error.code)) {
+    return { ok: false, cancelled: true, message: "No worries, nothing changed." };
+  }
+  if (error?.code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") {
+    return { ok: false, message: "This device already has a passkey for your player." };
+  }
+  if (error?.code === "SESSION_NOT_FRESH") {
+    return { ok: false, message: "For safety, sign in again first, then add this." };
+  }
+  return { ok: false, message: error?.message || fallback };
+}
+
+/** Save this player with a passkey on this device (Face ID, fingerprint, screen lock, or a phone). */
+export async function saveWithPasskey(): Promise<AuthResult> {
+  const res = await authClient.passkey.addPasskey({});
+  if (res.error) return fail(res.error, "Couldn't create a passkey. Please try again.");
+  await refreshPlayer();
+  return { ok: true };
+}
+
+/** Sign in to a player saved on another device. Reloads into that player. */
+export async function signInWithPasskey(): Promise<AuthResult> {
+  const res = await authClient.signIn.passkey({});
+  if (res.error) return fail(res.error, "Couldn't sign in with a passkey. Please try again.");
+  window.location.reload();
+  return { ok: true };
+}
+
+/**
+ * Google. Anonymous players *sign in* (a new Google account becomes this
+ * player; an existing one switches to that player). Saved players *link*
+ * Google as another way in. Both redirect away and back.
+ */
+export async function continueWithGoogle(): Promise<AuthResult> {
+  const here = window.location.href;
+  const failed = `${window.location.origin}/?signin=failed`;
+  const res = currentPlayer && !currentPlayer.isAnonymous
+    ? await authClient.linkSocial({ provider: "google", callbackURL: here, errorCallbackURL: failed })
+    : await authClient.signIn.social({ provider: "google", callbackURL: here, errorCallbackURL: failed });
+  if (res.error) return fail(res.error, "Couldn't reach Google. Please try again.");
+  return { ok: true }; // the browser is navigating to Google
+}
+
+/** Linked ways in, for the account panel. */
+export async function listSignInMethods(): Promise<{ passkeys: number; google: boolean }> {
+  const [passkeys, accounts] = await Promise.all([
+    authClient.passkey.listUserPasskeys(),
+    authClient.listAccounts(),
+  ]);
+  return {
+    passkeys: passkeys.data?.length ?? 0,
+    google: Boolean(accounts.data?.some((a) => a.providerId === "google")),
+  };
+}
+
+/** Sign out of this device. The next visit starts a fresh anonymous player. */
+export async function signOutOfDevice(): Promise<void> {
+  await authClient.signOut();
+  window.location.reload();
+}

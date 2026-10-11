@@ -61,6 +61,19 @@ spec:
                 secretKeyRef:
                   name: aweborn-secrets
                   key: BETTER_AUTH_SECRET
+            # Sign in with Google (optional: missing keys = Google button hidden).
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: GOOGLE_CLIENT_ID
+                  optional: true
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: GOOGLE_CLIENT_SECRET
+                  optional: true
           volumeMounts:
             - name: sync-data
               mountPath: /data

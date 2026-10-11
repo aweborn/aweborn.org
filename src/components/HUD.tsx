@@ -5,6 +5,7 @@ import { flightController } from '../systems/FlightController'
 import { warpSystem } from '../systems/WarpSystem'
 import { starModSlots } from '../systems/StarModSlots'
 import { RadarMinimap } from './RadarMinimap'
+import { PlayerAccount } from './PlayerAccount'
 
 interface HUDProps {
   showPrompt: boolean
@@ -178,9 +179,10 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
 
   return (
     <div className="hud-overlay">
-      {/* Top left — Brand */}
+      {/* Top left — Brand + player ("Save your player") */}
       <div className="hud-top-left">
         <div className="hud-brand">aweborn</div>
+        <PlayerAccount />
       </div>
 
       {/* Top right — Context mode */}

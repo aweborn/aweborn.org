@@ -20,7 +20,9 @@ import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { anonymous } from "better-auth/plugins";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
+import { passkey, getAuthenticatorName } from "@better-auth/passkey";
 
 /** Browser origins allowed to call the auth API with credentials. */
 export const TRUSTED_ORIGINS = [
@@ -36,10 +38,72 @@ export function isTrustedOrigin(origin: string | undefined): origin is string {
   return TRUSTED_ORIGINS.includes(origin) || (!IS_PROD && LOCAL_ORIGIN.test(origin));
 }
 
-/** A fresh sign-up has its user and session created within the same request. */
-const FRESH_USER_WINDOW_MS = 60_000;
+/**
+ * Real (non-anonymous) accounts created in the last few minutes by this
+ * process, so `onLinkAccount` can tell "this sign-in just created a new
+ * account" from "this sign-in reached an existing player". Timing heuristics
+ * can't: an existing player signing in moments after creation looks fresh.
+ */
+const NEW_ACCOUNT_TTL_MS = 5 * 60_000;
+const newAccounts = new Map<string, number>();
+function rememberNewAccount(userId: string): void {
+  const now = Date.now();
+  for (const [id, at] of newAccounts) if (now - at > NEW_ACCOUNT_TTL_MS) newAccounts.delete(id);
+  newAccounts.set(userId, now);
+}
+function takeNewAccount(userId: string): boolean {
+  const at = newAccounts.get(userId);
+  newAccounts.delete(userId);
+  return at !== undefined && Date.now() - at <= NEW_ACCOUNT_TTL_MS;
+}
 
 const DAY_S = 60 * 60 * 24;
+
+/**
+ * Passkeys are bound to the site the player sees (aweborn.org), not the auth
+ * host (sync.aweborn.org). A parent domain is a valid RP ID for a subdomain.
+ */
+const PASSKEY_RP_ID = process.env.PASSKEY_RP_ID ?? (IS_PROD ? "aweborn.org" : "localhost");
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? "";
+const GOOGLE_ENABLED = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
+
+/** Which sign-in methods the client should offer (GET /api/auth/methods). */
+export function authMethods(auth: Auth | null) {
+  return {
+    enabled: auth !== null,
+    passkey: auth !== null,
+    google: auth !== null && GOOGLE_ENABLED,
+    // Magic link + email/password land once SES is set up (Phase 08 I4/I7).
+    email: false,
+  };
+}
+
+/**
+ * Session freshness, our way. Better Auth's built-in check (session < 1 day
+ * old) would lock anonymous players out of saving their player for good:
+ * they have no credential to re-authenticate with. So the built-in check is
+ * off (`freshAge: 0`) and this hook enforces it only for players who already
+ * have a real sign-in method (they can simply sign in again).
+ */
+const FRESH_SESSION_MS = DAY_S * 1000;
+const SENSITIVE_PATHS = new Set([
+  "/passkey/generate-register-options",
+  "/passkey/verify-registration",
+  "/passkey/delete-passkey",
+  "/link-social",
+  "/unlink-account",
+  "/delete-user",
+  "/change-email",
+]);
+
+/** Readable label for the OS passkey picker (instead of a random placeholder). */
+function playerEmail(id: string): string {
+  return `player-${id.replace(/-/g, "").slice(0, 12)}@aweborn.invalid`;
+}
+/** Better Auth's default anonymous email, used before we set our own format. */
+const LEGACY_ANON_EMAIL = /@anonymous\.placeholder\.invalid$/;
 
 function buildOptions(db: Database.Database) {
   return {
@@ -62,12 +126,70 @@ function buildOptions(db: Database.Database) {
       // it long-lived and refreshed on use. Sessions are per device and revocable.
       expiresIn: 365 * DAY_S,
       updateAge: DAY_S,
+      // Off: see SENSITIVE_PATHS / the `hooks.before` below.
+      freshAge: 0,
+    },
+
+    // Sign-in methods. Each one attaches to the same player (`playerId`).
+    socialProviders: GOOGLE_ENABLED
+      ? {
+          google: {
+            clientId: GOOGLE_CLIENT_ID,
+            clientSecret: GOOGLE_CLIENT_SECRET,
+            // Shared/family devices: always let people pick the account.
+            prompt: "select_account" as const,
+          },
+        }
+      : {},
+
+    account: {
+      accountLinking: {
+        enabled: true,
+        // A player saved with a passkey has a placeholder email, so adding
+        // Google later is always a "different email". Explicit links only
+        // (requires the player's own session).
+        allowDifferentEmails: true,
+        trustedProviders: ["google"],
+      },
+    },
+
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (!SENSITIVE_PATHS.has(ctx.path)) return;
+        const session = await getSessionFromCtx(ctx);
+        if (!session) return;
+        if (session.user.isAnonymous) {
+          // About to make this player's first passkey: give it a readable name
+          // in the OS passkey picker. Best effort (label only).
+          const { id, email, playerId } = session.user as { id: string; email: string; playerId?: string };
+          if (ctx.path === "/passkey/generate-register-options" && playerId && LEGACY_ANON_EMAIL.test(email)) {
+            const relabelled = playerEmail(playerId);
+            await ctx.context.internalAdapter
+              .updateUser(id, { email: relabelled })
+              .then(() => {
+                session.user.email = relabelled; // the plugin reads this cached session
+              })
+              .catch((err: unknown) => console.warn("[auth] could not relabel anonymous player:", err));
+          }
+          return;
+        }
+        const age = Date.now() - new Date(session.session.createdAt).getTime();
+        if (age >= FRESH_SESSION_MS) {
+          throw new APIError("FORBIDDEN", {
+            code: "SESSION_NOT_FRESH",
+            message: "For safety, sign in again before changing how you sign in.",
+          });
+        }
+      }),
     },
 
     databaseHooks: {
       user: {
         create: {
           before: async (user) => ({ data: { ...user, playerId: randomUUID() } }),
+          after: async (user) => {
+            if (!(user as { isAnonymous?: boolean | null }).isAnonymous) rememberNewAccount(user.id);
+          },
         },
       },
     },
@@ -88,13 +210,39 @@ function buildOptions(db: Database.Database) {
     },
 
     plugins: [
+      passkey({
+        rpID: PASSKEY_RP_ID,
+        rpName: "Aweborn",
+        // `origin` unset: verified against the request's Origin, which Better
+        // Auth has already checked against trustedOrigins.
+        authenticatorSelection: {
+          // Discoverable credentials: sign in on a new device with no username.
+          residentKey: "required",
+          userVerification: "preferred",
+        },
+        registration: {
+          afterVerification: async ({ ctx, user, verification }) => {
+            // A passkey on an anonymous player makes it a saved player. Same
+            // user row, so playerId is untouched.
+            const full = (await ctx.context.internalAdapter.findUserById(user.id)) as
+              | { isAnonymous?: boolean | null; playerId?: string | null }
+              | null;
+            if (full?.isAnonymous) {
+              await ctx.context.internalAdapter.updateUser(user.id, { isAnonymous: false });
+              console.log(`[auth] player ${String(full.playerId)} saved with a passkey`);
+            }
+            return { name: getAuthenticatorName(verification.registrationInfo?.aaguid) || undefined };
+          },
+        },
+      }),
       anonymous({
+        // `player-<id>@aweborn.invalid`: readable in the OS passkey picker,
+        // and `.invalid` can never be a real mailbox.
+        generateRandomEmail: () => playerEmail(randomUUID()),
         onLinkAccount: async ({ anonymousUser, newUser, ctx }) => {
           const anonPlayerId = anonymousUser.user.playerId as string | undefined;
           if (!anonPlayerId) return;
-          const created = new Date(newUser.user.createdAt).getTime();
-          const sessionStart = new Date(newUser.session.createdAt).getTime();
-          if (Math.abs(sessionStart - created) <= FRESH_USER_WINDOW_MS) {
+          if (takeNewAccount(newUser.user.id)) {
             // Brand-new account: it simply becomes this player.
             await ctx.context.internalAdapter.updateUser(newUser.user.id, {
               playerId: anonPlayerId,

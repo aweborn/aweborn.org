@@ -3,7 +3,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
-import { initAuth, getPlayerId, isTrustedOrigin } from "./auth.js";
+import { initAuth, getPlayerId, isTrustedOrigin, authMethods } from "./auth.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
@@ -90,6 +90,11 @@ const server = createServer((req, res) => {
         "Access-Control-Max-Age": "600",
       });
       res.end();
+      return;
+    }
+    if (req.url === "/api/auth/methods" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(authMethods(auth)));
       return;
     }
     if (!authHandler) {

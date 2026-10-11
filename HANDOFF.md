@@ -272,7 +272,7 @@ Anonymous-first player identity (Phase 08 I1), served by **Better Auth inside sy
 
 - **Boot:** the client (`src/lib/player.ts`) reuses its session or silently calls `signIn.anonymous()`, then opens the universe socket. On the upgrade the server reads the session cookie (trusted origins only) and tags the socket with the player's `playerId`. World `creator` is always set by the server (client value ignored).
 - **IDs:** `playerId` (UUID, public: presence + `creator`) is our own column on Better Auth's `user` table. Better Auth's `user.id` changes when an anonymous player links a real sign-in; `playerId` is carried over (`onLinkAccount` in `server/sync-service/src/auth.ts`).
-- **Data:** tables `user`, `session`, `account`, `verification` live in **`universe.db`**, so the hourly/S3 backups and DR restore cover them. Migrations run automatically at boot.
+- **Data:** tables `user`, `session`, `account`, `verification`, `passkey` live in **`universe.db`**, so the hourly/S3 backups and DR restore cover them. Migrations run automatically at boot.
 - **Sessions:** httpOnly cookie on `sync.aweborn.org` (same-site with `aweborn.org`), 1 year, refreshed daily; one per device.
 - **Everyone is welcome:** if auth is unreachable (offline, cookies blocked, 5 s timeout) the client plays as a per-tab `guest-…`; guest worlds get `creator = "guest"`.
 - **Secret:** `BETTER_AUTH_SECRET` in `aweborn-secrets` (key added to `infra/k3s/secrets.example.yaml`). **Keep a copy in the password manager.** Losing or rotating it signs everyone out, and anonymous players then lose their identity for good. If it's missing, weak, or the `REPLACE_ME` placeholder in production, sync-service still runs but **auth is disabled** (everyone is a guest; `/api/auth/*` returns 503; loud `[auth] ✖` log line).
@@ -289,6 +289,31 @@ printf '{"stringData":{"BETTER_AUTH_SECRET":"%s"}}' "$(tr -d '\n' < AWEBORN_BETT
 Set 2026-10-11 (Alex keeps the copy). The next sync-service rollout picks it up.
 
 One-off: `server/sync-service/scripts/migrate-legacy-creators.ts` reassigns pre-identity `p-xxxxxx` creators to `"system"` (stop sync-service first; `--dry-run` supported; backs up first).
+
+### Saving a player (sign-in methods)
+
+Every method attaches to the **same** `playerId`. UI: `src/components/PlayerAccount.tsx` ("Save your player" chip under the brand, account panel, and a gentle nudge after the first world created or ~10 min of play, at most once a day; rules in `src/lib/onramp.ts`). The client asks `GET /api/auth/methods` which buttons to show.
+
+- **Passkeys** (`@better-auth/passkey`): on by default, nothing to configure. RP ID `aweborn.org` (override `PASSKEY_RP_ID`), so passkeys belong to the site players see even though auth runs on `sync.aweborn.org`. Adding one to an anonymous player flips `isAnonymous` to false (same user row). Signing in with one from an anonymous device switches to the saved player.
+- **Google**: shown only when `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` exist in `aweborn-secrets` (both `optional` in the deployment). Anonymous players `signIn.social` (a new Google account becomes this player; an existing one switches to it); saved players `linkSocial`.
+- **Email (magic link, email + password)**: not yet; needs SES (Phase 08 I4/I7).
+- **Freshness:** Better Auth's built-in "session < 1 day" check is off (`freshAge: 0`) because anonymous players can never re-authenticate. Our `hooks.before` enforces it for saved players only on sensitive routes (add/delete passkey, link/unlink, change email, delete user).
+
+**Google setup (once):** Google Cloud Console → APIs & Services → OAuth consent screen (External; app name Aweborn; support email; authorized domain `aweborn.org`; scopes: `openid`, `email`, `profile`; publish to Production) → Credentials → Create credentials → OAuth client ID → **Web application**:
+
+- Authorized JavaScript origins: `https://aweborn.org`
+- Authorized redirect URIs: `https://sync.aweborn.org/api/auth/callback/google` (and for local dev `http://localhost:1299/api/auth/callback/google`)
+
+Then store the pair from your Mac (pasted values never touch a command line):
+
+```bash
+read -r GID; read -rs GSECRET   # paste the client ID, Enter; paste the secret, Enter
+printf '{"stringData":{"GOOGLE_CLIENT_ID":"%s","GOOGLE_CLIENT_SECRET":"%s"}}' "$GID" "$GSECRET" \
+  | ssh -i ~/.ssh/lightsail-default.pem ubuntu@aweborn-vps \
+      'sudo k3s kubectl -n aweborn patch secret aweborn-secrets --type merge --patch-file /dev/stdin \
+       && sudo k3s kubectl -n aweborn rollout restart deploy/sync-service'
+unset GID GSECRET
+```
 
 ## Infrastructure stacks
 
