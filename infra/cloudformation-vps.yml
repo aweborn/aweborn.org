@@ -50,11 +50,10 @@ Resources:
           # affected by this firewall.
           # Break-glass: only the Lightsail browser SSH console (AWS-auth'd)
           # may reach port 22 publicly, via the `lightsail-connect` alias.
-          # Applied to the live instance 2026-10-03 via
-          # `aws lightsail put-instance-public-ports` (not a stack update),
-          # because CloudFormation flagged a UserData update on this
-          # resource. The stack's recorded state still lists 0.0.0.0/0 —
-          # always deploy THIS template, never an older copy.
+          # First applied 2026-10-03 with `aws lightsail put-instance-public-ports`;
+          # brought into the stack 2026-10-10. Rules use explicit Cidrs /
+          # Ipv6Cidrs (what Lightsail stores) rather than AccessFrom, a
+          # display string that always reads as drift.
           - FromPort: 22
             ToPort: 22
             Protocol: tcp
@@ -67,13 +66,15 @@ Resources:
           - FromPort: 80
             ToPort: 80
             Protocol: tcp
-            AccessFrom: '0.0.0.0/0'
+            Cidrs: ['0.0.0.0/0']
+            Ipv6Cidrs: ['::/0']
             AccessType: public
           # HTTPS — main traffic (WSS + HTTPS)
           - FromPort: 443
             ToPort: 443
             Protocol: tcp
-            AccessFrom: '0.0.0.0/0'
+            Cidrs: ['0.0.0.0/0']
+            Ipv6Cidrs: ['::/0']
             AccessType: public
           # k3s API — intentionally NOT exposed to public internet.
           # Access via SSH tunnel: ssh -L 6443:localhost:6443 ubuntu@aweborn-vps

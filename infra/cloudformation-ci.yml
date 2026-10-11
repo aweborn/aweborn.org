@@ -54,6 +54,7 @@ Resources:
                 Effect: Allow
                 Action:
                   - cloudformation:DescribeStacks
+                  - cloudformation:GetStackPolicy
                   - cloudformation:DescribeStackResources
                   - cloudformation:ListStackResources
                   - cloudformation:CreateChangeSet

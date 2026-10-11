@@ -70,6 +70,23 @@ for stack in "${STACKS[@]}"; do
     out "⚠️ Stack not deployed yet. Create it by hand (see HANDOFF)."; out ""; bump 3; continue
   fi
 
+  # Guards are part of the repo truth too.
+  if [[ "$(jq -r '.Stacks[0].EnableTerminationProtection' <<<"$deployed")" != "true" ]]; then
+    out "🛑 **Termination protection is OFF.** \`aws cloudformation update-termination-protection --enable-termination-protection --stack-name $stack\`"
+    bump 2
+  fi
+  policy_file="${tpl%.yml}.stack-policy.json"
+  if [[ -f "$policy_file" ]]; then
+    live_policy="$(aws cloudformation get-stack-policy --stack-name "$stack" --query StackPolicyBody --output text)"
+    if [[ "$live_policy" == "None" || -z "$live_policy" ]] ||
+       [[ "$(jq -cS . <<<"$live_policy")" != "$(jq -cS . "$policy_file")" ]]; then
+      out "🛑 **Stack policy differs from \`$policy_file\`.** \`aws cloudformation set-stack-policy --stack-name $stack --stack-policy-body file://$policy_file\`"
+      bump 2
+    else
+      out "🔒 Stack policy matches \`$policy_file\`."
+    fi
+  fi
+
   # Reuse every deployed parameter value (incl. NoEcho secrets, which we never
   # see); parameters new in the template fall back to their defaults.
   tpl_params="$(aws cloudformation get-template-summary --template-body "file://$tpl" \
@@ -82,6 +99,9 @@ for stack in "${STACKS[@]}"; do
   done
 
   cs="preview-$SHA-$(date +%s)"
+  # Always delete the change set, even if we're interrupted (Ctrl-C, CI cancel).
+  trap 'aws cloudformation delete-change-set --stack-name "$stack" --change-set-name "$cs" >/dev/null 2>&1 || true' EXIT
+  trap 'exit 130' INT TERM
   aws cloudformation create-change-set --stack-name "$stack" --change-set-name "$cs" \
     --change-set-type UPDATE --template-body "file://$tpl" \
     --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
@@ -90,6 +110,7 @@ for stack in "${STACKS[@]}"; do
   aws cloudformation wait change-set-create-complete --stack-name "$stack" --change-set-name "$cs" 2>/dev/null || true
   desc="$(aws cloudformation describe-change-set --stack-name "$stack" --change-set-name "$cs" --output json)"
   aws cloudformation delete-change-set --stack-name "$stack" --change-set-name "$cs" >/dev/null || true
+  trap - EXIT INT TERM  # cleaned up normally
 
   status="$(jq -r .Status <<<"$desc")"
   reason="$(jq -r '.StatusReason // ""' <<<"$desc")"

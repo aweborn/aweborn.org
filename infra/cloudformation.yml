@@ -346,7 +346,7 @@ Resources:
           - POST
           - OPTIONS
         AllowHeaders:
-          - Content-Type
+          - content-type # API Gateway stores header names lowercased; anything else reads as drift
         MaxAge: 86400
 
   PaymentApiIntegration:
