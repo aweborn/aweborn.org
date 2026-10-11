@@ -35,7 +35,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 - **CI/CD**: `.github/workflows/deploy.yml`. On push to `main` it deploys any changed VPS services (sync-service, genai-service, agent-runner, caddy) over Tailscale, then the frontend via OIDC. See [CI server deploys](#ci-server-deploys). `.github/workflows/backup.yml` copies the world DB off-box daily (see [Backups](#backups)).
 - **Domain**: `aweborn.org` + `www.aweborn.org`, Hosted Zone ID `Z077908710IGH7R1XO587`
 - **VPS**: `sync.aweborn.org` + `api.aweborn.org` → Lightsail (Ubuntu 22.04 + k3s + Caddy auto-TLS)
-- **Tailscale**: VPS joined as `aweborn-vps` on Tailnet (100.118.138.70) — agent-runner accessible via Tailnet only
+- **Tailscale**: VPS is `aweborn-vps` on the Tailnet (100.118.138.70), tagged `tag:server` (no key expiry). New servers join by themselves on first boot (see [Rebuilding the VPS](#rebuilding-the-vps--tailnet-auto-join)). agent-runner is reachable via the Tailnet only
 
 ## Key files
 
@@ -163,10 +163,9 @@ aws cloudformation deploy \
 ssh -i ~/.ssh/lightsail-default.pem ubuntu@aweborn-vps
 # Break-glass if Tailscale is down: Lightsail console → aweborn-vps → "Connect using SSH"
 # (browser SSH is the only public source allowed on port 22, via the lightsail-connect alias)
-# Tailscale key expiry is disabled for aweborn-vps (verified 2026-10-03) — keep it that way, or the VPS drops off the Tailnet
-# Drift: the SSH rule was applied with `aws lightsail put-instance-public-ports`, and the deployed
-# stack template predates the Sep 26 UserData additions (Tailscale, agent-runner). The repo template is
-# the source of truth — never update the stack from an older copy (it would reopen port 22).
+# Tagged tag:server (2026-10-11), so its node key never expires. Don't untag it.
+# IMDS is IMDSv2-only, hop limit 1 (set by the stack's ImdsHardening resource): the
+# user-data holds the Tailscale OAuth secret, and pods must not be able to read it.
 
 # Check pod status
 sudo k3s kubectl -n aweborn get pods
@@ -219,16 +218,21 @@ sudo cat /var/log/aweborn-bootstrap.log
 
 **Tailscale (one-time setup, admin console):**
 
-1. Access controls: define the tag and allow CI to reach only the VPS's SSH port:
+1. Access controls (current policy, 2026-10-11): tags, CI → servers on SSH only, servers → nothing, enforced by `tests`:
    ```jsonc
-   "hosts":     { "aweborn-vps": "100.118.138.70" },
-   "tagOwners": { "tag:ci": ["autogroup:admin"] },
-   // in "grants":
-   { "src": ["tag:ci"], "dst": ["aweborn-vps"], "ip": ["tcp:22"] }
+   "tagOwners": { "tag:ci": ["autogroup:admin"], "tag:server": ["autogroup:admin"] },
+   // in "grants" (next to the autogroup:member → * rule for humans):
+   { "src": ["tag:ci"], "dst": ["tag:server"], "ip": ["tcp:22"] },
+   // NO grant with "src": ["tag:server"]
+   "tests": [
+     { "src": "tag:ci", "accept": ["tag:server:22"], "deny": ["tag:server:443"] },
+     { "src": "tag:server", "deny": ["tag:ci:22", "tag:server:22", "100.118.138.70:22"] },
+   ]
    ```
-   If the policy still has the default allow-all rule, `tag:ci` can reach everything. Scope that rule to your users (e.g. `"src": ["autogroup:member"]`) so the grant above is CI's only access.
+   Keep the allow-all rule scoped to `"src": ["autogroup:member"]`; tagged devices aren't members, so it gives them nothing.
 2. Settings → Trust credentials → add **OpenID Connect** for GitHub: issuer `https://token.actions.githubusercontent.com`, subject `repo:aweborn@261697435/aweborn.org@1329275111:ref:refs/heads/main`, scope **auth_keys (write)**, tag `tag:ci`. The repo uses GitHub's **immutable subject** format (numeric owner/repo IDs). Check it with `gh api repos/aweborn/aweborn.org/actions/oidc/customization/sub` (`sub_claim_prefix`). The plain `repo:aweborn/aweborn.org:...` form gets a 403.
 3. GitHub secrets: `TS_OAUTH_CLIENT_ID` (the credential's client ID) and `TS_AUDIENCE` (its audience).
+4. Server auto-join: Settings → OAuth clients → scope **Auth Keys (write)**, tag **`tag:server`** only. Store its secret on the stack with `infra/set-tailscale-secret.sh` (never anywhere else). See [Rebuilding the VPS](#rebuilding-the-vps--tailnet-auto-join).
 
 Until those secrets exist, **deploy-server** skips with a warning and the frontend still deploys.
 
@@ -248,7 +252,7 @@ A failed or stale backup fails the workflow, and GitHub emails the admins. Check
 **One-time setup:**
 1. `aws cloudformation deploy --stack-name aweborn-backups --template-file infra/cloudformation-backups.yml --capabilities CAPABILITY_NAMED_IAM`, then `gh variable set AWS_BACKUP_ROLE_ARN -R aweborn/aweborn.org --body <RoleArn output>`.
 2. Backup key (secret `VPS_BACKUP_SSH_KEY`), restricted on the VPS to `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command="/home/ubuntu/aweborn/infra/backup/backup-fetch.sh"`. It can only stream `latest.*`. To rotate: new ed25519 key, replace that line, `gh secret set VPS_BACKUP_SSH_KEY`.
-3. Reuses `TS_OAUTH_CLIENT_ID` / `TS_AUDIENCE` and the existing `tag:ci` → `aweborn-vps:22` grant.
+3. Reuses `TS_OAUTH_CLIENT_ID` / `TS_AUDIENCE` and the `tag:ci` → `tag:server:22` grant.
 
 GitHub disables scheduled workflows after 60 days without repo activity. If commits ever pause that long, re-enable it under Actions → Backup.
 
@@ -259,15 +263,16 @@ The repo is the source of truth for AWS. Every stack maps to one template:
 | Stack | Template | Notes |
 |-------|----------|-------|
 | `aweborn-website` | `infra/cloudformation.yml` | S3, CloudFront, ACM, Route53, Stripe Lambda + API. `StripeSecretKey` is NoEcho |
-| `aweborn-vps` | `infra/cloudformation-vps.yml` | Lightsail VPS. **Check for replacement before any apply**: a replaced instance loses the hostPath world DB |
+| `aweborn-vps` | `infra/cloudformation-vps.yml` | Lightsail VPS. **Check for replacement before any apply**: a replaced instance loses the hostPath world DB. `TailscaleOAuthSecret` is NoEcho (set it only with `infra/set-tailscale-secret.sh`). `ImdsHardening` custom resource (+ Lambda/role) keeps IMDS v2-only |
 | `aweborn-backups` | `infra/cloudformation-backups.yml` | Backup bucket + put-only role |
 | `aweborn-ci` | `infra/cloudformation-ci.yml` | Read-only role for the infra check below |
 
 **Automatic, read-only check** (`.github/workflows/infra.yml`, runs `infra/cfn-preview.sh`):
 - On every push to `main` that touches a template, it validates each template and previews a change set (repo vs deployed). The change sets are deleted, never executed.
 - Mondays (and on demand), it also detects **drift**: edits made in the console or CLI behind CloudFormation's back.
+- For `aweborn-vps` it also checks the live IMDS setting is `required` / hop limit 1 (🛑 otherwise; fix by bumping `ImdsHardening.Revision` and applying).
 - ✅ in sync → pass. 🟡 undeployed in-place changes → pass with a warning. 🛑 a pending **replacement/removal**, or drift → **fail** (GitHub emails you). ❌ invalid → fail.
-- Its role is explicitly denied `ExecuteChangeSet` / `UpdateStack` / `DeleteStack`, object reads, and the Stripe Lambda's config. So drift on that one Lambda is not checked.
+- Its role is explicitly denied `ExecuteChangeSet` / `UpdateStack` / `DeleteStack`, object reads, and Lambda config reads. So drift on the Lambdas (Stripe, IMDS hardener) is not checked. NoEcho values are never printed (CloudFormation shows them as `****`, verified in stack events and drift records 2026-10-11).
 
 **Applying is manual and deliberate:**
 ```bash
@@ -278,6 +283,26 @@ aws cloudformation deploy --stack-name aweborn-website \
 #    including the Stripe key. Only pass a parameter you mean to change.
 ```
 Fix drift by putting the live value into the template (then apply), or by reverting the manual change. Don't leave drift in place.
+
+## Rebuilding the VPS / Tailnet auto-join
+
+A server built from `infra/cloudformation-vps.yml` joins the Tailnet **by itself** on first boot, as a persistent `tag:server` node named after `InstanceName`. It uses the Tailscale OAuth client secret stored in the stack (NoEcho `TailscaleOAuthSecret`). After joining, the bootstrap deletes every on-disk copy of the user-data. The stack's `ImdsHardening` resource makes IMDS v2-only with hop limit 1 seconds after the instance exists, so pods can't read the user-data either. An empty or invalid secret aborts the bootstrap loudly (`/var/log/aweborn-bootstrap.log`).
+
+**Why persistent, not ephemeral:** an ephemeral node is deleted once it's been offline a while. After a long outage the server couldn't rejoin, because the secret is scrubbed from the box, and CI deploys + backups would be locked out. Persistent nodes also keep their name and Tailnet IP. Test nodes (`infra/test-tailscale-join.sh`) *are* ephemeral, so they clean themselves up.
+
+**Before rebuilding or launching a new box:**
+1. Test the join on a throwaway instance: `infra/test-tailscale-join.sh` (asks for the secret; nano instance, ~10 min, cents).
+2. In the Tailscale admin console, **delete the old node first** if the new one reuses its name. Otherwise the new node becomes `aweborn-vps-1` and CI (which targets `aweborn-vps`) misses it.
+
+**After the box is up:**
+3. **Update the pinned host key.** `VPS_KNOWN_HOST` in `.github/workflows/deploy.yml` and `backup.yml` holds the old box's ed25519 key. CI fails closed until you replace it (correct behaviour; never switch to trust-on-first-use). Get the new key from the box itself (`sudo cat /etc/ssh/ssh_host_ed25519_key.pub` via the Lightsail browser console), not by scanning over the network.
+4. Re-add the restricted CI keys to `~ubuntu/.ssh/authorized_keys` (deploy key and backup key; see the `from=...,restrict,command=...` lines above). The bootstrap doesn't do this yet.
+5. Set real k8s secrets (`aweborn-secrets`) and restore the world DB from the latest backup (see [Backups](#backups)).
+6. `infra/cfn-preview.sh aweborn-vps` shows in sync, with IMDS hardened.
+
+**Rotate the OAuth secret** (yearly, or at once if user-data or the stack parameters might have leaked): Tailscale admin → Settings → OAuth clients → create a new client (Auth Keys write, `tag:server`), run `infra/set-tailscale-secret.sh` with it, then revoke the old client. Running servers are unaffected (they use their node keys, not the secret).
+
+**If the secret leaks**, the holder can add `tag:server` nodes, and nothing else. Those nodes can't reach any device (no grants from `tag:server`), and CI won't talk to an impostor because the host key is pinned. Rotate as above and delete any unknown `tag:server` nodes.
 
 ## Future Roadmap
 

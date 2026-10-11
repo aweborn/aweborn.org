@@ -26,6 +26,25 @@ Parameters:
     Default: us-east-1a
     Description: AZ for the Lightsail instance
 
+  InstanceName:
+    Type: String
+    Default: aweborn-vps
+    AllowedPattern: '^[a-z0-9][a-z0-9-]{0,62}$'
+    Description: >
+      Lightsail instance name, also used as the Tailnet hostname (MagicDNS).
+      Changing it REPLACES the instance (the stack policy blocks that).
+
+  TailscaleOAuthSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: >
+      Tailscale OAuth client secret (tskey-client-...), scope auth_keys,
+      tag tag:server only. Used once at first boot to join the Tailnet.
+      Never commit it; set it with infra/set-tailscale-secret.sh.
+      Empty = the bootstrap fails loudly (a server off the Tailnet can't
+      be deployed to or backed up). See HANDOFF -> Tailscale.
+
 Resources:
   # ============================================
   # Lightsail — VPS Instance
@@ -33,7 +52,7 @@ Resources:
   VPSInstance:
     Type: AWS::Lightsail::Instance
     Properties:
-      InstanceName: aweborn-vps
+      InstanceName: !Ref InstanceName
       BlueprintId: ubuntu_22_04
       BundleId: !Ref InstanceBundle
       AvailabilityZone: !Ref AvailabilityZone
@@ -78,7 +97,13 @@ Resources:
             AccessType: public
           # k3s API — intentionally NOT exposed to public internet.
           # Access via SSH tunnel: ssh -L 6443:localhost:6443 ubuntu@aweborn-vps
-      UserData: |
+      # UserData is a !Sub string: CloudFormation fills in ${InstanceName} and
+      # ${TailscaleOAuthSecret}. Any OTHER ${...} must be written ${!...} or
+      # CloudFormation will try to resolve it. Prefer plain $VAR in this script.
+      # The rendered user-data contains the secret and IMDS serves it, so the
+      # instance MUST be IMDSv2-only with hop limit 1 (pods can't reach it).
+      # The ImdsHardening custom resource below does that automatically.
+      UserData: !Sub |
         #!/bin/sh
         # Cloud-init runs this with /bin/sh — re-exec under bash for pipefail support
         if [ -z "$BASH_VERSION" ]; then
@@ -96,11 +121,39 @@ Resources:
         curl -fsSL https://get.docker.com | sh
         usermod -aG docker ubuntu
 
-        # ── Install Tailscale ─────────────────────────────────────
+        # >>> tailscale-join (extracted by infra/test-tailscale-join.sh; keep self-contained)
+        # Join the Tailnet as tag:server, hands-free. CI deploys, backups and
+        # SSH reach this box ONLY over the Tailnet (public :22 is closed).
+        # The OAuth secret is never echoed and never put on a command line;
+        # it goes through a root-only file, and every on-disk copy of the
+        # user-data is deleted once we've joined.
+        TS_HOSTNAME='${InstanceName}'
+        TS_KEY_FILE=$(mktemp /root/.ts-authkey.XXXXXX)   # mktemp => mode 0600
+        cat > "$TS_KEY_FILE" <<'TS_SECRET_EOF'
+        ${TailscaleOAuthSecret}
+        TS_SECRET_EOF
+        sed -i 's/^[[:space:]]*//;s/[[:space:]]*$//' "$TS_KEY_FILE"
+        if ! grep -q '^tskey-client-' "$TS_KEY_FILE"; then
+          rm -f "$TS_KEY_FILE"
+          echo "!!! TailscaleOAuthSecret is empty or not a tskey-client-... secret."
+          echo "!!! Not joining the Tailnet; aborting bootstrap. See HANDOFF -> Tailscale."
+          exit 1
+        fi
+        # OAuth client secrets mint a fresh auth key on use; these query params
+        # make it a persistent (non-ephemeral), pre-approved tag:server node.
+        sed -i 's/$/?ephemeral=false\&preauthorized=true/' "$TS_KEY_FILE"
         curl -fsSL https://tailscale.com/install.sh | sh
-        # To auto-join the Tailnet on boot, set the TAILSCALE_AUTHKEY
-        # parameter and uncomment the next line:
-        # tailscale up --authkey="${TAILSCALE_AUTHKEY}" --hostname=aweborn-vps
+        tailscale up --auth-key="file:$TS_KEY_FILE" \
+          --advertise-tags=tag:server --hostname="$TS_HOSTNAME" --timeout=180s
+        rm -f "$TS_KEY_FILE"
+        echo "Joined the Tailnet as $TS_HOSTNAME ($(tailscale ip -4))"
+        # Scrub on-disk copies of the user-data (they contain the secret).
+        # rm (unlink), never shred/truncate: this script is running from one
+        # of these files and bash still reads it through the open inode.
+        rm -f /var/lib/cloud/instances/*/user-data.txt* \
+              /var/lib/cloud/instances/*/scripts/* \
+              /var/lib/cloud/instances/*/obj.pkl 2>/dev/null || true
+        # <<< tailscale-join
 
         # ── Install k3s (without Traefik — we use Caddy) ────────
         curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
@@ -131,6 +184,86 @@ Resources:
         echo "=== Aweborn VPS bootstrap complete at $(date) ==="
 
   # ============================================
+  # IMDS hardening (custom resource)
+  # ============================================
+  # The rendered user-data holds the Tailscale OAuth secret, and the instance
+  # metadata service (IMDS) serves user-data to anything on the host. IMDSv2
+  # only + hop limit 1 means pods (one network hop away) can't get a token,
+  # so they can't read it. AWS::Lightsail::Instance has no MetadataOptions
+  # property, so this tiny Lambda calls the Lightsail API right after the
+  # instance exists (minutes before any pod runs) and verifies it applied.
+  # Delete is a no-op: removing this resource never loosens the setting.
+  # infra/cfn-preview.sh also checks the live setting (catches manual reverts).
+  ImdsHardenerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aweborn-vps-imds-hardener
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: lightsail-metadata-options
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lightsail:UpdateInstanceMetadataOptions
+                  - lightsail:GetInstance
+                Resource: '*'
+
+  ImdsHardenerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aweborn-vps-imds-hardener
+      Description: Makes the VPS IMDS v2-only with hop limit 1 (custom resource)
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 120
+      Role: !GetAtt ImdsHardenerRole.Arn
+      Code:
+        ZipFile: |
+          import time
+          import boto3
+          import cfnresponse
+
+          def handler(event, context):
+              props = event["ResourceProperties"]
+              name = props["InstanceName"]
+              try:
+                  if event["RequestType"] in ("Create", "Update"):
+                      ls = boto3.client("lightsail")
+                      ls.update_instance_metadata_options(
+                          instanceName=name, httpTokens="required",
+                          httpPutResponseHopLimit=1, httpEndpoint="enabled")
+                      for _ in range(20):
+                          md = ls.get_instance(instanceName=name)["instance"]["metadataOptions"]
+                          if (md.get("state") == "applied" and md.get("httpTokens") == "required"
+                                  and md.get("httpPutResponseHopLimit") == 1):
+                              break
+                          time.sleep(5)
+                      else:
+                          raise RuntimeError(f"metadata options not applied: {md}")
+                      print(f"IMDS hardened on {name}: {md}")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, f"imds-{name}")
+              except Exception as e:
+                  print(f"FAILED: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, f"imds-{name}", reason=str(e)[:200])
+
+  ImdsHardening:
+    Type: Custom::LightsailImdsHardening
+    Properties:
+      ServiceToken: !GetAtt ImdsHardenerFunction.Arn
+      InstanceName: !Ref VPSInstance
+      # Bump to force a re-apply (e.g. after a manual revert).
+      Revision: '1'
+
+  # ============================================
   # Lightsail — Static IP
   # ============================================
   VPSStaticIp:
@@ -138,7 +271,7 @@ Resources:
     DependsOn: VPSInstance
     Properties:
       StaticIpName: aweborn-vps-ip
-      AttachedTo: aweborn-vps
+      AttachedTo: !Ref InstanceName
 
   # ============================================
   # Route53 — DNS Records for VPS services

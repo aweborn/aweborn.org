@@ -87,6 +87,20 @@ for stack in "${STACKS[@]}"; do
     fi
   fi
 
+  # IMDS hardening (VPS only). The stack's ImdsHardening custom resource sets
+  # it, but can't notice a later manual revert; this check does. The user-data
+  # holds the Tailscale OAuth secret: IMDSv2-only + hop limit 1 keeps pods out.
+  if [[ "$stack" == aweborn-vps ]]; then
+    name="$(jq -r '.Stacks[0].Parameters // [] | map(select(.ParameterKey=="InstanceName"))[0].ParameterValue // "aweborn-vps"' <<<"$deployed")"
+    md="$(aws lightsail get-instance --instance-name "$name" --query 'instance.metadataOptions' --output json 2>/dev/null || echo '{}')"
+    if [[ "$(jq -r '"\(.httpTokens)/\(.httpPutResponseHopLimit)"' <<<"$md")" == "required/1" ]]; then
+      out "🔒 IMDS hardened on \`$name\` (IMDSv2 only, hop limit 1)."
+    else
+      out "🛑 **IMDS not hardened on \`$name\`** ($(jq -c . <<<"$md")). Fix: bump \`ImdsHardening.Revision\` in \`$tpl\` and apply the stack."
+      bump 2
+    fi
+  fi
+
   # Reuse every deployed parameter value (incl. NoEcho secrets, which we never
   # see); parameters new in the template fall back to their defaults.
   tpl_params="$(aws cloudformation get-template-summary --template-body "file://$tpl" \

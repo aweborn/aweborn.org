@@ -1,6 +1,6 @@
 # Ops: VPS auto-joins the Tailnet on first boot
 
-**Status:** `[ ]` Not started. **Next up** (before Phase 08 / 8B). Small task: about one session.
+**Status:** `[x]` Done (2026-10-11). Servers join the Tailnet hands-free. One follow-up is open (see the last task).
 **Why:** `infra/cloudformation-vps.yml` UserData installs Tailscale but never runs `tailscale up` (the line is commented out). A server rebuilt from the template would not join the Tailnet. CI deploys (`deploy.yml`), the off-box backup pull (`backup.yml`) and our SSH all reach the VPS **only** over the Tailnet, and public port 22 is closed. So every new server needs a manual `tailscale up` through the Lightsail browser console. Goal: any server we launch joins the Tailnet by itself and is immediately deployable.
 
 > Out of scope: several servers sharing world sync (server-to-server replication). That's a separate design discussion; see the README → Open Design Questions.
@@ -28,17 +28,24 @@
 
 ## Tasks
 
-- `[ ]` Decide the credential delivery (gotcha 1) with Alex
-- `[ ]` Tailscale admin (Alex): `tag:server` + OAuth client (`auth_keys` scope, tag `tag:server`); ACL grant `tag:ci` → `tag:server:22`
-- `[ ]` Re-tag the existing `aweborn-vps` as `tag:server`; confirm CI deploy + backup still connect (run `backup.yml` by hand)
-- `[ ]` UserData: `tailscale up` with the OAuth secret, tags, hostname. Fail the bootstrap loudly if the join fails (it's under `set -euo pipefail`)
-- `[ ]` Template parameter (NoEcho) or chosen mechanism; `infra/cfn-preview.sh` already passes NoEcho params as `UsePreviousValue`
-- `[ ]` Throwaway-instance test (gotcha 6); record evidence in the log below
-- `[ ]` Apply to the `aweborn-vps` stack (in place; preview first, expect `UserData` only, no replacement)
-- `[ ]` HANDOFF: update "Tailscale (one-time setup)" + rebuild runbook (host key update step)
+- `[x]` Decide the credential delivery (gotcha 1) with Alex: **(a) NoEcho param holding an OAuth client secret** (hands-free). SOPS/age rejected: it just moves the secret (the age key would have to go into user-data instead). Leak review (2026-10-11): template only holds `${TailscaleOAuthSecret}`; cfn-preview never prints NoEcho values; secret entered via `read -s`, passed to AWS through a 0600 temp file; on the box it goes through a 0600 file (`--auth-key=file:`), and cloud-init's user-data copies are deleted after the join. **New finding:** IMDS serves user-data to anything on the host, including pods. Fix: IMDSv2 only + hop limit 1 (no pod uses `hostNetwork`)
+- `[x]` IMDS hardening, in the stack: CFN has no `MetadataOptions` for Lightsail (verified in the resource schema 2026-10-11), so a custom resource (`ImdsHardening` + `ImdsHardenerFunction` Lambda + `aweborn-vps-imds-hardener` role) sets IMDSv2-only + hop limit 1 right after the instance exists and verifies it. `cfn-preview.sh` also checks the live setting (🛑 if not `required/1`). Live box was `httpTokens: optional`; it gets hardened when the stack is applied. `lightsail:GetInstance` does not return user-data (checked)
+- `[x]` Tailscale admin (Alex): `tag:server` + OAuth client (`auth_keys` scope, tag `tag:server`); ACL grant `tag:ci` → `tag:server:22` only (old `aweborn-vps` host grant + `hosts` removed); no grants *from* `tag:server`; ACL `tests` enforce both
+- `[x]` Re-tag the existing `aweborn-vps` as `tag:server` (tags `[tag:server]`, no key expiry). `backup.yml` passed by hand on the tag-only ACL (run 38160488236)
+- `[x]` UserData: `tailscale up` with the OAuth secret, tags, hostname (`InstanceName` param). Fails the bootstrap loudly if the secret is missing or the join fails. Block is marked `# >>> tailscale-join` / `# <<< tailscale-join`
+- `[x]` Template parameters: `TailscaleOAuthSecret` (NoEcho, default empty), `InstanceName` (default `aweborn-vps`, same as today, so no replacement). Set/rotate with `infra/set-tailscale-secret.sh`
+- `[x]` Throwaway-instance test: `infra/test-tailscale-join.sh` **PASSED 2026-10-11** (`ts-join-test-10111423`): joined hands-free as `tag:server`; SSH over the Tailnet ok; no secret in logs; key file removed; `/var/lib/cloud` scrubbed; IMDSv1 closed; logged out + instance deleted
+- `[x]` Apply to the `aweborn-vps` stack via `infra/set-tailscale-secret.sh` (2026-10-11): 3 Adds + `VPSInstance` Modify (no replacement), `UPDATE_COMPLETE`. Hardener Lambda returned SUCCESS; live IMDS now `required` / hop limit 1. sync + api `/health` 200, Tailnet ping ok. `cfn-preview.sh aweborn-vps --drift`: in sync, no drift, IMDS hardened. Secret is not in drift records, the template, or the Lambda logs; stack events show the UserData with the secret as `****`
+- `[x]` HANDOFF: Tailscale setup (tag ACL + tests, server OAuth client), "Rebuilding the VPS / Tailnet auto-join" runbook (delete the old node first, host key update, persistent vs ephemeral), secret rotation + leak response
+- `[x]` Test nodes are ephemeral (only difference from prod: the harness swaps `ephemeral=false` → `true`), so they disappear on their own. Prod stays persistent: an ephemeral server deleted during an outage couldn't rejoin (the secret is scrubbed)
+- `[ ]` **Follow-up (small):** a rebuilt box joins the Tailnet but is not yet *deployable*, because the restricted CI deploy/backup public keys aren't written to `authorized_keys` by the bootstrap. They're public keys, so they can go in the repo/template. Also, `VPS_KNOWN_HOST` must be updated by hand after a rebuild (by design)
 
 ## Session Log
 
 | Date | What was done | Next step |
 |------|--------------|-----------|
 | 2026-10-11 | Task scoped (this file) at the end of the 8A/backups/infra-check session. | Start with gotcha 1 |
+| 2026-10-11 | Decided (a) OAuth secret via NoEcho param; security review with Alex (see task 1). Wrote the UserData join block, `InstanceName` + `TailscaleOAuthSecret` params, `infra/set-tailscale-secret.sh`, `infra/test-tailscale-join.sh`. Local checks: bash syntax, only the two `!Sub` vars in UserData, key file 0600 + trimmed + query params appended, empty secret aborts. Not yet committed. | `aws login` → check Lightsail `MetadataOptions` schema; Alex does Tailscale admin steps; run the throwaway test |
+| 2026-10-11 | Alex: ACL (tag-only CI grant + tests), re-tagged VPS. Verified tag + backup run. IMDS hardening moved into the stack as a custom resource (Alex: no one-off manual commands). Preview: 3 Adds (role, Lambda, custom resource) + `VPSInstance` UserData Modify, no replacement. | Alex runs `infra/test-tailscale-join.sh`; then `infra/set-tailscale-secret.sh` to apply |
+| 2026-10-11 | Throwaway test: run 1 failed and gave no evidence (instance deleted before we could read its logs), so the harness now dumps redacted logs on failure. Run 2: `set: Illegal option -o pipefail`. Lightsail wraps user-data in its own `/bin/sh` script, so the shebang is ignored; the harness had a hand-written header without the template's re-exec-under-bash prelude. It now reuses the template header. cloud-init got the user-data fine (`DataSourceEc2Local`), so IMDS hardening doesn't race the user-data fetch. Run 3: joined, but the SSH check used Alex's local key; the harness now uses Lightsail's short-lived cert and always logs out in cleanup. Run 4: **PASS** (see task). | Alex applies with `infra/set-tailscale-secret.sh`; then verify site + IMDS + preview, HANDOFF, commit |
+| 2026-10-11 | Applied to prod and verified (see task). `tailscale logout` only *expires* tagged nodes, it doesn't delete them, so test nodes are now ephemeral. Persistent vs ephemeral for prod decided with Alex: persistent. HANDOFF updated. Committed. | Follow-up: CI keys in the bootstrap (last task). Then Phase 08 / 8B |

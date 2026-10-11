@@ -48,9 +48,11 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **➡️ NEXT UP (set 2026-10-11): [Ops: VPS auto-joins the Tailnet](./ops-tailscale-autojoin.md)**, a small, single-session task. Start with its "Gotchas" section (credential delivery is the first decision). Then:
+> **➡️ NEXT UP (set 2026-10-11): small follow-up to [Ops: VPS auto-joins the Tailnet](./ops-tailscale-autojoin.md)** (last task there): write the restricted CI deploy/backup public keys to `authorized_keys` in the bootstrap, so a rebuilt box is deployable without hand edits. Then:
 >
 > **➡️ PRIORITY: Phase 08, [Milestone 8B: The Worlidex](./08-nfc-trading-cards.md#milestone-8b--the-worlidex)**: persistent player identity first, then the data model, discovery tracking, card reveal, Worlidex UI and warp.
+>
+> **Done 2026-10-11:** VPS Tailnet auto-join. New servers join as `tag:server` hands-free (OAuth secret in a NoEcho stack param, scrubbed after use, IMDS v2-only via an in-stack custom resource). Tag-based ACL with tests. Tested on a throwaway instance, then applied to prod (HANDOFF → Rebuilding the VPS).
 >
 > **Done 2026-10-10:** Milestone 8A. Teleport links `/w/<uuid>` are live, Origin = `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7`, and the Origin card was re-rendered with the real ID. Also shipped that day: prod world-DB backups (hourly on-box + daily S3) and the read-only infra check, with all stacks in sync and guarded (HANDOFF → Backups / Infrastructure stacks). Remaining 8A bonus: "copy world link" button.
 >
