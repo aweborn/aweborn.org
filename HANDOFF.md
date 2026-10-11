@@ -311,7 +311,7 @@ The website (S3/CloudFront) stays up throughout; sync and gen-AI are down until 
 8. Set the real k8s secrets (`aweborn-secrets`, see VPS management). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6's host key check and offers to update both workflow files (then commit + push).
 9. Verify: both `/health` endpoints, `infra/cfn-preview.sh aweborn-vps` (in sync, IMDS hardened), `gh workflow run backup.yml` passes.
 
-The rebuild path is **not yet rehearsed end to end**. `rebuild-vps.sh` was dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.
+The rebuild path is **not yet rehearsed on prod**. `infra/test-dr-restore.sh` **passed 2026-10-11**: a fresh box with the full prod bootstrap, then `restore-from-s3.sh`, restored DB == backup. `rebuild-vps.sh` (the CloudFormation swap + static IP move) was dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.
 
 **Rotate the OAuth secret** (yearly, or at once if user-data or the stack parameters might have leaked): Tailscale admin → Settings → OAuth clients → create a new client (Auth Keys write, `tag:server`), run `infra/set-tailscale-secret.sh` with it, then revoke the old client. Running servers are unaffected (they use their node keys, not the secret).
 
