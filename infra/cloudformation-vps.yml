@@ -111,28 +111,21 @@ Resources:
         done
         echo "k3s node is ready"
 
-        # ── Clone repo and build images ──────────────────────────
+        # ── Clone repo ───────────────────────────────────────────
         git clone https://github.com/aweborn/aweborn.org.git /home/ubuntu/aweborn
         chown -R ubuntu:ubuntu /home/ubuntu/aweborn
 
-        # Build Docker images
-        docker build -t ghcr.io/aweborn/sync-service:latest /home/ubuntu/aweborn/server/sync-service
-        docker build -t ghcr.io/aweborn/genai-service:latest /home/ubuntu/aweborn/server/genai-service
-        docker build -t ghcr.io/aweborn/agent-runner:latest /home/ubuntu/aweborn/server/agent-runner
-
-        # Import images into k3s containerd
-        docker save ghcr.io/aweborn/sync-service:latest | k3s ctr images import -
-        docker save ghcr.io/aweborn/genai-service:latest | k3s ctr images import -
-        docker save ghcr.io/aweborn/agent-runner:latest | k3s ctr images import -
-
-        # ── Deploy k3s manifests ─────────────────────────────────
+        # ── Namespace + placeholder secret (only if none exists) ─
+        # Never overwrite a real secret; set real values with
+        # kubectl create secret ... (see infra/k3s/secrets.example.yaml).
         k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/namespace.yaml
-        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/secrets.yaml
-        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/sync-service-deployment.yaml
-        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/genai-service-deployment.yaml
-        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/caddy-pvc.yaml
-        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/agent-runner-deployment.yaml
-        k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/caddy-ingress.yaml
+        k3s kubectl -n aweborn get secret aweborn-secrets >/dev/null 2>&1 \
+          || k3s kubectl apply -f /home/ubuntu/aweborn/infra/k3s/secrets.example.yaml
+
+        # ── Build, smoke-test and deploy every service ──────────
+        # Same script CI uses (infra/k3s/deploy-services.sh).
+        sudo -u ubuntu -H REPO_DIR=/home/ubuntu/aweborn \
+          bash /home/ubuntu/aweborn/infra/k3s/deploy-services.sh all
 
         echo "=== Aweborn VPS bootstrap complete at $(date) ==="
 

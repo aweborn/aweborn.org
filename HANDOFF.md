@@ -32,7 +32,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 - **Backend**: Single Lambda function (Node.js 20, inline in CloudFormation) that proxies to Stripe
 - **Infra (static)**: `infra/cloudformation.yml` — S3, CloudFront, ACM cert, Route53, API Gateway, Lambda
 - **Infra (VPS)**: `infra/cloudformation-vps.yml` — Lightsail instance, static IP, Route53 DNS, k3s bootstrap
-- **CI/CD**: `.github/workflows/deploy.yml` — auto-deploys frontend on push to `main` via OIDC auth
+- **CI/CD**: `.github/workflows/deploy.yml`. On push to `main` it deploys any changed VPS services (sync-service, genai-service, agent-runner, caddy) over Tailscale, then the frontend via OIDC. See [CI server deploys](#ci-server-deploys).
 - **Domain**: `aweborn.org` + `www.aweborn.org`, Hosted Zone ID `Z077908710IGH7R1XO587`
 - **VPS**: `sync.aweborn.org` + `api.aweborn.org` → Lightsail (Ubuntu 22.04 + k3s + Caddy auto-TLS)
 - **Tailscale**: VPS joined as `aweborn-vps` on Tailnet (100.118.138.70) — agent-runner accessible via Tailnet only
@@ -65,8 +65,8 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `server/genai-service/src/index.ts` | Gen AI API proxy (placeholder, all routes return 501) |
 | `server/agent-runner/src/index.ts` | Cron-scheduled LLM agent runner with HTTP API (port 3002, Tailnet-only) |
 | `server/docker-compose.yml` | Local dev: runs all three services with hot-reload |
-| `infra/k3s/` | Kubernetes manifests for k3s deployment (namespace, deployments, Caddy ingress, secrets) |
-| `infra/k3s/deploy.sh` | Build → push → apply deployment script |
+| `infra/k3s/` | Kubernetes manifests for k3s deployment (namespace, deployments, Caddy ingress). `secrets.example.yaml` is a template only and is never applied by automation |
+| `infra/k3s/deploy-services.sh` | The one deploy path, run on the VPS by CI, by hand, and by bootstrap. Per service: build → smoke test → roll out → verify → auto-rollback. `deploy.sh` is a thin wrapper around it |
 | `.env.production` | `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY`, `VITE_SYNC_URL` |
 | `infra/cloudformation.yml` | Static site AWS stack (S3, CloudFront, ACM, Route53, API GW, Lambda) |
 | `infra/cloudformation-vps.yml` | VPS AWS stack (Lightsail instance, static IP, Route53 DNS, k3s+Docker bootstrap) |
@@ -111,7 +111,7 @@ The 3D scene renders behind the modal throughout — no page redirects.
       --parameters \
         ParameterKey=HostedZoneId,ParameterValue=Z077908710IGH7R1XO587
     ```
-    The UserData script automatically installs k3s + Docker, builds images from `main`, and deploys all K8s manifests.
+    The UserData script installs k3s and Docker, creates a *placeholder* `aweborn-secrets` (only if none exists), then runs `deploy-services.sh all`. Afterwards, set the real secret values with `kubectl create secret` (see `infra/k3s/secrets.example.yaml`).
 
 ## Local dev (server services)
 
@@ -170,15 +170,14 @@ sudo k3s kubectl -n aweborn logs daemonset/caddy
 curl http://aweborn-vps:3002/health
 curl http://aweborn-vps:3002/agents
 
-# Update services after code changes (on VPS)
-# sync-service deploys automatically from CI (see "CI server deploys" below).
-# Other services are still manual:
-cd /home/ubuntu/aweborn && git pull
-./infra/k3s/deploy.sh --vps --apply
-
-# Deploy ONLY sync-service by hand (same script CI runs: pull main → build →
-# smoke test → roll out → verify → auto-rollback). ~30s downtime (Recreate).
-~/aweborn/infra/k3s/deploy-sync-service.sh
+# Services deploy automatically from CI (see "CI server deploys" below).
+# By hand, on the VPS (same script CI runs: sync origin/main → build → smoke
+# test → roll out → verify → auto-rollback). sync-service and agent-runner use
+# Recreate, so expect ~30s downtime each. Caddy restarts only if its config changed.
+~/aweborn/infra/k3s/deploy-services.sh genai-service      # one or more services
+~/aweborn/infra/k3s/deploy-services.sh all
+# Secrets are never applied by any script. Change them with:
+#   sudo k3s kubectl -n aweborn create secret generic aweborn-secrets --from-literal=... --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 
 # World data (SQLite) lives on the host, outside k8s: /var/lib/aweborn/sync-data/universe.db
 # Back it up before migrations:  sudo sqlite3 ... or copy while the pod is scaled to 0
@@ -191,11 +190,20 @@ sudo cat /var/log/aweborn-bootstrap.log
 
 `.github/workflows/deploy.yml` on push to `main`:
 
-1. **changes**: did `server/sync-service/**`, `shared/**`, or the sync-service k3s files change?
-2. **deploy-server** (only if yes, or manual "Run workflow" with *deploy_server*): tests + typecheck, then joins the Tailnet as an **ephemeral** node tagged `tag:ci` (Tailscale workload identity federation, no long-lived Tailscale secret), then SSHes to `aweborn-vps` with a deploy-only key that runs `infra/k3s/deploy-sync-service.sh`.
+1. **changes**: path filters per service decide which ones need deploying:
+   - sync-service: `server/sync-service/**`, `shared/**`, its manifest, `.dockerignore`
+   - genai-service / agent-runner: `server/<svc>/**`, plus its manifest
+   - caddy: `caddy-ingress.yaml`, `caddy-pvc.yaml`
+   - Changes to the deploy script alone don't trigger a deploy.
+   - For a manual "Run workflow", set *services*: `all`, a space-separated list, or `none`.
+2. **deploy-server** (only if any service is selected):
+   - Typechecks each selected service.
+   - Joins the Tailnet as an **ephemeral** node tagged `tag:ci`, using Tailscale workload identity federation (no long-lived Tailscale secret).
+   - SSHes to `aweborn-vps` once with a deploy-only key. It sends the service list, which the VPS validates.
+   - The VPS runs `infra/k3s/deploy-services.sh` and deploys in the order sync-service → genai-service → agent-runner → caddy. It stops at the first failure.
 3. **deploy-frontend**: S3 + CloudFront. Runs after the server deploy succeeds or is skipped. **Never after a failed server deploy**, so a new client never ships against an old server.
 
-**Deploy key** (secret `VPS_SSH_KEY`): on the VPS it's locked down in `~/.ssh/authorized_keys` with `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command=".../deploy-sync-service.sh"`. It can only connect from the Tailnet and can only run the deploy script, which only deploys `origin/main`. No shell, no forwarding. To rotate: generate a new ed25519 key, replace that line, `gh secret set VPS_SSH_KEY`.
+**Deploy key** (secret `VPS_SSH_KEY`): on the VPS it's locked down in `~/.ssh/authorized_keys` with `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command=".../deploy-services.sh"`. It can only connect from the Tailnet and can only run the deploy script. That script accepts only known service names and only deploys `origin/main`. No shell, no forwarding. To rotate: generate a new ed25519 key, replace that line, `gh secret set VPS_SSH_KEY`.
 
 **Tailscale (one-time setup, admin console):**
 

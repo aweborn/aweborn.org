@@ -7,6 +7,10 @@ metadata:
     app: agent-runner
 spec:
   replicas: 1
+  # hostPort 3002 + RWO PVC + SQLite on one node: old and new pods can't
+  # coexist, so a RollingUpdate would deadlock. Stop old, then start new.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: agent-runner
