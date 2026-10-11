@@ -129,7 +129,7 @@ jobs:
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           # Host key of aweborn-vps (public; pinned so we never trust-on-first-use).
-          VPS_KNOWN_HOST: aweborn-vps ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE7Q5wnApGOQP6ThcuEKn03NQ3/rzzg+U8rYq0NcGpiT
+          VPS_KNOWN_HOST: aweborn-vps ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEMv6PX1yfxh5PjDbV6V8HVf2sjL8SWlN7KtQETDmKuZ
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key

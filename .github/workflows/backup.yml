@@ -56,7 +56,7 @@ jobs:
       - name: Fetch latest snapshot from VPS
         env:
           VPS_BACKUP_SSH_KEY: ${{ secrets.VPS_BACKUP_SSH_KEY }}
-          VPS_KNOWN_HOST: aweborn-vps ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE7Q5wnApGOQP6ThcuEKn03NQ3/rzzg+U8rYq0NcGpiT
+          VPS_KNOWN_HOST: aweborn-vps ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEMv6PX1yfxh5PjDbV6V8HVf2sjL8SWlN7KtQETDmKuZ
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_BACKUP_SSH_KEY" > ~/.ssh/backup_key && chmod 600 ~/.ssh/backup_key
