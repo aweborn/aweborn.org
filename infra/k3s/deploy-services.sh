@@ -180,8 +180,12 @@ PY
     caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile \
     || die "[caddy] Caddyfile invalid; production untouched"
 
-  local before after
-  before="$($KUBECTL -n "$NS" get cm caddy-config -o jsonpath='{.data.Caddyfile}' 2>/dev/null | sha256sum)"
+  local before after fresh=0
+  # Fresh box (bootstrap): no caddy-config yet. Guard the read: under
+  # pipefail a failing kubectl here used to kill the bootstrap silently
+  # (found by infra/test-dr-restore.sh, 2026-10-11).
+  $KUBECTL -n "$NS" get cm caddy-config >/dev/null 2>&1 || fresh=1
+  before="$( { $KUBECTL -n "$NS" get cm caddy-config -o jsonpath='{.data.Caddyfile}' 2>/dev/null || true; } | sha256sum)"
   $KUBECTL -n "$NS" get cm caddy-config -o yaml > "$tmp/prev-cm.yaml" 2>/dev/null || true
 
   log "[caddy] Applying manifests"
@@ -189,7 +193,28 @@ PY
   $KUBECTL apply -f infra/k3s/caddy-ingress.yaml
   after="$($KUBECTL -n "$NS" get cm caddy-config -o jsonpath='{.data.Caddyfile}' | sha256sum)"
 
-  if [[ "$before" == "$after" ]]; then
+  https_ok() {   # $1 = tries, 3s apart
+    local i
+    for (( i = 0; i < $1; i++ )); do
+      curl -sf --max-time 5 --resolve sync.aweborn.org:443:127.0.0.1 https://sync.aweborn.org/health >/dev/null && return 0
+      sleep 3
+    done
+    return 1
+  }
+
+  if [[ $fresh -eq 1 ]]; then
+    # First install: pods start with this config; nothing to roll back to.
+    log "[caddy] First install; waiting for pods + TLS certificates"
+    $KUBECTL -n "$NS" rollout status daemonset/caddy --timeout=180s || die "[caddy] pods did not start"
+    if https_ok 40; then
+      ok "[caddy] HTTPS ok"
+    else
+      # Certificates need DNS pointing at this box (true after a rebuild once
+      # the static IP has moved; never true on a throwaway test box). Not
+      # fatal: the rest of the box is up, and Caddy keeps retrying.
+      printf '\n\033[1;33m! [caddy] no HTTPS yet: certificates pending (DNS must point at this box). Caddy keeps retrying; check: curl https://sync.aweborn.org/health\033[0m\n' >&2
+    fi
+  elif [[ "$before" == "$after" ]]; then
     ok "[caddy] config unchanged; no restart"
   else
     # The Caddyfile is mounted via subPath, so changes need a pod restart.
@@ -197,12 +222,7 @@ PY
     $KUBECTL -n "$NS" rollout restart daemonset/caddy
     local healthy=0
     if $KUBECTL -n "$NS" rollout status daemonset/caddy --timeout=120s; then
-      for i in 1 2 3 4 5 6 7 8 9 10; do
-        if curl -sf --max-time 5 --resolve sync.aweborn.org:443:127.0.0.1 https://sync.aweborn.org/health >/dev/null; then
-          healthy=1; break
-        fi
-        sleep 3
-      done
+      https_ok 10 && healthy=1
     fi
     if [[ $healthy -ne 1 ]]; then
       printf '\n\033[1;31m✖ [caddy] HTTPS check failed — restoring previous config\033[0m\n' >&2
