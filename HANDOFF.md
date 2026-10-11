@@ -32,10 +32,10 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 - **Backend**: Single Lambda function (Node.js 20, inline in CloudFormation) that proxies to Stripe
 - **Infra (static)**: `infra/cloudformation.yml` — S3, CloudFront, ACM cert, Route53, API Gateway, Lambda
 - **Infra (VPS)**: `infra/cloudformation-vps.yml` — Lightsail instance, static IP, Route53 DNS, k3s bootstrap
-- **CI/CD**: `.github/workflows/deploy.yml`. On push to `main` it deploys any changed VPS services (sync-service, genai-service, agent-runner, caddy) over Tailscale, then the frontend via OIDC. See [CI server deploys](#ci-server-deploys). `.github/workflows/backup.yml` copies the world DB off-box daily (see [Backups](#backups)).
+- **CI/CD**: `.github/workflows/deploy.yml`. On push to `main` it deploys any changed VPS services (sync-service, genai-service, agent-runner, caddy) over Tailscale, then the frontend via OIDC. See [CI server deploys](#ci-server-deploys). `.github/workflows/backup.yml` copies the world DB off-box hourly (see [Backups](#backups)).
 - **Domain**: `aweborn.org` + `www.aweborn.org`, Hosted Zone ID `Z077908710IGH7R1XO587`
 - **VPS**: `sync.aweborn.org` + `api.aweborn.org` → Lightsail (Ubuntu 22.04 + k3s + Caddy auto-TLS)
-- **Tailscale**: VPS is `aweborn-vps` on the Tailnet (100.118.138.70), tagged `tag:server` (no key expiry). New servers join by themselves on first boot (see [Rebuilding the VPS](#rebuilding-the-vps--tailnet-auto-join)). agent-runner is reachable via the Tailnet only
+- **Tailscale**: VPS is `aweborn-vps` on the Tailnet (Lightsail instance `aweborn-vps-2` since the 2026-10-11 rebuild; Tailnet IP 100.86.61.100, changes on every rebuild, so never hard-code it), tagged `tag:server` (no key expiry). New servers join by themselves on first boot (see [Rebuilding the VPS](#rebuilding-the-vps--tailnet-auto-join)). agent-runner is reachable via the Tailnet only
 
 ## Key files
 
@@ -226,7 +226,7 @@ sudo cat /var/log/aweborn-bootstrap.log
    // NO grant with "src": ["tag:server"]
    "tests": [
      { "src": "tag:ci", "accept": ["tag:server:22"], "deny": ["tag:server:443"] },
-     { "src": "tag:server", "deny": ["tag:ci:22", "tag:server:22", "100.118.138.70:22"] },
+     { "src": "tag:server", "deny": ["tag:ci:22", "tag:server:22"] },   // tags only: node IPs change on rebuild
    ]
    ```
    Keep the allow-all rule scoped to `"src": ["autogroup:member"]`; tagged devices aren't members, so it gives them nothing.
@@ -311,7 +311,7 @@ The website (S3/CloudFront) stays up throughout; sync and gen-AI are down until 
 8. Set the real k8s secrets (`aweborn-secrets`, see VPS management). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6's host key check and offers to update both workflow files (then commit + push).
 9. Verify: both `/health` endpoints, `infra/cfn-preview.sh aweborn-vps` (in sync, IMDS hardened), `gh workflow run backup.yml` passes.
 
-The rebuild path is **not yet rehearsed on prod**. `infra/test-dr-restore.sh` **passed 2026-10-11**: a fresh box with the full prod bootstrap, then `restore-from-s3.sh`, restored DB == backup. `rebuild-vps.sh` (the CloudFormation swap + static IP move) was dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.
+**Rehearsed on prod 2026-10-11** (`aweborn-vps` → `aweborn-vps-2`, ~10 min of sync/gen-AI downtime): pre-rebuild snapshot + `backup.yml`, old node deleted in Machines, `rebuild-vps.sh`, `restore-from-s3.sh` (pin updated from the Lightsail API, restored DB fingerprint == backup), Caddy got real certs on the first try, pin committed, `backup.yml` + Deploy green, `cfn-preview.sh` in sync. Before that, `infra/test-dr-restore.sh` **passed 2026-10-11** on a throwaway box (re-run it after bootstrap/deploy changes). Earlier note, kept for history: the rebuild path was first dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.
 
 **Rotate the OAuth secret** (yearly, or at once if user-data or the stack parameters might have leaked): Tailscale admin → Settings → OAuth clients → create a new client (Auth Keys write, `tag:server`), run `infra/set-tailscale-secret.sh` with it, then revoke the old client. Running servers are unaffected (they use their node keys, not the secret).
 
