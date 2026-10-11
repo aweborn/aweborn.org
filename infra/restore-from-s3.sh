@@ -74,6 +74,7 @@ if [[ -n "${RESTORE_INSTANCE:-}" || -n "${RESTORE_TSNAME:-}" ]]; then
 fi
 
 get_access() {   # writes cert, key, known_hosts into $WORK; fails until the box is up
+  # Lightsail certs are valid ~13 min, so rsh refreshes them (see below).
   aws lightsail get-instance-access-details --instance-name "$INSTANCE" --protocol ssh \
     --output json > "$WORK/access.json" 2>/dev/null || return 1
   jq -e '.accessDetails.hostKeys | length > 0' "$WORK/access.json" >/dev/null || return 1
@@ -83,14 +84,20 @@ get_access() {   # writes cert, key, known_hosts into $WORK; fails until the box
   jq -r --arg h "$TSNAME" '.accessDetails.hostKeys[] | "\($h) \(.algorithm) \(.publicKey)"' \
     "$WORK/access.json" > "$WORK/known_hosts"
   rm -f "$WORK/access.json"   # holds the private key; keep only the split files
+  ACCESS_AT=$(date +%s); set_ssh_opts
 }
+ACCESS_AT=0
 SSH_OPTS=()
 set_ssh_opts() {
   SSH_OPTS=(-i "$WORK/k" -o CertificateFile="$WORK/k-cert.pub" -o IdentitiesOnly=yes
     -o UserKnownHostsFile="$WORK/known_hosts" -o StrictHostKeyChecking=yes
-    -o HostKeyAlias="$TSNAME" -o ConnectTimeout=10 -o LogLevel=ERROR)
+    -o HostKeyAlias="$TSNAME" -o ConnectTimeout=10 -o LogLevel=ERROR
+    -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
 }
-rsh() { ssh "${SSH_OPTS[@]}" "ubuntu@$TSNAME" "$@" </dev/null; }   # never eat our stdin (prompts)
+# Fresh cert if the current one is >5 min old (a slow answer at a prompt
+# used to expire it: "Permission denied (publickey)", drill 2026-10-11).
+fresh_access() { (( $(date +%s) - ACCESS_AT < 300 )) || get_access || die "could not get Lightsail SSH access for $INSTANCE"; }
+rsh() { fresh_access; ssh "${SSH_OPTS[@]}" "ubuntu@$TSNAME" "$@" </dev/null; }   # never eat our stdin (prompts)
 
 # ── 3. Wait for the box (and its bootstrap) ───────────────────
 say "Waiting for $INSTANCE (Tailnet: $TSNAME) to be up and bootstrapped (up to $BOOT_WAIT_MIN min)"
@@ -98,7 +105,6 @@ deadline=$(( $(date +%s) + BOOT_WAIT_MIN * 60 ))
 state=""
 while :; do
   if get_access; then
-    set_ssh_opts
     state="$(rsh 'if sudo grep -q "bootstrap complete" /var/log/aweborn-bootstrap.log 2>/dev/null; then echo done;
                   elif sudo grep -q "^!!!" /var/log/aweborn-bootstrap.log 2>/dev/null; then echo aborted;
                   else echo running; fi' 2>/dev/null || echo unreachable)"
@@ -161,6 +167,7 @@ The current DB is moved aside to /var/lib/aweborn/sync-data/pre-restore-<ts>/
 EOF
 read -r -p 'Type "restore" to continue: ' ok
 [[ "$ok" == restore ]] || { echo "Not confirmed. The backup stays in ~/restore/ on the box; nothing else changed."; exit 0; }
+fresh_access
 ssh -t "${SSH_OPTS[@]}" "ubuntu@$TSNAME" "$REMOTE_RESTORE ~/restore/$FILE"
 
 (( TEST_TARGET )) && { echo; echo "Restore finished on test target $INSTANCE."; exit 0; }

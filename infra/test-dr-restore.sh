@@ -93,11 +93,20 @@ get_access() {
     "$WORK/access.json" > "$WORK/known_hosts"
   jq -r '.accessDetails.ipAddress' "$WORK/access.json" > "$WORK/ip"
   rm -f "$WORK/access.json"
+  date +%s > "$WORK/access_at"
+}
+# Lightsail certs are valid ~13 min: refresh when >5 min old. (Timestamp in a
+# file so refreshes inside $(...) subshells count too.)
+fresh_access() {
+  local at; at="$(cat "$WORK/access_at" 2>/dev/null || echo 0)"
+  (( $(date +%s) - at < 300 )) || get_access
 }
 rsh() {
+  fresh_access || return 1
   ssh -i "$WORK/k" -o CertificateFile="$WORK/k-cert.pub" -o IdentitiesOnly=yes \
     -o UserKnownHostsFile="$WORK/known_hosts" -o StrictHostKeyChecking=yes -o HostKeyAlias="$NAME" \
-    -o ConnectTimeout=10 -o LogLevel=ERROR "ubuntu@${HOST:-$NAME}" "$@"
+    -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o LogLevel=ERROR \
+    "ubuntu@${HOST:-$NAME}" "$@"
 }
 dump_logs() {
   say "Logs from $NAME (tskey-* redacted)"
@@ -111,9 +120,16 @@ cleanup() {
   if [[ "${KEEP:-0}" != 1 ]] && (( CREATED )); then
     if (( JOINED )); then
       say "Logging $NAME out of the Tailnet"
-      { get_access && rsh 'sudo tailscale logout' </dev/null; } >/dev/null 2>&1 \
-        && echo "  logged out (ephemeral node; Tailscale removes it)" \
-        || echo "  WARN: logout failed; delete $NAME in the Tailscale admin console (Machines)"
+      # Over the PUBLIC IP, detached: logging out cuts the Tailnet, so an SSH
+      # session riding it would hang (drill 2026-10-11). The remote command
+      # returns at once; keepalives bound it anyway.
+      if get_access && HOST="$(cat "$WORK/ip")" \
+           rsh 'sudo sh -c "nohup sh -c \"sleep 1; tailscale logout\" >/dev/null 2>&1 &"' </dev/null >/dev/null 2>&1; then
+        echo "  logout started (ephemeral node; Tailscale removes it)"
+      else
+        echo "  WARN: logout failed; the ephemeral node disappears once the instance is gone (or delete $NAME in Machines)"
+      fi
+      sleep 5
     fi
     say "Deleting $NAME"
     aws lightsail delete-instance --instance-name "$NAME" >/dev/null || echo "  WARN: delete failed; delete $NAME in the Lightsail console"
