@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Aweborn off-box backups. Versioned, private S3 bucket + a put-only IAM role
+  that the scheduled GitHub Action (.github/workflows/backup.yml) assumes via
+  OIDC. No long-lived AWS keys anywhere; the VPS holds no AWS credentials.
+
+  Deploy (separate stack; does not touch aweborn-website or aweborn-vps):
+    aws cloudformation deploy --stack-name aweborn-backups \
+      --template-file infra/cloudformation-backups.yml --capabilities CAPABILITY_NAMED_IAM
+  Then set the repo variable from the RoleArn output:
+    gh variable set AWS_BACKUP_ROLE_ARN -R aweborn/aweborn.org --body <RoleArn>
+
+Parameters:
+  GitHubSubject:
+    Type: String
+    # This repo uses GitHub's immutable OIDC subject format (numeric owner/repo
+    # IDs): gh api repos/aweborn/aweborn.org/actions/oidc/customization/sub
+    Default: "repo:aweborn@261697435/aweborn.org@1329275111:ref:refs/heads/main"
+  RetentionDays:
+    Type: Number
+    Default: 90
+
+Resources:
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "aweborn-backups-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-snapshots
+            Status: Enabled
+            ExpirationInDays: !Ref RetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt BackupBucket.Arn
+              - !Sub "${BackupBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  GitHubBackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aweborn-github-backup
+      Description: Put-only access to the backup bucket for the scheduled GitHub backup workflow (main only)
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Ref GitHubSubject
+      Policies:
+        - PolicyName: put-backups
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Write-only: a leaked token can add snapshots but can't read,
+              # delete, or (thanks to versioning) destroy existing ones.
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${BackupBucket.Arn}/sync/*"
+
+Outputs:
+  BucketName:
+    Value: !Ref BackupBucket
+  RoleArn:
+    Value: !GetAtt GitHubBackupRole.Arn

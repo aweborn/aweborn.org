@@ -32,7 +32,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 - **Backend**: Single Lambda function (Node.js 20, inline in CloudFormation) that proxies to Stripe
 - **Infra (static)**: `infra/cloudformation.yml` — S3, CloudFront, ACM cert, Route53, API Gateway, Lambda
 - **Infra (VPS)**: `infra/cloudformation-vps.yml` — Lightsail instance, static IP, Route53 DNS, k3s bootstrap
-- **CI/CD**: `.github/workflows/deploy.yml`. On push to `main` it deploys any changed VPS services (sync-service, genai-service, agent-runner, caddy) over Tailscale, then the frontend via OIDC. See [CI server deploys](#ci-server-deploys).
+- **CI/CD**: `.github/workflows/deploy.yml`. On push to `main` it deploys any changed VPS services (sync-service, genai-service, agent-runner, caddy) over Tailscale, then the frontend via OIDC. See [CI server deploys](#ci-server-deploys). `.github/workflows/backup.yml` copies the world DB off-box daily (see [Backups](#backups)).
 - **Domain**: `aweborn.org` + `www.aweborn.org`, Hosted Zone ID `Z077908710IGH7R1XO587`
 - **VPS**: `sync.aweborn.org` + `api.aweborn.org` → Lightsail (Ubuntu 22.04 + k3s + Caddy auto-TLS)
 - **Tailscale**: VPS joined as `aweborn-vps` on Tailnet (100.118.138.70) — agent-runner accessible via Tailnet only
@@ -191,7 +191,8 @@ curl http://aweborn-vps:3002/agents
 #   sudo k3s kubectl -n aweborn create secret generic aweborn-secrets --from-literal=... --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 
 # World data (SQLite) lives on the host, outside k8s: /var/lib/aweborn/sync-data/universe.db
-# Back it up before migrations:  sudo sqlite3 ... or copy while the pod is scaled to 0
+# Snapshotted hourly + copied to S3 daily; see "Backups" below.
+# Fresh snapshot before a migration:  sudo k3s kubectl -n aweborn create job --from=cronjob/sync-backup pre-migration-$(date +%s)
 
 # Check bootstrap log (first boot only)
 sudo cat /var/log/aweborn-bootstrap.log
@@ -230,6 +231,26 @@ sudo cat /var/log/aweborn-bootstrap.log
 3. GitHub secrets: `TS_OAUTH_CLIENT_ID` (the credential's client ID) and `TS_AUDIENCE` (its audience).
 
 Until those secrets exist, **deploy-server** skips with a warning and the frontend still deploys.
+
+## Backups
+
+Prod world data (`/var/lib/aweborn/sync-data/universe.db`) is backed up in two layers:
+
+| Layer | What | Where | Retention |
+|-------|------|-------|-----------|
+| On-box, hourly at :07 UTC | CronJob `sync-backup` runs `server/sync-service/src/backup.ts` in the sync-service image: `VACUUM INTO` (consistent while the service writes), `integrity_check`, gzip | `/var/lib/aweborn/backups/sync/{hourly,daily}/universe-<UTC>.db.gz` + `latest.db.gz` / `latest.json` | 48 hourly + 30 daily |
+| Off-box, daily at 07:37 UTC | `.github/workflows/backup.yml`: ephemeral Tailscale node pulls `latest.*` with a read-only key, verifies checksum + age (≤ 3h) + integrity, uploads with a put-only OIDC role | `s3://aweborn-backups-<account>/sync/YYYY/MM/` (versioned, private, `infra/cloudformation-backups.yml`) | 90 days |
+
+A failed or stale backup fails the workflow, and GitHub emails the admins. Check the on-box job with `sudo k3s kubectl -n aweborn get cronjob,jobs -l app=sync-backup` and `ls -la /var/lib/aweborn/backups/sync/hourly`.
+
+**Restore** (on the VPS): `~/aweborn/infra/backup/restore-sync-db.sh <snapshot.db.gz>`. It verifies the snapshot first (`--check` = verify only), scales sync-service to 0, moves the current DB aside to `sync-data/pre-restore-<ts>/` (never deletes it), installs the snapshot, scales back up and checks `/health`. From S3: `aws s3 cp s3://aweborn-backups-<account>/sync/YYYY/MM/<file> .`, `scp` it to the VPS, then run the same script.
+
+**One-time setup:**
+1. `aws cloudformation deploy --stack-name aweborn-backups --template-file infra/cloudformation-backups.yml --capabilities CAPABILITY_NAMED_IAM`, then `gh variable set AWS_BACKUP_ROLE_ARN -R aweborn/aweborn.org --body <RoleArn output>`.
+2. Backup key (secret `VPS_BACKUP_SSH_KEY`), restricted on the VPS to `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command="/home/ubuntu/aweborn/infra/backup/backup-fetch.sh"`. It can only stream `latest.*`. To rotate: new ed25519 key, replace that line, `gh secret set VPS_BACKUP_SSH_KEY`.
+3. Reuses `TS_OAUTH_CLIENT_ID` / `TS_AUDIENCE` and the existing `tag:ci` → `aweborn-vps:22` grant.
+
+GitHub disables scheduled workflows after 60 days without repo activity. If commits ever pause that long, re-enable it under Actions → Backup.
 
 ## Future Roadmap
 

@@ -1,0 +1,123 @@
+name: Backup
+
+# Daily off-box copy of prod universe.db.
+# The VPS snapshots hourly (sync-backup CronJob → /var/lib/aweborn/backups/sync).
+# This job joins the Tailnet as an ephemeral node, pulls latest.* through a
+# read-only forced-command key, verifies it, and uploads it to the versioned
+# S3 bucket from infra/cloudformation-backups.yml with a put-only OIDC role.
+# A failed run emails the repo admins (GitHub's default for scheduled runs).
+
+on:
+  schedule:
+    - cron: "37 7 * * *" # 07:37 UTC daily (~3:37 AM Eastern)
+  workflow_dispatch:
+
+concurrency:
+  group: backup-production
+  cancel-in-progress: false
+
+jobs:
+  offsite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write # Tailscale + AWS OIDC (no long-lived secrets)
+      contents: read
+    env:
+      # Snapshots older than this mean the hourly CronJob is broken: fail loudly.
+      MAX_AGE_HOURS: 3
+    steps:
+      - name: Check credentials
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
+          VPS_BACKUP_SSH_KEY: ${{ secrets.VPS_BACKUP_SSH_KEY }}
+          AWS_BACKUP_ROLE_ARN: ${{ vars.AWS_BACKUP_ROLE_ARN }}
+        run: |
+          missing=()
+          [[ -n "$TS_OAUTH_CLIENT_ID" ]] || missing+=(TS_OAUTH_CLIENT_ID)
+          [[ -n "$TS_AUDIENCE" ]] || missing+=(TS_AUDIENCE)
+          [[ -n "$VPS_BACKUP_SSH_KEY" ]] || missing+=(VPS_BACKUP_SSH_KEY)
+          [[ -n "$AWS_BACKUP_ROLE_ARN" ]] || missing+=("AWS_BACKUP_ROLE_ARN (repo variable)")
+          if (( ${#missing[@]} )); then
+            echo "::error title=Backup not configured::Missing: ${missing[*]}. See HANDOFF.md → Backups."
+            exit 1
+          fi
+
+      - name: Join Tailnet (ephemeral node, tag:ci)
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+
+      - name: Fetch latest snapshot from VPS
+        env:
+          VPS_BACKUP_SSH_KEY: ${{ secrets.VPS_BACKUP_SSH_KEY }}
+          VPS_KNOWN_HOST: aweborn-vps ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE7Q5wnApGOQP6ThcuEKn03NQ3/rzzg+U8rYq0NcGpiT
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_BACKUP_SSH_KEY" > ~/.ssh/backup_key && chmod 600 ~/.ssh/backup_key
+          printf '%s\n' "$VPS_KNOWN_HOST" > ~/.ssh/known_hosts
+          mkdir -p snap
+          # The key's forced command (infra/backup/backup-fetch.sh) only streams
+          # latest.json + latest.db.gz. Retry once in case we raced the hourly
+          # job between its two atomic renames (sha mismatch).
+          for attempt in 1 2; do
+            rm -f snap/*
+            ssh -T -i ~/.ssh/backup_key -o IdentitiesOnly=yes -o ConnectTimeout=20 \
+              ubuntu@aweborn-vps latest | tar -C snap -xf -
+            want="$(jq -r .sha256 snap/latest.json)"
+            got="$(sha256sum snap/latest.db.gz | cut -d' ' -f1)"
+            [[ "$want" == "$got" ]] && break
+            echo "::warning::sha256 mismatch (attempt $attempt): $got != $want"
+            [[ $attempt -eq 2 ]] && { echo "::error::snapshot checksum mismatch"; exit 1; }
+            sleep 20
+          done
+          cat snap/latest.json
+
+      - name: Verify snapshot
+        run: |
+          created="$(jq -r .createdAt snap/latest.json)"
+          age_h=$(( ( $(date -u +%s) - $(date -u -d "$created" +%s) ) / 3600 ))
+          echo "Snapshot age: ${age_h}h"
+          if (( age_h > MAX_AGE_HOURS )); then
+            echo "::error title=Stale snapshot::Latest VPS snapshot is ${age_h}h old. Check: sudo k3s kubectl -n aweborn get cronjob,jobs -l app=sync-backup"
+            exit 1
+          fi
+          gunzip -c snap/latest.db.gz > snap/universe.db
+          python3 - snap/universe.db snap/latest.json <<'PY'
+          import json, sqlite3, sys
+          db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+          meta = json.load(open(sys.argv[2]))
+          ok = db.execute("PRAGMA integrity_check").fetchone()[0]
+          assert ok == "ok", f"integrity_check: {ok}"
+          docs = db.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+          universe = db.execute("SELECT COUNT(*) FROM documents WHERE doc_type='universe'").fetchone()[0]
+          assert docs == meta["documents"], f"documents {docs} != meta {meta['documents']}"
+          assert universe == 1, f"expected 1 universe doc, found {universe}"
+          print(f"verified: {docs} documents ({meta['worlds']} worlds)")
+          PY
+
+      - name: Configure AWS credentials (put-only backup role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BACKUP_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Upload to S3
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          bucket="aweborn-backups-$account"
+          file="$(jq -r .file snap/latest.json)"            # universe-20261011T020700Z.db.gz
+          month="$(jq -r '.createdAt[0:7]' snap/latest.json | tr - /)"   # 2026/10
+          key="sync/$month/$file"
+          aws s3 cp snap/latest.db.gz "s3://$bucket/$key" --only-show-errors \
+            --checksum-algorithm SHA256 \
+            --metadata "sha256=$(jq -r .sha256 snap/latest.json),documents=$(jq -r .documents snap/latest.json)"
+          aws s3 cp snap/latest.json "s3://$bucket/${key%.db.gz}.json" --only-show-errors
+          {
+            echo "### universe.db backed up"
+            echo "- \`s3://$bucket/$key\`"
+            echo "- $(jq -r '"\(.documents) documents (\(.worlds) worlds), \(.bytes) bytes gz, created \(.createdAt)"' snap/latest.json)"
+          } >> "$GITHUB_STEP_SUMMARY"

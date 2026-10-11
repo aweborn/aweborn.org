@@ -89,3 +89,77 @@ spec:
       targetPort: 1234
       protocol: TCP
   type: ClusterIP
+---
+# Hourly universe.db snapshots (server/sync-service/src/backup.ts).
+# Lives in this file so deploy-services.sh pins it to the same image SHA as
+# the Deployment. Snapshots go to a SEPARATE hostPath from the live data, so
+# wiping sync-data never takes the backups with it. Off-box copy: daily,
+# pulled by .github/workflows/backup.yml. Restore: infra/backup/restore-sync-db.sh
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sync-backup
+  namespace: aweborn
+  labels:
+    app: sync-backup
+spec:
+  schedule: "7 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app: sync-backup
+        spec:
+          restartPolicy: Never
+          volumes:
+            - name: sync-data
+              hostPath:
+                path: /var/lib/aweborn/sync-data
+                type: Directory
+            - name: backups
+              hostPath:
+                path: /var/lib/aweborn/backups/sync
+                type: DirectoryOrCreate
+          initContainers:
+            - name: fix-backup-perms
+              image: busybox:1.36
+              command: ["sh", "-c", "chown -R 1001:1001 /backups && chmod 755 /backups"]
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          containers:
+            - name: backup
+              image: ghcr.io/aweborn/sync-service:latest
+              imagePullPolicy: Never
+              command: ["node", "dist/server/sync-service/src/backup.js"]
+              env:
+                - name: DB_PATH
+                  value: /data/universe.db
+                - name: BACKUP_DIR
+                  value: /backups
+                - name: KEEP_HOURLY
+                  value: "48"
+                - name: KEEP_DAILY
+                  value: "30"
+              volumeMounts:
+                # Read-write only because SQLite WAL readers need the -shm
+                # file; the job never writes to the source DB.
+                - name: sync-data
+                  mountPath: /data
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests:
+                  memory: "32Mi"
+                  cpu: "10m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "250m"
