@@ -207,7 +207,7 @@ sudo cat /var/log/aweborn-bootstrap.log
    { "src": ["tag:ci"], "dst": ["aweborn-vps"], "ip": ["tcp:22"] }
    ```
    If the policy still has the default allow-all rule, `tag:ci` can reach everything. Scope that rule to your users (e.g. `"src": ["autogroup:member"]`) so the grant above is CI's only access.
-2. Settings → Trust credentials → add **OpenID Connect** for GitHub: issuer `https://token.actions.githubusercontent.com`, subject `repo:aweborn/aweborn.org:ref:refs/heads/main`, scope **auth_keys (write)**, tag `tag:ci`.
+2. Settings → Trust credentials → add **OpenID Connect** for GitHub: issuer `https://token.actions.githubusercontent.com`, subject `repo:aweborn@261697435/aweborn.org@1329275111:ref:refs/heads/main`, scope **auth_keys (write)**, tag `tag:ci`. The repo uses GitHub's **immutable subject** format (numeric owner/repo IDs). Check it with `gh api repos/aweborn/aweborn.org/actions/oidc/customization/sub` (`sub_claim_prefix`). The plain `repo:aweborn/aweborn.org:...` form gets a 403.
 3. GitHub secrets: `TS_OAUTH_CLIENT_ID` (the credential's client ID) and `TS_AUDIENCE` (its audience).
 
 Until those secrets exist, **deploy-server** skips with a warning and the frontend still deploys.
