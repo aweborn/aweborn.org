@@ -284,6 +284,13 @@ function buildOptions(db: Database.Database) {
         // Never remove the last way in.
         const body = (ctx.body ?? {}) as { id?: string; accountId?: string };
         const ways = waysIn(session.user.id);
+        // One Google account per player: to use a different one, remove it first.
+        if (ctx.path === "/link-social" && ways.google) {
+          throw new APIError("BAD_REQUEST", {
+            code: "ONE_GOOGLE",
+            message: "This player already has Google. Remove it first to use a different Google account.",
+          });
+        }
         const unlinking =
           ctx.path !== "/unlink-account" || !body.accountId
             ? null
