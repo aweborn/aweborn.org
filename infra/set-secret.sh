@@ -16,7 +16,8 @@
 #   infra/set-secret.sh google ~/Downloads/client_secret_….json
 #   infra/set-secret.sh ses                    # new SES sender key; old ones deleted
 #
-# Keys folder: $AWEBORN_KEYS_DIR, else Google Drive for desktop's
+# Keys folder: $AWEBORN_KEYS_DIR, else ~/keys (a symlink to the Drive folder),
+# else Google Drive for desktop's
 #   ~/Library/CloudStorage/GoogleDrive-*/My Drive/users/alexander-medeiros/keys
 set -euo pipefail
 umask 077
@@ -41,7 +42,7 @@ deployment_for() {
 keys_dir() {
   if [[ -n "${AWEBORN_KEYS_DIR:-}" ]]; then echo "$AWEBORN_KEYS_DIR"; return; fi
   local d
-  for d in "$HOME"/Library/CloudStorage/GoogleDrive-*/"My Drive/users/alexander-medeiros/keys"; do
+  for d in "$HOME/keys" "$HOME"/Library/CloudStorage/GoogleDrive-*/"My Drive/users/alexander-medeiros/keys"; do
     [[ -d "$d" ]] && { echo "$d"; return; }
   done
   echo "keys folder not found; set AWEBORN_KEYS_DIR" >&2; return 1
@@ -62,6 +63,7 @@ write_local() {
 vps() { ssh -i "$SSH_KEY" -o BatchMode=yes "$VPS" "$@"; }
 remote_hash() { vps "sudo k3s kubectl -n $NS get secret $SECRET -o jsonpath='{.data.$1}' | base64 -d | sha256sum | cut -c1-64; sudo k3s kubectl -n $NS get secret $SECRET -o jsonpath='{.data.$1}' | wc -c"; }
 EMPTY_HASH=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+PLACEHOLDER_HASH="$(printf REPLACE_ME | shasum -a 256 | cut -c1-64)"
 
 # Push KEY=VALUE pairs held in env vars named "$@", then restart each reader once.
 push_env() {
@@ -84,7 +86,8 @@ case "$cmd" in
       lh=""; if v="$(read_local "$k")"; then lh="$(printf '%s' "$v" | shasum -a 256 | cut -c1-64)"; fi; unset v
       { read -r rh; read -r rlen; } < <(remote_hash "$k")
       on_vps=$([[ "$rh" != "$EMPTY_HASH" ]] && echo yes || echo no)
-      if [[ -z "$lh" && "$on_vps" == no ]]; then s="— not set (optional?)"
+      if [[ -z "$lh" && "$rh" == "$PLACEHOLDER_HASH" ]]; then s="— placeholder (REPLACE_ME) on VPS"
+      elif [[ -z "$lh" && "$on_vps" == no ]]; then s="— not set (optional?)"
       elif [[ -z "$lh" ]]; then s="⚠ on VPS only: back it up with 'pull $k'"
       elif [[ "$on_vps" == no ]]; then s="⚠ folder only: 'push $k'"
       elif [[ "$lh" == "$rh" ]]; then s="✓ in sync"

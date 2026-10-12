@@ -2,7 +2,7 @@
 
 Every credential Aweborn uses: what it is, where it lives, and how to set or rotate it. **No values here, ever.** If you add a secret, add a row.
 
-**Source of truth: the keys folder.** Alex's Google Drive, `My Drive/users/alexander-medeiros/keys` (synced to the Mac by Google Drive for desktop; override with `AWEBORN_KEYS_DIR`). It holds one file per secret, named `AWEBORN_<KEY>.txt`. Everything else is a copy that can be rebuilt from it.
+**Source of truth: the keys folder.** Alex's Google Drive, `My Drive/users/alexander-medeiros/keys`, which Google Drive for desktop syncs to the Mac. `~/keys` is a symlink to it; override with `AWEBORN_KEYS_DIR`. It holds one file per secret, named `AWEBORN_<KEY>.txt`, with permissions 600. Everything else is a copy that can be rebuilt from it.
 
 **Rules**
 - Values never go on a command line, in shell history, in the repo, or in a CloudFormation output. Read them hidden or straight from AWS/a file, and pipe them over SSH stdin.
