@@ -105,8 +105,8 @@ jobs:
       - name: Check deploy credentials
         id: creds
         env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
+          TS_OAUTH_CLIENT_ID: THpqTuVanZ11CNTRL-kGb9s6ts1211CNTRL
+          TS_AUDIENCE: api.tailscale.com/THpqTuVanZ11CNTRL-kGb9s6ts1211CNTRL
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           if [[ -z "$TS_OAUTH_CLIENT_ID" || -z "$TS_AUDIENCE" || -z "$VPS_SSH_KEY" ]]; then
@@ -120,8 +120,8 @@ jobs:
         if: steps.creds.outputs.ready == 'true'
         uses: tailscale/github-action@v4
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          audience: ${{ secrets.TS_AUDIENCE }}
+          oauth-client-id: THpqTuVanZ11CNTRL-kGb9s6ts1211CNTRL
+          audience: api.tailscale.com/THpqTuVanZ11CNTRL-kGb9s6ts1211CNTRL
           tags: tag:ci
 
       - name: Deploy services on VPS

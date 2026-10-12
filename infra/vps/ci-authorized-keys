@@ -8,5 +8,5 @@
 #
 # Rotate: new ed25519 key, replace its line here, push, run the install script
 # on the VPS, then `gh secret set VPS_SSH_KEY` (deploy) / `VPS_BACKUP_SSH_KEY`.
-from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command="/home/ubuntu/aweborn/infra/k3s/deploy-services.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOZj394Gw0RX3i29MUZEMqtoriMe7SQ5QEjz5861Ovx4 github-actions-deploy@aweborn.org
-from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command="/home/ubuntu/aweborn/infra/backup/backup-fetch.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGv9vH/nASeLvhpaSl4DFRuyIwVgleA3Rzy79MdAIMaR github-actions-backup
+from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command="/home/ubuntu/aweborn/infra/k3s/deploy-services.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPNGocf6YNYmXlRhwiKUxCen1BfaGNo9nu7BVFSi3Ngk github-actions-deploy@aweborn.org
+from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command="/home/ubuntu/aweborn/infra/backup/backup-fetch.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICE9SEdOfScvXYLKaroFJ3tT5KtyqOWmzNXYgsHIE9gM github-actions-backup
