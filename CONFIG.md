@@ -20,7 +20,7 @@ The runtime spots:
 | # | Where | Who reads it | How to set it |
 |---|-------|--------------|---------------|
 | 1 | **k8s secret `aweborn-secrets`** on the VPS | sync-service, agent-runner pods (env vars) | [`infra/set-secret.sh`](infra/set-secret.sh) (`status` hashes `~/keys` vs VPS, `push all` restores after a rebuild) |
-| 2 | **CloudFormation `NoEcho` parameters** | Lambda (Stripe), VPS first boot (Tailscale) | stack update / `infra/set-tailscale-secret.sh` |
+| 2 | **CloudFormation `NoEcho` parameters** | Lambda (Stripe), VPS first boot (Tailscale) | `infra/set-stack-key.sh stripe` / `tailscale` (reads `~/keys`) |
 | 3 | **GitHub Actions secrets** | CI deploy + backup workflows | `gh secret set NAME < ~/keys/<file>` |
 | 4 | **Your Mac** | you (SSH, AWS CLI) | `~/.ssh`, `aws login` |
 
@@ -30,10 +30,10 @@ The runtime spots:
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 1 | sync-service (Sign in with Google) | Google Cloud Console → project `aweborn` → Credentials | New secret in the console → `set-secret.sh google <json>` → delete the JSON | Re-download from the console |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | 1 | sync-service (sends sign-in codes via SES) | IAM user `aweborn-mail-sender` (stack `aweborn-mail`), send-as `hello@aweborn.org` only | `set-secret.sh ses` (new key in, old keys deleted) | Make a new one |
 | `LLM_API_KEY` | 1 | agent-runner | LLM provider dashboard | `set-secret.sh set LLM_API_KEY` | Placeholder today (agents unused) |
-| `StripeSecretKey` | 2 (`aweborn-website`) | Stripe Checkout Lambda (deliberately kept apart from the VPS) | Stripe dashboard → Developers → API keys | Roll in Stripe → stack update with the new value | Roll a new one in Stripe |
-| `TailscaleOAuthSecret` | 2 (`aweborn-vps`) | VPS first boot only (joins the Tailnet) | Tailscale admin → OAuth clients (scope `auth_keys`, tag `tag:server`) | `infra/set-tailscale-secret.sh` | Create a new OAuth client |
-| `VPS_SSH_KEY` | 3 | `deploy.yml` (forced-command deploy key) | `ssh-keygen`; public half in `infra/vps/ci-authorized-keys` | New keypair → update both halves | Regenerate |
-| `VPS_BACKUP_SSH_KEY` | 3 | `backup.yml` (read-only, forced-command) | same as above | same as above | Regenerate |
+| `AWEBORN_STRIPE_SECRET_KEY.txt` → `StripeSecretKey` | 2 (`aweborn-website`) | Stripe Checkout Lambda (deliberately kept apart from the VPS) | Stripe dashboard → Developers → API keys | Roll in Stripe → save to `~/keys` → `infra/set-stack-key.sh stripe` | Roll a new one in Stripe |
+| `AWEBORN_TAILSCALE_OAUTH_SECRET.txt` → `TailscaleOAuthSecret` (⚠ not yet in `~/keys`) | 2 (`aweborn-vps`) | VPS first boot only (joins the Tailnet) | Tailscale admin → OAuth clients (scope `auth_keys`, tag `tag:server`) | New client → save to `~/keys` → `infra/set-stack-key.sh tailscale` | Create a new OAuth client |
+| `AWEBORN_VPS_CI_DEPLOY_SSH_KEY` → GitHub `VPS_SSH_KEY` | 3 | `deploy.yml` (forced-command deploy key) | `ssh-keygen`; public half in `infra/vps/ci-authorized-keys` | New keypair in `~/keys` → update public line → install on VPS → `gh secret set` | Regenerate (`.pub` next to it) |
+| `AWEBORN_VPS_CI_BACKUP_SSH_KEY` → GitHub `VPS_BACKUP_SSH_KEY` | 3 | `backup.yml` (read-only, forced-command) | same as above | same as above | Regenerate |
 | `AWEBORN_VPS_ADMIN_SSH_KEY.pem` (Lightsail default key; copy also at `~/.ssh/lightsail-default.pem`) | 4 (`~/keys`, used by `set-secret.sh`) | you → `ssh ubuntu@aweborn-vps` | Lightsail console → Account → SSH keys | Download again / new default key | Re-download (Tailscale SSH also works) |
 | AWS CLI session | 4 (`aws login`) | you → every `aws` / `infra/*.sh` command | AWS console sign-in | Expires on its own | Sign in again |
 | `AWEBORN_MAIL_FORWARD_TO` | 2 (`aweborn-mail` param `ForwardTo`) | mail forwarder (where hello@/privacy@ land) | your inbox | Edit the file, redeploy the stack with `ForwardTo="$(cat ~/keys/AWEBORN_MAIL_FORWARD_TO.txt)"` | Private, not secret |
@@ -53,7 +53,7 @@ CI reaches AWS through OIDC roles, so there are **no AWS keys in GitHub**. Tails
 | Frontend | `VITE_SYNC_URL`, `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY` (publishable, safe): `.env`, `.env.production` | Vite build |
 | CI role ARNs | `AWS_BACKUP_ROLE_ARN`, `AWS_INFRA_PREVIEW_ROLE_ARN`: GitHub repo **variables**; `VPS_KNOWN_HOST` pin: variable | workflows |
 | Deploy role / region / CDN | `arn:aws:iam::111551045759:role/github-actions-deploy`, `us-east-1`, CloudFront `E3Q49I3A6Q6RH`: plaintext in `deploy.yml`, `backup.yml` | workflows |
-| ⚠ Stored as GitHub *secrets* but really parameters | `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE` | `deploy.yml`, `backup.yml`. **To do:** inline once the values are read from the Tailscale admin |
+| Tailscale CI identity | client ID `THpqTuVanZ11CNTRL-kGb9s6ts1211CNTRL`, audience `api.tailscale.com/<client ID>`, tag `tag:ci`: plaintext in `deploy.yml`, `backup.yml` | workflows |
 
 ## Local dev
 

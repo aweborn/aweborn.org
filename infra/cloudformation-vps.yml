@@ -52,7 +52,7 @@ Parameters:
     Description: >
       Tailscale OAuth client secret (tskey-client-...), scope auth_keys,
       tag tag:server only. Used once at first boot to join the Tailnet.
-      Never commit it; set it with infra/set-tailscale-secret.sh.
+      Never commit it; set it with infra/set-stack-key.sh tailscale.
       Empty = the bootstrap fails loudly (a server off the Tailnet can't
       be deployed to or backed up). See HANDOFF -> Tailscale.
 

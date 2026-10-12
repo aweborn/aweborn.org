@@ -224,7 +224,7 @@ sudo cat /var/log/aweborn-bootstrap.log
    - The VPS runs `infra/k3s/deploy-services.sh` and deploys in the order sync-service → genai-service → agent-runner → caddy. It stops at the first failure.
 3. **deploy-frontend**: S3 + CloudFront. Runs after the server deploy succeeds or is skipped. **Never after a failed server deploy**, so a new client never ships against an old server.
 
-**Deploy key** (secret `VPS_SSH_KEY`): on the VPS it's locked down in `~/.ssh/authorized_keys` with `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command=".../deploy-services.sh"`. It can only connect from the Tailnet and can only run the deploy script. That script accepts only known service names and only deploys `origin/main`. No shell, no forwarding. The public key line lives in `infra/vps/ci-authorized-keys` and is installed by `infra/vps/install-ci-keys.sh`, which runs in the bootstrap and refuses any line that isn't locked down like this. To rotate: generate a new ed25519 key, replace its line in `infra/vps/ci-authorized-keys`, push, run `sudo ~/aweborn/infra/vps/install-ci-keys.sh` on the VPS (after `git pull`), then `gh secret set VPS_SSH_KEY`.
+**Deploy key** (secret `VPS_SSH_KEY`): on the VPS it's locked down in `~/.ssh/authorized_keys` with `from="100.64.0.0/10,fd7a:115c:a1e0::/48",restrict,command=".../deploy-services.sh"`. It can only connect from the Tailnet and can only run the deploy script. That script accepts only known service names and only deploys `origin/main`. No shell, no forwarding. The public key line lives in `infra/vps/ci-authorized-keys` and is installed by `infra/vps/install-ci-keys.sh`, which runs in the bootstrap and refuses any line that isn't locked down like this. To rotate: generate a new ed25519 key, replace its line in `infra/vps/ci-authorized-keys`, push, run `sudo ~/aweborn/infra/vps/install-ci-keys.sh` on the VPS (after `git pull`), then `gh secret set VPS_SSH_KEY < ~/keys/AWEBORN_VPS_CI_DEPLOY_SSH_KEY`. Generate the new key straight into `~/keys` (source of truth).
 
 **Tailscale (one-time setup, admin console):**
 
@@ -241,8 +241,8 @@ sudo cat /var/log/aweborn-bootstrap.log
    ```
    Keep the allow-all rule scoped to `"src": ["autogroup:member"]`; tagged devices aren't members, so it gives them nothing.
 2. Settings → Trust credentials → add **OpenID Connect** for GitHub: issuer `https://token.actions.githubusercontent.com`, subject `repo:aweborn@261697435/aweborn.org@1329275111:ref:refs/heads/main`, scope **auth_keys (write)**, tag `tag:ci`. The repo uses GitHub's **immutable subject** format (numeric owner/repo IDs). Check it with `gh api repos/aweborn/aweborn.org/actions/oidc/customization/sub` (`sub_claim_prefix`). The plain `repo:aweborn/aweborn.org:...` form gets a 403.
-3. GitHub secrets: `TS_OAUTH_CLIENT_ID` (the credential's client ID) and `TS_AUDIENCE` (its audience).
-4. Server auto-join: Settings → OAuth clients → scope **Auth Keys (write)**, tag **`tag:server`** only. Store its secret on the stack with `infra/set-tailscale-secret.sh` (never anywhere else). See [Rebuilding the VPS](#rebuilding-the-vps--tailnet-auto-join).
+3. Its client ID and audience go in plaintext in `deploy.yml` / `backup.yml` (not secret).
+4. Server auto-join: Settings → OAuth clients → scope **Auth Keys (write)**, tag **`tag:server`** only. Store its secret on the stack with `infra/set-stack-key.sh tailscale` (never anywhere else). See [Rebuilding the VPS](#rebuilding-the-vps--tailnet-auto-join).
 
 Until those secrets exist, **deploy-server** skips with a warning and the frontend still deploys.
 
@@ -306,7 +306,7 @@ The repo is the source of truth for AWS. Every stack maps to one template:
 | Stack | Template | Notes |
 |-------|----------|-------|
 | `aweborn-website` | `infra/cloudformation.yml` | S3, CloudFront, ACM, Route53, Stripe Lambda + API. `StripeSecretKey` is NoEcho |
-| `aweborn-vps` | `infra/cloudformation-vps.yml` | Lightsail VPS. **Check for replacement before any apply**: a replaced instance loses the hostPath world DB. `TailscaleOAuthSecret` is NoEcho (set it only with `infra/set-tailscale-secret.sh`). `ImdsHardening` custom resource (+ Lambda/role) keeps IMDS v2-only |
+| `aweborn-vps` | `infra/cloudformation-vps.yml` | Lightsail VPS. **Check for replacement before any apply**: a replaced instance loses the hostPath world DB. `TailscaleOAuthSecret` is NoEcho (set it only with `infra/set-stack-key.sh tailscale`). `ImdsHardening` custom resource (+ Lambda/role) keeps IMDS v2-only |
 | `aweborn-backups` | `infra/cloudformation-backups.yml` | Backup bucket + put-only role |
 | `aweborn-ci` | `infra/cloudformation-ci.yml` | Read-only role for the infra check below |
 | `aweborn-mail` | `infra/cloudformation-mail.yml` | SES domain identity for aweborn.org (DKIM + SPF + DMARC `p=none` records in Route53, plus a custom MAIL FROM `mail.aweborn.org` so SPF aligns too). Inbound forwarding of `hello@` and `privacy@aweborn.org` → private inbox, plus-tagged per address (`you+aweborn-hello@…`, `you+aweborn-privacy@…`, so Gmail can filter): S3 raw copy kept 30 days → Lambda rewrites From to `forwarder@aweborn.org`, original sender as Reply-To. `ForwardTo` is a deploy parameter kept out of the repo (`ForwardTo="$(cat ~/keys/AWEBORN_MAIL_FORWARD_TO.txt)"`). Add addresses via `Recipients`. IAM user `aweborn-mail-sender` sends sign-in codes (key created out-of-band, see Saving a player). Deploy needs `CAPABILITY_NAMED_IAM`. **After first deploy:** `aws ses set-active-receipt-rule-set --rule-set-name aweborn-inbound`. SES production access granted 2026-10-12 (50k/day, 14/s) |
@@ -357,7 +357,7 @@ The website (S3/CloudFront) stays up throughout; sync and gen-AI are down until 
 
 **Rehearsed on prod 2026-10-11** (`aweborn-vps` → `aweborn-vps-2`, ~10 min of sync/gen-AI downtime): pre-rebuild snapshot + `backup.yml`, old node deleted in Machines, `rebuild-vps.sh`, `restore-from-s3.sh` (pin updated from the Lightsail API, restored DB fingerprint == backup), Caddy got real certs on the first try, pin committed, `backup.yml` + Deploy green, `cfn-preview.sh` in sync. Before that, `infra/test-dr-restore.sh` **passed 2026-10-11** on a throwaway box (re-run it after bootstrap/deploy changes). Earlier note, kept for history: the rebuild path was first dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.
 
-**Rotate the OAuth secret** (yearly, or at once if user-data or the stack parameters might have leaked): Tailscale admin → Settings → OAuth clients → create a new client (Auth Keys write, `tag:server`), run `infra/set-tailscale-secret.sh` with it, then revoke the old client. Running servers are unaffected (they use their node keys, not the secret).
+**Rotate the OAuth secret** (yearly, or at once if user-data or the stack parameters might have leaked): Tailscale admin → Settings → OAuth clients → create a new client (Auth Keys write, `tag:server`), run `infra/set-stack-key.sh tailscale` with it, then revoke the old client. Running servers are unaffected (they use their node keys, not the secret).
 
 **If the secret leaks**, the holder can add `tag:server` nodes, and nothing else. Those nodes can't reach any device (no grants from `tag:server`), and CI won't talk to an impostor because the host key is pinned. Rotate as above and delete any unknown `tag:server` nodes.
 
