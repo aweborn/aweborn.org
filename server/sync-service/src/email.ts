@@ -79,7 +79,7 @@ const CODE_COPY: Record<CodePurpose, { subject: string; lead: string; after: str
   "sign-in": {
     subject: "Your Aweborn code",
     lead: "Here's your code to save your player and sign in.",
-    after: "Type it into Aweborn on the screen where you asked for it.",
+    after: "Type it into Aweborn on the screen where you're asked for it.",
   },
   "email-verification": {
     subject: "Confirm your email for Aweborn",
@@ -121,7 +121,8 @@ export function codeEmail(to: string, code: string, purpose: CodePurpose, minute
     SITE,
   ].join("\n");
 
-  return { to, subject, text, html: layout(subject, `
+  return {
+    to, subject, text, html: layout(subject, `
     <p style="margin:0 0 16px">Hi there,</p>
     <p style="margin:0 0 24px">${copy.lead}</p>
     <div style="margin:0 0 24px;padding:20px 12px;text-align:center;border-radius:14px;background:#14123d;border:1px solid #3a3470">
@@ -129,7 +130,8 @@ export function codeEmail(to: string, code: string, purpose: CodePurpose, minute
     </div>
     <p style="margin:0 0 16px">${copy.after} It works for ${minutes} minutes.</p>
     <p style="margin:0 0 16px;color:#a9abc4">Didn't ask for this? You can safely ignore it. Nothing changes until the code is used.</p>
-  `) };
+  `)
+  };
 }
 
 /** Sent to an existing player when someone tries to sign up with their email. */
@@ -150,12 +152,44 @@ export function existingAccountEmail(to: string): Email {
     "Aweborn",
     SITE,
   ].join("\n");
-  return { to, subject, text, html: layout(subject, `
+  return {
+    to, subject, text, html: layout(subject, `
     <p style="margin:0 0 16px">Hi there,</p>
     <p style="margin:0 0 16px">Someone just tried to create an Aweborn player with this email, but you already have one.</p>
     <p style="margin:0 0 16px"><strong style="color:#eef0f6">If it was you:</strong> no need to sign up again. Open Aweborn, choose “Save your player”, and use “Email me a code” to sign in.</p>
     <p style="margin:0 0 16px"><strong style="color:#eef0f6">If it wasn't you:</strong> you don't need to do anything. Your player is safe.</p>
-  `) };
+  `)
+  };
+}
+
+/**
+ * Sent whenever a way into a player changes (passkey, Google, email,
+ * password), so a change made on a borrowed device doesn't go unnoticed.
+ */
+export function wayInChangedEmail(to: string, change: string): Email {
+  const subject = `Your Aweborn player changed: ${change}`;
+  const text = [
+    "Hi there,",
+    "",
+    `A change was just made to how you sign in to your Aweborn player: ${change}.`,
+    "",
+    "If it was you: all good, nothing to do.",
+    "",
+    "If it wasn't you: reply to this email right away and we'll help you lock it down.",
+    "",
+    "With awe,",
+    "Aweborn",
+    SITE,
+  ].join("\n");
+  return {
+    to, subject, text, html: layout(subject, `
+    <p style="margin:0 0 16px">Hi there,</p>
+    <p style="margin:0 0 16px">A change was just made to how you sign in to your Aweborn player:</p>
+    <p style="margin:0 0 16px;padding:12px 16px;border-radius:12px;background:#14123d;border:1px solid #3a3470;color:#f0d78c">${change}</p>
+    <p style="margin:0 0 16px"><strong style="color:#eef0f6">If it was you:</strong> all good, nothing to do.</p>
+    <p style="margin:0 0 16px"><strong style="color:#eef0f6">If it wasn't you:</strong> reply to this email right away and we'll help you lock it down.</p>
+  `)
+  };
 }
 
 function layout(title: string, body: string): string {

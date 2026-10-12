@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import type { WebSocket } from "ws";
+import { recordDiscovery } from "./identity.js";
 import type { WorldEntry, Vec3 } from "../../../shared/crdt-schema.js";
 import {
   positionToSector,
@@ -60,8 +61,10 @@ export class RoomManager {
   /** Flush interval handle */
   private flushTimer: ReturnType<typeof setInterval> | null = null;
 
-  /** Authenticated playerId per socket (from the session cookie at upgrade). */
+  /** Authenticated playerId (active character) per socket (from the session cookie at upgrade). */
   private playerIds = new WeakMap<WebSocket, string>();
+  /** Account behind a socket, for the World Index. */
+  private accountIds = new WeakMap<WebSocket, string>();
 
   constructor() {
     this.universeDoc = initUniverseDoc();
@@ -78,8 +81,9 @@ export class RoomManager {
   // ── Universe Room ────────────────────────────────────────────────
 
   /** Record the authenticated player behind a socket. */
-  setPlayer(ws: WebSocket, playerId: string): void {
+  setPlayer(ws: WebSocket, playerId: string, accountId?: string): void {
     this.playerIds.set(ws, playerId);
+    if (accountId) this.accountIds.set(ws, accountId);
   }
 
   /**
@@ -164,6 +168,18 @@ export class RoomManager {
     }
 
     room.clients.add(ws);
+
+    // World Index: entering a world counts as discovering it (first visit wins).
+    const accountId = this.accountIds.get(ws);
+    if (accountId) {
+      try {
+        if (recordDiscovery(accountId, worldId, this.playerIds.get(ws) ?? null)) {
+          console.log(`[rooms] world "${worldId}" discovered`);
+        }
+      } catch (err) {
+        console.warn("[rooms] could not record discovery:", err);
+      }
+    }
 
     // Update player count in universe
     updatePlayerCount(this.universeDoc, worldId, room.clients.size);

@@ -19,11 +19,22 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { anonymous, emailOTP, haveIBeenPwned } from "better-auth/plugins";
+import { anonymous, customSession, emailOTP, haveIBeenPwned } from "better-auth/plugins";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { passkey, getAuthenticatorName } from "@better-auth/passkey";
-import { codeEmail, emailEnabled, existingAccountEmail, sendEmail } from "./email.js";
+import { codeEmail, emailEnabled, existingAccountEmail, sendEmail, wayInChangedEmail } from "./email.js";
+import {
+  absorbAnonymous,
+  countWaysIn,
+  initIdentity,
+  listCharacters,
+  realEmail,
+  resolveIdentity,
+  setSessionCharacter,
+  waysIn,
+  type Identity,
+} from "./identity.js";
 
 /** Browser origins allowed to call the auth API with credentials. */
 export const TRUSTED_ORIGINS = [
@@ -85,13 +96,15 @@ export function authMethods(auth: Auth | null) {
 }
 
 /**
- * Session freshness, our way. Better Auth's built-in check (session < 1 day
- * old) would lock anonymous players out of saving their player for good:
- * they have no credential to re-authenticate with. So the built-in check is
- * off (`freshAge: 0`) and this hook enforces it only for players who already
- * have a real sign-in method (they can simply sign in again).
+ * Confirm it's you, our way. Better Auth's built-in check would lock
+ * anonymous players out of saving their player for good: they have no
+ * credential to re-authenticate with. So the built-in check is off
+ * (`freshAge: 0`) and this hook enforces it only for saved players: any
+ * change to how they sign in needs a session from the last 5 minutes, i.e.
+ * a fresh passkey, email code or Google round trip on this device. Someone
+ * holding a borrowed, signed-in phone can't pass that (I5, 2026-10-12).
  */
-const FRESH_SESSION_MS = DAY_S * 1000;
+const FRESH_SESSION_MS = 5 * 60_000;
 const SENSITIVE_PATHS = new Set([
   "/passkey/generate-register-options",
   "/passkey/verify-registration",
@@ -111,6 +124,50 @@ function playerEmail(id: string): string {
 }
 /** Better Auth's default anonymous email, used before we set our own format. */
 const LEGACY_ANON_EMAIL = /@anonymous\.placeholder\.invalid$/;
+
+/**
+ * Endpoints that sign this device in. From a *saved* device they may only
+ * reach the same player (that's the "confirm it's you" re-check); a
+ * different player is refused: sign out of this device first. Anonymous
+ * devices are handled by the anonymous plugin's `onLinkAccount`.
+ */
+const SIGN_IN_PATH =
+  /^\/(sign-in\/(email|email-otp|social|passkey)|callback\/|passkey\/verify-authentication|email-otp\/verify-email|verify-email)/;
+
+/** Where to send a browser that was refused mid-OAuth. */
+const APP_URL = process.env.APP_URL ?? (IS_PROD ? "https://aweborn.org" : "http://localhost:5173");
+
+const DIFFERENT_PLAYER = {
+  code: "DIFFERENT_PLAYER",
+  message: "That belongs to a different player. Sign out of this device first to switch.",
+};
+
+type RawUser = { id: string; email?: string | null; emailVerified?: boolean | null; playerId?: string | null; isAnonymous?: boolean | null };
+type Ctx = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
+
+/**
+ * The session this request arrived with (from its cookie), without touching
+ * response cookies. `getSessionFromCtx` could append a Set-Cookie (refresh or
+ * clear) and clobber the cookie of the sign-in we're observing.
+ */
+async function arrivingSession(ctx: Ctx) {
+  const token = await ctx.getSignedCookie(ctx.context.authCookies.sessionToken.name, ctx.context.secret);
+  if (!token) return null;
+  const found = await ctx.context.internalAdapter.findSession(token).catch(() => null);
+  if (!found || new Date(found.session.expiresAt).getTime() < Date.now()) return null;
+  return found as { session: { id: string; token: string; createdAt: Date | string }; user: RawUser };
+}
+
+/** Tell the player (at their real email, if any) that a way in changed. */
+function notify(user: RawUser | null | undefined, change: string, ...also: (string | null)[]): void {
+  const to = new Set([user ? realEmail(user) : null, ...also].filter((x): x is string => Boolean(x)));
+  for (const addr of to) void sendEmail(wayInChangedEmail(addr, change));
+}
+
+/** Old email per session, between `/email-otp/change-email`'s before and after hooks. */
+const pendingEmailChange = new Map<string, string | null>();
+/** session id → which way in an unlink is removing (the row is gone by the after hook). */
+const pendingUnlink = new Map<string, "google" | "password">();
 
 function buildOptions(db: Database.Database) {
   return {
@@ -178,6 +235,25 @@ function buildOptions(db: Database.Database) {
 
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        // A saved device can only sign in to *its own* player. Catch the
+        // email cases early (before a code is sent or an account is made).
+        if (
+          ctx.path === "/email-otp/send-verification-otp" ||
+          ctx.path === "/sign-in/email-otp" ||
+          ctx.path === "/sign-in/email" ||
+          ctx.path === "/sign-up/email"
+        ) {
+          const body = (ctx.body ?? {}) as { email?: string; type?: string };
+          if (ctx.path === "/email-otp/send-verification-otp" && body.type !== "sign-in") return;
+          const prev = await arrivingSession(ctx);
+          if (!prev || prev.user.isAnonymous) return;
+          const asked = String(body.email ?? "").trim().toLowerCase();
+          if (ctx.path === "/sign-up/email" || asked !== (prev.user.email ?? "").toLowerCase()) {
+            throw new APIError("FORBIDDEN", DIFFERENT_PLAYER);
+          }
+          return;
+        }
+
         if (!SENSITIVE_PATHS.has(ctx.path)) return;
         const session = await getSessionFromCtx(ctx);
         if (!session) return;
@@ -200,13 +276,122 @@ function buildOptions(db: Database.Database) {
         if (age >= FRESH_SESSION_MS) {
           throw new APIError("FORBIDDEN", {
             code: "SESSION_NOT_FRESH",
-            message: "For safety, sign in again before changing how you sign in.",
+            message: "For safety, confirm it's you first.",
           });
         }
+        // Never remove the last way in.
+        const body = (ctx.body ?? {}) as { id?: string; accountId?: string };
+        const ways = waysIn(session.user.id);
+        const unlinking =
+          ctx.path !== "/unlink-account" || !body.accountId
+            ? null
+            : body.accountId === ways.accountIds.google
+              ? "google"
+              : body.accountId === ways.accountIds.password
+                ? "password"
+                : null;
+        const removing =
+          ctx.path === "/passkey/delete-passkey"
+            ? ways.passkeys.some((p) => p.id === body.id)
+            : unlinking === "google";
+        if (removing && countWaysIn(ways) <= 1) {
+          throw new APIError("BAD_REQUEST", {
+            code: "LAST_WAY_IN",
+            message: "That's your only way in. Add another one first.",
+          });
+        }
+        if (unlinking) pendingUnlink.set(session.session.id, unlinking);
+        if (ctx.path === "/email-otp/change-email") {
+          pendingEmailChange.set(session.session.id, realEmail(session.user as RawUser));
+        }
+      }),
+
+      after: createAuthMiddleware(async (ctx) => {
+        if (!ctx.path) return;
+        const failed = ctx.context.returned instanceof APIError;
+
+        // Notices for changes to how a saved player signs in.
+        if (SENSITIVE_PATHS.has(ctx.path) && !failed) {
+          const session = await getSessionFromCtx(ctx).catch(() => null);
+          const user = session?.user as RawUser | undefined;
+          const body = (ctx.body ?? {}) as { newEmail?: string };
+          const unlinked = session ? pendingUnlink.get(session.session.id) : undefined;
+          if (session) pendingUnlink.delete(session.session.id);
+          if (user && !user.isAnonymous) {
+            if (ctx.path === "/passkey/verify-registration") notify(user, "a passkey was added");
+            else if (ctx.path === "/passkey/delete-passkey") notify(user, "a passkey was removed");
+            else if (ctx.path === "/unlink-account")
+              notify(user, unlinked === "password" ? "your password was removed" : "Google sign-in was removed");
+            else if (ctx.path === "/change-password") notify(user, "your password was changed");
+            else if (ctx.path === "/email-otp/change-email" && session) {
+              const old = pendingEmailChange.get(session.session.id) ?? null;
+              pendingEmailChange.delete(session.session.id);
+              const newEmail = String(body.newEmail ?? "").trim().toLowerCase();
+              notify(user, `your email is now ${newEmail}`, old, newEmail);
+            }
+          }
+          return;
+        }
+        if (ctx.path === "/email-otp/change-email") {
+          const s = await getSessionFromCtx(ctx).catch(() => null);
+          if (s) pendingEmailChange.delete(s.session.id);
+        }
+        if (ctx.path === "/email-otp/reset-password" && !failed) {
+          const email = String((ctx.body as { email?: string } | undefined)?.email ?? "").trim().toLowerCase();
+          if (email) void sendEmail(wayInChangedEmail(email, "your password was reset"));
+          return;
+        }
+
+        // Sign-ins from a saved device: same player = "confirm it's you";
+        // any other player is refused and nothing changes.
+        if (!SIGN_IN_PATH.test(ctx.path)) return;
+        const next = ctx.context.newSession as { session: { id: string; token: string }; user: RawUser } | null;
+        if (!next) return;
+        const prev = await arrivingSession(ctx);
+        if (!prev || prev.user.isAnonymous) return;
+
+        if (prev.user.id === next.user.id) {
+          // Re-check passed. Keep playing the same character; retire the old session.
+          if (prev.user.playerId) {
+            const playing = resolveIdentity(prev.user.id, prev.user.playerId, prev.session.id).playerId;
+            setSessionCharacter(next.session.id, playing);
+          }
+          // Retire the old session a moment later: plugin after-hooks still read
+          // the arriving cookie, and if its session were already gone they'd
+          // clear cookies, including the one for the session just made.
+          const oldToken = prev.session.token;
+          setTimeout(() => {
+            void ctx.context.internalAdapter.deleteSession(oldToken).catch(() => undefined);
+          }, 2_000).unref();
+          return;
+        }
+
+        // A different player: undo the sign-in (drop its cookie + session, and
+        // the account if this attempt just created it).
+        ctx.context.responseHeaders?.delete("set-cookie");
+        await ctx.context.internalAdapter.deleteSession(next.session.token).catch(() => undefined);
+        if (newAccounts.has(next.user.id)) {
+          newAccounts.delete(next.user.id);
+          await ctx.context.internalAdapter.deleteUser(next.user.id).catch(() => undefined);
+        }
+        console.log(`[auth] refused: saved device tried to sign in to a different player`);
+        if (ctx.path.startsWith("/callback/")) throw ctx.redirect(`${APP_URL}/?signin=different`);
+        throw new APIError("FORBIDDEN", DIFFERENT_PLAYER);
       }),
     },
 
     databaseHooks: {
+      account: {
+        create: {
+          after: async (account, ctx) => {
+            // Google attached to an existing saved player (link, or Better
+            // Auth's same-email implicit link): tell them.
+            if (account.providerId !== "google" || !ctx || newAccounts.has(account.userId)) return;
+            const user = (await ctx.context.internalAdapter.findUserById(account.userId).catch(() => null)) as RawUser | null;
+            if (user && !user.isAnonymous) notify(user, "Google sign-in was added");
+          },
+        },
+      },
       user: {
         create: {
           before: async (user, ctx) => {
@@ -229,7 +414,8 @@ function buildOptions(db: Database.Database) {
     },
 
     rateLimit: {
-      enabled: true,
+      // Local e2e scripts only. Never in production.
+      enabled: IS_PROD || !process.env.DEV_NO_RATE_LIMIT,
       window: 60,
       max: 100,
       customRules: {
@@ -315,13 +501,37 @@ function buildOptions(db: Database.Database) {
             });
             console.log(`[auth] linked anonymous player ${anonPlayerId} to a new account (fallback)`);
           } else {
-            // Signed in to an existing player from an anonymous device. The
-            // existing playerId wins; merging the anonymous World Index is I5.
+            // Signed in to an existing player from an anonymous device. Both
+            // survive: the anonymous character (and its World Index) joins
+            // that account, and this device keeps playing it. The player can
+            // switch characters from the account panel.
             console.log(
-              `[auth] anonymous player ${anonPlayerId} signed in to existing player ${newUser.user.playerId} (merge: I5)`
+              `[auth] anonymous player ${anonPlayerId} joined existing player ${String(newUser.user.playerId)}`
             );
           }
+          try {
+            const home = newUser.user.playerId as string | null | undefined;
+            const joinedExisting = !isNew && home && home !== anonPlayerId;
+            if (joinedExisting) resolveIdentity(newUser.user.id, home, newUser.session.id);
+            absorbAnonymous(anonymousUser.user.id, anonPlayerId, newUser.user.id);
+            setSessionCharacter(newUser.session.id, anonPlayerId);
+          } catch (err) {
+            console.error("[auth] could not carry the anonymous character over:", err);
+          }
         },
+      }),
+      // The session reports the character this device plays (not the user's
+      // home character) plus the account's other characters. Internal hooks
+      // (getSessionFromCtx) still see the raw user.
+      customSession(async ({ user, session }) => {
+        const raw = user as RawUser;
+        if (!raw.playerId) return { user, session, characters: [] as string[] };
+        const id = resolveIdentity(raw.id, raw.playerId, session.id);
+        return {
+          user: { ...user, playerId: id.playerId },
+          session,
+          characters: listCharacters(id.accountId).map((c) => c.id),
+        };
       }),
     ],
   } satisfies BetterAuthOptions;
@@ -356,12 +566,21 @@ export async function initAuth(db: Database.Database): Promise<Auth | null> {
     console.log(`[auth] migrating auth schema: ${names}`);
     await runMigrations();
   }
+  initIdentity(db);
   return createAuthFromOptions(options);
 }
 
-/** Resolve the player behind a request's session cookie, or null. */
-export async function getPlayerId(auth: Auth, headers: Headers): Promise<string | null> {
-  const session = await auth.api.getSession({ headers });
-  const playerId = (session?.user as { playerId?: string } | undefined)?.playerId;
-  return playerId ?? null;
+/** The raw session behind a request (user + session ids), or null. */
+export async function getRawSession(auth: Auth, headers: Headers) {
+  const res = await auth.api.getSession({ headers });
+  if (!res) return null;
+  return { userId: res.user.id, sessionId: res.session.id, playerId: (res.user as RawUser).playerId ?? null };
+}
+
+/** Resolve the account + active character behind a request's session cookie, or null. */
+export async function getIdentity(auth: Auth, headers: Headers): Promise<Identity | null> {
+  const s = await getRawSession(auth, headers);
+  if (!s?.playerId) return null;
+  // `playerId` here is already the active character (customSession).
+  return { accountId: s.userId, playerId: s.playerId };
 }

@@ -3,7 +3,9 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
-import { initAuth, getPlayerId, isTrustedOrigin, authMethods } from "./auth.js";
+import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods } from "./auth.js";
+import { listCharacters, switchCharacter, waysIn, worldIndex } from "./identity.js";
+import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
@@ -72,8 +74,87 @@ function handleWorldLookup(req: IncomingMessage, res: ServerResponse, id: string
   );
 }
 
+function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString();
+      if (body.length > limit) {
+        reject(new Error("too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (err) {
+        reject(err as Error);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+/**
+ * `/api/player/*`: the signed-in account (session cookie, trusted origins only).
+ *   GET  /api/player/me         { playerId, characters, methods, worldIndex }
+ *   POST /api/player/character  { id } → this device now plays that character
+ */
+async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const json = (status: number, body: unknown) => {
+    res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(body));
+  };
+  if (!auth) return json(503, { error: "auth_disabled" });
+  // Credentialed: our own pages only (also covers CSRF on the POST).
+  if (!isTrustedOrigin(req.headers.origin)) return json(403, { error: "forbidden_origin" });
+  const session = await getRawSession(auth, fromNodeHeaders(req.headers));
+  if (!session?.playerId) return json(401, { error: "no_session" });
+  const accountId = session.userId;
+  const path = req.url?.split("?")[0];
+
+  if (path === "/api/player/me" && req.method === "GET") {
+    return json(200, {
+      playerId: session.playerId,
+      characters: listCharacters(accountId),
+      methods: waysIn(accountId),
+      worldIndex: worldIndex(accountId),
+    });
+  }
+  if (path === "/api/player/character" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { id?: unknown } | null;
+    const id = typeof body?.id === "string" ? body.id : "";
+    if (!switchCharacter(accountId, session.sessionId, id)) return json(404, { error: "not_your_character" });
+    return json(200, { playerId: id });
+  }
+  return json(404, { error: "not_found" });
+}
+
 // HTTP server (health checks + stats + world lookup + auth)
 const server = createServer((req, res) => {
+  if (req.url?.startsWith("/api/player/")) {
+    const origin = req.headers.origin;
+    if (isTrustedOrigin(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+    res.setHeader("Vary", "Origin");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "600",
+      });
+      res.end();
+      return;
+    }
+    handlePlayerApi(req, res).catch((err: unknown) => {
+      console.error("[player-api]", err);
+      if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "internal" }));
+    });
+    return;
+  }
   // Better Auth: /api/auth/* (credentialed CORS for trusted origins only;
   // Better Auth also checks Origin against trustedOrigins on mutations).
   if (req.url?.startsWith("/api/auth/")) {
@@ -146,7 +227,7 @@ const server = createServer((req, res) => {
 // ── WebSocket server ─────────────────────────────────────────────────
 const wss = new WebSocketServer({ noServer: true });
 
-wss.on("connection", (ws: WebSocket, req: IncomingMessage, playerId: string | null) => {
+wss.on("connection", (ws: WebSocket, req: IncomingMessage, identity: Identity | null) => {
   const url = req.url ?? "/";
   const route = parseRoomPath(url);
 
@@ -159,8 +240,8 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage, playerId: string | nu
   // Everyone is welcome. Normally the client signs in anonymously first, so
   // the socket carries a player. Sockets with no session (cookies blocked,
   // old clients) still play as guests; they just have no persistent identity.
-  if (playerId) {
-    rooms.setPlayer(ws, playerId);
+  if (identity) {
+    rooms.setPlayer(ws, identity.playerId, identity.accountId);
   } else {
     console.log("[ws] guest connection (no session)");
   }
@@ -193,15 +274,15 @@ server.on("upgrade", (req, socket, head) => {
   // Only trust the session cookie on sockets opened by our own pages
   // (defence against cross-site WebSocket hijacking).
   const resolve = auth && isTrustedOrigin(req.headers.origin)
-    ? getPlayerId(auth, fromNodeHeaders(req.headers)).catch((err) => {
+    ? getIdentity(auth, fromNodeHeaders(req.headers)).catch((err) => {
         console.error("[ws] session lookup failed:", err);
         return null;
       })
     : Promise.resolve(null);
 
-  void resolve.then((playerId) => {
+  void resolve.then((identity) => {
     wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req, playerId);
+      wss.emit("connection", ws, req, identity);
     });
   });
 });

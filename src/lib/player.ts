@@ -28,7 +28,7 @@ export const authClient = createAuthClient({
 });
 
 export interface Player {
-  /** Stable public player ID (UUID), or a per-tab `guest-…` ID. */
+  /** Stable public player ID (UUID) of the character this device plays, or a per-tab `guest-…` ID. */
   playerId: string;
   /** Derived from `playerId`, so it's the same on every device. */
   color: string;
@@ -36,6 +36,8 @@ export interface Player {
   isAnonymous: boolean;
   /** No session at all: nothing persists. */
   isGuest: boolean;
+  /** Every character in this account (incl. `playerId`), oldest first. */
+  characters: string[];
 }
 
 /** Same player, same colour everywhere (FNV-1a hash → hue). Customisable later. */
@@ -56,29 +58,37 @@ function guestPlayer(): Player {
     id = `guest-${crypto.randomUUID().slice(0, 8)}`;
     sessionStorage.setItem(key, id);
   }
-  return { playerId: id, color: colorForPlayer(id), isAnonymous: false, isGuest: true };
+  return { playerId: id, color: colorForPlayer(id), isAnonymous: false, isGuest: true, characters: [id] };
 }
 
 type SessionUser = { playerId?: string | null; isAnonymous?: boolean | null };
+type SessionData = { user?: SessionUser; characters?: string[] } | null | undefined;
 
-function toPlayer(user: SessionUser | undefined | null): Player | null {
+function toPlayer(data: SessionData): Player | null {
+  const user = data?.user;
   if (!user?.playerId) return null;
+  const characters = data?.characters?.length ? data.characters : [user.playerId];
   return {
     playerId: user.playerId,
     color: colorForPlayer(user.playerId),
     isAnonymous: Boolean(user.isAnonymous),
     isGuest: false,
+    characters,
   };
 }
 
 async function resolvePlayer(): Promise<Player> {
   const existing = await authClient.getSession();
-  const fromSession = toPlayer(existing.data?.user as SessionUser | undefined);
+  const fromSession = toPlayer(existing.data as SessionData);
   if (fromSession) return fromSession;
 
   const created = await authClient.signIn.anonymous();
-  const fromSignIn = toPlayer(created.data?.user as SessionUser | undefined);
-  if (fromSignIn) return fromSignIn;
+  if (created.data?.user) {
+    // Re-read: the session reports the active character + the account's list.
+    const fresh = await authClient.getSession({ query: { disableCookieCache: true } });
+    const fromSignIn = toPlayer(fresh.data as SessionData) ?? toPlayer({ user: created.data.user as SessionUser });
+    if (fromSignIn) return fromSignIn;
+  }
 
   throw new Error(created.error?.message ?? "anonymous sign-in returned no player");
 }
@@ -123,11 +133,24 @@ export function subscribePlayer(fn: () => void): () => void {
   return () => playerListeners.delete(fn);
 }
 
-/** Re-read the session (e.g. after saving with a passkey). Same playerId. */
+/** Re-read the session (e.g. after saving with a passkey). */
 export async function refreshPlayer(): Promise<void> {
   const res = await authClient.getSession({ query: { disableCookieCache: true } });
-  const player = toPlayer(res.data?.user as SessionUser | undefined);
+  const player = toPlayer(res.data as SessionData);
   if (player) setPlayer(player);
+}
+
+/** Play another character of this account on this device. Reloads into it. */
+export async function switchCharacter(id: string): Promise<AuthResult> {
+  const res = await fetch(`${AUTH_URL}/api/player/character`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  }).catch(() => null);
+  if (!res?.ok) return { ok: false, message: "Couldn't switch characters. Please try again." };
+  window.location.reload();
+  return { ok: true };
 }
 
 // ── Sign-in methods ─────────────────────────────────────────────────────────
@@ -154,8 +177,8 @@ export function fetchAuthMethods(): Promise<AuthMethods> {
   return methodsPromise;
 }
 
-/** Result of a sign-in action, phrased for players. */
-export type AuthResult = { ok: true } | { ok: false; cancelled?: boolean; message: string };
+/** Result of a sign-in action, phrased for players. `needsConfirm`: re-check first. */
+export type AuthResult = { ok: true } | { ok: false; cancelled?: boolean; needsConfirm?: boolean; message: string };
 
 const CANCEL_CODES = /CANCEL|ABORT|NOT_ALLOWED|PASSTHROUGH/i;
 
@@ -169,8 +192,17 @@ function fail(
   if (error?.code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") {
     return { ok: false, message: "This device already has a passkey for your player." };
   }
+  if (error?.code === "DIFFERENT_PLAYER") {
+    return { ok: false, message: "That belongs to a different player. Sign out of this device first to switch." };
+  }
+  if (error?.code === "LAST_WAY_IN") {
+    return { ok: false, message: "That's your only way in. Add another one first." };
+  }
+  if (error?.code && /ALREADY_(EXISTS|IN_USE|LINKED)|EMAIL_EXISTS/.test(error.code)) {
+    return { ok: false, message: "That belongs to a different player, so it can't be added here." };
+  }
   if (error?.code === "SESSION_NOT_FRESH") {
-    return { ok: false, message: "For safety, sign in again first, then add this." };
+    return { ok: false, needsConfirm: true, message: "For safety, confirm it's you first." };
   }
   if (error?.status === 429) {
     return { ok: false, message: "That's a lot of tries. Take a breath and try again in a minute." };
@@ -201,7 +233,7 @@ export async function saveWithPasskey(): Promise<AuthResult> {
   return { ok: true };
 }
 
-/** Sign in to a player saved on another device. Reloads into that player. */
+/** Sign in to a player saved on another device (anonymous devices only). Reloads into that player. */
 export async function signInWithPasskey(): Promise<AuthResult> {
   const res = await authClient.signIn.passkey({});
   if (res.error) return fail(res.error, "Couldn't sign in with a passkey. Please try again.");
@@ -209,10 +241,47 @@ export async function signInWithPasskey(): Promise<AuthResult> {
   return { ok: true };
 }
 
+// ── Confirm it's you (saved players, before changing ways in) ───────────────
+// Each one signs this device in again *to the same player*; the server
+// refuses any other player. Good for 5 minutes.
+
+export async function confirmWithPasskey(): Promise<AuthResult> {
+  const res = await authClient.signIn.passkey({});
+  if (res.error) return fail(res.error, "Couldn't confirm with a passkey. Please try again.");
+  await refreshPlayer();
+  return { ok: true };
+}
+
+const RECHECK_KEY = "aweborn-recheck";
+
+/** Confirm with Google (redirects away and back; the panel reopens confirmed). */
+export async function confirmWithGoogle(): Promise<AuthResult> {
+  sessionStorage.setItem(RECHECK_KEY, "1");
+  const res = await authClient.signIn.social({
+    provider: "google",
+    callbackURL: window.location.href,
+    errorCallbackURL: `${window.location.origin}/?signin=failed`,
+  });
+  if (res.error) {
+    sessionStorage.removeItem(RECHECK_KEY);
+    return fail(res.error, "Couldn't reach Google. Please try again.");
+  }
+  return { ok: true };
+}
+
+/** True once, right after returning from a Google confirm. */
+export function takeRecheckReturn(): boolean {
+  const was = sessionStorage.getItem(RECHECK_KEY) === "1";
+  sessionStorage.removeItem(RECHECK_KEY);
+  return was;
+}
+
 /**
  * Google. Anonymous players *sign in* (a new Google account becomes this
- * player; an existing one switches to that player). Saved players *link*
- * Google as another way in. Both redirect away and back.
+ * player; an existing one switches to that player and this device's
+ * character comes along). Saved players *link* Google to this player; a
+ * Google account that belongs to another player is refused. Both redirect
+ * away and back.
  */
 export async function continueWithGoogle(): Promise<AuthResult> {
   const here = window.location.href;
@@ -224,33 +293,51 @@ export async function continueWithGoogle(): Promise<AuthResult> {
   return { ok: true }; // the browser is navigating to Google
 }
 
-/** Linked ways in, for the account panel. */
-export async function listSignInMethods(): Promise<{ passkeys: number; google: boolean; email: string | null; password: boolean }> {
-  const [passkeys, accounts, session] = await Promise.all([
-    authClient.passkey.listUserPasskeys(),
-    authClient.listAccounts(),
-    authClient.getSession({ query: { disableCookieCache: true } }),
-  ]);
-  const user = session.data?.user as { email?: string; emailVerified?: boolean } | undefined;
-  const realEmail = user?.email && user.emailVerified && !user.email.endsWith(".invalid") ? user.email : null;
-  return {
-    passkeys: passkeys.data?.length ?? 0,
-    google: Boolean(accounts.data?.some((a) => a.providerId === "google")),
-    email: realEmail,
-    password: Boolean(accounts.data?.some((a) => a.providerId === "credential")),
-  };
+export interface SignInMethods {
+  passkeys: { id: string; name: string | null; createdAt: string | number }[];
+  google: boolean;
+  email: string | null;
+  password: boolean;
+  accountIds: { google: string | null; password: string | null };
+}
+
+/** Every way into this player, for the account panel. */
+export async function listSignInMethods(): Promise<SignInMethods> {
+  const res = await fetch(`${AUTH_URL}/api/player/me`, { credentials: "include" });
+  if (!res.ok) throw new Error(`player/me ${res.status}`);
+  const me = (await res.json()) as { methods: SignInMethods };
+  return me.methods;
+}
+
+/** Remove a way in (needs a fresh confirm; never the last one). */
+export async function removePasskey(id: string): Promise<AuthResult> {
+  const res = await authClient.passkey.deletePasskey({ id });
+  return res.error ? fail(res.error, "Couldn't remove that passkey. Please try again.") : { ok: true };
+}
+async function unlink(which: "google" | "password", failMsg: string): Promise<AuthResult> {
+  const accountId = (await listSignInMethods()).accountIds[which];
+  if (!accountId) return { ok: true }; // already gone
+  const res = await authClient.unlinkAccount({ accountId });
+  return res.error ? fail(res.error, failMsg) : { ok: true };
+}
+export function removeGoogle(): Promise<AuthResult> {
+  return unlink("google", "Couldn't remove Google. Please try again.");
+}
+export function removePassword(): Promise<AuthResult> {
+  return unlink("password", "Couldn't remove the password. Please try again.");
 }
 
 // ── Email (codes first, password as the quiet alternative) ──────────────────
 
 /**
- * After a sign-in: same player → just refresh. Different player (this device
- * signed in to one saved elsewhere) → reload so the whole universe switches.
+ * After a sign-in: same character → just refresh (the account may have grown).
+ * Different character (this device signed in somewhere new) → reload so the
+ * whole universe switches.
  */
 async function settleSignIn(): Promise<AuthResult> {
   const before = currentPlayer?.playerId;
   const res = await authClient.getSession({ query: { disableCookieCache: true } });
-  const after = toPlayer(res.data?.user as SessionUser | undefined);
+  const after = toPlayer(res.data as SessionData);
   if (after && before && after.playerId !== before) {
     window.location.reload();
     return { ok: true };
@@ -323,7 +410,11 @@ export async function resetPasswordWithCode(email: string, code: string, passwor
   return signInWithPassword(email, password);
 }
 
-/** Saved players with no email yet (passkey only): add one, confirmed by code. */
+/**
+ * Saved players adding or replacing their email, confirmed by a code sent to
+ * the new address. Needs a fresh confirm; an email that belongs to another
+ * player is refused.
+ */
 export async function sendAddEmailCode(email: string): Promise<AuthResult> {
   const res = await authClient.emailOtp.requestEmailChange({ newEmail: cleanEmail(email) });
   if (res.error) return fail(res.error, "Couldn't send the code. Please try again.");

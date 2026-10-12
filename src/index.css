@@ -1843,6 +1843,62 @@ html, body, #root {
   background: var(--glass-border);
 }
 
+/* Characters in this account (I5): one orb each; the played one glows. */
+.pa-characters {
+  margin: 0 0 0.5rem;
+}
+.pa-characters-title {
+  margin: 0 0 0.45rem;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.pa-character-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.pa-character {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 4.25rem;
+  padding: 0.6rem 0.5rem 0.5rem;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  background: rgba(238, 240, 246, 0.03);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.pa-character:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(238, 240, 246, 0.25);
+  background: rgba(238, 240, 246, 0.07);
+}
+.pa-character:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+.pa-character.is-playing {
+  color: var(--color-text-primary);
+  border-color: rgba(232, 185, 74, 0.45);
+  box-shadow: 0 0 18px rgba(232, 185, 74, 0.15);
+  cursor: default;
+}
+.pa-character:disabled:not(.is-playing) {
+  opacity: 0.55;
+  cursor: progress;
+}
+
 .pa-linked {
   list-style: none;
   margin: 0 0 0.25rem;
@@ -2019,6 +2075,40 @@ html, body, #root {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pa-linked-sub {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+}
+.pa-link--danger {
+  color: #f2a7a7;
+  border-color: rgba(242, 167, 167, 0.3);
+}
+.pa-link--danger:hover:not(:disabled) {
+  background: rgba(242, 167, 167, 0.1);
+  border-color: rgba(242, 167, 167, 0.55);
+}
+
+/* "Confirm it's you" before changing ways in (I5). */
+.pa-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: linear-gradient(160deg, rgba(232, 185, 74, 0.08), rgba(238, 240, 246, 0.02) 60%);
+  border: 1px solid rgba(232, 185, 74, 0.3);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 24px rgba(232, 185, 74, 0.08);
+  animation: pa-rise 0.25s ease-out both;
+}
+.pa-confirm-title {
+  margin: 0;
+  font-family: var(--font-display, var(--font-body));
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-accent-secondary);
+}
+.pa-confirm .pa-hint { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
-  .pa-email-status { animation: none; }
+  .pa-email-status,
+  .pa-confirm { animation: none; }
 }
