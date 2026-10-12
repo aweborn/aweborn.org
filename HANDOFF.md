@@ -325,6 +325,7 @@ The repo is the source of truth for AWS. Every stack maps to one template:
 | `aweborn-vps` | `infra/cloudformation-vps.yml` | Lightsail VPS. **Check for replacement before any apply**: a replaced instance loses the hostPath world DB. `TailscaleOAuthSecret` is NoEcho (set it only with `infra/set-tailscale-secret.sh`). `ImdsHardening` custom resource (+ Lambda/role) keeps IMDS v2-only |
 | `aweborn-backups` | `infra/cloudformation-backups.yml` | Backup bucket + put-only role |
 | `aweborn-ci` | `infra/cloudformation-ci.yml` | Read-only role for the infra check below |
+| `aweborn-mail` | `infra/cloudformation-mail.yml` | SES domain identity for aweborn.org (DKIM + SPF + DMARC `p=none` records in Route53), and inbound forwarding of `privacy@aweborn.org` → private inbox (S3 raw copy kept 30 days → Lambda rewrites From to `forwarder@aweborn.org`, original sender as Reply-To). `ForwardTo` is a deploy parameter, kept out of the repo. Add addresses via the `Recipients` parameter. **After first deploy:** `aws ses set-active-receipt-rule-set --rule-set-name aweborn-inbound`. While SES is in the sandbox, the ForwardTo inbox must click AWS's verification email, and magic-link sending needs production access (request in the SES console) |
 
 **Automatic, read-only check** (`.github/workflows/infra.yml`, runs `infra/cfn-preview.sh`):
 - On every push to `main` that touches a template, it validates each template and previews a change set (repo vs deployed). The change sets are deleted, never executed.

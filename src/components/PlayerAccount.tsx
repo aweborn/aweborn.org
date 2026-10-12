@@ -316,6 +316,12 @@ export function PlayerAccount() {
           <p className={`pa-status${status ? ` pa-status--${status.tone}` : ''}`} role="status" aria-live="polite">
             {status?.text ?? ''}
           </p>
+
+          <p className="pa-legal">
+            <a href="/privacy.html" target="_blank" rel="noopener" id="pa-privacy-link">Privacy</a>
+            {' · '}
+            <a href="/terms.html" target="_blank" rel="noopener" id="pa-terms-link">Terms</a>
+          </p>
         </div>
       </dialog>
     </>

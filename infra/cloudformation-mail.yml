@@ -1,0 +1,241 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Aweborn mail: SES domain identity for aweborn.org (DKIM/SPF/DMARC) and
+  inbound forwarding of public addresses (e.g. privacy@aweborn.org) to a
+  private inbox. The same identity will send magic-link / verification mail.
+
+  Deploy:
+    aws cloudformation deploy --stack-name aweborn-mail \
+      --template-file infra/cloudformation-mail.yml --capabilities CAPABILITY_IAM \
+      --parameter-overrides ForwardTo=<private inbox>
+    aws ses set-active-receipt-rule-set --rule-set-name aweborn-inbound   # once; CFN can't activate it
+  While SES is in the sandbox, ForwardTo must click the verification email
+  AWS sends it (the ForwardToIdentity resource triggers it).
+
+Parameters:
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Default: Z077908710IGH7R1XO587
+  DomainName:
+    Type: String
+    Default: aweborn.org
+  ForwardTo:
+    Type: String
+    Description: Private inbox that receives forwarded mail. Passed at deploy time so it never lands in this public repo.
+    AllowedPattern: ".+@.+"
+  Recipients:
+    Type: CommaDelimitedList
+    Default: privacy@aweborn.org
+    Description: Public addresses to accept and forward.
+
+Resources:
+  # --- Domain identity (sending + DKIM) -------------------------------------
+  DomainIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref DomainName
+      DkimSigningAttributes:
+        NextSigningKeyLength: RSA_2048_BIT
+
+  ForwardToIdentity:
+    # Sandbox accounts can only send to verified addresses.
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref ForwardTo
+
+  MailDns:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      RecordSets:
+        - Name: !GetAtt DomainIdentity.DkimDNSTokenName1
+          Type: CNAME
+          TTL: "1800"
+          ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue1]
+        - Name: !GetAtt DomainIdentity.DkimDNSTokenName2
+          Type: CNAME
+          TTL: "1800"
+          ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue2]
+        - Name: !GetAtt DomainIdentity.DkimDNSTokenName3
+          Type: CNAME
+          TTL: "1800"
+          ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue3]
+        - Name: !Ref DomainName
+          Type: MX
+          TTL: "300"
+          ResourceRecords: [!Sub "10 inbound-smtp.${AWS::Region}.amazonaws.com"]
+        - Name: !Ref DomainName
+          Type: TXT
+          TTL: "300"
+          ResourceRecords: ['"v=spf1 include:amazonses.com ~all"']
+        - Name: !Sub "_dmarc.${DomainName}"
+          Type: TXT
+          TTL: "300"
+          ResourceRecords: [!Sub '"v=DMARC1; p=none; adkim=r; aspf=r"']
+
+  # --- Inbound: store raw mail, then forward ---------------------------------
+  InboundBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-inbound
+            Status: Enabled
+            ExpirationInDays: 30
+
+  InboundBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref InboundBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowSesPut
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: s3:PutObject
+            Resource: !Sub "${InboundBucket.Arn}/inbound/*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/aweborn-inbound:receipt-rule/*"
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt InboundBucket.Arn, !Sub "${InboundBucket.Arn}/*"]
+            Condition:
+              Bool: { aws:SecureTransport: "false" }
+
+  ForwarderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: forward
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${InboundBucket.Arn}/inbound/*"
+              - Effect: Allow
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource:
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${DomainName}"
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${ForwardTo}"
+
+  Forwarder:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Forwards inbound aweborn.org mail to a private inbox
+      Runtime: nodejs22.x
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 256
+      Role: !GetAtt ForwarderRole.Arn
+      Environment:
+        Variables:
+          BUCKET: !Ref InboundBucket
+          FORWARD_TO: !Ref ForwardTo
+          FROM_ADDRESS: !Sub "forwarder@${DomainName}"
+      Code:
+        ZipFile: |
+          // Rewrites the sender so SES can send it (From must be our verified
+          // domain), keeps the original sender as Reply-To, and drops headers
+          // that would break (DKIM signatures, Return-Path, Sender).
+          const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
+          const { SESv2Client, SendEmailCommand } = require("@aws-sdk/client-sesv2");
+          const s3 = new S3Client({});
+          const ses = new SESv2Client({});
+          const DROP = /^(dkim-signature|return-path|sender|message-id|x-ses-[^:]*|authentication-results|received-spf):/i;
+
+          exports.handler = async (event) => {
+            const rec = event.Records[0].ses;
+            const v = rec.receipt;
+            if ([v.spamVerdict, v.virusVerdict].some((x) => x.status === "FAIL")) {
+              console.log("dropped (spam/virus)", rec.mail.messageId);
+              return;
+            }
+            const obj = await s3.send(new GetObjectCommand({
+              Bucket: process.env.BUCKET, Key: `inbound/${rec.mail.messageId}`,
+            }));
+            const raw = Buffer.from(await obj.Body.transformToByteArray()).toString("latin1");
+            const split = raw.search(/\r?\n\r?\n/);
+            const headText = raw.slice(0, split);
+            const body = raw.slice(split);
+            // Unfold, filter, rebuild.
+            const lines = headText.replace(/\r?\n[ \t]+/g, " ").split(/\r?\n/);
+            let from = "", hasReplyTo = false;
+            const kept = [];
+            for (const l of lines) {
+              if (/^from:/i.test(l)) { from = l.slice(5).trim(); continue; }
+              if (/^reply-to:/i.test(l)) hasReplyTo = true;
+              if (DROP.test(l)) continue;
+              kept.push(l);
+            }
+            const name = (from.match(/^"?([^"<]*?)"?\s*</)?.[1] || from.replace(/[<>]/g, "")).replace(/["\r\n]/g, "").trim();
+            kept.unshift(`From: "${name.slice(0, 60)} via Aweborn" <${process.env.FROM_ADDRESS}>`);
+            if (!hasReplyTo && from) kept.push(`Reply-To: ${from}`);
+            kept.push(`X-Aweborn-Original-To: ${rec.mail.destination.join(", ")}`);
+            await ses.send(new SendEmailCommand({
+              FromEmailAddress: process.env.FROM_ADDRESS,
+              Destination: { ToAddresses: [process.env.FORWARD_TO] },
+              Content: { Raw: { Data: Buffer.from(kept.join("\r\n") + body, "latin1") } },
+            }));
+            console.log("forwarded", rec.mail.messageId);
+          };
+
+  ForwarderInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Forwarder
+      Action: lambda:InvokeFunction
+      Principal: ses.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  InboundRuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: aweborn-inbound
+
+  ForwardRule:
+    Type: AWS::SES::ReceiptRule
+    DependsOn: [InboundBucketPolicy, ForwarderInvokePermission]
+    Properties:
+      RuleSetName: !Ref InboundRuleSet
+      Rule:
+        Name: forward-public-addresses
+        Enabled: true
+        ScanEnabled: true
+        TlsPolicy: Optional
+        Recipients: !Ref Recipients
+        Actions:
+          - S3Action:
+              BucketName: !Ref InboundBucket
+              ObjectKeyPrefix: inbound/
+          - LambdaAction:
+              FunctionArn: !GetAtt Forwarder.Arn
+              InvocationType: Event
+
+Outputs:
+  InboundBucket:
+    Value: !Ref InboundBucket
+  ForwarderFunction:
+    Value: !Ref Forwarder
