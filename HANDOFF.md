@@ -132,7 +132,7 @@ The 3D scene renders behind the modal throughout — no page redirects.
       --parameters \
         ParameterKey=HostedZoneId,ParameterValue=Z077908710IGH7R1XO587
     ```
-    The UserData script installs k3s and Docker, creates a *placeholder* `aweborn-secrets` (only if none exists), then runs `deploy-services.sh all`. Afterwards, set the real secret values with `kubectl create secret` (see `infra/k3s/secrets.example.yaml`).
+    The UserData script installs k3s and Docker, creates a *placeholder* `aweborn-secrets` (only if none exists), then runs `deploy-services.sh all`. Afterwards, set the real secret values from your Mac with `infra/set-secret.sh` (see [SECRETS.md](SECRETS.md)).
 
 ## Local dev (server services)
 
@@ -196,8 +196,8 @@ curl http://aweborn-vps:3002/agents
 # Recreate, so expect ~30s downtime each. Caddy restarts only if its config changed.
 ~/aweborn/infra/k3s/deploy-services.sh genai-service      # one or more services
 ~/aweborn/infra/k3s/deploy-services.sh all
-# Secrets are never applied by any script. Change them with:
-#   sudo k3s kubectl -n aweborn create secret generic aweborn-secrets --from-literal=... --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+# Secrets are never applied by any deploy script. Set them from your Mac with
+# infra/set-secret.sh (inventory: SECRETS.md).
 
 # World data (SQLite) lives on the host, outside k8s: /var/lib/aweborn/sync-data/universe.db
 # Snapshotted hourly + copied to S3 daily; see "Backups" below.
@@ -275,18 +275,9 @@ Anonymous-first player identity (Phase 08 I1), served by **Better Auth inside sy
 - **Data:** tables `user`, `session`, `account`, `verification`, `passkey` live in **`universe.db`**, so the hourly/S3 backups and DR restore cover them. Migrations run automatically at boot.
 - **Sessions:** httpOnly cookie on `sync.aweborn.org` (same-site with `aweborn.org`), 1 year, refreshed daily; one per device.
 - **Everyone is welcome:** if auth is unreachable (offline, cookies blocked, 5 s timeout) the client plays as a per-tab `guest-…`; guest worlds get `creator = "guest"`.
-- **Secret:** `BETTER_AUTH_SECRET` in `aweborn-secrets` (key added to `infra/k3s/secrets.example.yaml`). **Keep a copy in the password manager.** Losing or rotating it signs everyone out, and anonymous players then lose their identity for good. If it's missing, weak, or the `REPLACE_ME` placeholder in production, sync-service still runs but **auth is disabled** (everyone is a guest; `/api/auth/*` returns 503; loud `[auth] ✖` log line).
+- **Secret:** `BETTER_AUTH_SECRET` in `aweborn-secrets`. **Keep a copy in the keys folder.** Losing or rotating it signs everyone out, and anonymous players then lose their identity for good. If it's missing, weak, or the `REPLACE_ME` placeholder in production, sync-service still runs but **auth is disabled** (everyone is a guest; `/api/auth/*` returns 503; loud `[auth] ✖` log line).
 
-Set it once, **from your Mac** (k3s only exists on the VPS). It merges into the existing secret without touching the other keys, and the value goes over stdin so it never shows up in a command line or `ps`:
-
-```bash
-openssl rand -base64 32 > AWEBORN_BETTER_AUTH_SECRET.txt   # store it safely first
-printf '{"stringData":{"BETTER_AUTH_SECRET":"%s"}}' "$(tr -d '\n' < AWEBORN_BETTER_AUTH_SECRET.txt)" \
-  | ssh -i ~/.ssh/lightsail-default.pem ubuntu@aweborn-vps \
-      'sudo k3s kubectl -n aweborn patch secret aweborn-secrets --type merge --patch-file /dev/stdin'
-```
-
-Set 2026-10-11 (Alex keeps the copy). The next sync-service rollout picks it up.
+The source copy is `AWEBORN_BETTER_AUTH_SECRET.txt` in the keys folder (see [SECRETS.md](SECRETS.md)). After a rebuild, restore it with `infra/set-secret.sh push BETTER_AUTH_SECRET`, and check it with `infra/set-secret.sh status`. Set 2026-10-11.
 
 One-off: `server/sync-service/scripts/migrate-legacy-creators.ts` reassigns pre-identity `p-xxxxxx` creators to `"system"` (stop sync-service first; `--dry-run` supported; backs up first).
 
@@ -296,7 +287,7 @@ Every method attaches to the **same** `playerId`. UI: `src/components/PlayerAcco
 
 - **Passkeys** (`@better-auth/passkey`): on by default, nothing to configure. RP ID `aweborn.org` (override `PASSKEY_RP_ID`), so passkeys belong to the site players see even though auth runs on `sync.aweborn.org`. Adding one to an anonymous player flips `isAnonymous` to false (same user row). Signing in with one from an anonymous device switches to the saved player.
 - **Google**: shown only when `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` exist in `aweborn-secrets` (both `optional` in the deployment). Anonymous players `signIn.social` (a new Google account becomes this player; an existing one switches to it); saved players `linkSocial`.
-- **Email (magic link, email + password)**: not yet; needs SES (Phase 08 I4/I7).
+- **Email** (`emailOTP` plugin + email & password): a **6-digit code**, not a magic link. A link signs in whichever browser opens the mail, which breaks "save on this device" across devices; a link that binds the requesting device enables login hijacking. Codes last 10 min, 5 attempts, stored hashed. Password is an optional secondary path (min 10 chars, HIBP-checked, verification required; signing up with a taken email sends the owner a notice instead of revealing it). Shown only when SES creds (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, both `optional`) exist in `aweborn-secrets`. Mail goes out from `Aweborn <hello@aweborn.org>` (`server/sync-service/src/email.ts`), and replies reach a real person (hello@ is forwarded). Never use a no-reply address. Local dev prints mail to the console; `DEV_FIXED_OTP=424242` pins the code (ignored in prod). The new user inherits the anonymous player's `playerId` in `user.create.before`, because `/sign-up/email` with required verification returns no session.
 - **Freshness:** Better Auth's built-in "session < 1 day" check is off (`freshAge: 0`) because anonymous players can never re-authenticate. Our `hooks.before` enforces it for saved players only on sensitive routes (add/delete passkey, link/unlink, change email, delete user).
 
 **Google setup (once):** Google Cloud Console → APIs & Services → OAuth consent screen (External; app name Aweborn; support email; authorized domain `aweborn.org`; scopes: `openid`, `email`, `profile`; publish to Production) → Credentials → Create credentials → OAuth client ID → **Web application**:
@@ -304,16 +295,9 @@ Every method attaches to the **same** `playerId`. UI: `src/components/PlayerAcco
 - Authorized JavaScript origins: `https://aweborn.org`
 - Authorized redirect URIs: `https://sync.aweborn.org/api/auth/callback/google` (and for local dev `http://localhost:1299/api/auth/callback/google`)
 
-Then store the pair from your Mac (pasted values never touch a command line):
+Then download the client JSON and run `infra/set-secret.sh google ~/Downloads/client_secret_….json` from your Mac. Delete the JSON afterwards.
 
-```bash
-read -r GID; read -rs GSECRET   # paste the client ID, Enter; paste the secret, Enter
-printf '{"stringData":{"GOOGLE_CLIENT_ID":"%s","GOOGLE_CLIENT_SECRET":"%s"}}' "$GID" "$GSECRET" \
-  | ssh -i ~/.ssh/lightsail-default.pem ubuntu@aweborn-vps \
-      'sudo k3s kubectl -n aweborn patch secret aweborn-secrets --type merge --patch-file /dev/stdin \
-       && sudo k3s kubectl -n aweborn rollout restart deploy/sync-service'
-unset GID GSECRET
-```
+**SES sender key (once, or to rotate):** `infra/set-secret.sh ses`. It creates a key for the `aweborn-mail-sender` IAM user (mail stack, send-as `hello@aweborn.org` only), stores it, restarts sync-service, then deletes the old keys.
 
 ## Infrastructure stacks
 
@@ -325,7 +309,7 @@ The repo is the source of truth for AWS. Every stack maps to one template:
 | `aweborn-vps` | `infra/cloudformation-vps.yml` | Lightsail VPS. **Check for replacement before any apply**: a replaced instance loses the hostPath world DB. `TailscaleOAuthSecret` is NoEcho (set it only with `infra/set-tailscale-secret.sh`). `ImdsHardening` custom resource (+ Lambda/role) keeps IMDS v2-only |
 | `aweborn-backups` | `infra/cloudformation-backups.yml` | Backup bucket + put-only role |
 | `aweborn-ci` | `infra/cloudformation-ci.yml` | Read-only role for the infra check below |
-| `aweborn-mail` | `infra/cloudformation-mail.yml` | SES domain identity for aweborn.org (DKIM + SPF + DMARC `p=none` records in Route53), and inbound forwarding of `privacy@aweborn.org` → private inbox (S3 raw copy kept 30 days → Lambda rewrites From to `forwarder@aweborn.org`, original sender as Reply-To). `ForwardTo` is a deploy parameter, kept out of the repo. Add addresses via the `Recipients` parameter. **After first deploy:** `aws ses set-active-receipt-rule-set --rule-set-name aweborn-inbound`. While SES is in the sandbox, the ForwardTo inbox must click AWS's verification email, and magic-link sending needs production access (request in the SES console) |
+| `aweborn-mail` | `infra/cloudformation-mail.yml` | SES domain identity for aweborn.org (DKIM + SPF + DMARC `p=none` records in Route53, plus a custom MAIL FROM `mail.aweborn.org` so SPF aligns too). Inbound forwarding of `hello@` and `privacy@aweborn.org` → private inbox, plus-tagged per address (`you+aweborn-hello@…`, `you+aweborn-privacy@…`, so Gmail can filter): S3 raw copy kept 30 days → Lambda rewrites From to `forwarder@aweborn.org`, original sender as Reply-To. `ForwardTo` is a deploy parameter kept out of the repo (`ForwardTo=$(git config user.email)`). Add addresses via `Recipients`. IAM user `aweborn-mail-sender` sends sign-in codes (key created out-of-band, see Saving a player). Deploy needs `CAPABILITY_NAMED_IAM`. **After first deploy:** `aws ses set-active-receipt-rule-set --rule-set-name aweborn-inbound`. SES production access granted 2026-10-12 (50k/day, 14/s) |
 
 **Automatic, read-only check** (`.github/workflows/infra.yml`, runs `infra/cfn-preview.sh`):
 - On every push to `main` that touches a template, it validates each template and previews a change set (repo vs deployed). The change sets are deleted, never executed.
@@ -368,7 +352,7 @@ The website (S3/CloudFront) stays up throughout; sync and gen-AI are down until 
 **After the box is up:**
 6. **Update the pinned host key.** CI pins the box's ed25519 host key in the repo variable `VPS_KNOWN_HOST` (read by `deploy.yml` + `backup.yml`; admin-only, changes are in the audit log). After a rebuild it still holds the old key, so CI fails closed until it's updated (correct behaviour; never switch to trust-on-first-use). `infra/restore-from-s3.sh` (step 8) takes the new key from the Lightsail API (AWS-authenticated, not a network scan) and sets the variable after you answer `y`. No commit needed. By hand: `gh variable set VPS_KNOWN_HOST -R aweborn/aweborn.org --body 'aweborn-vps ssh-ed25519 AAAA...'`. To trust the new box on your Mac: `ssh-keygen -R aweborn-vps && gh variable get VPS_KNOWN_HOST -R aweborn/aweborn.org >> ~/.ssh/known_hosts`.
 7. The restricted CI keys (deploy + backup) were installed by the bootstrap from `infra/vps/ci-authorized-keys`. Check with `sudo ~/aweborn/infra/vps/install-ci-keys.sh --check`.
-8. Set the real k8s secrets (`aweborn-secrets`, see VPS management). **`BETTER_AUTH_SECRET` must be the same value as before** (from the password manager), or every player is signed out and anonymous players lose their identity (see [Player identity](#player-identity)). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6 (sets the host key pin variable).
+8. Set the real k8s secrets from your Mac with `infra/set-secret.sh` ([SECRETS.md](SECRETS.md) lists them). **`BETTER_AUTH_SECRET` must be the same value as before** (from the keys folder: `infra/set-secret.sh push all`), or every player is signed out and anonymous players lose their identity (see [Player identity](#player-identity)). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6 (sets the host key pin variable).
 9. Verify: both `/health` endpoints, `infra/cfn-preview.sh aweborn-vps` (in sync, IMDS hardened), `gh workflow run backup.yml` passes.
 
 **Rehearsed on prod 2026-10-11** (`aweborn-vps` → `aweborn-vps-2`, ~10 min of sync/gen-AI downtime): pre-rebuild snapshot + `backup.yml`, old node deleted in Machines, `rebuild-vps.sh`, `restore-from-s3.sh` (pin updated from the Lightsail API, restored DB fingerprint == backup), Caddy got real certs on the first try, pin committed, `backup.yml` + Deploy green, `cfn-preview.sh` in sync. Before that, `infra/test-dr-restore.sh` **passed 2026-10-11** on a throwaway box (re-run it after bootstrap/deploy changes). Earlier note, kept for history: the rebuild path was first dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.
