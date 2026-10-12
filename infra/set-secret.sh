@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The one way to manage VPS secrets (k8s secret `aweborn-secrets`).
 #
-# Source of truth: your keys folder (Google Drive), one file per secret named
+# Source of truth: ~/keys (a private, backed-up folder), one file per secret named
 # AWEBORN_<KEY>.txt. The VPS holds a copy. `push all` rebuilds the VPS copy
 # from the folder (e.g. after a rebuild); `status` shows drift without
 # printing any value. Values never go on a command line or in shell history;
@@ -16,9 +16,7 @@
 #   infra/set-secret.sh google ~/Downloads/client_secret_….json
 #   infra/set-secret.sh ses                    # new SES sender key; old ones deleted
 #
-# Keys folder: $AWEBORN_KEYS_DIR, else ~/keys (a symlink to the Drive folder),
-# else Google Drive for desktop's
-#   ~/Library/CloudStorage/GoogleDrive-*/My Drive/users/alexander-medeiros/keys
+# Keys folder: $AWEBORN_KEYS_DIR, else ~/keys.
 set -euo pipefail
 umask 077
 
@@ -40,12 +38,9 @@ deployment_for() {
 }
 
 keys_dir() {
-  if [[ -n "${AWEBORN_KEYS_DIR:-}" ]]; then echo "$AWEBORN_KEYS_DIR"; return; fi
-  local d
-  for d in "$HOME/keys" "$HOME"/Library/CloudStorage/GoogleDrive-*/"My Drive/users/alexander-medeiros/keys"; do
-    [[ -d "$d" ]] && { echo "$d"; return; }
-  done
-  echo "keys folder not found; set AWEBORN_KEYS_DIR" >&2; return 1
+  local d="${AWEBORN_KEYS_DIR:-$HOME/keys}"
+  [[ -d "$d" ]] || { echo "keys folder not found: $d (create ~/keys or set AWEBORN_KEYS_DIR)" >&2; return 1; }
+  echo "$d"
 }
 KDIR="$(keys_dir)"
 file_for() { echo "$KDIR/AWEBORN_$1.txt"; }
