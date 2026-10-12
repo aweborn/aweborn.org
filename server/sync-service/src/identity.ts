@@ -126,7 +126,7 @@ export function realEmail(user: { email?: string | null; emailVerified?: boolean
 }
 
 export interface WaysIn {
-  passkeys: { id: string; name: string | null; createdAt: number | string }[];
+  passkeys: { id: string; name: string | null; createdAt: number | string; credentialID: string }[];
   google: boolean;
   email: string | null;
   password: boolean;
@@ -137,7 +137,7 @@ export interface WaysIn {
 /** Every way into an account, for the panel and the keep-one rule. */
 export function waysIn(userId: string): WaysIn {
   const passkeys = db
-    .prepare(`SELECT id, name, createdAt FROM passkey WHERE userId = ? ORDER BY createdAt`)
+    .prepare(`SELECT id, name, createdAt, credentialID FROM passkey WHERE userId = ? ORDER BY createdAt`)
     .all(userId) as WaysIn["passkeys"];
   const accounts = db.prepare(`SELECT id, providerId FROM account WHERE userId = ?`).all(userId) as {
     id: string;

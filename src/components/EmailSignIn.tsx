@@ -6,19 +6,23 @@
  * is the quiet alternative, confirmed with the same kind of code.
  *
  * mode="save":    anonymous players (new email saves, known email signs in).
+ * mode="signin":  same calls, worded for returning players; offers passkeys
+ *                 in the email field's autofill.
  * mode="add":     saved players adding or replacing their email.
  * mode="confirm": saved players confirming it's them (code to their own email).
  */
 
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import {
   confirmAddEmail,
   confirmEmail,
+  getPlayerSnapshot,
   resendConfirmCode,
   resetPasswordWithCode,
   sendAddEmailCode,
   sendEmailCode,
   sendResetCode,
+  signInWithPasskey,
   signInWithPassword,
   signUpWithPassword,
   verifyEmailCode,
@@ -40,18 +44,22 @@ const MailMark = () => (
   </svg>
 )
 
-export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail }: {
-  mode: 'save' | 'add' | 'confirm'
+export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail, initialEmail, passkeyAutofill }: {
+  mode: 'save' | 'signin' | 'add' | 'confirm'
   disabled?: boolean
   onDone: (message: string) => void
   /** A change was refused until the player confirms it's them. */
   onNeedsConfirm?: () => void
   /** mode="confirm": the player's own email. */
   fixedEmail?: string
+  /** Prefill (e.g. the email this device last signed in with). */
+  initialEmail?: string | null
+  /** Offer saved passkeys in the email field's autofill (conditional mediation). */
+  passkeyAutofill?: boolean
 }) {
   const uid = useId()
   const [step, setStep] = useState<Step>({ kind: 'email' })
-  const [email, setEmail] = useState(fixedEmail ?? '')
+  const [email, setEmail] = useState(fixedEmail ?? initialEmail ?? '')
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [hasPassword, setHasPassword] = useState(true)
@@ -59,6 +67,20 @@ export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail
   const [status, setStatus] = useState<Status>(null)
   const codeRef = useRef<HTMLInputElement>(null)
   const confirming = mode === 'confirm'
+  const anonymous = mode === 'save' || mode === 'signin'
+
+  // Passkeys in autofill: waits quietly until the player picks one from the
+  // email field's suggestions. A passkey button elsewhere cancels it.
+  useEffect(() => {
+    if (!passkeyAutofill) return
+    let live = true
+    void signInWithPasskey({ autoFill: true }).then((res) => {
+      if (live && !res.ok && !res.cancelled && res.message) setStatus({ tone: 'error', text: res.message })
+    })
+    return () => {
+      live = false
+    }
+  }, [passkeyAutofill])
 
   const go = (next: Step, note: Status = null) => {
     setStep(next)
@@ -98,14 +120,22 @@ export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail
     if (step.kind === 'code') {
       const check =
         step.purpose === 'signin' ? verifyEmailCode : step.purpose === 'confirm' ? confirmEmail : confirmAddEmail
-      return void act(() => check(email, code), () =>
+      return void act(() => check(email, code), () => {
+        // Known email: this device joined that player (its character came
+        // along). New email: it saved this player.
+        const joined = (getPlayerSnapshot()?.characters.length ?? 1) > 1
         onDone(
           confirming
             ? "Confirmed. You can change how you sign in for the next 5 minutes."
             : step.purpose === 'add'
               ? 'Email saved. You can sign in with a code any time.'
-              : 'Saved! Sign in with your email on any device.',
-        ))
+              : joined
+                ? 'Welcome back! The character you were playing here came along too.'
+                : mode === 'signin'
+                  ? 'That email was new, so it saved this player. Use it to sign in on any device.'
+                  : 'Saved! Sign in with your email on any device.',
+        )
+      })
     }
     if (step.kind === 'password') {
       if (hasPassword) return void act(() => signInWithPassword(email, password), () => onDone('Signed in. Welcome back!'))
@@ -130,7 +160,7 @@ export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail
             className="pa-input"
             type="email"
             name="email"
-            autoComplete={step.kind === 'password' ? 'username' : 'email'}
+            autoComplete={step.kind === 'password' ? 'username' : passkeyAutofill ? 'username webauthn' : 'email'}
             inputMode="email"
             spellCheck={false}
             required
@@ -146,9 +176,17 @@ export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail
         <>
           <button type="submit" id={`player-email-${mode}`} className="pa-btn pa-btn--light" disabled={off || !email.includes('@')}>
             <MailMark />
-            {busy ? 'Sending…' : confirming ? `Email a code to ${fixedEmail ?? 'me'}` : mode === 'add' ? 'Send me a code' : 'Email me a code'}
+            {busy
+              ? 'Sending…'
+              : confirming
+                ? `Email a code to ${fixedEmail ?? 'me'}`
+                : mode === 'add'
+                  ? 'Send me a code'
+                  : mode === 'signin'
+                    ? 'Email me a sign-in code'
+                    : 'Email me a code'}
           </button>
-          {mode === 'save' && (
+          {anonymous && (
             <button type="button" id="player-use-password" className="pa-link pa-link--quiet" disabled={off} onClick={() => go({ kind: 'password' })}>
               Use a password instead
             </button>
@@ -202,7 +240,15 @@ export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail
       {step.kind === 'code' && (
         <>
           <button type="submit" id="player-email-confirm" className="pa-btn pa-btn--primary" disabled={off || code.replace(/\D/g, '').length !== 6}>
-            {busy ? 'Checking…' : confirming ? 'Confirm' : step.purpose === 'add' ? 'Save this email' : 'Save my player'}
+            {busy
+              ? 'Checking…'
+              : confirming
+                ? 'Confirm'
+                : step.purpose === 'add'
+                  ? 'Save this email'
+                  : mode === 'signin'
+                    ? 'Sign in'
+                    : 'Save my player'}
           </button>
           <div className="pa-row">
             <button

@@ -225,18 +225,94 @@ function fail(
   return { ok: false, message: error?.message || fallback };
 }
 
+// ── This device's memory (so sign-in can lead for returning players) ──────────
+
+export type WayIn = "passkey" | "google" | "email" | "password";
+/** A saved player used this device before. Kept through sign-out on purpose. */
+export interface Returning {
+  email: string | null;
+  lastMethod: WayIn | null;
+  at: number;
+}
+const RETURNING_KEY = "aweborn-returning";
+
+export function getReturning(): Returning | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(RETURNING_KEY) ?? "null") as Returning | null;
+    return v && typeof v === "object" ? v : null;
+  } catch {
+    return null;
+  }
+}
+export function rememberReturning(patch: Partial<Omit<Returning, "at">>): void {
+  try {
+    const prev = getReturning();
+    const next: Returning = { email: null, lastMethod: null, ...prev, at: Date.now() };
+    if (patch.email) next.email = patch.email;
+    if (patch.lastMethod) next.lastMethod = patch.lastMethod;
+    localStorage.setItem(RETURNING_KEY, JSON.stringify(next));
+  } catch {
+    /* private mode: no memory, no problem */
+  }
+}
+/** "Not you?": forget who used this device. */
+export function forgetReturning(): void {
+  try {
+    localStorage.removeItem(RETURNING_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Ask the password manager to drop a passkey the server doesn't know (a
+ * removed passkey, or one from a deleted player). WebAuthn Signal API:
+ * Chrome/Edge 132+, Safari 26+; a no-op elsewhere.
+ */
+function signalUnknownPasskey(credentialId: string | null | undefined): void {
+  const PKC = (typeof window !== "undefined" ? window.PublicKeyCredential : undefined) as
+    | (typeof PublicKeyCredential & {
+        signalUnknownCredential?: (o: { rpId: string; credentialId: string }) => Promise<void>;
+      })
+    | undefined;
+  if (!credentialId || !PKC?.signalUnknownCredential) return;
+  const rpId = window.location.hostname.replace(/^www\./, "");
+  void PKC.signalUnknownCredential({ rpId, credentialId }).catch(() => undefined);
+}
+
 /** Save this player with a passkey on this device (Face ID, fingerprint, screen lock, or a phone). */
 export async function saveWithPasskey(): Promise<AuthResult> {
   const res = await authClient.passkey.addPasskey({});
   if (res.error) return fail(res.error, "Couldn't create a passkey. Please try again.");
+  rememberReturning({ lastMethod: "passkey" });
   await refreshPlayer();
   return { ok: true };
 }
 
-/** Sign in to a player saved on another device (anonymous devices only). Reloads into that player. */
-export async function signInWithPasskey(): Promise<AuthResult> {
-  const res = await authClient.signIn.passkey({});
-  if (res.error) return fail(res.error, "Couldn't sign in with a passkey. Please try again.");
+/**
+ * Sign in to a saved player (anonymous devices only). Reloads into that
+ * player. `autoFill`: offer passkeys in the email field's autofill
+ * (conditional mediation); resolves only if the player picks one.
+ */
+export async function signInWithPasskey(opts: { autoFill?: boolean } = {}): Promise<AuthResult> {
+  if (opts.autoFill) {
+    const PKC = window.PublicKeyCredential as typeof PublicKeyCredential | undefined;
+    if (!PKC?.isConditionalMediationAvailable || !(await PKC.isConditionalMediationAvailable())) {
+      return { ok: false, cancelled: true, message: "" };
+    }
+  }
+  const res = await authClient.signIn.passkey({ autoFill: opts.autoFill, returnWebAuthnResponse: true });
+  if (res.error) {
+    if ("code" in res.error && res.error.code === "PASSKEY_NOT_FOUND") {
+      signalUnknownPasskey((res as { webauthn?: { response?: { id?: string } } }).webauthn?.response?.id);
+      return {
+        ok: false,
+        message: "That passkey belongs to a player that no longer exists. We've asked your device to forget it. Try another one.",
+      };
+    }
+    return fail(res.error, "Couldn't sign in with a passkey. Please try again.");
+  }
+  rememberReturning({ lastMethod: "passkey" });
   window.location.reload();
   return { ok: true };
 }
@@ -286,6 +362,7 @@ export function takeRecheckReturn(): boolean {
 export async function continueWithGoogle(): Promise<AuthResult> {
   const here = window.location.href;
   const failed = `${window.location.origin}/?signin=failed`;
+  rememberReturning({ lastMethod: "google" }); // best guess; the page leaves for Google
   const res = currentPlayer && !currentPlayer.isAnonymous
     ? await authClient.linkSocial({ provider: "google", callbackURL: here, errorCallbackURL: failed })
     : await authClient.signIn.social({ provider: "google", callbackURL: here, errorCallbackURL: failed });
@@ -294,7 +371,7 @@ export async function continueWithGoogle(): Promise<AuthResult> {
 }
 
 export interface SignInMethods {
-  passkeys: { id: string; name: string | null; createdAt: string | number }[];
+  passkeys: { id: string; name: string | null; createdAt: string | number; credentialID?: string }[];
   google: boolean;
   email: string | null;
   password: boolean;
@@ -310,9 +387,11 @@ export async function listSignInMethods(): Promise<SignInMethods> {
 }
 
 /** Remove a way in (needs a fresh confirm; never the last one). */
-export async function removePasskey(id: string): Promise<AuthResult> {
+export async function removePasskey(id: string, credentialID?: string): Promise<AuthResult> {
   const res = await authClient.passkey.deletePasskey({ id });
-  return res.error ? fail(res.error, "Couldn't remove that passkey. Please try again.") : { ok: true };
+  if (res.error) return fail(res.error, "Couldn't remove that passkey. Please try again.");
+  signalUnknownPasskey(credentialID); // so it stops showing up in the passkey picker
+  return { ok: true };
 }
 async function unlink(which: "google" | "password", failMsg: string): Promise<AuthResult> {
   const accountId = (await listSignInMethods()).accountIds[which];
@@ -359,6 +438,7 @@ export async function sendEmailCode(email: string): Promise<AuthResult> {
 export async function verifyEmailCode(email: string, code: string): Promise<AuthResult> {
   const res = await authClient.signIn.emailOtp({ email: cleanEmail(email), otp: code.replace(/\D/g, "") });
   if (res.error) return fail(res.error, "Couldn't check that code. Please try again.");
+  rememberReturning({ email: cleanEmail(email), lastMethod: "email" });
   return settleSignIn();
 }
 
@@ -373,6 +453,7 @@ export async function signUpWithPassword(email: string, password: string): Promi
 export async function confirmEmail(email: string, code: string): Promise<AuthResult> {
   const res = await authClient.emailOtp.verifyEmail({ email: cleanEmail(email), otp: code.replace(/\D/g, "") });
   if (res.error) return fail(res.error, "Couldn't check that code. Please try again.");
+  rememberReturning({ email: cleanEmail(email), lastMethod: "password" });
   return settleSignIn();
 }
 
@@ -393,6 +474,7 @@ export async function signInWithPassword(email: string, password: string): Promi
     if (res.error.status === 403) return { ok: false, needsCode: true, message: "Almost there! We sent a code to confirm your email." };
     return fail(res.error, "Couldn't sign in. Please try again.");
   }
+  rememberReturning({ email: cleanEmail(email), lastMethod: "password" });
   return settleSignIn();
 }
 

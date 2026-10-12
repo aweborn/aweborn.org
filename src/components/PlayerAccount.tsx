@@ -1,20 +1,27 @@
 /**
- * Aweborn — "Save your player" chip, gentle nudge, and account panel.
+ * Aweborn — player chip, gentle nudge, and account panel.
  *
  * Anonymous-first: the chip is always there but never in the way. After a
  * meaningful moment (first world, ~10 min of play) a dismissible nudge
  * suggests saving, at most once a day. Saving attaches a real sign-in method
  * to the *same* player (`playerId`), so nothing is lost.
+ *
+ * Signing in is never second-class (Alex, 2026-10-12): "Sign in" and "Save
+ * this player" are equal tabs. A device that had a saved player before opens
+ * on Sign in, with the method it used last on top and its email filled in.
  */
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import {
   confirmWithGoogle,
   confirmWithPasskey,
   continueWithGoogle,
   fetchAuthMethods,
+  forgetReturning,
   getPlayerSnapshot,
+  getReturning,
   listSignInMethods,
+  rememberReturning,
   removeGoogle,
   removePasskey,
   removePassword,
@@ -27,12 +34,15 @@ import {
   colorForPlayer,
   type AuthMethods,
   type AuthResult,
+  type Returning,
   type SignInMethods,
+  type WayIn,
 } from '../lib/player'
 import { canPromptNow, onMeaningfulMoment, recordPrompted, trackPlaytime } from '../lib/onramp'
 import { EmailSignIn } from './EmailSignIn'
 
 type Busy = null | 'passkey-save' | 'passkey-signin' | 'google' | 'signout' | 'switch' | 'confirm' | `remove-${string}`
+type Tab = 'signin' | 'save'
 
 function usePlayer() {
   return useSyncExternalStore(subscribePlayer, getPlayerSnapshot, getPlayerSnapshot)
@@ -81,6 +91,11 @@ export function PlayerAccount() {
   const [addingEmail, setAddingEmail] = useState(false)
   /** A change was refused until the player confirms it's them. */
   const [confirming, setConfirming] = useState(false)
+  /** A saved player used this device before (survives sign-out). */
+  const [returning, setReturning] = useState<Returning | null>(() => getReturning())
+  const [tab, setTab] = useState<Tab>(() => (getReturning() ? 'signin' : 'save'))
+  /** The panel is open (passkey autofill only runs while it is). */
+  const [shown, setShown] = useState(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   const isAnonymous = player?.isAnonymous ?? false
@@ -97,6 +112,15 @@ export function PlayerAccount() {
     }
   }, [player])
   useEffect(refreshLinked, [refreshLinked])
+
+  // Remember that a saved player uses this device, so after sign-out the
+  // panel leads with "Welcome back" instead of "Save".
+  useEffect(() => {
+    if (player && !player.isAnonymous && !player.isGuest) {
+      rememberReturning({ email: linked?.email ?? null })
+      setReturning(getReturning())
+    }
+  }, [player, linked])
 
   // Gentle nudge after a meaningful moment (anonymous players only, ≤ 1/day).
   useEffect(() => {
@@ -118,7 +142,11 @@ export function PlayerAccount() {
     setStatus(null)
     setAddingEmail(false)
     setConfirming(false)
+    const r = getReturning()
+    setReturning(r)
+    setTab(r ? 'signin' : 'save')
     refreshLinked()
+    setShown(true)
     dialogRef.current?.showModal()
   }, [refreshLinked])
 
@@ -195,6 +223,80 @@ export function PlayerAccount() {
     setAddingEmail(false)
     setConfirming(true)
   }
+  const pickTab = (next: Tab) => {
+    setTab(next)
+    setStatus(null)
+  }
+  const forgetDevice = () => {
+    forgetReturning()
+    setReturning(null)
+    setStatus({ tone: 'info', text: 'Forgotten. This device no longer suggests that player.' })
+  }
+
+  // Sign in: the way this device used last goes first (password → email row).
+  const last: WayIn | null = returning?.lastMethod ?? null
+  const isLast = (m: 'passkey' | 'google' | 'email') =>
+    Boolean(returning) && (m === last || (m === 'email' && last === 'password'))
+  const lastBadge = (m: 'passkey' | 'google' | 'email') =>
+    isLast(m) ? <span className="pa-badge">Last used</span> : null
+  const signInRows: { key: 'passkey' | 'google'; node: ReactNode }[] = []
+  if (methods?.passkey) {
+    signInRows.push({
+      key: 'passkey',
+      node: (
+        <button
+          key="passkey"
+          type="button"
+          id="player-signin-passkey"
+          className="pa-btn pa-btn--primary"
+          disabled={busy !== null}
+          onClick={() => run('passkey-signin', () => signInWithPasskey())}
+        >
+          <PasskeyMark />
+          {busy === 'passkey-signin' ? 'Waiting for your device…' : 'Sign in with a passkey'}
+          {lastBadge('passkey')}
+        </button>
+      ),
+    })
+  }
+  if (methods?.google) {
+    signInRows.push({
+      key: 'google',
+      node: (
+        <button
+          key="google"
+          type="button"
+          id="player-signin-google"
+          className="pa-btn pa-btn--light"
+          disabled={busy !== null}
+          onClick={() => run('google', continueWithGoogle)}
+        >
+          <GoogleMark />
+          {busy === 'google' ? 'Opening Google…' : 'Sign in with Google'}
+          {lastBadge('google')}
+        </button>
+      ),
+    })
+  }
+  if (isLast('google')) signInRows.reverse()
+  const emailFirst = isLast('email')
+  const signInEmail = methods?.email ? (
+    <EmailSignIn
+      key="signin-email"
+      mode="signin"
+      initialEmail={returning?.email}
+      passkeyAutofill={shown && tab === 'signin' && Boolean(methods.passkey)}
+      disabled={busy !== null}
+      onDone={emailDone}
+    />
+  ) : null
+  const onTabKey = (e: KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const next: Tab = tab === 'signin' ? 'save' : 'signin'
+    pickTab(next)
+    document.getElementById(`player-tab-${next}`)?.focus()
+  }
 
   return (
     <>
@@ -204,20 +306,24 @@ export function PlayerAccount() {
         className={`pa-chip${isAnonymous ? '' : ' pa-chip--saved'}${nudge ? ' pa-chip--glow' : ''}`}
         onClick={open}
         aria-haspopup="dialog"
-        title={isAnonymous ? 'Save your player to keep it on every device' : 'Your player'}
+        title={isAnonymous ? (returning ? 'Sign in to your saved player' : 'Save your player, or sign in') : 'Your player'}
       >
         <span className="pa-orb" style={{ '--pa-color': player.color } as CSSProperties} aria-hidden="true" />
-        <span className="pa-chip-label">{isAnonymous ? 'Save your player' : 'Saved'}</span>
+        <span className="pa-chip-label">{isAnonymous ? (returning ? 'Sign in' : 'Save · Sign in') : 'Saved'}</span>
       </button>
 
       {nudge && (
         <div className="pa-nudge" role="status">
           <p className="pa-nudge-text">
-            <strong>Keep what you've made.</strong> Your player only lives on this device right now.
+            {returning ? (
+              <><strong>Welcome back.</strong> Sign in to pick up your saved player.</>
+            ) : (
+              <><strong>Keep what you've made.</strong> Your player only lives on this device right now.</>
+            )}
           </p>
           <div className="pa-nudge-actions">
             <button type="button" id="player-nudge-save" className="pa-btn pa-btn--primary pa-btn--sm" onClick={open}>
-              Save my player
+              {returning ? 'Sign in' : 'Save my player'}
             </button>
             <button type="button" id="player-nudge-dismiss" className="pa-btn pa-btn--ghost pa-btn--sm" onClick={() => setNudge(false)}>
               Not now
@@ -231,34 +337,98 @@ export function PlayerAccount() {
         id="player-account-dialog"
         className="pa-dialog"
         aria-labelledby="pa-title"
+        onClose={() => setShown(false)}
         // closedby: light dismiss + Esc (React passes unknown lowercase attrs through)
         {...{ closedby: 'any' }}
       >
         <div className="pa-panel">
           <button type="button" className="pa-close" onClick={close} aria-label="Close">×</button>
 
+          {isAnonymous && (
+            <div className="pa-tabs" role="tablist" aria-label="Sign in or save" onKeyDown={onTabKey}>
+              {(['signin', 'save'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="tab"
+                  id={`player-tab-${t}`}
+                  className="pa-tab"
+                  aria-selected={tab === t}
+                  aria-controls="player-tabpanel"
+                  tabIndex={tab === t ? 0 : -1}
+                  onClick={() => pickTab(t)}
+                >
+                  {t === 'signin' ? 'Sign in' : 'Save this player'}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="pa-hero">
             <span className="pa-orb pa-orb--lg" style={{ '--pa-color': player.color } as CSSProperties} aria-hidden="true" />
-            <h2 id="pa-title" className="pa-title">{isAnonymous ? 'Save your player' : 'Your player'}</h2>
+            <h2 id="pa-title" className="pa-title">
+              {!isAnonymous ? 'Your player' : tab === 'signin' ? (returning ? 'Welcome back' : 'Sign in') : 'Save your player'}
+            </h2>
             <p className="pa-sub">
-              {isAnonymous
-                ? 'Keep your worlds and cards on every device. No password needed. You can keep playing either way.'
-                : 'Your player is saved. Sign in on any device to pick up where you left off.'}
+              {!isAnonymous
+                ? 'Your player is saved. Sign in on any device to pick up where you left off.'
+                : tab === 'signin'
+                  ? returning?.email
+                    ? `Pick up where you left off as ${returning.email}. What you did on this device comes along.`
+                    : 'Already saved on another device? Sign in and pick up where you left off. What you did here comes along.'
+                  : 'Keep your worlds and cards on every device. No password needed. You can keep playing either way.'}
             </p>
           </div>
 
-          {isAnonymous ? (
-            <div className="pa-actions">
+          {isAnonymous && tab === 'signin' ? (
+            <div className="pa-actions" role="tabpanel" id="player-tabpanel" aria-labelledby="player-tab-signin">
+              {emailFirst && signInEmail && (
+                <p className="pa-last-label">
+                  {last === 'password' ? 'Your email and password' : 'Your email'}
+                  {lastBadge('email')}
+                </p>
+              )}
+              {emailFirst && signInEmail}
+              {emailFirst && signInRows.length > 0 && <div className="pa-divider"><span>or</span></div>}
+              {signInRows.map((r) => r.node)}
+              {!emailFirst && signInEmail && (
+                <>
+                  {signInRows.length > 0 && <div className="pa-divider"><span>or use your email</span></div>}
+                  {signInEmail}
+                </>
+              )}
+              {returning && (
+                <p className="pa-hint">
+                  Not {returning.email ?? 'you'}?{' '}
+                  <button type="button" id="player-forget-device" className="pa-link pa-link--quiet" onClick={forgetDevice}>
+                    Forget this device
+                  </button>
+                </p>
+              )}
+            </div>
+          ) : isAnonymous ? (
+            <div className="pa-actions" role="tabpanel" id="player-tabpanel" aria-labelledby="player-tab-save">
+              {returning && (
+                <div className="pa-notice" role="note">
+                  <span>
+                    A saved player signed in on this device before{returning.email ? ` (${returning.email})` : ''}.
+                    Saving now starts a <em>new</em> player.
+                  </span>
+                  <button type="button" id="player-notice-signin" className="pa-link" onClick={() => pickTab('signin')}>
+                    Sign in instead
+                  </button>
+                </div>
+              )}
               {methods?.passkey && (
                 <button
                   type="button"
                   id="player-save-passkey"
-                  className="pa-btn pa-btn--primary"
+                  className={`pa-btn ${returning ? 'pa-btn--ghost' : 'pa-btn--primary'}`}
                   disabled={busy !== null}
                   onClick={() => run('passkey-save', saveWithPasskey, 'Saved! Your player now has a passkey.')}
                 >
                   <PasskeyMark />
-                  {busy === 'passkey-save' ? 'Waiting for your device…' : 'Save with a passkey'}
+                  {busy === 'passkey-save' ? 'Waiting for your device…' : 'Create a passkey for this player'}
                 </button>
               )}
               {methods?.google && (
@@ -270,7 +440,7 @@ export function PlayerAccount() {
                   onClick={() => run('google', continueWithGoogle)}
                 >
                   <GoogleMark />
-                  {busy === 'google' ? 'Opening Google…' : 'Continue with Google'}
+                  {busy === 'google' ? 'Opening Google…' : 'Save with Google'}
                 </button>
               )}
               {methods?.passkey && (
@@ -282,21 +452,6 @@ export function PlayerAccount() {
                   {(methods.passkey || methods.google) && <div className="pa-divider"><span>or use your email</span></div>}
                   <EmailSignIn mode="save" disabled={busy !== null} onDone={emailDone} />
                 </>
-              )}
-
-              {methods?.passkey && (
-                <div className="pa-divider"><span>Already saved on another device?</span></div>
-              )}
-              {methods?.passkey && (
-                <button
-                  type="button"
-                  id="player-signin-passkey"
-                  className="pa-btn pa-btn--ghost"
-                  disabled={busy !== null}
-                  onClick={() => run('passkey-signin', signInWithPasskey)}
-                >
-                  {busy === 'passkey-signin' ? 'Waiting for your device…' : 'Sign in with a passkey'}
-                </button>
               )}
             </div>
           ) : (
@@ -383,7 +538,7 @@ export function PlayerAccount() {
                           id={`player-remove-passkey-${i}`}
                           className="pa-link pa-link--danger"
                           disabled={busy !== null}
-                          onClick={() => run(`remove-${pk.id}`, () => removePasskey(pk.id), 'Passkey removed.')}
+                          onClick={() => run(`remove-${pk.id}`, () => removePasskey(pk.id, pk.credentialID), 'Passkey removed.')}
                         >
                           Remove
                         </button>
