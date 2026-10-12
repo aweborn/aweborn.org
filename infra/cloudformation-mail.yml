@@ -1,16 +1,19 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Aweborn mail: SES domain identity for aweborn.org (DKIM/SPF/DMARC) and
-  inbound forwarding of public addresses (e.g. privacy@aweborn.org) to a
-  private inbox. The same identity will send magic-link / verification mail.
+  Aweborn mail: SES domain identity for aweborn.org (DKIM/SPF/DMARC),
+  inbound forwarding of public addresses (hello@, privacy@) to a private
+  inbox (plus-tagged per address, e.g. you+aweborn-hello@gmail.com), and the
+  IAM user the sync-service uses to send sign-in codes as hello@aweborn.org.
 
   Deploy:
     aws cloudformation deploy --stack-name aweborn-mail \
-      --template-file infra/cloudformation-mail.yml --capabilities CAPABILITY_IAM \
+      --template-file infra/cloudformation-mail.yml --capabilities CAPABILITY_NAMED_IAM \
       --parameter-overrides ForwardTo=<private inbox>
     aws ses set-active-receipt-rule-set --rule-set-name aweborn-inbound   # once; CFN can't activate it
-  While SES is in the sandbox, ForwardTo must click the verification email
-  AWS sends it (the ForwardToIdentity resource triggers it).
+  The sender's access key is created out-of-band (aws iam create-access-key
+  --user-name aweborn-mail-sender) and piped straight into the k8s secret;
+  it is never a stack output. SES production access was granted 2026-10-12,
+  so ForwardToIdentity is no longer required but harmless.
 
 Parameters:
   HostedZoneId:
@@ -25,7 +28,7 @@ Parameters:
     AllowedPattern: ".+@.+"
   Recipients:
     Type: CommaDelimitedList
-    Default: privacy@aweborn.org
+    Default: hello@aweborn.org,privacy@aweborn.org
     Description: Public addresses to accept and forward.
 
 Resources:
@@ -36,6 +39,11 @@ Resources:
       EmailIdentity: !Ref DomainName
       DkimSigningAttributes:
         NextSigningKeyLength: RSA_2048_BIT
+      # Bounces go to mail.aweborn.org instead of amazonses.com, so SPF passes
+      # *aligned* with aweborn.org (DMARC on both SPF and DKIM). Helps inboxing.
+      MailFromAttributes:
+        MailFromDomain: !Sub "mail.${DomainName}"
+        BehaviorOnMxFailure: USE_DEFAULT_VALUE
 
   ForwardToIdentity:
     # Sandbox accounts can only send to verified addresses.
@@ -72,6 +80,14 @@ Resources:
           Type: TXT
           TTL: "300"
           ResourceRecords: [!Sub '"v=DMARC1; p=none; adkim=r; aspf=r"']
+        - Name: !Sub "mail.${DomainName}"
+          Type: MX
+          TTL: "300"
+          ResourceRecords: [!Sub "10 feedback-smtp.${AWS::Region}.amazonses.com"]
+        - Name: !Sub "mail.${DomainName}"
+          Type: TXT
+          TTL: "300"
+          ResourceRecords: ['"v=spf1 include:amazonses.com ~all"']
 
   # --- Inbound: store raw mail, then forward ---------------------------------
   InboundBucket:
@@ -141,6 +157,23 @@ Resources:
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${DomainName}"
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${ForwardTo}"
 
+  # --- Outbound: sync-service sends sign-in codes ----------------------------
+  MailSender:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: aweborn-mail-sender
+      Policies:
+        - PolicyName: send-as-hello
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${DomainName}"
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Sub "hello@${DomainName}"
+
   Forwarder:
     Type: AWS::Lambda::Function
     Properties:
@@ -194,9 +227,13 @@ Resources:
             kept.unshift(`From: "${name.slice(0, 60)} via Aweborn" <${process.env.FROM_ADDRESS}>`);
             if (!hasReplyTo && from) kept.push(`Reply-To: ${from}`);
             kept.push(`X-Aweborn-Original-To: ${rec.mail.destination.join(", ")}`);
+            // Plus-tag by the public address it arrived at, so the inbox can filter.
+            const local = (rec.receipt.recipients[0] || "").split("@")[0].toLowerCase().replace(/[^a-z0-9-]/g, "");
+            const [user, host] = process.env.FORWARD_TO.split("@");
+            const to = local ? `${user.split("+")[0]}+aweborn-${local}@${host}` : process.env.FORWARD_TO;
             await ses.send(new SendEmailCommand({
               FromEmailAddress: process.env.FROM_ADDRESS,
-              Destination: { ToAddresses: [process.env.FORWARD_TO] },
+              Destination: { ToAddresses: [to] },
               Content: { Raw: { Data: Buffer.from(kept.join("\r\n") + body, "latin1") } },
             }));
             console.log("forwarded", rec.mail.messageId);
