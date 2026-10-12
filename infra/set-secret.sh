@@ -5,7 +5,7 @@
 # AWEBORN_<KEY>.txt. The VPS holds a copy. `push all` rebuilds the VPS copy
 # from the folder (e.g. after a rebuild); `status` shows drift without
 # printing any value. Values never go on a command line or in shell history;
-# they go to the VPS over SSH stdin. Inventory: SECRETS.md.
+# they go to the VPS over SSH stdin. Inventory: CONFIG.md.
 #
 # Usage:
 #   infra/set-secret.sh status                 # each key: in folder? on VPS? same value?

@@ -42,12 +42,18 @@ The VPS runs **Ubuntu 22.04 LTS + k3s** on an AWS Lightsail 2 GB instance (`infr
 | `agent-runner` | Node.js | ✅ Live (Tailnet-only, port 3002) | Cron-scheduled LLM agents with HTTP API (added Sep 26, 2026) |
 | `caddy` | Caddy | ✅ Live | Reverse proxy, TLS termination, routing |
 
+**Rule: catalog every secret, key and parameter.** Any infrastructure change or one-time setup that introduces one adds a row to [CONFIG.md](./CONFIG.md) in the same change.
+- **Parameters** (not dangerous if public: IDs, ARNs, regions, names, ports) live **in plaintext in the repo that uses them**. Don't hide them in secret stores.
+- **Secrets and keys** are backed up to Alex's private, backed-up keys folder, reachable at **`~/keys`**. They are deployed to their runtime spot (k8s secret, CloudFormation `NoEcho`, GitHub secret, …) by copying from there, never typed fresh, and never committed.
+- Personal-but-not-secret values (e.g. Alex's inbox) are deploy-time parameters, kept out of public repos.
+
 ## Design Documents
 
 | Document | Purpose | Location |
 |----------|---------|----------|
 | ROADMAP.md | Full vision — multiplayer, mesh networking, CRDT architecture, mana economy, navigation, visuals | [ROADMAP.md](./ROADMAP.md) |
 | HANDOFF.md | Current architecture snapshot — frontend, backend, infra, deployment | [HANDOFF.md](./HANDOFF.md) |
+| CONFIG.md | Catalog of every secret, key and parameter: where it lives, how to set/rotate it | [CONFIG.md](./CONFIG.md) |
 
 > ⚠️ **ROADMAP.md is the design bible.** Do NOT modify it during execution. If a design decision changes, note the deviation in the relevant phase file and discuss with Alex.
 

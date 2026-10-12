@@ -132,7 +132,7 @@ The 3D scene renders behind the modal throughout — no page redirects.
       --parameters \
         ParameterKey=HostedZoneId,ParameterValue=Z077908710IGH7R1XO587
     ```
-    The UserData script installs k3s and Docker, creates a *placeholder* `aweborn-secrets` (only if none exists), then runs `deploy-services.sh all`. Afterwards, set the real secret values from your Mac with `infra/set-secret.sh` (see [SECRETS.md](SECRETS.md)).
+    The UserData script installs k3s and Docker, creates a *placeholder* `aweborn-secrets` (only if none exists), then runs `deploy-services.sh all`. Afterwards, set the real secret values from your Mac with `infra/set-secret.sh` (see [CONFIG.md](CONFIG.md)).
 
 ## Local dev (server services)
 
@@ -197,7 +197,7 @@ curl http://aweborn-vps:3002/agents
 ~/aweborn/infra/k3s/deploy-services.sh genai-service      # one or more services
 ~/aweborn/infra/k3s/deploy-services.sh all
 # Secrets are never applied by any deploy script. Set them from your Mac with
-# infra/set-secret.sh (inventory: SECRETS.md).
+# infra/set-secret.sh (inventory: CONFIG.md).
 
 # World data (SQLite) lives on the host, outside k8s: /var/lib/aweborn/sync-data/universe.db
 # Snapshotted hourly + copied to S3 daily; see "Backups" below.
@@ -277,7 +277,7 @@ Anonymous-first player identity (Phase 08 I1), served by **Better Auth inside sy
 - **Everyone is welcome:** if auth is unreachable (offline, cookies blocked, 5 s timeout) the client plays as a per-tab `guest-…`; guest worlds get `creator = "guest"`.
 - **Secret:** `BETTER_AUTH_SECRET` in `aweborn-secrets`. **Keep a copy in the keys folder.** Losing or rotating it signs everyone out, and anonymous players then lose their identity for good. If it's missing, weak, or the `REPLACE_ME` placeholder in production, sync-service still runs but **auth is disabled** (everyone is a guest; `/api/auth/*` returns 503; loud `[auth] ✖` log line).
 
-The source copy is `AWEBORN_BETTER_AUTH_SECRET.txt` in the keys folder (see [SECRETS.md](SECRETS.md)). After a rebuild, restore it with `infra/set-secret.sh push BETTER_AUTH_SECRET`, and check it with `infra/set-secret.sh status`. Set 2026-10-11.
+The source copy is `AWEBORN_BETTER_AUTH_SECRET.txt` in the keys folder (see [CONFIG.md](CONFIG.md)). After a rebuild, restore it with `infra/set-secret.sh push BETTER_AUTH_SECRET`, and check it with `infra/set-secret.sh status`. Set 2026-10-11.
 
 One-off: `server/sync-service/scripts/migrate-legacy-creators.ts` reassigns pre-identity `p-xxxxxx` creators to `"system"` (stop sync-service first; `--dry-run` supported; backs up first).
 
@@ -352,7 +352,7 @@ The website (S3/CloudFront) stays up throughout; sync and gen-AI are down until 
 **After the box is up:**
 6. **Update the pinned host key.** CI pins the box's ed25519 host key in the repo variable `VPS_KNOWN_HOST` (read by `deploy.yml` + `backup.yml`; admin-only, changes are in the audit log). After a rebuild it still holds the old key, so CI fails closed until it's updated (correct behaviour; never switch to trust-on-first-use). `infra/restore-from-s3.sh` (step 8) takes the new key from the Lightsail API (AWS-authenticated, not a network scan) and sets the variable after you answer `y`. No commit needed. By hand: `gh variable set VPS_KNOWN_HOST -R aweborn/aweborn.org --body 'aweborn-vps ssh-ed25519 AAAA...'`. To trust the new box on your Mac: `ssh-keygen -R aweborn-vps && gh variable get VPS_KNOWN_HOST -R aweborn/aweborn.org >> ~/.ssh/known_hosts`.
 7. The restricted CI keys (deploy + backup) were installed by the bootstrap from `infra/vps/ci-authorized-keys`. Check with `sudo ~/aweborn/infra/vps/install-ci-keys.sh --check`.
-8. Set the real k8s secrets from your Mac with `infra/set-secret.sh` ([SECRETS.md](SECRETS.md) lists them). **`BETTER_AUTH_SECRET` must be the same value as before** (from the keys folder: `infra/set-secret.sh push all`), or every player is signed out and anonymous players lose their identity (see [Player identity](#player-identity)). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6 (sets the host key pin variable).
+8. Set the real k8s secrets from your Mac with `infra/set-secret.sh` ([CONFIG.md](CONFIG.md) lists them). **`BETTER_AUTH_SECRET` must be the same value as before** (from the keys folder: `infra/set-secret.sh push all`), or every player is signed out and anonymous players lose their identity (see [Player identity](#player-identity)). Restore the world DB: `infra/restore-from-s3.sh` on your Mac (see [Backups](#backups)). It also does step 6 (sets the host key pin variable).
 9. Verify: both `/health` endpoints, `infra/cfn-preview.sh aweborn-vps` (in sync, IMDS hardened), `gh workflow run backup.yml` passes.
 
 **Rehearsed on prod 2026-10-11** (`aweborn-vps` → `aweborn-vps-2`, ~10 min of sync/gen-AI downtime): pre-rebuild snapshot + `backup.yml`, old node deleted in Machines, `rebuild-vps.sh`, `restore-from-s3.sh` (pin updated from the Lightsail API, restored DB fingerprint == backup), Caddy got real certs on the first try, pin committed, `backup.yml` + Deploy green, `cfn-preview.sh` in sync. Before that, `infra/test-dr-restore.sh` **passed 2026-10-11** on a throwaway box (re-run it after bootstrap/deploy changes). Earlier note, kept for history: the rebuild path was first dry-run against the live stack (preview + refusal, answered "no"); `restore-from-s3.sh` was run against the live box up to the final prompt (download, API host keys, pin check, copy, `--check`; answered "no"); the join was tested on throwaway instances.
