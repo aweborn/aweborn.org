@@ -21,6 +21,43 @@ Parameters:
     Default: Z077908710IGH7R1XO587
 
 Resources:
+  # Website deploy (deploy.yml): sync the built site to S3 + invalidate
+  # CloudFront. Replaces the hand-made github-actions-deploy role (2026-10-12).
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aweborn-github-deploy
+      Description: deploy.yml - upload the site to S3 and invalidate CloudFront (main only)
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Ref GitHubSubject
+      Policies:
+        - PolicyName: site-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: SiteBucket
+                Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: arn:aws:s3:::aweborn-website-content
+              - Sid: SiteObjects
+                Effect: Allow
+                Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
+                Resource: arn:aws:s3:::aweborn-website-content/*
+              - Sid: Invalidate
+                Effect: Allow
+                Action: [cloudfront:CreateInvalidation, cloudfront:GetInvalidation, cloudfront:ListInvalidations]
+                Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/*"
+
   InfraPreviewRole:
     Type: AWS::IAM::Role
     Properties:
@@ -144,5 +181,7 @@ Resources:
                 Resource: "*"
 
 Outputs:
+  DeployRoleArn:
+    Value: !GetAtt DeployRole.Arn
   RoleArn:
     Value: !GetAtt InfraPreviewRole.Arn

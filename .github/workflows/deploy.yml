@@ -164,7 +164,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::111551045759:role/github-actions-deploy
+          role-to-assume: arn:aws:iam::111551045759:role/aweborn-github-deploy
           aws-region: us-east-1
 
       - name: Setup Node

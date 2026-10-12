@@ -13,6 +13,8 @@ Every **secret**, **key** and **parameter** Aweborn depends on: what it is, wher
 
 **Goal: one-touch recovery.** Mount `~/keys`, run the provisioning scripts, and everything comes back. If something needs a value found neither in the repo nor in `~/keys`, that's a gap: add it to one of them.
 
+**The one touch:** `infra/recover.sh`. Run `infra/recover.sh --check` any time (read-only) to prove recovery would work today. It checks every key file below, then creates any missing stack from its template (keys from `~/keys`), rebuilds/restores the VPS if you say so, pushes runtime keys, and re-sets GitHub secrets/variables. It asks before each change and skips whatever is already fine.
+
 ## Keys
 
 The runtime spots:
@@ -52,8 +54,23 @@ CI reaches AWS through OIDC roles, so there are **no AWS keys in GitHub**. Tails
 | Service env | `PORT`, `HOST`, `DB_PATH`, `NODE_ENV`, `BETTER_AUTH_URL`, `AWS_REGION`, `LLM_MODEL`, `LLM_API_URL`, backup `KEEP_*`: `value:` in `infra/k3s/*-deployment.yaml` | pods |
 | Frontend | `VITE_SYNC_URL`, `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY` (publishable, safe): `.env`, `.env.production` | Vite build |
 | CI role ARNs | `AWS_BACKUP_ROLE_ARN`, `AWS_INFRA_PREVIEW_ROLE_ARN`: GitHub repo **variables**; `VPS_KNOWN_HOST` pin: variable | workflows |
-| Deploy role / region / CDN | `arn:aws:iam::111551045759:role/github-actions-deploy`, `us-east-1`, CloudFront `E3Q49I3A6Q6RH`: plaintext in `deploy.yml`, `backup.yml` | workflows |
+| Deploy role / region / CDN | `arn:aws:iam::111551045759:role/aweborn-github-deploy`, `us-east-1`, CloudFront `E3Q49I3A6Q6RH`: plaintext in `deploy.yml`, `backup.yml` | workflows |
 | Tailscale CI identity | client ID `THpqTuVanZ11CNTRL-kGb9s6ts1211CNTRL`, audience `api.tailscale.com/<client ID>`, tag `tag:ci`: plaintext in `deploy.yml`, `backup.yml` | workflows |
+
+## Outside the repo (accounts; can't be scripted)
+
+These are the accounts everything runs in. Their sign-ins live in your password manager / `~/keys`, not here. `recover.sh` assumes they exist.
+
+| Account / setting | Why it matters | If lost |
+|---|---|---|
+| AWS account `111551045759` + root MFA | everything in AWS | AWS account recovery |
+| Route53 domain `aweborn.org` (registration + hosted zone `Z077908710IGH7R1XO587`) | DNS; zone ID is a parameter in the templates | new zone → update the `HostedZoneId` defaults |
+| SES production access (us-east-1) | sign-in codes to any inbox | re-request in the SES console (took ~1 day) |
+| Google Cloud OAuth consent screen + client | Google sign-in (`AWEBORN_GOOGLE_CLIENT_*`) | recreate client → save to `~/keys` → `set-secret.sh push all` |
+| Tailscale tailnet: ACL (`tag:ci` → `tag:server:22`), CI workload-identity credential, server OAuth client | CI + SSH reach the VPS | recreate → update the client ID in workflows / `AWEBORN_TAILSCALE_OAUTH_SECRET.txt` |
+| Stripe account | donations (`AWEBORN_STRIPE_SECRET_KEY.txt`, publishable key in `.env.production`) | roll keys in the dashboard |
+| GitHub org `aweborn` + repo | code, CI; OIDC subject uses numeric IDs | a new repo gets new IDs → update `GitHubSubject` defaults |
+| GitHub OIDC provider in AWS | CI → AWS (shared with other repos) | `recover.sh` recreates it |
 
 ## Local dev
 

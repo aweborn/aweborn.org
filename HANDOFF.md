@@ -330,11 +330,13 @@ Fix drift by putting the live value into the template (then apply), or by revert
 
 ## Rebuilding the VPS / Tailnet auto-join
 
+> **Start with `infra/recover.sh`** (`--check` first). It runs the steps below in order from `~/keys` + the repo, and also recreates missing stacks after a bigger loss. The manual steps stay documented here for when you need to go step by step.
+
 A server built from `infra/cloudformation-vps.yml` joins the Tailnet **by itself** on first boot, as a persistent `tag:server` node named `TailnetHostname` (default `aweborn-vps`, which is what CI and SSH target). That name is separate from the Lightsail `InstanceName`. It uses the Tailscale OAuth client secret stored in the stack (NoEcho `TailscaleOAuthSecret`). After joining, the bootstrap deletes every on-disk copy of the user-data. The stack's `ImdsHardening` resource makes IMDS v2-only with hop limit 1 seconds after the instance exists, so pods can't read the user-data either. An empty or invalid secret aborts the bootstrap loudly (`/var/log/aweborn-bootstrap.log`). The bootstrap also installs the restricted CI keys, k3s, and deploys every service (with placeholder secrets).
 
 **Why persistent, not ephemeral:** an ephemeral node is deleted once it's been offline a while. After a long outage the server couldn't rejoin, because the secret is scrubbed from the box, and CI deploys + backups would be locked out. Persistent nodes also keep their name and Tailnet IP. Test nodes (`infra/test-tailscale-join.sh`) *are* ephemeral, so they clean themselves up.
 
-**Nothing on the disk is relied on** (by design, no disk snapshots). The world DB is copied off-box **hourly** (`backup.yml`, :37), so losing the box costs at most ~1h of world edits. Secrets come from their sources: the Stripe key (Alex's Drive / Stripe dashboard) and `LLM_API_KEY` (not issued yet).
+**Nothing on the disk is relied on** (by design, no disk snapshots). The world DB is copied off-box **hourly** (`backup.yml`, :37), so losing the box costs at most ~1h of world edits. Every key comes from `~/keys` (see CONFIG.md); `LLM_API_KEY` is not issued yet.
 
 ### If the VPS is unhealthy
 1. Lightsail console → `aweborn-vps` → **Reboot**; if that doesn't help, **Stop** then **Start** (moves it to new hardware; disk and static IP stay). Tailscale, k3s and the pods all come back by themselves.
