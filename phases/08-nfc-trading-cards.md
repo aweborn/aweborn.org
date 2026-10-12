@@ -135,9 +135,11 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 **I5. Merging**
 - `[ ]` A device that already has an anonymous player signs in to another player → union its World Index into the signed-in player and retire the anonymous ID (rule for its created worlds TBD)
+- `[ ]` **Every method lands on the same identity** (Alex, 2026-10-12): passkey, Google and email (code or password) all resolve to one `playerId`, whichever is used first and on whichever device. Includes merging two *saved* players when one person saved separately on two devices
 
 **I6. (D) Social sign-in**
-- `[ ]` Google, Apple, Facebook first (others, e.g. Discord/GitHub/Microsoft, later). OAuth/OIDC with PKCE; link to the current anonymous player on first use. **Google code done (2026-10-11):** env-gated (`GOOGLE_CLIENT_ID`/`_SECRET`, optional secret keys), anonymous → `signIn.social`, saved → `linkSocial` (`allowDifferentEmails`, since passkey-saved players have placeholder emails). Waiting on Alex's Google Cloud OAuth client (steps in HANDOFF → Saving a player)
+- **Scope cut (Alex, 2026-10-12): passkey + Google + email are enough for now.** Apple/Facebook deferred: aweborn is anonymous-first on the web (sign-in never gates play), passkeys already give iPhone users Face ID + iCloud sync, Apple's sign-in rule applies only to iOS apps, and Apple costs $99/yr + a key rotated every 6 months + Hide-My-Email relay setup for SES. Revisit if a native iOS app ships or players ask.
+- `[~]` Google, ~~Apple, Facebook~~ first (others, e.g. Discord/GitHub/Microsoft, later). OAuth/OIDC with PKCE; link to the current anonymous player on first use. **Google code done (2026-10-11):** env-gated (`GOOGLE_CLIENT_ID`/`_SECRET`, optional secret keys), anonymous → `signIn.social`, saved → `linkSocial` (`allowDifferentEmails`, since passkey-saved players have placeholder emails). Waiting on Alex's Google Cloud OAuth client (steps in HANDOFF → Saving a player)
 - `[ ]` Provider setup: Google Cloud OAuth client; Apple Developer Program ($99/yr) Services ID + key; Meta app + business verification/app review before public launch. Client secrets in k3s secrets, never in the repo
 - `[ ]` Privacy policy + data-deletion URL (required by Meta and Apple)
 
