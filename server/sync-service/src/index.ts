@@ -3,7 +3,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
-import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods } from "./auth.js";
+import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword } from "./auth.js";
 import { listCharacters, switchCharacter, waysIn, worldIndex } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
@@ -99,6 +99,7 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
  * `/api/player/*`: the signed-in account (session cookie, trusted origins only).
  *   GET  /api/player/me         { playerId, characters, methods, worldIndex }
  *   POST /api/player/character  { id } → this device now plays that character
+ *   POST /api/player/password   { password } → add or change this player's password
  */
 async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const json = (status: number, body: unknown) => {
@@ -126,6 +127,11 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     const id = typeof body?.id === "string" ? body.id : "";
     if (!switchCharacter(accountId, session.sessionId, id)) return json(404, { error: "not_your_character" });
     return json(200, { playerId: id });
+  }
+  if (path === "/api/player/password" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { password?: unknown } | null;
+    const r = await setPlayerPassword(auth, fromNodeHeaders(req.headers), body?.password);
+    return r.ok ? json(200, { changed: r.changed }) : json(r.status, { code: r.code, message: r.message });
   }
   return json(404, { error: "not_found" });
 }

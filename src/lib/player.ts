@@ -405,6 +405,19 @@ export function removeGoogle(): Promise<AuthResult> {
 export function removePassword(): Promise<AuthResult> {
   return unlink("password", "Couldn't remove the password. Please try again.");
 }
+/** Add a password to a saved player, or change it (needs a fresh confirm and a real email). */
+export async function setPassword(password: string): Promise<AuthResult> {
+  const res = await fetch(`${AUTH_URL}/api/player/password`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  }).catch(() => null);
+  if (!res) return { ok: false, message: "Couldn't reach Aweborn. Check your connection and try again." };
+  if (res.ok) return { ok: true };
+  const err = (await res.json().catch(() => ({}))) as { code?: string; message?: string };
+  return fail({ ...err, status: res.status }, "Couldn't save the password. Please try again.");
+}
 
 // ── Email (codes first, password as the quiet alternative) ──────────────────
 

@@ -44,7 +44,7 @@ const MailMark = () => (
   </svg>
 )
 
-export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail, initialEmail, passkeyAutofill }: {
+export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail, initialEmail, passkeyAutofill, startWithPassword }: {
   mode: 'save' | 'signin' | 'add' | 'confirm'
   disabled?: boolean
   onDone: (message: string) => void
@@ -56,9 +56,11 @@ export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail
   initialEmail?: string | null
   /** Offer saved passkeys in the email field's autofill (conditional mediation). */
   passkeyAutofill?: boolean
+  /** Open on the password step (this device last signed in with a password). */
+  startWithPassword?: boolean
 }) {
   const uid = useId()
-  const [step, setStep] = useState<Step>({ kind: 'email' })
+  const [step, setStep] = useState<Step>(() => (startWithPassword ? { kind: 'password' } : { kind: 'email' }))
   const [email, setEmail] = useState(fixedEmail ?? initialEmail ?? '')
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
@@ -274,9 +276,11 @@ export function EmailSignIn({ mode, disabled, onDone, onNeedsConfirm, fixedEmail
             {busy ? 'One moment…' : hasPassword ? 'Sign in' : 'Save my player'}
           </button>
           <div className="pa-row">
-            <button type="button" className="pa-link pa-link--quiet" disabled={off} onClick={() => { setHasPassword(!hasPassword); setStatus(null) }}>
-              {hasPassword ? 'New here? Create a password' : 'I already have a password'}
-            </button>
+            {mode !== 'signin' && (
+              <button type="button" className="pa-link pa-link--quiet" disabled={off} onClick={() => { setHasPassword(!hasPassword); setStatus(null) }}>
+                {hasPassword ? 'New here? Create a password' : 'I already have a password'}
+              </button>
+            )}
             {hasPassword && (
               <button
                 type="button"

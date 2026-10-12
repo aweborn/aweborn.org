@@ -6,9 +6,10 @@
  * suggests saving, at most once a day. Saving attaches a real sign-in method
  * to the *same* player (`playerId`), so nothing is lost.
  *
- * Signing in is never second-class (Alex, 2026-10-12): "Sign in" and "Save
- * this player" are equal tabs. A device that had a saved player before opens
- * on Sign in, with the method it used last on top and its email filled in.
+ * Signing in is never second-class (Alex, 2026-10-12): "Returning" and "New
+ * player" are equal tabs. Returning always lists passkey, then Google, then
+ * an email code (password as the fallback); a device that had a saved player
+ * opens on it, marks the way it used last and fills in its email.
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
@@ -40,6 +41,7 @@ import {
 } from '../lib/player'
 import { canPromptNow, onMeaningfulMoment, recordPrompted, trackPlaytime } from '../lib/onramp'
 import { EmailSignIn } from './EmailSignIn'
+import { SetPassword } from './SetPassword'
 
 type Busy = null | 'passkey-save' | 'passkey-signin' | 'google' | 'signout' | 'switch' | 'confirm' | `remove-${string}`
 type Tab = 'signin' | 'save'
@@ -89,6 +91,7 @@ export function PlayerAccount() {
   const [busy, setBusy] = useState<Busy>(null)
   const [status, setStatus] = useState<{ tone: 'info' | 'error' | 'success'; text: string } | null>(null)
   const [addingEmail, setAddingEmail] = useState(false)
+  const [settingPassword, setSettingPassword] = useState(false)
   /** A change was refused until the player confirms it's them. */
   const [confirming, setConfirming] = useState(false)
   /** A saved player used this device before (survives sign-out). */
@@ -141,6 +144,7 @@ export function PlayerAccount() {
     setNudge(false)
     setStatus(null)
     setAddingEmail(false)
+    setSettingPassword(false)
     setConfirming(false)
     const r = getReturning()
     setReturning(r)
@@ -211,6 +215,7 @@ export function PlayerAccount() {
   const characters = player.characters
   const emailDone = (message: string) => {
     setAddingEmail(false)
+    setSettingPassword(false)
     setStatus({ tone: 'success', text: message })
     refreshLinked()
   }
@@ -221,6 +226,7 @@ export function PlayerAccount() {
   }
   const needConfirm = () => {
     setAddingEmail(false)
+    setSettingPassword(false)
     setConfirming(true)
   }
   const pickTab = (next: Tab) => {
@@ -233,7 +239,8 @@ export function PlayerAccount() {
     setStatus({ tone: 'info', text: 'Forgotten. This device no longer suggests that player.' })
   }
 
-  // Sign in: the way this device used last goes first (password → email row).
+  // Returning: always passkey → Google → email code (password fallback).
+  // The way this device used last gets a badge, not a new position.
   const last: WayIn | null = returning?.lastMethod ?? null
   const isLast = (m: 'passkey' | 'google' | 'email') =>
     Boolean(returning) && (m === last || (m === 'email' && last === 'password'))
@@ -278,13 +285,12 @@ export function PlayerAccount() {
       ),
     })
   }
-  if (isLast('google')) signInRows.reverse()
-  const emailFirst = isLast('email')
   const signInEmail = methods?.email ? (
     <EmailSignIn
       key="signin-email"
       mode="signin"
       initialEmail={returning?.email}
+      startWithPassword={last === 'password'}
       passkeyAutofill={shown && tab === 'signin' && Boolean(methods.passkey)}
       disabled={busy !== null}
       onDone={emailDone}
@@ -345,7 +351,7 @@ export function PlayerAccount() {
           <button type="button" className="pa-close" onClick={close} aria-label="Close">×</button>
 
           {isAnonymous && (
-            <div className="pa-tabs" role="tablist" aria-label="Sign in or save" onKeyDown={onTabKey}>
+            <div className="pa-tabs" role="tablist" aria-label="Returning or new player" onKeyDown={onTabKey}>
               {(['signin', 'save'] as const).map((t) => (
                 <button
                   key={t}
@@ -358,7 +364,7 @@ export function PlayerAccount() {
                   tabIndex={tab === t ? 0 : -1}
                   onClick={() => pickTab(t)}
                 >
-                  {t === 'signin' ? 'Sign in' : 'Save this player'}
+                  {t === 'signin' ? 'Returning' : 'New player'}
                 </button>
               ))}
             </div>
@@ -367,7 +373,7 @@ export function PlayerAccount() {
           <div className="pa-hero">
             <span className="pa-orb pa-orb--lg" style={{ '--pa-color': player.color } as CSSProperties} aria-hidden="true" />
             <h2 id="pa-title" className="pa-title">
-              {!isAnonymous ? 'Your player' : tab === 'signin' ? (returning ? 'Welcome back' : 'Sign in') : 'Save your player'}
+              {!isAnonymous ? 'Your player' : tab === 'signin' ? 'Welcome back' : 'Save your player'}
             </h2>
             <p className="pa-sub">
               {!isAnonymous
@@ -382,18 +388,12 @@ export function PlayerAccount() {
 
           {isAnonymous && tab === 'signin' ? (
             <div className="pa-actions" role="tabpanel" id="player-tabpanel" aria-labelledby="player-tab-signin">
-              {emailFirst && signInEmail && (
-                <p className="pa-last-label">
-                  {last === 'password' ? 'Your email and password' : 'Your email'}
-                  {lastBadge('email')}
-                </p>
-              )}
-              {emailFirst && signInEmail}
-              {emailFirst && signInRows.length > 0 && <div className="pa-divider"><span>or</span></div>}
               {signInRows.map((r) => r.node)}
-              {!emailFirst && signInEmail && (
+              {signInEmail && (
                 <>
-                  {signInRows.length > 0 && <div className="pa-divider"><span>or use your email</span></div>}
+                  {signInRows.length > 0 && (
+                    <div className="pa-divider"><span>or use your email{lastBadge('email')}</span></div>
+                  )}
                   {signInEmail}
                 </>
               )}
@@ -599,33 +599,67 @@ export function PlayerAccount() {
                           className="pa-link"
                           disabled={busy !== null}
                           aria-expanded={addingEmail}
-                          onClick={() => setAddingEmail(!addingEmail)}
+                          onClick={() => {
+                            setSettingPassword(false)
+                            setAddingEmail(!addingEmail)
+                          }}
                         >
                           {addingEmail ? 'Cancel' : email ? 'Change' : 'Add'}
                         </button>
                       </li>
                     )}
-                    {linked?.password && (
-                      <li className="is-on">
+                    {methods?.email && (
+                      <li className={linked?.password ? 'is-on' : ''}>
                         <svg className="pa-btn-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                           <rect x="4" y="10" width="16" height="10" rx="2.5" />
                           <path d="M8 10V7a4 4 0 0 1 8 0v3" />
                         </svg>
-                        <span>Password</span>
+                        <span className="pa-linked-label">Password</span>
                         <button
                           type="button"
-                          id="player-remove-password"
-                          className="pa-link pa-link--danger"
+                          id="player-set-password"
+                          className="pa-link"
                           disabled={busy !== null}
-                          onClick={() => run('remove-password', removePassword, 'Password removed. Sign in with a code instead.')}
+                          aria-expanded={settingPassword}
+                          onClick={() => {
+                            if (!email && !settingPassword) {
+                              setStatus({ tone: 'info', text: 'Add your email first: you sign in with your email and password.' })
+                              setAddingEmail(true)
+                              return
+                            }
+                            setStatus(null)
+                            setAddingEmail(false)
+                            setSettingPassword(!settingPassword)
+                          }}
                         >
-                          Remove
+                          {settingPassword ? 'Cancel' : linked?.password ? 'Change' : 'Add'}
                         </button>
+                        {linked?.password && !settingPassword && (
+                          <button
+                            type="button"
+                            id="player-remove-password"
+                            className="pa-link pa-link--danger"
+                            disabled={busy !== null}
+                            onClick={() => run('remove-password', removePassword, 'Password removed. Sign in with a code instead.')}
+                          >
+                            Remove
+                          </button>
+                        )}
                       </li>
                     )}
                   </ul>
                   {addingEmail && (
                     <EmailSignIn mode="add" disabled={busy !== null} onDone={emailDone} onNeedsConfirm={needConfirm} />
+                  )}
+                  {settingPassword && email && (
+                    <SetPassword
+                      email={email}
+                      changing={Boolean(linked?.password)}
+                      disabled={busy !== null}
+                      onDone={emailDone}
+                      onNeedsConfirm={needConfirm}
+                      onCancel={() => setSettingPassword(false)}
+                    />
                   )}
                   {hasPasskey && methods?.passkey && (
                     <button

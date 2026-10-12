@@ -16,12 +16,13 @@
  * hourly on-box + S3 backups and the DR restore cover them with no changes.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { anonymous, customSession, emailOTP, haveIBeenPwned } from "better-auth/plugins";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
+import { hashPassword } from "better-auth/crypto";
 import { passkey, getAuthenticatorName } from "@better-auth/passkey";
 import { codeEmail, emailEnabled, existingAccountEmail, sendEmail, wayInChangedEmail } from "./email.js";
 import {
@@ -105,6 +106,7 @@ export function authMethods(auth: Auth | null) {
  * holding a borrowed, signed-in phone can't pass that (I5, 2026-10-12).
  */
 const FRESH_SESSION_MS = 5 * 60_000;
+const MIN_PASSWORD = 10;
 const SENSITIVE_PATHS = new Set([
   "/passkey/generate-register-options",
   "/passkey/verify-registration",
@@ -222,7 +224,7 @@ function buildOptions(db: Database.Database) {
     emailAndPassword: {
       enabled: emailEnabled,
       requireEmailVerification: true,
-      minPasswordLength: 10,
+      minPasswordLength: MIN_PASSWORD,
       revokeSessionsOnPasswordReset: true,
       onExistingUserSignUp: async ({ user }) => {
         void sendEmail(existingAccountEmail(user.email));
@@ -583,4 +585,67 @@ export async function getIdentity(auth: Auth, headers: Headers): Promise<Identit
   if (!s?.playerId) return null;
   // `playerId` here is already the active character (customSession).
   return { accountId: s.userId, playerId: s.playerId };
+}
+
+/** Have I Been Pwned range check (only 5 hash chars leave the server). Throws if unreachable. */
+async function passwordIsBreached(password: string): Promise<boolean> {
+  const sha1 = createHash("sha1").update(password).digest("hex").toUpperCase();
+  const res = await fetch(`https://api.pwnedpasswords.com/range/${sha1.slice(0, 5)}`, {
+    headers: { "Add-Padding": "true", "User-Agent": "aweborn.org" },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) throw new Error(`pwnedpasswords ${res.status}`);
+  const suffix = sha1.slice(5);
+  return (await res.text()).split(/\r?\n/).some((line) => {
+    const [hash, count] = line.split(":");
+    return hash === suffix && Number(count) > 0;
+  });
+}
+
+export type SetPasswordResult =
+  | { ok: true; changed: boolean }
+  | { ok: false; status: number; code: string; message: string };
+
+/**
+ * A saved player adds (or changes) a password, for people who like them.
+ * Better Auth's `setPassword` is server-only and can't change an existing
+ * one without the old password, so this is ours, with the same guards as
+ * every other change to how a player signs in: saved players only, a real
+ * confirmed email (it's the username), confirmed within 5 minutes, breach
+ * check, and a notice email. Other devices stay signed in, as for passkeys.
+ */
+export async function setPlayerPassword(auth: Auth, headers: Headers, password: unknown): Promise<SetPasswordResult> {
+  const no = (status: number, code: string, message: string) => ({ ok: false as const, status, code, message });
+  const res = await auth.api.getSession({ headers });
+  if (!res) return no(401, "NO_SESSION", "Please sign in first.");
+  const user = res.user as RawUser;
+  if (user.isAnonymous) return no(400, "SAVE_FIRST", "Save your player first.");
+  const email = realEmail(user);
+  if (!email) return no(400, "NEEDS_EMAIL", "Add your email first: you'll sign in with your email and this password.");
+  if (Date.now() - new Date(res.session.createdAt).getTime() >= FRESH_SESSION_MS) {
+    return no(403, "SESSION_NOT_FRESH", "For safety, confirm it's you first.");
+  }
+  if (typeof password !== "string" || password.length < MIN_PASSWORD) {
+    return no(400, "PASSWORD_TOO_SHORT", "Use at least 10 characters. A short phrase works great.");
+  }
+  if (password.length > 128) return no(400, "PASSWORD_TOO_LONG", "That's a very long password. Keep it under 128 characters.");
+  try {
+    if (await passwordIsBreached(password)) {
+      return no(400, "PASSWORD_COMPROMISED", "That password has shown up in a data breach elsewhere. Please choose a different one.");
+    }
+  } catch (err) {
+    console.warn("[auth] breach check failed:", err);
+    return no(503, "CHECK_FAILED", "Couldn't check that password right now. Please try again in a minute.");
+  }
+  const ctx = await auth.$context;
+  const hash = await hashPassword(password);
+  const account = await ctx.internalAdapter.findCredentialAccount(user.id);
+  const changed = Boolean(account?.password);
+  if (!account) {
+    await ctx.internalAdapter.linkAccount({ userId: user.id, providerId: "credential", accountId: user.id, password: hash });
+  } else {
+    await ctx.internalAdapter.updatePassword(user.id, hash);
+  }
+  notify(user, changed ? "your password was changed" : "a password was added");
+  return { ok: true, changed };
 }
