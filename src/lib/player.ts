@@ -11,7 +11,7 @@
  */
 
 import { createAuthClient } from "better-auth/client";
-import { anonymousClient } from "better-auth/client/plugins";
+import { anonymousClient, emailOTPClient } from "better-auth/client/plugins";
 import { passkeyClient } from "@better-auth/passkey/client";
 
 const SYNC_URL: string = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
@@ -24,7 +24,7 @@ const AUTH_TIMEOUT_MS = 5_000;
 export const authClient = createAuthClient({
   baseURL: AUTH_URL,
   fetchOptions: { credentials: "include" },
-  plugins: [anonymousClient(), passkeyClient()],
+  plugins: [anonymousClient(), passkeyClient(), emailOTPClient()],
 });
 
 export interface Player {
@@ -159,7 +159,10 @@ export type AuthResult = { ok: true } | { ok: false; cancelled?: boolean; messag
 
 const CANCEL_CODES = /CANCEL|ABORT|NOT_ALLOWED|PASSTHROUGH/i;
 
-function fail(error: { code?: string; message?: string } | null | undefined, fallback: string): AuthResult {
+function fail(
+  error: { code?: string; message?: string; status?: number } | null | undefined,
+  fallback: string,
+): AuthResult {
   if (error?.code && CANCEL_CODES.test(error.code)) {
     return { ok: false, cancelled: true, message: "No worries, nothing changed." };
   }
@@ -168,6 +171,24 @@ function fail(error: { code?: string; message?: string } | null | undefined, fal
   }
   if (error?.code === "SESSION_NOT_FRESH") {
     return { ok: false, message: "For safety, sign in again first, then add this." };
+  }
+  if (error?.status === 429) {
+    return { ok: false, message: "That's a lot of tries. Take a breath and try again in a minute." };
+  }
+  if (error?.code === "INVALID_OTP" || error?.code === "OTP_EXPIRED" || error?.code === "TOO_MANY_ATTEMPTS") {
+    return {
+      ok: false,
+      message:
+        error.code === "INVALID_OTP"
+          ? "That code doesn't match. Check the latest email and try again."
+          : "That code has expired. Send a new one and you're set.",
+    };
+  }
+  if (error?.code === "INVALID_EMAIL_OR_PASSWORD") {
+    return { ok: false, message: "That email and password don't match. Try again, or get a code instead." };
+  }
+  if (error?.code === "PASSWORD_TOO_SHORT") {
+    return { ok: false, message: "Use at least 10 characters. A short phrase works great." };
   }
   return { ok: false, message: error?.message || fallback };
 }
@@ -204,15 +225,115 @@ export async function continueWithGoogle(): Promise<AuthResult> {
 }
 
 /** Linked ways in, for the account panel. */
-export async function listSignInMethods(): Promise<{ passkeys: number; google: boolean }> {
-  const [passkeys, accounts] = await Promise.all([
+export async function listSignInMethods(): Promise<{ passkeys: number; google: boolean; email: string | null; password: boolean }> {
+  const [passkeys, accounts, session] = await Promise.all([
     authClient.passkey.listUserPasskeys(),
     authClient.listAccounts(),
+    authClient.getSession({ query: { disableCookieCache: true } }),
   ]);
+  const user = session.data?.user as { email?: string; emailVerified?: boolean } | undefined;
+  const realEmail = user?.email && user.emailVerified && !user.email.endsWith(".invalid") ? user.email : null;
   return {
     passkeys: passkeys.data?.length ?? 0,
     google: Boolean(accounts.data?.some((a) => a.providerId === "google")),
+    email: realEmail,
+    password: Boolean(accounts.data?.some((a) => a.providerId === "credential")),
   };
+}
+
+// ── Email (codes first, password as the quiet alternative) ──────────────────
+
+/**
+ * After a sign-in: same player → just refresh. Different player (this device
+ * signed in to one saved elsewhere) → reload so the whole universe switches.
+ */
+async function settleSignIn(): Promise<AuthResult> {
+  const before = currentPlayer?.playerId;
+  const res = await authClient.getSession({ query: { disableCookieCache: true } });
+  const after = toPlayer(res.data?.user as SessionUser | undefined);
+  if (after && before && after.playerId !== before) {
+    window.location.reload();
+    return { ok: true };
+  }
+  if (after) setPlayer(after);
+  return { ok: true };
+}
+
+const cleanEmail = (email: string) => email.trim().toLowerCase();
+
+/** Step 1 of the email code: send a 6-digit code to this address. */
+export async function sendEmailCode(email: string): Promise<AuthResult> {
+  const res = await authClient.emailOtp.sendVerificationOtp({ email: cleanEmail(email), type: "sign-in" });
+  if (res.error) return fail(res.error, "Couldn't send the code. Please check the address and try again.");
+  return { ok: true };
+}
+
+/** Step 2: the code saves this player (new email) or signs in (known email). */
+export async function verifyEmailCode(email: string, code: string): Promise<AuthResult> {
+  const res = await authClient.signIn.emailOtp({ email: cleanEmail(email), otp: code.replace(/\D/g, "") });
+  if (res.error) return fail(res.error, "Couldn't check that code. Please try again.");
+  return settleSignIn();
+}
+
+/** Password sign-up. The email is confirmed by code next (`confirmEmail`). */
+export async function signUpWithPassword(email: string, password: string): Promise<AuthResult> {
+  const res = await authClient.signUp.email({ email: cleanEmail(email), password, name: "" });
+  if (res.error) return fail(res.error, "Couldn't create that. Please try again.");
+  return { ok: true };
+}
+
+/** Confirm the email of a password sign-up. Signs in and saves this player. */
+export async function confirmEmail(email: string, code: string): Promise<AuthResult> {
+  const res = await authClient.emailOtp.verifyEmail({ email: cleanEmail(email), otp: code.replace(/\D/g, "") });
+  if (res.error) return fail(res.error, "Couldn't check that code. Please try again.");
+  return settleSignIn();
+}
+
+/** Resend the confirmation code (never a sign-in code: that would drop the new password). */
+export async function resendConfirmCode(email: string): Promise<AuthResult> {
+  const res = await authClient.emailOtp.sendVerificationOtp({ email: cleanEmail(email), type: "email-verification" });
+  if (res.error) return fail(res.error, "Couldn't send the code. Please try again.");
+  return { ok: true };
+}
+
+/**
+ * Password sign-in. `needsCode` means the email was never confirmed: the
+ * server just sent a code, so the panel moves to `confirmEmail`.
+ */
+export async function signInWithPassword(email: string, password: string): Promise<AuthResult & { needsCode?: boolean }> {
+  const res = await authClient.signIn.email({ email: cleanEmail(email), password });
+  if (res.error) {
+    if (res.error.status === 403) return { ok: false, needsCode: true, message: "Almost there! We sent a code to confirm your email." };
+    return fail(res.error, "Couldn't sign in. Please try again.");
+  }
+  return settleSignIn();
+}
+
+/** Forgot password, step 1: email a reset code. Same reply whether or not the email exists. */
+export async function sendResetCode(email: string): Promise<AuthResult> {
+  const res = await authClient.emailOtp.requestPasswordReset({ email: cleanEmail(email) });
+  if (res.error) return fail(res.error, "Couldn't send the code. Please try again.");
+  return { ok: true };
+}
+
+/** Forgot password, step 2: new password, then sign in with it. */
+export async function resetPasswordWithCode(email: string, code: string, password: string): Promise<AuthResult> {
+  const res = await authClient.emailOtp.resetPassword({ email: cleanEmail(email), otp: code.replace(/\D/g, ""), password });
+  if (res.error) return fail(res.error, "Couldn't reset the password. Please try again.");
+  return signInWithPassword(email, password);
+}
+
+/** Saved players with no email yet (passkey only): add one, confirmed by code. */
+export async function sendAddEmailCode(email: string): Promise<AuthResult> {
+  const res = await authClient.emailOtp.requestEmailChange({ newEmail: cleanEmail(email) });
+  if (res.error) return fail(res.error, "Couldn't send the code. Please try again.");
+  return { ok: true };
+}
+export async function confirmAddEmail(email: string, code: string): Promise<AuthResult> {
+  const res = await authClient.emailOtp.changeEmail({ newEmail: cleanEmail(email), otp: code.replace(/\D/g, "") });
+  if (res.error) return fail(res.error, "Couldn't check that code. Please try again.");
+  await refreshPlayer();
+  return { ok: true };
 }
 
 /** Sign out of this device. The next visit starts a fresh anonymous player. */

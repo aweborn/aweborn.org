@@ -19,10 +19,11 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { anonymous } from "better-auth/plugins";
+import { anonymous, emailOTP, haveIBeenPwned } from "better-auth/plugins";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { passkey, getAuthenticatorName } from "@better-auth/passkey";
+import { codeEmail, emailEnabled, existingAccountEmail, sendEmail } from "./email.js";
 
 /** Browser origins allowed to call the auth API with credentials. */
 export const TRUSTED_ORIGINS = [
@@ -69,14 +70,17 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? "";
 const GOOGLE_ENABLED = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
 
+/** Email codes (sign-in, verify, reset) last this long. */
+const CODE_MINUTES = 10;
+
 /** Which sign-in methods the client should offer (GET /api/auth/methods). */
 export function authMethods(auth: Auth | null) {
   return {
     enabled: auth !== null,
     passkey: auth !== null,
     google: auth !== null && GOOGLE_ENABLED,
-    // Magic link + email/password land once SES is set up (Phase 08 I4/I7).
-    email: false,
+    // Email code + email/password: on whenever mail can be sent (SES in prod).
+    email: auth !== null && emailEnabled,
   };
 }
 
@@ -96,6 +100,9 @@ const SENSITIVE_PATHS = new Set([
   "/unlink-account",
   "/delete-user",
   "/change-email",
+  "/change-password",
+  "/email-otp/request-email-change",
+  "/email-otp/change-email",
 ]);
 
 /** Readable label for the OS passkey picker (instead of a random placeholder). */
@@ -153,6 +160,22 @@ function buildOptions(db: Database.Database) {
       },
     },
 
+    // Email + password: a quieter alternative to the email code. The email is
+    // always confirmed with a code first (emailOTP overrides verification).
+    emailAndPassword: {
+      enabled: emailEnabled,
+      requireEmailVerification: true,
+      minPasswordLength: 10,
+      revokeSessionsOnPasswordReset: true,
+      onExistingUserSignUp: async ({ user }) => {
+        void sendEmail(existingAccountEmail(user.email));
+      },
+    },
+    emailVerification: {
+      // Confirming the email (on the device that signed up) saves the player.
+      autoSignInAfterVerification: true,
+    },
+
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         if (!SENSITIVE_PATHS.has(ctx.path)) return;
@@ -186,7 +209,18 @@ function buildOptions(db: Database.Database) {
     databaseHooks: {
       user: {
         create: {
-          before: async (user) => ({ data: { ...user, playerId: randomUUID() } }),
+          before: async (user, ctx) => {
+            // Saving an anonymous player (any method: email code, password
+            // sign-up, Google): the new account IS that player, from birth.
+            // Covers sign-ups confirmed later, which never pass `onLinkAccount`.
+            let playerId: string = randomUUID();
+            if (ctx && !(user as { isAnonymous?: boolean | null }).isAnonymous) {
+              const session = await getSessionFromCtx(ctx).catch(() => null);
+              const anon = session?.user as { isAnonymous?: boolean | null; playerId?: string | null } | undefined;
+              if (anon?.isAnonymous && anon.playerId) playerId = anon.playerId;
+            }
+            return { data: { ...user, playerId } };
+          },
           after: async (user) => {
             if (!(user as { isAnonymous?: boolean | null }).isAnonymous) rememberNewAccount(user.id);
           },
@@ -235,6 +269,33 @@ function buildOptions(db: Database.Database) {
           },
         },
       }),
+      ...(emailEnabled
+        ? [
+            emailOTP({
+              // Codes, not magic links: typed on the device being saved (a link
+              // would sign in whichever browser opens the email), and a
+              // stranger can't bind someone's inbox to their own device.
+              sendVerificationOTP: async ({ email, otp, type }) => {
+                void sendEmail(codeEmail(email, otp, type, CODE_MINUTES)); // not awaited: no timing oracle
+              },
+              otpLength: 6,
+              // Local UI tests only: a known code. Never in production.
+              ...(!IS_PROD && process.env.DEV_FIXED_OTP ? { generateOTP: () => process.env.DEV_FIXED_OTP } : {}),
+              expiresIn: CODE_MINUTES * 60,
+              allowedAttempts: 5,
+              storeOTP: "hashed",
+              overrideDefaultEmailVerification: true,
+              sendVerificationOnSignUp: true,
+              // Passkey-only players add a real email by "changing" their
+              // placeholder one (no code to the placeholder: it can't receive).
+              changeEmail: { enabled: true, verifyCurrentEmail: false },
+            }),
+            haveIBeenPwned({
+              customPasswordCompromisedMessage:
+                "That password has shown up in a data breach elsewhere. Please choose a different one.",
+            }),
+          ]
+        : []),
       anonymous({
         // `player-<id>@aweborn.invalid`: readable in the OS passkey picker,
         // and `.invalid` can never be a real mailbox.
@@ -242,12 +303,17 @@ function buildOptions(db: Database.Database) {
         onLinkAccount: async ({ anonymousUser, newUser, ctx }) => {
           const anonPlayerId = anonymousUser.user.playerId as string | undefined;
           if (!anonPlayerId) return;
-          if (takeNewAccount(newUser.user.id)) {
-            // Brand-new account: it simply becomes this player.
+          const isNew = takeNewAccount(newUser.user.id);
+          if (newUser.user.playerId === anonPlayerId) {
+            // Already inherited at creation (user.create.before).
+            console.log(`[auth] linked anonymous player ${anonPlayerId} to a new account`);
+          } else if (isNew) {
+            // Fallback: brand-new account created without the anonymous
+            // session in context. It simply becomes this player.
             await ctx.context.internalAdapter.updateUser(newUser.user.id, {
               playerId: anonPlayerId,
             });
-            console.log(`[auth] linked anonymous player ${anonPlayerId} to a new account`);
+            console.log(`[auth] linked anonymous player ${anonPlayerId} to a new account (fallback)`);
           } else {
             // Signed in to an existing player from an anonymous device. The
             // existing playerId wins; merging the anonymous World Index is I5.

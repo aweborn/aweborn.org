@@ -21,6 +21,7 @@ import {
   type AuthResult,
 } from '../lib/player'
 import { canPromptNow, onMeaningfulMoment, recordPrompted, trackPlaytime } from '../lib/onramp'
+import { EmailSignIn } from './EmailSignIn'
 
 type Busy = null | 'passkey-save' | 'passkey-signin' | 'google' | 'signout'
 
@@ -56,14 +57,15 @@ const PasskeyMark = () => (
 export function PlayerAccount() {
   const player = usePlayer()
   const [methods, setMethods] = useState<AuthMethods | null>(null)
-  const [linked, setLinked] = useState<{ passkeys: number; google: boolean } | null>(null)
+  const [linked, setLinked] = useState<{ passkeys: number; google: boolean; email: string | null; password: boolean } | null>(null)
   const [nudge, setNudge] = useState(false)
   const [busy, setBusy] = useState<Busy>(null)
   const [status, setStatus] = useState<{ tone: 'info' | 'error' | 'success'; text: string } | null>(null)
+  const [addingEmail, setAddingEmail] = useState(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   const isAnonymous = player?.isAnonymous ?? false
-  const canSave = Boolean(methods?.enabled && (methods.passkey || methods.google))
+  const canSave = Boolean(methods?.enabled && (methods.passkey || methods.google || methods.email))
 
   useEffect(() => {
     void fetchAuthMethods().then(setMethods)
@@ -95,6 +97,7 @@ export function PlayerAccount() {
   const open = useCallback(() => {
     setNudge(false)
     setStatus(null)
+    setAddingEmail(false)
     refreshLinked()
     dialogRef.current?.showModal()
   }, [refreshLinked])
@@ -148,6 +151,11 @@ export function PlayerAccount() {
 
   const hasPasskey = (linked?.passkeys ?? 0) > 0
   const hasGoogle = linked?.google ?? false
+  const emailDone = (message: string) => {
+    setAddingEmail(false)
+    setStatus({ tone: 'success', text: message })
+    refreshLinked()
+  }
 
   return (
     <>
@@ -195,7 +203,7 @@ export function PlayerAccount() {
             <h2 id="pa-title" className="pa-title">{isAnonymous ? 'Save your player' : 'Your player'}</h2>
             <p className="pa-sub">
               {isAnonymous
-                ? 'Keep your worlds and cards on every device. No password, no email needed. You can keep playing either way.'
+                ? 'Keep your worlds and cards on every device. No password needed. You can keep playing either way.'
                 : 'Your player is saved. Sign in on any device to pick up where you left off.'}
             </p>
           </div>
@@ -228,6 +236,13 @@ export function PlayerAccount() {
               )}
               {methods?.passkey && (
                 <p className="pa-hint">Face ID, fingerprint, or your screen lock. Works with your phone too.</p>
+              )}
+
+              {methods?.email && (
+                <>
+                  {(methods.passkey || methods.google) && <div className="pa-divider"><span>or use your email</span></div>}
+                  <EmailSignIn mode="save" disabled={busy !== null} onDone={emailDone} />
+                </>
               )}
 
               {methods?.passkey && (
@@ -286,7 +301,35 @@ export function PlayerAccount() {
                     )}
                   </li>
                 )}
+                {methods?.email && (
+                  <li className={linked?.email ? 'is-on' : ''}>
+                    <svg className="pa-btn-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="5" width="18" height="14" rx="3" />
+                      <path d="m4 7 8 6 8-6" />
+                    </svg>
+                    <span className="pa-linked-label" title={linked?.email ?? undefined}>
+                      {linked?.email ?? 'Email'}
+                    </span>
+                    {linked?.email ? (
+                      <span className="pa-check" aria-label="linked">✓</span>
+                    ) : (
+                      <button
+                        type="button"
+                        id="player-add-email"
+                        className="pa-link"
+                        disabled={busy !== null}
+                        aria-expanded={addingEmail}
+                        onClick={() => setAddingEmail(!addingEmail)}
+                      >
+                        {addingEmail ? 'Cancel' : 'Add'}
+                      </button>
+                    )}
+                  </li>
+                )}
               </ul>
+              {addingEmail && !linked?.email && (
+                <EmailSignIn mode="add" disabled={busy !== null} onDone={emailDone} />
+              )}
               {hasPasskey && methods?.passkey && (
                 <button
                   type="button"

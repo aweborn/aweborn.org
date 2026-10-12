@@ -19,7 +19,7 @@
 
     <main>
       <h1>Privacy Policy</h1>
-      <p class="updated">Last updated: October 11, 2026</p>
+      <p class="updated">Last updated: October 12, 2026</p>
 
       <p class="lede">Aweborn is a non-profit. We collect only what the game needs to work, we never sell your information, and there are no ads or tracking.</p>
 
@@ -31,6 +31,7 @@
         <li><strong>Sessions.</strong> We store a sign-in cookie for sync.aweborn.org so you stay the same player when you come back. With each session we record the IP address and browser type, to keep accounts secure and to spot abuse.</li>
         <li><strong>If you save your player with Google</strong>, Google shares your name, email address and profile picture with us. We use them only to sign you in and to show you which methods are linked. We never post anything to your Google account.</li>
         <li><strong>If you save your player with a passkey</strong>, we store the passkey’s public key and a device label. Your fingerprint, face or PIN never leaves your device; we never see it.</li>
+        <li><strong>If you save your player with your email</strong>, we store your email address and use it only to send you sign-in codes and important notices about your player. We never send marketing. If you also choose a password, we store only a secure hash of it, never the password itself.</li>
         <li><strong>What you create.</strong> Worlds, objects and other content you build are stored on our servers and are visible to other players.</li>
         <li><strong>Live presence.</strong> While you play, your position and player colour are shared in real time with other players nearby. We don’t keep a history of where you moved.</li>
         <li><strong>On your device.</strong> We keep a few settings in your browser’s local storage, for example whether we’ve already reminded you to save your player and how long you’ve played. They stay on your device.</li>
@@ -48,9 +49,10 @@
 
       <h2>Who else handles it</h2>
       <ul>
-        <li><strong>Amazon Web Services</strong>: hosting, content delivery and encrypted backups (US).</li>
+        <li><strong>Amazon Web Services</strong>: hosting, content delivery, encrypted backups, and sending our emails through Amazon SES (US).</li>
         <li><strong>Google</strong>: only if you choose “Continue with Google”. Our pages also load fonts from Google Fonts, which sees your IP address.</li>
         <li><strong>Stripe</strong>: only if you donate.</li>
+        <li><strong>Have I Been Pwned</strong>: if you choose a password, we check whether it has appeared in a known data breach. Only the first 5 characters of a hash of it are sent, so the service never learns your password.</li>
       </ul>
       <p>We may also disclose information if the law requires it, or to protect players and the public from harm.</p>
 
@@ -71,7 +73,7 @@
       </ul>
 
       <h2>Security</h2>
-      <p>All traffic is encrypted (HTTPS). We don’t store passwords for Google or passkey sign-in. Backups are encrypted and access is restricted. No system is perfect, but we work to protect what you trust us with.</p>
+      <p>All traffic is encrypted (HTTPS). Sign-in codes expire after 10 minutes and are stored only as hashes. Passwords are stored only as secure hashes, and we don’t store any password for Google or passkey sign-in. Backups are encrypted and access is restricted. No system is perfect, but we work to protect what you trust us with.</p>
 
       <h2>Age</h2>
       <p>Aweborn contains content made by other players and is meant for people <strong>18 and older</strong>. We don’t knowingly collect information from children. If you think a child has given us information, contact us and we’ll delete it.</p>
@@ -80,7 +82,7 @@
       <p>If we change this policy, we’ll update the date above. If a change is significant, we’ll let you know in the game.</p>
 
       <h2>Contact</h2>
-      <p>Questions or requests: <a href="mailto:privacy@aweborn.org" id="privacy-contact">privacy@aweborn.org</a></p>
+      <p>Questions or requests about your privacy: <a href="mailto:privacy@aweborn.org" id="privacy-contact">privacy@aweborn.org</a>. Anything else: <a href="mailto:hello@aweborn.org" id="hello-contact">hello@aweborn.org</a>. A real person reads every message.</p>
     </main>
 
     <footer>

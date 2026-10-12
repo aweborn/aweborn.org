@@ -74,6 +74,22 @@ spec:
                   name: aweborn-secrets
                   key: GOOGLE_CLIENT_SECRET
                   optional: true
+            # Email sign-in codes via SES as hello@aweborn.org (IAM user
+            # aweborn-mail-sender, infra/cloudformation-mail.yml). Missing = email hidden.
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
           volumeMounts:
             - name: sync-data
               mountPath: /data
