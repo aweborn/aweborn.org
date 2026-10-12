@@ -34,7 +34,7 @@ The runtime spots:
 | `TailscaleOAuthSecret` | 2 (`aweborn-vps`) | VPS first boot only (joins the Tailnet) | Tailscale admin → OAuth clients (scope `auth_keys`, tag `tag:server`) | `infra/set-tailscale-secret.sh` | Create a new OAuth client |
 | `VPS_SSH_KEY` | 3 | `deploy.yml` (forced-command deploy key) | `ssh-keygen`; public half in `infra/vps/ci-authorized-keys` | New keypair → update both halves | Regenerate |
 | `VPS_BACKUP_SSH_KEY` | 3 | `backup.yml` (read-only, forced-command) | same as above | same as above | Regenerate |
-| `lightsail-default.pem` | 4 (`~/.ssh`) | you → `ssh ubuntu@aweborn-vps` | Lightsail console → Account → SSH keys | Download again / new default key | Re-download (Tailscale SSH also works) |
+| `AWEBORN_VPS_ADMIN_SSH_KEY.pem` (Lightsail default key; copy also at `~/.ssh/lightsail-default.pem`) | 4 (`~/keys`, used by `set-secret.sh`) | you → `ssh ubuntu@aweborn-vps` | Lightsail console → Account → SSH keys | Download again / new default key | Re-download (Tailscale SSH also works) |
 | AWS CLI session | 4 (`aws login`) | you → every `aws` / `infra/*.sh` command | AWS console sign-in | Expires on its own | Sign in again |
 | `AWEBORN_MAIL_FORWARD_TO` | 2 (`aweborn-mail` param `ForwardTo`) | mail forwarder (where hello@/privacy@ land) | your inbox | Edit the file, redeploy the stack with `ForwardTo="$(cat ~/keys/AWEBORN_MAIL_FORWARD_TO.txt)"` | Private, not secret |
 
@@ -52,7 +52,8 @@ CI reaches AWS through OIDC roles, so there are **no AWS keys in GitHub**. Tails
 | Service env | `PORT`, `HOST`, `DB_PATH`, `NODE_ENV`, `BETTER_AUTH_URL`, `AWS_REGION`, `LLM_MODEL`, `LLM_API_URL`, backup `KEEP_*`: `value:` in `infra/k3s/*-deployment.yaml` | pods |
 | Frontend | `VITE_SYNC_URL`, `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY` (publishable, safe): `.env`, `.env.production` | Vite build |
 | CI role ARNs | `AWS_BACKUP_ROLE_ARN`, `AWS_INFRA_PREVIEW_ROLE_ARN`: GitHub repo **variables**; `VPS_KNOWN_HOST` pin: variable | workflows |
-| ⚠ Stored as GitHub *secrets* but really parameters | `AWS_REGION`, `AWS_ROLE_ARN`, `CLOUDFRONT_DISTRIBUTION_ID`, `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE` | `deploy.yml`, `backup.yml`. **To do:** move them into the workflow files (plaintext) |
+| Deploy role / region / CDN | `arn:aws:iam::111551045759:role/github-actions-deploy`, `us-east-1`, CloudFront `E3Q49I3A6Q6RH`: plaintext in `deploy.yml`, `backup.yml` | workflows |
+| ⚠ Stored as GitHub *secrets* but really parameters | `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE` | `deploy.yml`, `backup.yml`. **To do:** inline once the values are read from the Tailscale admin |
 
 ## Local dev
 

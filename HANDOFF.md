@@ -170,7 +170,7 @@ aws cloudformation deploy \
 
 ```bash
 # SSH into VPS — Tailnet only (public port 22 closed 2026-10-03)
-ssh -i ~/.ssh/lightsail-default.pem ubuntu@aweborn-vps
+ssh -i ~/keys/AWEBORN_VPS_ADMIN_SSH_KEY.pem ubuntu@aweborn-vps
 # Break-glass if Tailscale is down: Lightsail console → aweborn-vps → "Connect using SSH"
 # (browser SSH is the only public source allowed on port 22, via the lightsail-connect alias)
 # Tagged tag:server (2026-10-11), so its node key never expires. Don't untag it.

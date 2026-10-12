@@ -21,7 +21,7 @@ set -euo pipefail
 umask 077
 
 VPS="${VPS:-ubuntu@aweborn-vps}"
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/lightsail-default.pem}"
+SSH_KEY="${SSH_KEY:-${AWEBORN_KEYS_DIR:-$HOME/keys}/AWEBORN_VPS_ADMIN_SSH_KEY.pem}"
 NS=aweborn
 SECRET=aweborn-secrets
 SES_USER=aweborn-mail-sender

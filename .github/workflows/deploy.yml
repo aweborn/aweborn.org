@@ -164,8 +164,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          role-to-assume: arn:aws:iam::111551045759:role/github-actions-deploy
+          aws-region: us-east-1
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -181,4 +181,4 @@ jobs:
       - name: Deploy static site to S3 bucket
         run: |
           aws s3 sync ./dist/ s3://aweborn-website-content --delete
-          aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths '/*'
+          aws cloudfront create-invalidation --distribution-id E3Q49I3A6Q6RH --paths '/*'
