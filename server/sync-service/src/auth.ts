@@ -215,7 +215,11 @@ function buildOptions(db: Database.Database) {
         // Google later is always a "different email". Explicit links only
         // (requires the player's own session).
         allowDifferentEmails: true,
-        trustedProviders: ["google"],
+        // No `trustedProviders`: a Google account links (explicitly, or by
+        // Better Auth's same-email implicit link) only if Google says its
+        // email is verified. Trusting Google would also link Google accounts
+        // registered under an unconfirmed, non-Gmail address: a takeover path.
+        // Gmail addresses are always verified, so nobody real notices.
       },
     },
 
