@@ -1633,6 +1633,10 @@ html, body, #root {
   width: min(26rem, calc(100vw - 2rem));
   max-height: calc(100dvh - 2rem);
   padding: 0;
+  /* Lives inside .hud-overlay (pointer-events: none), which the top layer
+     still inherits. Without this, every click falls through and light-dismiss
+     closes the dialog before any button fires. */
+  pointer-events: auto;
   color: var(--color-text-primary);
   background: transparent;
   border: none;
