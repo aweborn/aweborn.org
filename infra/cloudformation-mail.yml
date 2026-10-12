@@ -8,7 +8,7 @@ Description: >
   Deploy:
     aws cloudformation deploy --stack-name aweborn-mail \
       --template-file infra/cloudformation-mail.yml --capabilities CAPABILITY_NAMED_IAM \
-      --parameter-overrides ForwardTo=<private inbox>
+      --parameter-overrides ForwardTo="$(cat ~/keys/AWEBORN_MAIL_FORWARD_TO.txt)"
     aws ses set-active-receipt-rule-set --rule-set-name aweborn-inbound   # once; CFN can't activate it
   The sender's access key is created out-of-band (aws iam create-access-key
   --user-name aweborn-mail-sender) and piped straight into the k8s secret;

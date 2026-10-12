@@ -4,16 +4,16 @@ Every **secret**, **key** and **parameter** Aweborn depends on: what it is, wher
 
 ## The two kinds
 
-| | **Parameters** | **Secrets & keys** |
+| | **Parameters** | **Keys** (secrets, credentials, anything private) |
 |---|---|---|
-| What | Anything that isn't dangerous if public: region, hosted-zone ID, role ARNs, distribution IDs, bucket names, ports, domains, model names | Anything that grants access: API keys, OAuth client secrets, signing secrets, private SSH keys, access keys |
+| What | Anything fine to publish: region, hosted-zone ID, role ARNs, distribution IDs, bucket names, ports, domains, model names | Anything that grants access *or* is private: API keys, OAuth client secrets, signing secrets, private SSH keys, access keys, personal email addresses |
 | Source of truth | **Plaintext in the repo that uses it** (template `Default:`, manifest `value:`, workflow file, `.env*`) | **`~/keys`**: a private, backed-up folder outside every repo (override with `AWEBORN_KEYS_DIR`). Files are `AWEBORN_<KEY>.txt` (or a descriptive name), permissions 600 |
-| Deployed to | Wherever it's read; it ships with the code | Its runtime spot (k8s secret, CloudFormation `NoEcho`, GitHub secret, Lambda), always **copied from `~/keys`**, never typed fresh |
+| Deployed to | Wherever it's read; it ships with the code | Its runtime spot (k8s secret, CloudFormation `NoEcho` or deploy-time parameter, GitHub secret, Lambda), always **read from `~/keys`**, never typed fresh |
 | Rule | Don't hide it. Hidden parameters (e.g. in GitHub *secrets*) just make rebuilds harder | Never on a command line, in shell history, in a repo, or in a CloudFormation output. Pipe it over stdin |
 
-**Private but not secret** (personal, e.g. your inbox): pass it as a deploy-time parameter and keep it out of the public repo. Example: `ForwardTo` on `aweborn-mail`.
+**Goal: one-touch recovery.** Mount `~/keys`, run the provisioning scripts, and everything comes back. If something needs a value found neither in the repo nor in `~/keys`, that's a gap: add it to one of them.
 
-## Secrets & keys
+## Keys
 
 The runtime spots:
 
@@ -36,6 +36,7 @@ The runtime spots:
 | `VPS_BACKUP_SSH_KEY` | 3 | `backup.yml` (read-only, forced-command) | same as above | same as above | Regenerate |
 | `lightsail-default.pem` | 4 (`~/.ssh`) | you → `ssh ubuntu@aweborn-vps` | Lightsail console → Account → SSH keys | Download again / new default key | Re-download (Tailscale SSH also works) |
 | AWS CLI session | 4 (`aws login`) | you → every `aws` / `infra/*.sh` command | AWS console sign-in | Expires on its own | Sign in again |
+| `AWEBORN_MAIL_FORWARD_TO` | 2 (`aweborn-mail` param `ForwardTo`) | mail forwarder (where hello@/privacy@ land) | your inbox | Edit the file, redeploy the stack with `ForwardTo="$(cat ~/keys/AWEBORN_MAIL_FORWARD_TO.txt)"` | Private, not secret |
 
 CI reaches AWS through OIDC roles, so there are **no AWS keys in GitHub**. Tailscale in CI uses workload identity, so there's no stored Tailscale secret either.
 
@@ -52,7 +53,6 @@ CI reaches AWS through OIDC roles, so there are **no AWS keys in GitHub**. Tails
 | Frontend | `VITE_SYNC_URL`, `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY` (publishable, safe): `.env`, `.env.production` | Vite build |
 | CI role ARNs | `AWS_BACKUP_ROLE_ARN`, `AWS_INFRA_PREVIEW_ROLE_ARN`: GitHub repo **variables**; `VPS_KNOWN_HOST` pin: variable | workflows |
 | ⚠ Stored as GitHub *secrets* but really parameters | `AWS_REGION`, `AWS_ROLE_ARN`, `CLOUDFRONT_DISTRIBUTION_ID`, `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE` | `deploy.yml`, `backup.yml`. **To do:** move them into the workflow files (plaintext) |
-| Private parameter | `ForwardTo` (`aweborn-mail`): your inbox, passed at deploy time (`$(git config user.email)`) | mail forwarder |
 
 ## Local dev
 
