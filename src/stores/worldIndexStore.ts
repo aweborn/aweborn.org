@@ -379,8 +379,9 @@ function onEnterWorld(worldId: string): void {
 }
 
 /**
- * Landed next to a world by link or card tap (TeleportSystem): sighted,
- * method "link". Entering it afterwards (`?a=in`) makes it visited.
+ * Teleported to a world by link or card tap (TeleportSystem): sighted,
+ * method "link". The teleport then enters it, which makes it visited
+ * (Origin has no interior, so it stays sighted).
  */
 export function recordArrival(world: WorldLookup): void {
   if (!owner) {

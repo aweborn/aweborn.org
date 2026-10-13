@@ -25,7 +25,7 @@ const artPath = path.resolve(root, process.argv[2] ?? "cards/samples/origin-tunn
 const artHref = `data:image/jpeg;base64,${(await readFile(artPath)).toString("base64")}`;
 const sample = {
   id: "5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7", name: "Origin", creator: "aweborn",
-  coords: "(0, 0, 0)", sector: "0:0:0", setName: "Origin Set", setNumber: "", arrival: "orbit", artHref,
+  coords: "(0, 0, 0)", sector: "0:0:0", setName: "Origin Set", setNumber: "", artHref,
 };
 
 const variants = [

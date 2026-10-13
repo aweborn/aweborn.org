@@ -13,9 +13,9 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 | Concept | Decision |
 |---------|----------|
-| URL | `https://aweborn.org/w/<uuidv4>`, optional `?a=in` arrival param |
+| URL | `https://aweborn.org/w/<uuidv4>` (no params; `?a=in` on older links is ignored) |
 | World IDs | **Migrate from 5-char random → UUIDv4** (`crypto.randomUUID()`) before any card is printed |
-| Arrival | Configurable per card via URL param; **default = orbit** (`?a=in` = drop inside the world) |
+| Arrival | **Every card and link lands the player inside the world**, like opening a game pack: tap and you're in (Alex, 2026-10-13; replaces per-card orbit/inside modes). Origin has no interior, so its card arrives at the portal |
 | Card front | World art, name, creator, coordinates + sector, set name + set number |
 | Card back | **Static Aweborn logo design, identical on every card** |
 | Chip | NTAG213 (≈60-byte payload fits in its 144 bytes), NDEF URI record, **locked read-only** |
@@ -80,7 +80,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 ### Client Route & Teleport
 - `[x]` Parse `window.location.pathname` for `/w/<uuid>` on boot (`parseTeleportLink()` in shared, no router)
-- `[x]` Parse `?a=` arrival param: `in` → inside, anything else / missing → orbit (`in` on Origin falls back to orbit)
+- `[x]` Arrival: every link enters its world (Origin: the portal). *(2026-10-13: the `?a=` param is gone; older `?a=in` links still work)*
 - `[x]` Create `src/systems/TeleportSystem.ts`: fetch world → set player position near `resolvedPosition` (universe doc is not sector-filtered, so no extra subscription needed)
 - `[x]` Orbit arrival: player placed 2.5u from the world (inside the orbit-capture band), facing it; Origin at 6u
 - `[x]` Inside arrival: calls `enterWorld` after the arrival flash (700 ms)
@@ -222,7 +222,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[ ]` Pick the Origin art (painted candidates in `cards/samples/origin-*.jpg`, compare sheet `cards/explore/origin-compare.png`) and put the portal's real UUID into the card build
 - `[ ]` Small pilot run (~10-50 cards)
 - `[ ]` Test matrix: iPhone (locked screen, unlocked, Safari default, PWA installed), Android (Chrome, Samsung Internet), phone cases, tap position on card
-- `[ ]` Test arrival modes (`orbit`, `?a=in`) + first discovery + repeat tap
+- `[ ]` Test arrival (lands inside; Origin at the portal) + first discovery + repeat tap
 
 ---
 
@@ -247,7 +247,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[ ]` Moderation: review world name/art before printing (printed content is permanent)
 
 ### Organizations & Events
-- `[ ]` Bulk order path for events (large quantities, `?a=in` default)
+- `[ ]` Bulk order path for events (large quantities)
 - `[ ]` One-page "How to use Aweborn cards at your event" guide
 
 ---
@@ -255,7 +255,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 ## Acceptance Criteria
 
 - [ ] `https://aweborn.org/w/<uuidv4>` teleports a player to that world from a cold start and from an already-open session
-- [ ] Default arrival = captured orbit; `?a=in` = drops inside the world
+- [ ] Every card lands inside its world (Origin: at the portal)
 - [ ] All world IDs are UUIDv4; no legacy short IDs remain (or legacy is explicitly supported)
 - [ ] World Index persists across tab closes and page reloads
 - [ ] First discovery generates awe into the universal pool and shows the card-reveal moment; repeat visits don't
@@ -341,3 +341,4 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | 2026-10-12 | **World Index client built and DEPLOYED (`b1ba425`, CI green; ROADMAP World Index section + stale open questions refreshed with Alex's OK).** `worldIndexStore.ts` (100 u sighting scan, offline queue replayed with original times, optimistic visits, server merge keeps local visits until confirmed, backoff on 429/offline/auth), `WorldCard.tsx` (HTML replica of the physical front, Jost, tilt + glare, face-down = `/cards/back.svg`, now also written by `build-back.mjs`), `WorldIndex.tsx` (HUD chip + **M**, `<dialog>` grid with All/Visited/Sighted, detail: found/visits/where, **Warp here**, **Copy link**), `CardReveal.tsx` (flip → caption → flies to the chip). `WarpSystem.lockRemote()` (no range cancel, snap on arrival). **Deviations:** localStorage instead of IndexedDB; generated orb art instead of the live mini-render (follow-up); **Origin shows face-up once sighted** (no interior to enter; proposal); `/worlds/:id` adds `creator` and `/api/player/me` index entries carry `world` meta (name/colour/creator/position), since the client only holds nearby sectors; HUD now re-renders on warp phase/charge changes (it went stale while stationary). Verified: tsc, oxlint, browser (Origin first-card reveal, grid/filters/detail, far lock "Far Lantern 3,010 u", `?a=in` link → face-up ×1 + "New card" reveal, DB rows). | Alex: review, try a hold-K warp from the index → commit + deploy (additive API, no schema change). Then: sets/progress, live mini-render, audio cue, character names |
 | 2026-10-13 | **Alex tested the World Index in prod: all good, except K sometimes needed a second press after a full charge.** Cause: input edges are computed per render frame but `warpSystem.update()` runs per fixed 60 Hz physics step, so on a 120 Hz display a K release on a frame with no step was lost (also J/Esc could be dropped, or doubled at low fps). Pre-existing in all K warps. Fix: charging ends on the held state (`!actions.warp`), and J/Esc are latched per frame (`warpSystem.captureInput()`) and consumed by the next step. | 8B follow-ups: sets/progress, live mini-render art, audio cue, character names |
 | 2026-10-13 | **8B follow-ups (part 1) + Phase 05 design session opened** (Alex answers mana questions in parallel; see [05-mana-economy.md](./05-mana-economy.md)). Built: **live mini-render** card art (`src/lib/cardArt.ts`, shared offscreen renderer, scene shaders; still in grid, live on hover/detail/reveal; `WorldIndexWorld.solidified` added on server `/api/player/me`, `/worlds/:id` lookups and client snapshots); **dev overlay retired in prod** (hidden by default, no world list; still mounted for the sync connection); **awe hook stub** (`awe.ts`, `onFirstDiscovery` from `joinWorld` with `companions`). 8A copy-link bonus closed (World Index detail has it). Verified: tsc (client + server), oxlint (no new warnings), browser on a scratch sync-service (port 1235, scratch DB; the Docker container on 1234 speaks an old protocol and was left alone): 3 ghost worlds → grid art, hover, detail, reveal, no console errors. **Not committed.** Held for Alex: audio cue (would be the game's first sound + needs a mute), sets/progress (what is a set?), character names. | Alex: review → commit + deploy (additive, no migration). Answer mana Q1–Q3 + the 8B questions |
+| 2026-10-13 | **Cards land inside (Alex: "like a game pack, tap and you're in").** `parseTeleportLink()` no longer reads `?a=`; `ArrivalMode` removed; `TeleportSystem` always enters the world after the arrival flash (Origin, with no interior, arrives at the portal). Older `?a=in` links still work (query ignored). Card scripts' `worldUrl(id)` drops the param (the printed Origin URL is unchanged). Every mention of orbit arrival replaced, **including ROADMAP** (Alex: "overwrite all mentions"), PLAN, HANDOFF and this file. Tests (9/9), tsc and lint clean. Also pushed and deployed the morning's card art + legal pages. | Levels design (Phase 05) in a new conversation; 8B follow-ups (audio cue, sets/progress, character names) |

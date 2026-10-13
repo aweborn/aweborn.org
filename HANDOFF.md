@@ -88,7 +88,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 
 - World IDs are lowercase UUIDv4 (`isWorldId()` in `shared/crdt-schema.ts`), e.g. `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7`.
 - **Origin** (the Aweborn Portal at `(0, 0, 0)`) is a real world with permanent ID `5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7` (`ORIGIN_WORLD_ID`). The server seeds it on boot; the client hides it from `worlds` since the portal has its own rendering.
-- Arrival: default = orbit; `?a=in` = drop inside (ignored for Origin).
+- Arrival: every link lands **inside** its world (Origin: at the portal, no interior). Query strings are ignored, so older `?a=in` links still work.
 - Lookup: `GET https://sync.aweborn.org/worlds/<id>` → `200 {id,name,color,solidified,sector,position,isOrigin}`, `400 invalid_id`, `404 not_found` (shown as "This world has faded"). CORS allows aweborn.org, localhost, and `CORS_ORIGINS`.
 - After handling the link, the client resets the URL to `/`. CloudFront serves `index.html` for unknown paths, so no infra is involved.
 

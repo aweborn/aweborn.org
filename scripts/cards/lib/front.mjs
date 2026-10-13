@@ -24,9 +24,12 @@ export const C = {
   qrInk: "#18181b",
 };
 
-/** Permanent public card URL (Card Invariant: never change this format). */
-export function worldUrl(id, arrival) {
-  return `https://aweborn.org/w/${id}${arrival === "in" ? "?a=in" : ""}`;
+/**
+ * Permanent public card URL (Card Invariant: never change this format).
+ * Every card lands the player inside its world (Origin: at the portal).
+ */
+export function worldUrl(id) {
+  return `https://aweborn.org/w/${id}`;
 }
 
 /**
@@ -38,7 +41,6 @@ export function worldUrl(id, arrival) {
  * @param {string} w.sector      e.g. "4:-1:12"
  * @param {string} w.setName     e.g. "ORIGIN SET"
  * @param {string} [w.setNumber] e.g. "01 / 12" (padded to the set's width); omit/empty for single-card sets
- * @param {"orbit"|"in"} [w.arrival]
  * @param {string} [w.artHref]  data URI of raster world art, cropped to fill the window
  * @param {string} [w.artSvg]   OR vector art: SVG markup in a 55 × 45 coordinate space
  * @param {object} [opts]
@@ -58,7 +60,7 @@ export function renderFront(w, { numbers = "jost", colors = {}, smallWght = 450,
   const art = w.artSvg
     ? `<svg x="7" y="15" width="55" height="45" viewBox="0 0 55 45" preserveAspectRatio="xMidYMid slice">${w.artSvg}</svg>`
     : `<image x="7" y="15" width="55" height="45" preserveAspectRatio="xMidYMid slice" href="${w.artHref}" xlink:href="${w.artHref}"/>`;
-  const url = worldUrl(w.id, w.arrival);
+  const url = worldUrl(w.id);
 
   // Header: set number (right) first, so the name can shrink to fit beside it.
   const setNo = outline(w.setNumber ?? "", { ...data, size: 2.2, x: 61.5, y: 12.2, anchor: "end", fill: c.muted });

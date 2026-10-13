@@ -581,22 +581,15 @@ It's a sci-fi token that links the real world to the virtual one. Cards are chea
 ```
 1. Phone touches card
 2. OS reads NDEF URI record (iOS background tag reading / Android tag dispatch; no app, no Web NFC API)
-3. Browser or installed PWA opens https://aweborn.org/w/<uuid>[?a=<arrival>]
+3. Browser or installed PWA opens https://aweborn.org/w/<uuid>
 4. App boots → reads world ID from the path → looks up the WorldEntry by ID
    (the client only subscribes to nearby sectors, so this needs a direct lookup by ID)
 5. Teleport: warp-arrival effect plays, player star placed at the world's resolvedPosition
-6. Arrival mode applied (default: captured orbit around the world's sun)
-7. World Index: entry added as sighted (method = "link"; a card tap is a link) or visited with `?a=in` → first visit fires the reward
+6. The player enters the world (Origin has no interior: the player arrives at the portal)
+7. World Index: entry added (method = "link"; a card tap is a link) and marked visited on entry → first visit fires the reward
 ```
 
-**Arrival modes (configurable per card, default = orbit):**
-
-| Mode | URL | Behavior |
-|------|-----|----------|
-| **Orbit** (default) | `/w/<uuid>` | Warp-arrive in the world's gravity well, settle into a captured orbit. Player presses **N** to enter. They see the world from outside first, which is the awe moment |
-| **Inside** | `/w/<uuid>?a=in` | Skip the universe and drop straight into the world interior (best for event/venue cards where the world *is* the destination) |
-
-The arrival mode is chosen when the card is designed, and it's encoded in the URL. Once the tag is locked the mode can't change. Unknown or missing params fall back to orbit.
+**Arrival: every card lands you inside its world** (Alex, 2026-10-13). A card works like opening a game pack: tap and you're in. There are no per-card arrival modes and no URL parameter; older links that carry `?a=in` still work because the query string is ignored. The one exception is **Origin**, which has no interior, so its card arrives at the portal.
 
 **Teleport vs. Warp:** the normal warp (K) requires lock-on and arrives with momentum. A card teleport can be **any distance, from anywhere, with no lock-on**. It's a jump between physical and virtual space. It reuses the warp arrival visuals (flash, residual particles) so it feels native to the game.
 
@@ -657,7 +650,7 @@ Both programs exist side by side:
 
 **Distribution:** sold (fundraiser) **and** given free (outreach at events and meetups). Low stakes, high delight.
 
-**Example (events):** a conference prints 2,000 cards for its venue world with `?a=in`. Attendees tap at the badge desk and land inside a virtual version of the conference hall. Every first tap adds 500 mana of awe to the universal pool, and shared-awe doubles it when people tap together. The conference just expanded the Living Frontier for everyone.
+**Example (events):** a conference prints 2,000 cards for its venue world. Attendees tap at the badge desk and land inside a virtual version of the conference hall. Every first tap adds 500 mana of awe to the universal pool, and shared-awe doubles it when people tap together. The conference just expanded the Living Frontier for everyone.
 
 #### Cards & the Mana Economy
 
@@ -679,9 +672,8 @@ Both programs exist side by side:
 | NDEF URI prefix code `0x04` (= `https://`) | 1 |
 | `aweborn.org/w/` | 14 |
 | UUIDv4 | 36 |
-| Optional `?a=in` | 5 |
 | NDEF/TLV overhead | ~7 |
-| **Total** | **~58–63 bytes** |
+| **Total** | **~58 bytes** |
 
 | Chip | User memory | Verdict |
 |------|------------|---------|

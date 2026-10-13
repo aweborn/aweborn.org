@@ -52,30 +52,22 @@ test("Origin has a permanent, valid world ID at (0,0,0)", () => {
   assert.equal(ORIGIN_WORLD_ENTRY.sector, "0:0:0");
 });
 
-test("parseTeleportLink: /w/<uuid> defaults to orbit", () => {
+test("parseTeleportLink: /w/<uuid> resolves the world (links always land inside)", () => {
   const id = randomUUID();
-  assert.deepEqual(parseTeleportLink(`/w/${id}`), { worldId: id, arrival: "orbit" });
-  assert.deepEqual(parseTeleportLink(`/w/${id}/`), { worldId: id, arrival: "orbit" });
-  assert.deepEqual(parseTeleportLink(`/w/${id}`, "?a=orbit"), { worldId: id, arrival: "orbit" });
-  assert.deepEqual(parseTeleportLink(`/w/${id}`, "?a=bogus"), { worldId: id, arrival: "orbit" });
-});
-
-test("parseTeleportLink: ?a=in arrives inside", () => {
-  const id = randomUUID();
-  assert.deepEqual(parseTeleportLink(`/w/${id}`, "?a=in"), { worldId: id, arrival: "in" });
+  assert.deepEqual(parseTeleportLink(`/w/${id}`), { worldId: id });
+  assert.deepEqual(parseTeleportLink(`/w/${id}/`), { worldId: id });
 });
 
 test("parseTeleportLink: uppercase IDs are normalized", () => {
   assert.deepEqual(parseTeleportLink(`/w/${ORIGIN_WORLD_ID.toUpperCase()}`), {
     worldId: ORIGIN_WORLD_ID,
-    arrival: "orbit",
   });
 });
 
 test("parseTeleportLink: malformed IDs are flagged, other paths ignored", () => {
-  assert.deepEqual(parseTeleportLink("/w/k7x9m"), { worldId: null, arrival: "orbit" });
-  assert.deepEqual(parseTeleportLink("/w/%E0%A4%A"), { worldId: null, arrival: "orbit" });
-  assert.deepEqual(parseTeleportLink("/w/"), { worldId: null, arrival: "orbit" });
+  assert.deepEqual(parseTeleportLink("/w/k7x9m"), { worldId: null });
+  assert.deepEqual(parseTeleportLink("/w/%E0%A4%A"), { worldId: null });
+  assert.deepEqual(parseTeleportLink("/w/"), { worldId: null });
   assert.equal(parseTeleportLink("/"), null);
   assert.equal(parseTeleportLink(`/world/${randomUUID()}`), null);
   assert.equal(parseTeleportLink(`/w/${randomUUID()}/extra`), null);

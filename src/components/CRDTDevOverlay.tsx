@@ -86,7 +86,7 @@ export function CRDTDevOverlay() {
   }, [send, setWorldDocUpdateHandler]);
 
   // Keep the server-side world room in sync with activeWorldId, however the
-  // player got there: N key, Escape, a teleport link (?a=in), or this panel.
+  // player got there: N key, Escape, a teleport link / card tap, or this panel.
   const joinedWorldRef = useRef<string | null>(null);
   useEffect(() => {
     if (!connected) {

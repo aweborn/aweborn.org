@@ -317,21 +317,19 @@ export const ORIGIN_WORLD_ENTRY: Readonly<WorldEntry> = Object.freeze({
 
 // ── Teleport links (/w/<worldId>) ────────────────────────────────────
 
-/** How a teleport link drops the player: orbiting the world, or inside it. */
-export type ArrivalMode = "orbit" | "in";
-
 /**
- * Parse a teleport link path + query: `/w/<worldId>[?a=in]`.
+ * Parse a teleport link path: `/w/<worldId>`.
  * This is a permanent public format (printed on NFC cards).
+ *
+ * Every link lands the player **inside** its world, like opening a game pack
+ * (Alex, 2026-10-13). The only exception is Origin, which has no interior, so
+ * its link arrives at the portal. Older links may carry `?a=in`; any query
+ * string is ignored.
  *
  * - `null`: not a teleport link (any other path).
  * - `{ worldId: null }`: looks like a link but the ID is malformed.
- * - `a=in` → inside; anything else or missing → orbit.
  */
-export function parseTeleportLink(
-  pathname: string,
-  search = ""
-): { worldId: string | null; arrival: ArrivalMode } | null {
+export function parseTeleportLink(pathname: string): { worldId: string | null } | null {
   const m = pathname.match(/^\/w\/([^/]*)\/?$/);
   if (!m) return null;
   let id: string;
@@ -340,8 +338,7 @@ export function parseTeleportLink(
   } catch {
     id = ""; // malformed %-encoding
   }
-  const arrival: ArrivalMode = new URLSearchParams(search).get("a") === "in" ? "in" : "orbit";
-  return { worldId: isWorldId(id) ? id : null, arrival };
+  return { worldId: isWorldId(id) ? id : null };
 }
 
 /**

@@ -1,12 +1,14 @@
 /**
  * Aweborn — Teleport System (Phase 08, Milestone 8A)
  *
- * Handles teleport links: `https://aweborn.org/w/<worldId>[?a=in]`.
+ * Handles teleport links: `https://aweborn.org/w/<worldId>`.
  * NFC cards and QR codes encode these URLs, so this is a permanent public API.
  *
  * Flow: parse the URL on boot → `GET /worlds/:id` on the sync-service →
- * place the player in the world's gravity well (orbit, the default) or enter
- * it (`?a=in`) → reuse the warp arrival flash → show a notice.
+ * reuse the warp arrival flash → **enter the world** (every link lands inside,
+ * like opening a game pack; Alex, 2026-10-13) → show a notice. Origin has no
+ * interior, so its link arrives at the portal. Older links may carry `?a=in`;
+ * the query string is ignored.
  *
  * Tapping a card while the app is open is a normal navigation (new page
  * load), so boot handling covers it. `teleportToId()` is the in-app entry
@@ -17,7 +19,6 @@ import * as THREE from 'three'
 import { create } from 'zustand'
 import {
   parseTeleportLink,
-  type ArrivalMode,
   type Vec3,
 } from '@aweborn/shared/crdt-schema'
 import { flightController } from './FlightController'
@@ -32,15 +33,15 @@ const SYNC_URL: string = import.meta.env.VITE_SYNC_URL ?? 'ws://localhost:1234'
 export const SYNC_HTTP_URL = SYNC_URL.replace(/^ws/, 'http').replace(/\/+$/, '')
 
 /**
- * Orbit arrival distance from a world's center. Inside GravitySystem's
- * captured-orbit band (0.8–3), so the orbit logic takes over on arrival.
+ * Arrival distance from a world's center, where the player briefly appears
+ * (inside GravitySystem's captured-orbit band, 0.8–3) before entering it.
  */
 const ORBIT_ARRIVAL_DISTANCE = 2.5
 
 /** The portal is bigger (halo r≈2.5, ring r=3): arrive just outside it. */
 const PORTAL_ARRIVAL_DISTANCE = 6
 
-/** Pause between the arrival flash and entering the world (`?a=in`). */
+/** Pause between the arrival flash and entering the world. */
 const ENTER_DELAY_MS = 700
 
 const LOOKUP_TIMEOUT_MS = 8000
@@ -116,8 +117,8 @@ class TeleportSystem {
    * Handle a teleport link in the current URL, if any. Call once on boot.
    * Resets the address bar to `/` afterwards so a reload doesn't re-teleport.
    */
-  async handleBootLink(location: Pick<Location, 'pathname' | 'search'> = window.location): Promise<void> {
-    const link = parseTeleportLink(location.pathname, location.search)
+  async handleBootLink(location: Pick<Location, 'pathname'> = window.location): Promise<void> {
+    const link = parseTeleportLink(location.pathname)
     if (!link) return
     window.history.replaceState(null, '', '/')
 
@@ -129,11 +130,11 @@ class TeleportSystem {
       })
       return
     }
-    await this.teleportToId(link.worldId, link.arrival)
+    await this.teleportToId(link.worldId)
   }
 
-  /** Look up a world by ID and teleport to it. */
-  async teleportToId(worldId: string, arrival: ArrivalMode = 'orbit'): Promise<boolean> {
+  /** Look up a world by ID and teleport into it. */
+  async teleportToId(worldId: string): Promise<boolean> {
     useTeleportStore.setState({ pending: true })
     const result = await lookupWorld(worldId)
     useTeleportStore.setState({ pending: false })
@@ -155,12 +156,12 @@ class TeleportSystem {
       return false
     }
 
-    this.teleportTo(result.world, arrival)
+    this.teleportTo(result.world)
     return true
   }
 
-  /** Teleport to an already-resolved world. */
-  teleportTo(world: WorldLookup, arrival: ArrivalMode): void {
+  /** Teleport into an already-resolved world (Origin: to the portal). */
+  teleportTo(world: WorldLookup): void {
     const store = useUniverseStore.getState()
     if (this._enterTimer) clearTimeout(this._enterTimer)
     if (store.activeWorldId) store.exitWorld()
@@ -175,12 +176,12 @@ class TeleportSystem {
     warpSystem.requestArrivalEffect()
     recordArrival(world) // sighted by link (a card tap is a link)
 
-    // The portal has no interior, so `?a=in` on Origin still orbits.
-    const enter = arrival === 'in' && !world.isOrigin
+    // The portal has no interior, so Origin's link arrives at the portal.
+    const enter = !world.isOrigin
     showNotice({
       kind: 'arrived',
       title: world.name,
-      detail: enter ? 'Teleporting inside…' : world.isOrigin ? 'The Aweborn Portal' : 'You’ve arrived in orbit',
+      detail: enter ? 'Teleporting inside…' : 'The Aweborn Portal',
       color: world.color,
     })
 

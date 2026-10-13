@@ -75,7 +75,7 @@ Tailnet (ops only)
 | QR signaling | **QWBP** | Compresses SDP to 55-100 bytes |
 | Rendering | **Three.js LOD + InstancedMesh** | Handles 100k+ worlds |
 | World IDs | **UUIDv4** (migrating from 5-char random) | Printed on NFC cards forever — must be unique + unguessable |
-| World deep links | **`aweborn.org/w/<uuid>[?a=in]`** | NFC trading cards + share links; permanent public API |
+| World deep links | **`aweborn.org/w/<uuid>`**, always lands inside the world (Origin: the portal) | NFC trading cards + share links; permanent public API |
 | NFC cards | **NTAG213, NDEF URI, locked, no serials, no anti-clone** | Low-stakes collectible; cloning a card only clones a link |
 
 ## File Map (Current)

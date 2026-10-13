@@ -33,7 +33,6 @@ const sample = {
   sector: "0:0:0",
   setName: "Origin Set",
   setNumber: "", // multi-card sets print e.g. "01 / 12" (pad to the set's width)
-  arrival: "orbit",
 };
 
 // Usage: node scripts/cards/render-preview.mjs [art.jpg|art.png] [outDir]

@@ -20,7 +20,7 @@ const artHref = `data:image/jpeg;base64,${(await readFile(artPath)).toString("ba
 const base = {
   id: "5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7",
   name: "Origin", creator: "aweborn", coords: "(0, 0, 0)", sector: "0:0:0",
-  setName: "Origin Set", arrival: "orbit", artHref,
+  setName: "Origin Set", artHref,
 };
 const variants = [
   { label: "A · JetBrains Mono · 001 / 001 (current)", setNumber: "001 / 001", numbers: "jetbrains" },
