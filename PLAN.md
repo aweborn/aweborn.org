@@ -69,8 +69,8 @@ Tailnet (ops only)
 | Real-time transport | **Native WebSockets** (sync-service container, custom binary room protocol over Yjs) | In-memory CRDT merge, near-zero cost |
 | Player presence (current) | **WebSocket relay through sync-service** (msg `0x09`) | Shipped Aug 24, 2026 for cross-browser presence. ROADMAP's WebRTC P2P ephemeral channel remains the target for scale (Phase 06) |
 | Gen AI backend | **genai-service** container (Node.js, proxies to external APIs) | Isolated from sync service, independently scalable |
-| Mana cost model | **Pegged to real compute cost + ~7% margin** | Makes the economy self-sustaining; research API costs before finalizing formula |
-| Creation model | **Online = AI prompt (costs mana/compute), Offline = edit/arrange (free)** | AI calls need network; editing is local-only |
+| Mana cost model | **Mana = compute** (1 mana = $0.001 of real compute, no margin). One universal pool: gifts fill it (`K · α · net`), manifesting drains it; players hold none (2026-10-13, [Phase 05 formula](./phases/05-mana-economy.md#the-mana-pool-formula)) | Spend can never outrun donors; every gift is a pure gift |
+| Creation model | **Online = AI prompt (draws mana from the shared pool), Offline = edit/arrange (free)** | AI calls need network; editing is local-only |
 | Offline transport | **WebRTC DataChannels (y-webrtc)** | Browser-native, no server needed for P2P |
 | QR signaling | **QWBP** | Compresses SDP to 55-100 bytes |
 | Rendering | **Three.js LOD + InstancedMesh** | Handles 100k+ worlds |
@@ -133,7 +133,7 @@ The following TokBot features are now part of aweborn.org's world interior exper
 |----------------|----------------------|-------|
 | Avatar creation (Meshy AI) | In-world character creation via AI prompt | Phase 07 |
 | Content studio | World building tools (objects, terrain, effects) | Phase 07 |
-| Token economy | Mana system (pegged to real compute cost) | Phase 05 |
+| Token economy | Universal mana pool (mana = compute, donation-filled; awe → XP/levels) | Phase 05 |
 | Social publishing | Not in scope (aweborn.org IS the social platform) | — |
 | Firebase Auth | Not needed (anonymous + Stripe donor identity). Persistent anonymous identity is still required for the World Index — see Phase 08 | — |
 

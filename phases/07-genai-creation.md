@@ -7,7 +7,7 @@
 
 ## Goal
 
-Players can create rich, AI-generated content inside worlds: 3D avatars/characters, objects, landscapes, textures, music, ambient sounds, voices, and text/lore — all via natural language prompts. Each generation costs mana pegged to real compute/API costs (+ ~7% margin). Editing and arranging existing objects is free and works offline.
+Players can create rich, AI-generated content inside worlds: 3D avatars/characters, objects, landscapes, textures, music, ambient sounds, voices, and text/lore — all via natural language prompts. Each generation draws its **real compute cost** (× `K` = 1,000 mana per compute-dollar) from the **universal mana pool**: nobody holds mana, gifts fill the pool (see [Phase 05 formula](./05-mana-economy.md#the-mana-pool-formula), 2026-10-13). Editing and arranging existing objects is free and works offline.
 
 This phase answers the ROADMAP's open question: **"What can players actually do inside a world?"**
 
@@ -16,7 +16,7 @@ This phase answers the ROADMAP's open question: **"What can players actually do 
 | Principle | Implementation |
 |-----------|---------------|
 | **Online = Create, Offline = Edit** | AI prompting requires network (costs real API calls). Arranging, moving, resizing, coloring existing objects is local-only and free. |
-| **Mana = Real Cost** | Each generation type has a mana cost derived from the actual API cost + ~7% margin. The formula is abstracted (not tied to a specific model) so we can swap providers. |
+| **Mana = Real Cost** | Each generation draws exactly its real compute cost × `K` from the shared pool. **No margin** (2026-10-13: non-profit costs are covered by the creative share `α` of each gift, not by marking up mana). The formula is abstracted (not tied to a specific model) so we can swap providers. |
 | **Everything is a seam** | Each generation type is a separate endpoint in genai-service with a consistent interface. New modalities plug in without restructuring. |
 | **Results live in the CRDT** | Generated assets are stored as URLs in the World CRDT. The asset files themselves go to object storage (S3 or Lightsail block storage). |
 
@@ -51,7 +51,7 @@ interface GenerateRequest {
 // Response
 interface GenerateResponse {
   taskId: string;          // For polling status
-  estimatedMana: number;   // Mana cost (pre-deducted)
+  estimatedMana: number;   // Mana reserved from the universal pool at admission
   estimatedTime: number;   // Seconds
   status: "queued" | "processing" | "complete" | "failed";
 }
@@ -98,9 +98,9 @@ interface GenerateResult {
 - `[ ]` Design abstract mana cost formula:
   - NOT tied to specific model/provider (so we can swap)
   - Based on observable output metrics where possible (e.g., complexity, duration, resolution)
-  - Includes ~7% margin for non-profit sustainability
+  - Real cost × `K` (1 mana = $0.001 of compute); **no margin** (retired 2026-10-13)
   - Document in a `MANA_COSTS.md` reference file
-- `[ ]` Define cost tiers (rough starting point, to be tuned):
+- `[ ]` Define cost tiers (rough starting point from the August ROADMAP; **replace with measured cost × K**):
   ```
   Simple object (low-poly, basic shape):    100-500 mana
   Complex object (detailed, textured):      500-2,000 mana
@@ -115,14 +115,14 @@ interface GenerateResult {
 ### genai-service: Core Framework
 - `[ ]` Implement the consistent request/response interface above
 - `[ ]` Request validation middleware
-- `[ ]` Mana pre-check: call sync-service to validate mana balance before proxying to AI API
-- `[ ]` Mana deduction flow: pre-deduct estimated mana → generate → adjust if actual differs
+- `[ ]` Mana admission: ask sync-service `requestDraw(player, estimate)` (pool − reserved, global cap, personal cap, priority queue) before proxying to the AI API; denial = "The world must be replenished…"
+- `[ ]` Reserve → settle: reserve the estimate → generate → draw the actual cost
 - `[ ]` Task queue: track in-progress generations (in-memory or Redis)
 - `[ ]` Status polling endpoint (`GET /generate/status/:id`)
 - `[ ]` Asset storage: upload completed assets to S3 or Lightsail object storage
 - `[ ]` Cost table endpoint (`GET /generate/cost`) — returns current mana prices
-- `[ ]` Rate limiting per player (prevent spam generation)
-- `[ ]` Error handling: refund mana on generation failure
+- `[ ]` Rate limiting per player = Phase 05 personal caps (one mechanism, not two)
+- `[ ]` Error handling: failed generations draw nothing (release the reservation)
 
 ### genai-service: 3D Model Generation (Meshy AI)
 - `[ ]` Migrate Meshy AI integration from `tokbot-backend/functions/src/avatars/`

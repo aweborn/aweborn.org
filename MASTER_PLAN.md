@@ -82,7 +82,7 @@ The VPS runs **Ubuntu 22.04 LTS + k3s** on an AWS Lightsail 2 GB instance (`infr
 
 | Decision | Options | Status |
 |----------|---------|--------|
-| Mana-to-cost formula | Research API costs → derive conversion rate | ⬜ Pending (Phase 05 + 07 task) |
+| Mana-to-cost formula | **Drafted 2026-10-13:** 1 mana = $0.001 of compute; gifts add `K · α · net`; global cap `pool / τ` ([Phase 05](./phases/05-mana-economy.md#the-mana-pool-formula)). Still to pick: `α`, `τ`, floor; per-modality costs (Phase 07) | 🟡 Drafted |
 | Gen AI providers | Meshy (3D), others TBD per modality | ⬜ Pending (Phase 07 task) |
 | NFC card print + encode vendor | In-house (pilot) vs. vendor (scale) | ⬜ Pending (Phase 08 task) |
 | Card product name | TBD ("World Index" is settled) | ⬜ Pending |

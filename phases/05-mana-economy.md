@@ -1,92 +1,136 @@
 # Phase 05: Mana Economy & Donations
 
-**Status:** `[ ]` Not Started
+**Status:** `[ ]` Not Started (design ~settled 2026-10-13; see [The Mana Pool Formula](#the-mana-pool-formula))
 **Depends on:** [Phase 02: Multiplayer Core](./02-multiplayer-core.md), [Phase 04: Navigation & Controls](./04-navigation-controls.md)
-**ROADMAP reference:** [The Mana Mechanic: The Frontier of Dreams](../ROADMAP.md#the-mana-mechanic-the-frontier-of-dreams)
+**ROADMAP reference:** [The Mana Mechanic: The Frontier of Dreams](../ROADMAP.md#the-mana-mechanic-the-frontier-of-dreams) (⚠️ still describes the August model; this file supersedes it until ROADMAP is refreshed: see the 2026-10-13 night session log row)
 **Estimated sessions:** 4-5
 
 ## Goal
 
-Implement the mana economy — the creative energy system that powers the Living Frontier. Donations add mana to a universal pool; mana expands the Frontier; Ghost worlds solidify when the Frontier reaches them. The **solidification wave** (a golden shockwave sweeping outward when someone donates) is the defining visual moment of Aweborn.
+Implement the mana economy. **Mana is the universe's creative energy, and it is literally compute:** one universal pool, filled by donations, drained when players manifest things with Gen AI. Nobody holds mana. Giving swells the pool for everyone; the more there is, the faster the whole universe can create. Separately, the **high-water line** (everything that has ever flowed in, plus the reach of awe) sets the **Living Frontier**, and Ghost worlds solidify when the Frontier reaches them. The **solidification wave** (a golden shockwave sweeping outward when someone donates) is the defining visual moment of Aweborn.
 
-**Key deviation from original ROADMAP:** Mana costs are **pegged to real compute/API costs + ~7% margin**, not arbitrary game-design numbers. This makes the economy self-sustaining — donations literally fund the compute that brings creations to life. The mana cost formula is abstracted from specific AI providers so we can swap backends without changing the player-facing economy. Gen AI creation costs are researched and implemented in [Phase 07: Gen AI Creation](./07-genai-creation.md).
+**Awe is about growth, not energy:** exploring and the reactions others have to what you made earn **experience → levels** (which unlock abilities) and push the high-water line outward. Awe never mints spendable mana.
+
+**Key deviation from the original ROADMAP (2026-10-13):** the August model (awe as the primary mana source, natural regeneration, donation afterglow, per-player flow rate with diminishing returns, fixed game-design costs, targeted patronage) is retired. The October model is below. Gen AI cost research lives in [Phase 07](./07-genai-creation.md).
 
 ## Architecture Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Mana authority | **Server-authoritative** for manifesting (solid worlds, AI generation). **Dreaming stays free, manifesting draws on the universal flow** (Alex, 2026-10-13): ghost/offline creation needs no mana and no validation | Prevents cheating while allowing unlimited offline creativity |
+| Mana authority | **Server-authoritative** for manifesting (solid worlds, AI generation). **Dreaming stays free, manifesting draws on the universal pool** (Alex, 2026-10-13): ghost/offline creation needs no mana and no validation | Prevents cheating while allowing unlimited offline creativity |
 | Who holds mana | **Nobody. Players hold no mana at all** (Alex, 2026-10-13 evening). There is one **universal pool**; giving to the mission swells it. *Supersedes the morning's personal reserve, mana purchases, creator earnings and the Curiosity Budget.* | Every gift is a pure gift: no personal benefit, so no purchase-vs-donation or unrelated-business-income problem |
-| Flow rate | **The universe's flow rate rises for everyone with donation velocity** (Alex, 2026-10-13 evening). Manifesting = channeling mana through a Gen AI prompt for some time; the flow rate bounds how much generation happens per unit time | Compute spend can never outrun what donors give |
-| Mana cost model | **Priced by complexity, driven by real costs** (Alex, 2026-10-13). Place/move: tiny; meshes/terrain/sound: a lot; a whole new world: a lot more. Costs track real API + infra spend, abstracted by output, **not** compute + 7%. Now expressed as how much of the shared flow (and how long) a manifestation channels, not as a price a player pays | Mana stays honest about what reality costs |
-| Cost abstraction | **Not tied to specific AI model/provider** — based on output metrics (complexity, duration, resolution) | Allows provider swaps without economy changes |
-| Experience & levels | **Manifesting earns experience → levels; levels unlock abilities** (e.g. warp, creating a sound): a scaffolded, studio-like path through every Gen AI tool (Alex, 2026-10-13 evening). **Warp is gated behind a level** (Q14 b: movement in 3D is already advanced; warp is too powerful before players learn to move). Exception to settle: card taps / `/w/<uuid>` links still deliver a player to a world | Teaches why mana matters; money never buys abilities |
-| Two numbers | **High-water line** = the farthest mana has ever spread (sets the Frontier, never falls) + **Pool** = mana available to flow now (decided 2026-10-13, Alex). Replaces ROADMAP's `r ∝ ∛(pool)` | Spending never shrinks reality |
-| Awe | **Awe gives experience *and* raises the high-water line** (Alex, 2026-10-13 evening, Q13 a): exploring grows reality for everyone and levels you up. Only donations raise the flow rate | Curiosity is rewarded without minting spendable mana |
+| What mana is | **Mana = compute.** 1 mana = $0.001 of real compute (`K = 1,000` mana per compute-dollar). A manifestation costs exactly what it costs us, converted at `K`. No markup (draft, 2026-10-13 night) | The pool is honestly "how much imagination the donors have paid for" |
+| Pool | **Linear in money:** each net donation adds `K · α · amount`; each manifestation subtracts its cost. Up with gifts, down with creation (Alex, 2026-10-13 night). See [formula](#the-mana-pool-formula) | Simple, explainable, auditable |
+| Creative share `α` | **Draft:** only a published share of each gift becomes mana (example 60%); the rest funds research, ops and people. **Alex to decide** the value (or `α = 1` with ops funded by grants) | Not every donated dollar can be compute |
+| Flow rate | **The universe's flow rate rises for everyone as the pool grows** (Alex, 2026-10-13 evening). Draft: global cap per window = `max(floor, pool / τ)`, so a full pool flows fast and a low pool flows gently; donation velocity raises it automatically | Compute spend can never outrun what donors give; the pool can't be drained in an afternoon |
+| Personal caps | **Per-player cap per window, tunable during play** (e.g. by level). Fairness under scarcity, not a paywall: when the pool is healthy the caps are generous (Alex, 2026-10-13 night) | "Unlimited imagination" for everyone, shared fairly when energy is low |
+| Admission & order | **Requests are ordered; each asks "how much compute does this take?"** If it exceeds what the pool (and caps) allow → no-dice and the universe whispers *the world must be replenished*. **Priority order, formula deferred** (Alex, 2026-10-13 night). Reserve the estimate, settle the actual, refund on failure | No literal simultaneity; a queue with a gentle denial |
+| Mana cost model | **Priced by complexity, driven by real costs** (Alex, 2026-10-13). Place/move: tiny; meshes/terrain/sound: a lot; a whole new world: a lot more. Abstracted by output, not provider | Mana stays honest about what reality costs |
+| Cost abstraction | **Not tied to specific AI model/provider**: based on output metrics (complexity, duration, resolution) | Allows provider swaps without economy changes |
+| Experience & levels | **Levels unlock abilities** (e.g. warp, creating a sound): a scaffolded, studio-like path through every Gen AI tool (Alex, 2026-10-13 evening). **XP comes from reactions** (other players' awe at what you made) **and your own awe**, *not* from mana channeled (Alex, 2026-10-13 night): manifesting is a core feature for everyone, never something to grind. **Warp gated behind a level** (Q14 b). Card taps / `/w/<uuid>` links always deliver a player inside the world. What a level measures (Q16) is **open** | Rewards making things people love; no incentive to burn the shared pool for XP |
+| Two numbers | **High-water line** = everything that has ever flowed in + awe reach (sets the Frontier, never falls) + **Pool** = mana available to flow now (decided 2026-10-13, Alex) | Spending never shrinks reality |
+| Awe | **Awe gives experience *and* raises the high-water line** (Alex, 2026-10-13 evening, Q13 a). Only donations fill the pool / raise the flow | Curiosity is rewarded without minting spendable mana |
+| Patronage | **Scrapped** (Alex, 2026-10-13 night): no targeted solidification, no Oasis, no print-your-world patronage | Donations buy no personal advantage; the Frontier belongs to everyone |
+| Donor perks | **None beyond optional recognition in the wave** (implied by "no personal advantage"; replaces Aug 19 "cosmetics only"). *Confirm with Alex* | Pure gifts |
 | Organization | **Aweborn is a non-profit, already incorporated with 501(c)(3) status** (Alex, 2026-10-13). Mission: MatchRank research, systematically building teams with psychological safety (see [RESEARCH.md](../RESEARCH.md)). No equity investors; backers are donors, grant makers, impact funders, research partners | Mission first |
-| Glow | **Aura brightness scales with mana channeled recently**, no rank or status (Alex, 2026-10-13, Q9 b). Still fits: channeling = manifesting | Rewards manifesting, not hoarding |
+| Glow | **Aura brightness scales with mana channeled recently**, no rank or status (Alex, 2026-10-13, Q9 b) | Rewards manifesting, not hoarding |
 | Donation pipeline | Existing Stripe → Lambda → mana pool (extend current Lambda) | Reuses proven payment flow |
 | Frontier shape | Sector-based (not perfect sphere) | Allows organic expansion bulges |
-| Mana → radius | Cube root formula: `r ∝ ∛(high-water line)` (confirmed 2026-10-13, Alex, Q10 a: driven by the high-water line, not the pool; each mana adds equal volume) | Early donations have dramatic effect, exponential cost at scale |
-| Solar cycle | Browser timezone + sunrise/sunset API | Client calculates modifier locally |
+| Mana → radius | `r ∝ ∛(high-water line)` (confirmed 2026-10-13, Alex, Q10 a) | Early gifts have dramatic effect; each mana adds equal volume |
+| Solar cycle | **Open** (was a per-player flow modifier, which no longer exists). Options: visual-only day/night mood, or a gentle modifier on personal caps | Healthy rhythms without a personal flow rate |
 | Draw validation | sync-service validates all mana draws (solidified-world actions + AI generation) | In-memory state makes validation fast |
-| Creation model | **Online = AI prompt (channels mana), Offline = edit/arrange (free)** | AI calls need network; editing is local-only |
+| Creation model | **Online = AI prompt (draws mana), Offline = edit/arrange (free)** | AI calls need network; editing is local-only |
+
+## The Mana Pool Formula
+
+> Draft v1 (2026-10-13 night), written from Alex's description: *money in → mana pools up → players manifest → pool drains a little*, with personal caps and global caps on flow. Pushback is called out inline.
+
+```text
+Constants (tunable, public)
+  K      = 1,000 mana per compute-dollar     1 mana = $0.001 of real compute
+  α      = creative share of each gift        draft 0.6  (Alex decides)
+  τ      = drain horizon                      draft 14 days
+  floor  = minimum global flow                draft 2,000 mana/day (or 0)
+
+When a gift lands (Stripe webhook, net of processor fees)
+  inflow     = K · α · net_amount
+  pool      += inflow
+  highWater += inflow                         never falls
+
+When awe happens
+  highWater += reach(awe)                     never touches the pool
+  xp[player] += xp(awe)
+
+Global flow cap, per window (e.g. per minute)
+  globalCap  = max(floor, pool / τ)           pro-rated to the window
+
+When a player asks to manifest r (requests are processed in priority order)
+  est = estimate(r)                           real compute cost × K
+  admit if   est ≤ pool − reserved
+         and est fits globalCap this window
+         and est fits personalCap[player] this window
+  admit  → reserved += est → generate → pool −= actual, reserved −= est
+           (failure → nothing drawn)
+  reject → whisper: "The world must be replenished…"   (gentle, not punitive)
+
+Frontier
+  frontierRadius = c · ∛(highWater)
+```
+
+![Illustrative 120-day simulation of the universal mana pool](./assets/mana-pool-model.png)
+
+*Illustrative only, made-up numbers. Regenerate with `python3 phases/assets/mana_pool_chart.py`. Top: the pool (gold) jumps with gifts and drains slowly while people manifest; the high-water line (violet) only rises. Bottom: daily inflow vs mana drawn, players' demand, and the global cap.*
+
+**What the chart shows (and the pushback):**
+
+1. **Linear and direct, as asked.** Every dollar adds the same mana; every manifestation subtracts its real cost. Nothing else (no regen, no afterglow) touches the pool.
+2. **Pushback: `α`.** If 100% of every gift becomes compute, nothing pays for research, ops or people. A published creative share keeps the formula linear and honest ("60% of your gift becomes mana"). Alex picks the number.
+3. **Pushback: tie the global cap to the pool (`pool / τ`).** This is what makes "flow rises with donations" automatic, and it means a single afternoon can never drain months of gifts (the dry spell, days 60–90, drains gracefully instead of crashing to zero).
+4. **Consequence: early days are throttled.** With a tiny pool, the cap is tiny (red dots, days 0–20). Fix with a seed grant into the pool, a non-zero `floor`, or both.
+5. **Mana = compute, so no markup.** The old "+7%" / "4× direct cost" ideas are gone: the non-profit's costs are covered by `1 − α`, not by overcharging mana.
+6. **Reserve, then settle.** Gen AI cost is only known afterwards, so admission reserves the estimate; failures cost nothing.
+
+**Open (for the next session):** values of `α`, `τ`, `floor`, the window size; how personal caps scale (by level?); the priority formula; whether the pool/caps are shown to players as numbers or only as ambience.
 
 ## Tasks
 
-### Universal Mana Pool (Universe CRDT)
-- `[ ]` Add mana fields to Universe CRDT (*note: a `ManaState` type without `solarCycle` already exists in `shared/crdt-schema.ts`; extend it rather than redefining*):
+### Universal Mana Pool & Ledger
+- `[ ]` Extend the existing `ManaState` in `shared/crdt-schema.ts` (don't redefine) to the October model:
   ```typescript
   interface ManaState {
-    pool: number;
+    pool: number;          // spendable now (mana)
+    reserved: number;      // estimates held for in-flight manifestations
+    highWater: number;     // Σ inflow + Σ awe reach; never falls; sets the Frontier
     frontierRadius: number;
-    totalEverGenerated: number;
-    totalEverSpent: number;
-    regenRate: number;
-    donationMultiplier: number;
+    totalIn: number;       // lifetime mana from gifts
+    totalDrawn: number;    // lifetime mana drawn by manifesting
+    params: { K: number; alpha: number; tauDays: number; floorPerDay: number };
     lastDonationAt: number;
-    solarCycle: { enabled: boolean; peakMultiplier: number; troughMultiplier: number };
   }
   ```
-- `[ ]` Server writes mana state to Universe CRDT (authoritative)
-- `[ ]` Clients read mana state reactively
+- `[ ]` Append-only ledger on the VPS (SQLite): gifts, reservations, settlements, refunds, awe reach. The CRDT shows totals; the ledger is the audit trail
+- `[ ]` Server writes mana state to the Universe CRDT (authoritative); clients read it reactively
 
-### Mana Flow Rate System
-- `[ ]` Base rate: 100 mana/minute (same for all players)
-- `[ ]` Activity multiplier: 1.0–2.0 (exploration/awe bonuses)
-- `[ ]` Solar modifier: 0.6–1.5 (based on local sun position)
-- `[ ]` Diminishing returns curve (24hr rolling window)
-- `[ ]` Formula: `flowRate = baseRate * activityMultiplier * solarModifier * diminishingReturns`
+### Flow & Admission (server)
+- `[ ]` `server/sync-service/src/mana.ts`: `requestDraw(player, estimate)` → admit / reject per [the formula](#the-mana-pool-formula)
+- `[ ]` Global cap per window = `max(floor, pool / τ)`; personal cap per window (tunable; by level TBD)
+- `[ ]` Ordered request queue with a priority hook (`priority(request)` returns 0 for now; formula deferred)
+- `[ ]` Reserve → settle actual → release on failure, atomically with the ledger
+- `[ ]` Gentle denial: *"The world must be replenished…"*
+- `[ ]` Ghost creation requires **no validation** (free, unlimited)
 
-### Solar Tidal Cycle
-- `[ ]` Create `src/systems/SolarCycle.ts`
-- `[ ]` Calculate local solar position from browser timezone
-- `[ ]` Flow modifier: 1.5x at solar noon, 0.6x at midnight, sinusoidal
-- `[ ]` Visual: universe warm-toned during day, cool/deep at night
-- `[ ]` Send modifier to server with draw requests
-
-### Awe Generation
-- `[ ]` Create `src/systems/AweTracker.ts`
-- `[ ]` Track per-player awe events:
-  - First world visit: 500 mana
-  - First creation seen: 50 mana
-  - Distance milestone: 200 mana
-  - Slingshot chain (3+): 100 mana
-  - Cluster discovery: 300 mana
-  - Long absence return (7d+): 1000 mana
-- `[ ]` Shared-awe multiplier: 2x when near other players
-- `[ ]` Diminishing novelty: exponential decay on revisits
-- `[ ]` Client reports awe events → server validates → adds to pool
-- `[ ]` Expose a discovery hook (`onFirstDiscovery(worldId, method)`) so [Phase 08](./08-nfc-trading-cards.md)'s World Index + NFC card taps can fire `first-world-visit` awe
+### Donation → Mana Pipeline (Extend Lambda)
+- `[ ]` On `payment_intent.succeeded`: `inflow = K · α · net_amount` → pool + highWater + ledger (via VPS API)
+- `[ ]` VPS recalculates `frontierRadius`, broadcasts the expansion, triggers the solidification wave for everyone online
+- `[ ]` Optional donor recognition in the wave (named or anonymous). No other donor perks
+- `[ ]` Product-agnostic so [Phase 08](./08-nfc-trading-cards.md) card-order surplus flows in as ordinary gifts
+- `[-]` ~~`donationMultiplier` 24 h afterglow~~ retired: the flow follows the pool automatically
 
 ### Living Frontier & Solidification
-- `[ ]` Server calculates `frontierRadius` from mana pool (cube root formula)
+- `[ ]` Server calculates `frontierRadius = c · ∛(highWater)`
 - `[ ]` Sector-level solidification tracking
-- `[ ]` Ghost → Solid transition when Frontier reaches a world:
-  - Server sets `solidified: true`, `solidifiedAt: timestamp`
-  - Physics activate, collision enables
-- `[ ]` Targeted patronage: donor can solidify a specific Ghost world (5,000 mana)
-- `[ ]` Oasis creation: bubble of light in the Deep Dark
+- `[ ]` Ghost → Solid transition when the Frontier reaches a world (`solidified: true`, `solidifiedAt`; physics + collision on)
+- `[-]` ~~Targeted patronage (5,000 mana) and Oasis~~ scrapped 2026-10-13 (Alex)
 
 ### Solidification Wave (The Golden Moment)
 - `[ ]` Create `src/effects/SolidificationWave.tsx`
@@ -94,37 +138,26 @@ Implement the mana economy — the creative energy system that powers the Living
 - `[ ]` Ripples outward from Aweborn Portal at origin
 - `[ ]` As wave hits Ghost worlds: wireframes shatter → reform as solid objects
 - `[ ]` Audio: deep bass sweep → warm orchestral hum
-- `[ ]` Donor recognition (optional): "A wave of light from ★ [name]" or anonymous
 
-### Donation → Mana Pipeline (Extend Lambda)
-- `[ ]` Modify Lambda to add mana on `payment_intent.succeeded`:
-  - Calculate: `amount * 1000 = mana`
-  - Write to mana pool (via VPS API or direct CRDT update)
-  - Update donor's `lifetimeDonations`
-  - Set `donationMultiplier` boost (24hr afterglow)
-  - Write to `manaLedger` (audit trail)
-- `[ ]` VPS receives mana update → recalculates `frontierRadius`
-- `[ ]` VPS broadcasts frontier expansion to all connected clients
-- `[ ]` Trigger solidification wave visual for all online players
-- `[ ]` Keep the pipeline product-agnostic so [Phase 08](./08-nfc-trading-cards.md) NFC card order surplus can flow in as donations (and optionally as targeted patronage for the card's world)
+### Awe → Experience + Reach
+- `[ ]` Create `src/systems/AweTracker.ts` (client) and wire the stubbed server hook `server/sync-service/src/awe.ts` (`onFirstDiscovery`, `onAwe`)
+- `[ ]` Awe events (first world visit, first creation seen, distance milestone, slingshot chain, cluster discovery, long-absence return) grant **XP** and **high-water reach**, never pool mana. Amounts TBD with the levels design
+- `[ ]` **Reactions:** other players' awe at a world credits XP to its creator(s): the main XP source for makers
+- `[ ]` Shared-awe 2× when near other players; diminishing novelty on revisits
+- `[ ]` Server validates (cheap checks now, [Phase 09](./09-authoritative-flight.md) server-derived later)
 
-### Server: Mana Draw Validation
-- `[ ]` Validate draw requests for solidified-world actions:
-  - Pool sufficient?
-  - Flow rate within limits?
-  - Action legitimate?
-  - World solidified?
-- `[ ]` Atomic deduction + transaction ledger
-- `[ ]` Denial response: "The universe needs more energy" (gentle, not punitive)
-- `[ ]` Ghost creation requires **no validation** (free, unlimited)
+### Experience & Levels (design pending, Q16)
+- `[ ]` Decide what a level measures (Q16, deferred by Alex 2026-10-13)
+- `[ ]` Unlock ladder: which tools/abilities open at which level (warp gated; link/card arrival never gated)
+- `[ ]` Gate the live World Index "Warp here" button once levels exist
 
-### Mana Costs Implementation
+### Solar Cycle (open)
+- `[ ]` Decide: visual-only day/night mood, or a gentle modifier on personal caps (there is no personal flow rate anymore)
 
-> ✅ **Resolved 2026-10-13 (Alex):** everything that manifests costs mana, scaled by complexity. Non-compute actions (place/move) cost very little; AI generation is priced from real costs at a target margin. The numbers below are the old ROADMAP values, to be replaced by the price table in the business plan draft.
-
-- `[ ]` Object placement in solidified worlds (10-500 mana by complexity)
-- `[ ]` Physics changes (gravity: 500, friction/bounce: 200, water: 300)
-- `[ ]` Avatar customization (trail: 50, aura: 50, shape: 100, color: 25)
+### Mana Costs
+- `[ ]` Cost of each manifestation = real compute cost × `K`, from the Phase 07 cost research (`MANA_COSTS.md`)
+- `[ ]` Non-compute actions (place/move/arrange): nominal or free; decide with the cost table
+- `[-]` ~~Old ROADMAP fixed costs (gravity 500, avatar trail 50, …)~~ retired
 
 ### Mana Visualization
 - `[ ]` Pool level affects universe ambience:
@@ -132,17 +165,19 @@ Implement the mana economy — the creative energy system that powers the Living
   - Medium (30-80%): baseline
   - Low (<30%): dim, sparse, desaturated
   - Critical (<5%): near-dark, aurora near Portal
+  - *(open: "%" of what? e.g. pool relative to 30 days of typical draw)*
 - `[ ]` Audio ambience scales with pool level
 - `[ ]` Drawing mana → satisfying sound (universe breathing through you)
 
 ## Acceptance Criteria
 
 - [ ] Mana pool is visible in the Universe CRDT and reflected visually
-- [ ] Donations via Stripe add mana and trigger the solidification wave
-- [ ] Ghost worlds solidify when the Frontier reaches them
-- [ ] Awe events generate mana from exploration
-- [ ] Solar tidal cycle modifies flow rate based on player's timezone
-- [ ] Mana draws are server-validated for solidified-world actions
+- [ ] A donation adds exactly `K · α · net` mana and triggers the solidification wave
+- [ ] Manifesting draws the real cost; a request the pool or caps can't cover is gently denied; failures cost nothing
+- [ ] The pool can't drain faster than the global cap allows
+- [ ] Ghost worlds solidify when the Frontier (from the high-water line) reaches them
+- [ ] Awe events grant XP and high-water reach, never pool mana
+- [ ] Mana draws are server-validated and ledgered
 - [ ] Ghost creation is free and requires no server validation
 - [ ] Universe ambience changes based on pool level
 
@@ -150,14 +185,14 @@ Implement the mana economy — the creative energy system that powers the Living
 
 | File | Action | Notes |
 |------|--------|-------|
-| `src/systems/SolarCycle.ts` | NEW | Timezone-based flow modifier |
-| `src/systems/AweTracker.ts` | NEW | Awe event tracking + mana generation |
+| `src/systems/AweTracker.ts` | NEW | Awe events → XP + reach |
 | `src/effects/SolidificationWave.tsx` | NEW | Golden shockwave effect |
 | `src/components/FrontierVisual.tsx` | NEW | Living Frontier boundary rendering |
-| `shared/crdt-schema.ts` | MODIFY | Add ManaState types |
-| `server/src/mana.ts` | NEW | Mana validation, frontier calculation |
-| `server/src/index.ts` | MODIFY | Add mana draw API endpoints |
-| `infra/cloudformation.yml` | MODIFY | Extend Lambda for mana pipeline |
+| `shared/crdt-schema.ts` | MODIFY | Extend `ManaState` |
+| `server/sync-service/src/mana.ts` | NEW | Pool, admission, reserve/settle, ledger, frontier |
+| `server/sync-service/src/awe.ts` | MODIFY | Wire the stubbed hook to XP + reach |
+| `infra/cloudformation.yml` | MODIFY | Extend Lambda for the mana pipeline |
+| `phases/assets/mana_pool_chart.py` | NEW | Illustrative pool simulation + chart |
 
 ## Session Log
 
@@ -173,3 +208,4 @@ Implement the mana economy — the creative energy system that powers the Living
 | 2026-10-13 (evening) | **Alex's new model (supersedes personal reserve, Resonance-as-reserve, mana purchases and creator earnings; table not yet rewritten, pending confirmation of open questions).** **Players hold no mana at all.** Giving to the mission swells the **universal mana pool**; **flow rate rises for everyone with donation velocity**. Manifesting = channeling mana through a Gen AI prompt for some time. Manifesting earns **experience → levels**, and levels unlock abilities (e.g. warp, creating a sound): a scaffolded, studio-like path through all the Gen AI tools that teaches why mana matters and why everyone explores and gives together. Consequences: donations become pure gifts (no personal benefit) so the purchase-vs-donation and unrelated-business-income worries mostly disappear; compute spend is bounded by flow rate, so the game can't outspend its donors. **Origin of Aweborn:** Alex's 2023 grad-school statement of purpose (Drive, `profile/academia-grad/stanford-2023`) proposed **MatchRank**: systematically matching people in an organization (mentor, mentee, aligned peer) to build belonging and engagement. Aweborn *is* MatchRank: the game exists to gather (consented) telemetry on personality and teamwork in creation and play, to merge psychological-safety, personality and team-dynamics research into systematically building great teams. **Not yet documented anywhere in the repo.** | Alex: where the vision doc lives, awe's role, warp gating (warp is already free and live), research consent model |
 | 2026-10-13 (evening) | **Q12 (a):** new public [RESEARCH.md](../RESEARCH.md) (draft v0.1: MatchRank origin, hypothesis *match → observe → re-match*, data principles). **Q13 (a):** awe gives experience and raises the high-water line; only donations raise flow. **Q14 (b):** warp gated behind a level (scaffold movement first); open: card taps and `/w/<uuid>` links must still deliver new players, and the live World Index "Warp here" button needs gating. **Q15 (b, refined):** no consent form for disclosed, pseudonymous, aggregated gameplay telemetry; the Privacy page must be updated before telemetry ships; explicit opt-in only for anything that profiles an identified person (personality read-outs, workplace matching); 13+ for research data; university IRB only when publishing with a partner. Decision table rewritten for the evening model. | Alex: confirm the refined Q15 and the link exception; then levels design (what unlocks when), flow-rate formula from donation velocity, business plan v0.4 (donation-led) |
 | 2026-10-13 (evening) | **Confirmed:** refined Q15 (disclosed telemetry, no consent form; opt-in only for profiling an identified person or workplace matching). **Link exception:** card taps and `/w/<uuid>` links always deliver a player, and **the default is to land *inside* the world** ("like a game pack: tap and you're in"). **Privacy + Terms updated** (Alex: "disclose anything necessary"): Privacy now discloses the **World Index records that were already live but undisclosed** (seen/visited, how found, visit count, first/last visit), adds a Research section (gameplay only, pseudonymous + aggregated, separate from sign-in details, policy updated *before* any new recording, opt-in for individual profiling, de-identified publishing, university ethics review), and replaces "no tracking" with "no ads and no third-party trackers". Terms: donations grow the shared mana for everyone and buy no personal advantage, 501(c)(3) note, Research pointer, email sign-in, card taps open worlds. Aweborn is already 18+, so research data is clear of COPPA. | Next: levels design (what unlocks when; warp gating), flow-rate formula from donation velocity, business plan v0.4 (donation-led); deploy the updated legal pages |
+| 2026-10-13 (night) | **Review + formula.** Assistant review: the evening model is the first coherent one (pure gifts, spend bounded by donors, tied to the mission); gaps flagged: stale task list, patronage vs "no personal advantage", undefined pool/flow, splitting flow among players, XP farming, warp gating. **Alex's answers:** (1) refresh all August/September mana docs: awe ↔ leveling, mana ↔ creative energy = compute; (2) **patronage scrapped**; (3) pool is **linear in money**: gifts fill it, manifesting drains it, personal caps (tunable in play) + global caps on flow; (4) requests are **ordered with priority** (formula later); each asks "how much compute?", too much → no-dice, the universe whispers *the world must be replenished*; (5) manifesting is for everyone ("unlimited imagination"), **XP comes from reactions**, not mana channeled; (6) no live players yet, so gating warp costs nothing. **Done:** this file rewritten for the October model (decisions, [formula](#the-mana-pool-formula) with pushback: creative share `α`, global cap `pool / τ`, early-days throttling → seed/floor, mana = compute with no markup, reserve-then-settle), chart `phases/assets/mana-pool-model.png` (+ script), tasks/acceptance refreshed; Phase 07/08, PLAN.md, MASTER_PLAN.md and `phases/README.md` refreshed. **ROADMAP.md not edited** (rule: only on Alex's explicit say-so); proposed rewrite of its mana section is ready in [05-roadmap-mana-rewrite.md](./05-roadmap-mana-rewrite.md). | **Tomorrow:** (a) Alex: apply the ROADMAP rewrite? (b) pick `α`, `τ`, `floor`; seed grant? (c) donor perks = wave recognition only? (d) solar cycle: visual-only or cap modifier? (e) Q16 levels design; then business plan v0.4 |

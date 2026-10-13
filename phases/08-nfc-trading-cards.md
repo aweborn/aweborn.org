@@ -22,7 +22,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | Per-card serials | **No.** The card is just the world ID |
 | Anti-clone | **Not needed.** Low stakes by design. NTAG 424 DNA (SUN) is a documented future option only |
 | World Index | Persistent personal index; any discovery method counts; warp to any entry from anywhere |
-| First discovery | `first-world-visit` awe (500 mana → **universal pool**) + card-reveal animation + World Index entry |
+| First discovery | `first-world-visit` awe (**XP + high-water reach**, never pool mana; Phase 05, 2026-10-13) + card-reveal animation + World Index entry |
 | Programs | Curated sets (Aweborn) **and** print-your-world on demand (players, companies, events) |
 | Money | Sold as fundraiser (proceeds → Stripe → mana pool) **and** given free at events |
 
@@ -175,7 +175,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 ### Discovery Tracking
 - `[x]` Add entry on: entering a world (visited, `rooms.joinWorld`); card/link arrival (`/arrived`); sighting within 100 u = close LOD range (client scan every 500 ms, queued offline, flushed in batches of 20)
-- `[~]` First discovery → fire `first-world-visit` awe event (500 mana → universal pool, server-validated). **Hook stubbed 2026-10-13:** `server/sync-service/src/awe.ts` (`onFirstDiscovery` → listeners via `onAwe`), called from `rooms.joinWorld` on a server-seen first visit. Logs only; amount/destination wait on the Phase 05 design session
+- `[~]` First discovery → fire `first-world-visit` awe event (**XP + high-water reach**, server-validated; was "500 mana → universal pool" before the 2026-10-13 Phase 05 model). **Hook stubbed 2026-10-13:** `server/sync-service/src/awe.ts` (`onFirstDiscovery` → listeners via `onAwe`), called from `rooms.joinWorld` on a server-seen first visit. Logs only; amounts wait on the Phase 05 levels design (Q16)
 - `[~]` Shared-awe 2× when other players are nearby at discovery time. The hook passes `companions` (distinct other players in the world room; your own tabs don't count)
 - `[x]` Repeat visits increment `visitCount`, no reward (30 s dedupe)
 
@@ -243,7 +243,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 ### Economy Hooks
 - `[ ]` Order surplus (price − production − shipping) → donation pipeline → mana pool (golden wave)
-- `[ ]` (If decided) Ghost world order → targeted patronage toward solidifying that world
+- `[-]` ~~Ghost world order → targeted patronage toward solidifying that world~~ **Scrapped 2026-10-13 (Alex): no patronage**
 - `[ ]` Moderation: review world name/art before printing (printed content is permanent)
 
 ### Organizations & Events
@@ -258,7 +258,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - [ ] Every card lands inside its world (Origin: at the portal)
 - [ ] All world IDs are UUIDv4; no legacy short IDs remain (or legacy is explicitly supported)
 - [ ] World Index persists across tab closes and page reloads
-- [ ] First discovery generates awe into the universal pool and shows the card-reveal moment; repeat visits don't
+- [ ] First discovery generates awe (XP + Frontier reach) and shows the card-reveal moment; repeat visits don't
 - [ ] Player can warp to any World Index world from anywhere in the universe
 - [ ] A physical NTAG213 card, locked, opens the correct world on both iOS and Android with no app installed
 - [ ] Every card in a set has an identical back
@@ -275,7 +275,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | Identity: device vs cross-device? | ✅ **Decided 2026-10-11:** anonymous first + QR device linking + passkeys + email magic link + social (Google/Facebook/Apple…) + email/password, all one `playerId`; per-device sessions. One screen steers. Open: auth stack (I0) |
 | Personal discovery rewards beyond awe + entry? | Cosmetic-only milestone badges / set-completion flair |
 | Distinguish card taps from shared links? | ✅ **Decided 2026-10-12 (Alex): no.** A card is a link; both carry the existing enter-or-not parameter. No marker param, no card-found badge |
-| Print-your-world → patronage? | Opt-in at checkout |
+| Print-your-world → patronage? | ✅ **Decided 2026-10-13 (Alex): no.** Patronage scrapped; card surplus is an ordinary gift to the pool |
 | Card size? | TCG 63×88 mm |
 | QR fallback on front? | Yes, small corner QR |
 | Art pipeline? | v1 in-game photo mode; later Phase 07 AI art. **World Index (decided 2026-10-12):** worlds without art get a generated card from the same front template (name, creator, coordinates) with a live mini-render of the world in the art window |
