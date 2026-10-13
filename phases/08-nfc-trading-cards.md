@@ -114,11 +114,11 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[x]` `server/sync-service/scripts/migrate-legacy-creators.ts`: `p-xxxxxx` → `"system"` in the universe CRDT + world `meta` (tested on a DB copy; run on prod after deploy)
 - `[x]` **Prod (2026-10-11):** secret set, deployed `1004f4c` (auth tables migrated at boot), creator migration ran (1 world, "Lost", `p-qx3htp` → `system`; backup `universe.db.pre-creators-2026-10-11T23-25-43-700Z.bak` + pre-deploy snapshot). Live check: anonymous player created, same `playerId` after reload, no console errors
 - `[ ]` Follow-up: Safari may cap server-set cookies at 7 days when the cookie's server IP differs from the site's (aweborn.org is on CloudFront, sync on Lightsail). If anonymous iOS players lose identity after a week away, proxy `/api/auth/*` through CloudFront on `aweborn.org`. Players who linked a real sign-in (I2–I7) can simply sign back in
-- `[ ]` **One screen steers (I1b):** server merges a player's connections into one presence. The most recent screen to take input is the driver; others become live followers (camera tracks the shared character, input ignored) with a "Play here" button to take over. Until then, two tabs of one player show as one flickering presence to others
+- `[ ]` *(Deferred, Alex 2026-10-12: can wait.)* **One screen steers (I1b):** server merges a player's connections into one presence. The most recent screen to take input is the driver; others become live followers (camera tracks the shared character, input ignored) with a "Play here" button to take over. Until then, two tabs of one player show as one flickering presence to others
 - `[x]` **Smooth onramp to a verified account** (built 2026-10-11, local; Alex chose the UX): an always-visible "Save your player" chip under the brand (`src/components/PlayerAccount.tsx`) + one gentle, dismissible nudge after a meaningful moment (first world created, or ~10 min of visible play across visits), **at most once a day** (`src/lib/onramp.ts`). Panel shows only the methods the server offers (`GET /api/auth/methods`). Never a wall
 - `[x]` Fix (found by the new e2e test): `onLinkAccount` decided "new account vs existing player" with a 60 s timing window, so an existing player signing in from another device moments after creation would have had its `playerId` overwritten. Now "new" = a non-anonymous user row created by this process in the last 5 min (tracked in `databaseHooks.user.create.after`). Never hit on prod (no real sign-in method was live)
 
-**I2. (A) QR device linking**
+**I2. (A) QR device linking**: *deferred (Alex, 2026-10-12): not yet.*
 - `[ ]` "Link a device": a signed-in device requests a short-lived (5 min), single-use link code; shows a QR (`aweborn.org/link#<code>`) + a typeable code
 - `[ ]` New device redeems the code → server issues it a *new* device credential for the same `playerId` (the old secret is never copied)
 - `[ ]` Devices list with revoke
@@ -142,7 +142,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[x]` `GET /api/player/me` (characters, ways in incl. passkeys by name, World Index) and `POST /api/player/character` (switch). Credentialed, trusted origins only
 - `[x]` Panel: "Your characters" orb switcher (when > 1); ways-in list (passkeys by name + date with Remove; Google Add/Remove; email Add/Change; password Remove); "Confirm it's you" box (passkey / Google / email code / Cancel); hint "To use a different player here, sign out first."
 - `[x]` Verified: `i5-test.mjs` API e2e 34/34 (anon join keeps its character, World Index union earliest-wins, switch + ownership/401/403; saved device → another player refused for email code (no mail sent), email-OTP, password and sign-up, cookie unchanged; stale session → `SESSION_NOT_FRESH` on change-email/add-passkey/remove-passkey/unlink; same-user re-check → fresh session, same character, old session retired; email change to a taken address refused; notices to old + new address; `LAST_WAY_IN`); email suite 24/24, passkey suite all pass (one assertion each updated by design); browser click-through (save → ways in → stale change-email → Confirm box → email code → change completes)
-- `[ ]` Follow-ups: no *second* Google account; character names (only colour today); a saved player without a password can't add one (no endpoint yet); Google's implicit same-email linking skips the re-check (a notice is still sent); "one screen steers" (I1b) is per character
+- `[~]` Follow-ups: ~~no second Google account~~ (done: `ONE_GOOGLE`); character names (only colour today); ~~add a password~~ (done: `POST /api/player/password`); ~~Google implicit same-email link re-check~~ (decided not needed; verified Google emails only); "one screen steers" (I1b) is per character
 
 **I6. (D) Social sign-in**
 - **Scope cut (Alex, 2026-10-12): passkey + Google + email are enough for now.** Apple/Facebook deferred: aweborn is anonymous-first on the web (sign-in never gates play), passkeys already give iPhone users Face ID + iCloud sync, Apple's sign-in rule applies only to iOS apps, and Apple costs $99/yr + a key rotated every 6 months + Hide-My-Email relay setup for SES. Revisit if a native iOS app ships or players ask.
@@ -155,27 +155,29 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[x]` Email verification + password reset by code (reuses the I4 SES path). Signing up with a taken email sends the owner a notice instead (no account enumeration)
 
 ### Data Model & Storage
-- `[ ]` Add `WorldIndexEntry` type to `shared/crdt-schema.ts`:
+- `[x]` Add `WorldIndexEntry` type to `shared/crdt-schema.ts` (2026-10-12; plus `characterId` and `visitedAt`; `lastVisitedAt`/`visitedAt` are null while sighted; `pending` is client-only):
   ```typescript
   interface WorldIndexEntry {
     worldId: string;
     state: "sighted" | "visited";
-    discoveredAt: number;
     method: "flight" | "card" | "link" | "warp";
-    visitCount: number;
-    lastVisitedAt: number;
-    pending: boolean;   // tapped offline, not yet resolved
+    characterId: string | null;  // who found it first
+    discoveredAt: number;
+    visitedAt: number | null;
+    visitCount: number;          // repeats within 30 s count once
+    lastVisitedAt: number | null;
+    pending?: boolean;           // client only: found offline, not yet confirmed
   }
   ```
-- `[~]` Server: World Index store **built with I5** (`world_index` table in `universe.db`: `accountId, worldId, characterId, discoveredAt`; per *account*, Alex 2026-10-12: any character can warp anywhere the person has found). Read via `GET /api/player/me`. Still to add: `state`/`method`/`visitCount`/`pending` columns from the type above
+- `[x]` Server: `world_index` table (built with I5, per *account*) now has `state`/`method`/`visitCount`/`visitedAt`/`lastVisitedAt` (in-place migration; old rows = visited by flight). `recordDiscovery` only moves sighted → visited, 30 s visit dedupe, an earlier (offline) time moves the discovery earlier; anonymous carry-over merges (visited wins, earliest discovery wins, visit counts add). Endpoints: `POST /api/player/world-index/sighted` (`{ sightings: [{ worldId, at? }] }`, ≤ 20, known worlds only, ≤ 30 days old, 60/min/account) and `/arrived` (`{ worldId }`: link/card landing → sighted). Read via `GET /api/player/me`
 - `[ ]` Client: `src/stores/worldIndexStore.ts` with IndexedDB cache, synced to the server when online
-- `[ ]` Distinguish `card` vs `link` method (e.g., card URLs carry a marker param, decided at print time; see Open Questions)
+- `[x]` ~~Distinguish `card` vs `link` method~~ **Not needed (Alex, 2026-10-12):** a card tap is a link. Cards and links both carry the existing "enter the world or not" parameter
 
 ### Discovery Tracking
-- `[~]` Add entry on: card/link teleport arrival, entering a world (N) **(done: `rooms.joinWorld` records first entry)**, and (if decided) sighting within close LOD range or scanning with L
+- `[~]` Add entry on: entering a world (visited, `rooms.joinWorld`) **done**; card/link arrival and sightings **server done**, client still to call them; sighting = within close LOD range (client-reported; the server doesn't track positions)
 - `[ ]` First discovery → fire `first-world-visit` awe event (500 mana → universal pool, server-validated)
 - `[ ]` Shared-awe 2× when other players are nearby at discovery time
-- `[ ]` Repeat visits increment `visitCount`, no reward
+- `[x]` Repeat visits increment `visitCount`, no reward (30 s dedupe)
 
 ### Discovery Moment (Card Reveal)
 - `[ ]` Create `src/components/CardReveal.tsx`: static Aweborn back flips to the world's front art, then slides into the World Index
@@ -184,8 +186,8 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 ### World Index UI
 - `[ ]` Create `src/components/WorldIndex.tsx`: collector grid of world cards (same art as physical cards)
 - `[ ]` Group by set, show per-set progress ("7 / 12 discovered")
-- `[ ]` Card-found badge for `method: "card"` entries (decorative only)
-- `[ ]` Key binding (proposal: hold `;`). Touch: dedicated HUD button. Gamepad: TBD
+- `[-]` ~~Card-found badge~~ dropped: card taps aren't told apart from links
+- `[ ]` Key binding: **`M`** (decided 2026-10-12). Touch: dedicated HUD button. Gamepad: TBD
 - `[ ]` Replace the temporary `CRDTDevOverlay` world list in production with the World Index
 
 ### World Index Warp
@@ -265,16 +267,17 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 | Question | Proposal |
 |----------|----------|
-| Discovery threshold: sighted vs visited? | Two states. Sighted = can warp to, visited = full art revealed |
-| World Index Warp cost/cooldown? | Free, standard K charge, no cooldown |
-| World Index key binding? | `;` tap = Map/Compass, hold = World Index |
+| Discovery threshold: sighted vs visited? | ✅ **Decided 2026-10-12 (Alex):** two states. **Sighted** = came close enough to see it: flying up to it, or landing next to it by link/card/warp. Face-down card, can warp to it. **Visited** = went inside (also when a link/card has the enter parameter). Card flips to full art. Sightings work offline (queued with their time, replayed later) |
+| Anti-cheat for client-reported sightings? | ✅ **Decided 2026-10-12 (Alex):** ship on cheap checks now (real live worlds only, ≤ 30 days old, 60/min/account). The real answer is [Phase 09](./09-authoritative-flight.md): server-authoritative shared flight sim, offline = server replay of inputs, and the server derives sightings itself (then `/world-index/sighted` is retired) |
+| World Index Warp cost/cooldown? | ✅ **Decided 2026-10-12:** free, standard K charge, no cooldown |
+| World Index key binding? | ✅ **Decided 2026-10-12:** **`M`** (think Map) + a HUD button (I is `modAura`, Tab is focus navigation). Gamepad later |
 | Identity: device vs cross-device? | ✅ **Decided 2026-10-11:** anonymous first + QR device linking + passkeys + email magic link + social (Google/Facebook/Apple…) + email/password, all one `playerId`; per-device sessions. One screen steers. Open: auth stack (I0) |
 | Personal discovery rewards beyond awe + entry? | Cosmetic-only milestone badges / set-completion flair |
-| Distinguish card taps from shared links? | Optional marker param baked into card URLs (e.g., `?c=1`); only affects the badge, never rewards |
+| Distinguish card taps from shared links? | ✅ **Decided 2026-10-12 (Alex): no.** A card is a link; both carry the existing enter-or-not parameter. No marker param, no card-found badge |
 | Print-your-world → patronage? | Opt-in at checkout |
 | Card size? | TCG 63×88 mm |
 | QR fallback on front? | Yes, small corner QR |
-| Art pipeline? | v1 in-game photo mode; later Phase 07 AI art |
+| Art pipeline? | v1 in-game photo mode; later Phase 07 AI art. **World Index (decided 2026-10-12):** worlds without art get a generated card from the same front template (name, creator, coordinates) with a live mini-render of the world in the art window |
 | Vendor vs in-house encoding? | In-house for pilot, vendor for scale |
 | Product name? | TBD |
 | Should `/w/` URL be cleared after arrival? | TBD |
@@ -329,3 +332,8 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | 2026-10-12 | **Panel tweaks (Alex's feedback).** (1) **Tabs renamed "Returning" \| "New player"**: Alex suggested Returning/Registering; too alike at a glance (both "Re-…-ing") and "registering" sounds like paperwork; he wanted "new" and matching syllables, so New player (3/3). The Returning tab is always titled "Welcome back". (2) **Fixed sign-in order** on Returning: passkey → Google → "or use your email" → email code, with password as the fallback. "Last used" is now just a badge (on the button, or in the email divider) and doesn't reorder anything; a device whose last sign-in used a password opens the email form on the password step; Returning no longer offers "Create a password" (that would make a new player). (3) **Saved players can add or change a password**: new `POST /api/player/password` (`setPlayerPassword` in `auth.ts`). Better Auth's `setPassword` is server-only and can't replace an existing password, so this endpoint is ours, with the same guards as other ways in: saved only, needs a real confirmed email (it's the username; otherwise "Add your email first"), confirmed within 5 minutes (`SESSION_NOT_FRESH` → the Confirm box), 10–128 chars, Have I Been Pwned range check (fails closed), notice email ("a password was added/changed"). Other sessions stay signed in, as with passkeys. Panel: the Password row is always shown (Add, or Change + Remove); new `SetPassword.tsx` (hidden username + `new-password` for password managers, Show/Hide). Verified: password e2e 15/15 (anonymous refused, too short, breached, add, notice, sign-in on another device, change, old password rejected, stale session → confirm, foreign origin refused), I5 suite 34/34, typecheck/lint, browser click-through (tabs, order, add password, sign out → password sign-in, Change form). | Alex: test in prod (Returning/New player, add a password from the saved panel). Open I5 follow-ups: character names, Google implicit same-email linking skips the re-check. Then I2 QR, I1b, World Index UI |
 | 2026-10-12 | **One Google account per player** (Alex: linking a second shouldn't be possible). The panel already hid "Add" once Google was linked, but the server would have accepted another `/link-social`; the before hook now refuses it (`ONE_GOOGLE`: "This player already has Google. Remove it first to use a different Google account."). Switching Google accounts = Remove, then Add. Dropped from the follow-up list. | Same as above |
 | 2026-10-12 | **Google implicit linking: no re-check, but verified emails only.** Alex asked whether the same-email implicit link (an anonymous device signs in with Google whose email matches a saved player) needs "confirm it's you". **Decided: no.** A Google sign-in proves control of that email just like an email code, which is already a full way in, and the re-check exists for signed-in devices changing ways in. Hardening: **removed `trustedProviders: ["google"]`**, which made Better Auth link even when Google reports the email *unverified* (possible for Google accounts on non-Gmail addresses). Now only verified Google emails link, both implicitly and explicitly. The notice email for any Google link was already there (`databaseHooks.account.create.after`), so I was wrong earlier to call that a gap. Follow-up retired. | Open I5 follow-up: character names. Then I2 QR, I1b, World Index UI |
+| 2026-10-12 | **Priorities.** Alex: QR device linking (I2) not yet; one screen steers (I1b) can wait. **Next: the World Index** (data model → discovery tracking → card reveal → UI → warp). | Start the World Index: settle the open questions (sighted vs visited, warp rules, key binding), then the data model |
+| 2026-10-12 | **World Index decisions (Alex).** Two discovery states (sighted = face-down + warpable, visited = full art); worlds without art get a generated card from the physical front template with a live mini-render; warp is free with the standard K charge and no cooldown; opened by a dedicated key + a HUD button (I is taken by `modAura` and Tab is focus navigation, so the key is still to pick). | Key = **M** (Alex). Next: the data model (`state`/`method`/`visitCount`/`lastVisitedAt` columns, `WorldIndexEntry` in shared, sighted detection) |
+| 2026-10-12 | **World Index data model (server).** `WorldIndexEntry` in shared; `world_index` migrated in place (new columns; old rows = visited/flight, `visitedAt` = `discoveredAt`); `recordDiscovery(…, state, method)` returns `{ isNew, firstVisit }` (`firstVisit` will drive the card reveal); sighted → visited only, `card` sticks, 30 s visit dedupe; anonymous carry-over merge updated. New endpoints `world-index/sighted` and `world-index/arrived`. **Proposals (for Alex):** a link arrival only *sights* (entering the world then visits it); warp never discovers; sightings are client-reported, so they are validated (real, live worlds) and rate-limited (60/min/account), which is fine because the universe is public and rewards come only on first *visit*. Verified: new World Index e2e 26/26 (migration, sight/visit/flip, dedupe, card sticky, validation, rate limit, merge), I5 suite 34/34, typecheck. **Not committed yet.** | Alex: OK the proposals + commit. Deploy needs a prod snapshot first (schema migration). Then the client: `worldIndexStore`, sighting detection, `WorldIndex.tsx` on **M** |
+| 2026-10-12 | **Alex on the proposals.** (1) Link arrival = sighted: agreed. (2) Warp: landing next to a world sights it, entering visits it (a warp target is already in the index, so in practice a no-op). (3) Sightings must be client-reported so they work **offline** (queue, replay later), but the server should judge legitimacy: **anti-cheat is now an open question.** (4) Card taps aren't told apart from links; both carry the existing enter-or-not parameter. **Changes:** `DiscoveryMethod` = `flight` \| `link` (no `card`, no `warp`); `/arrived` takes just `worldId` (→ sighted/link); `/sighted` takes `{ sightings: [{ worldId, at? }] }` (future → now, > 30 days dropped); an earlier sighting moves `discoveredAt` (and who/how) earlier. Card-found badge dropped. Verified: World Index e2e 28/28 (adds offline cases), I5 34/34, typecheck. **Anti-cheat notes for the next talk:** a `/w/<id>` link can already sight *any* world honestly (world ids are public in the universe doc), so faking sightings gains nothing a link doesn't; the thing worth protecting is the first-*visit* reward, and visits are always online and seen by the server (`joinWorld`). Options: (a) light checks now (done) + guard rewards in Phase 05; (b) a flight trace with each batch (position + time per sighting), checked for max speed and sight radius, warps allowed only to indexed worlds; (c) online, the server samples awareness positions it already relays and checks live sightings against them; offline batches get (b). | Alex: decide the anti-cheat approach (a/b/c). Then commit (snapshot before deploy), then the client |
+| 2026-10-12 | **Anti-cheat → new Phase 09.** Alex liked (b)+(c) and went further: the server should hold every player's flight trace (telemetry + online anti-cheat), offline checked by the same code, online and offline must feel the same (no "unverified" tier), and the "perfect honest flier" bound is the guarantee. Chose server-authoritative movement with client prediction (as Quake/Source/Overwatch do); offline = server replay of recorded inputs; mesh peers exchange inputs. Planned as [Phase 09](./09-authoritative-flight.md), queued after 8B. **For 8B:** ship on the cheap checks already built. | Commit the World Index server work (snapshot before deploy), then the client |

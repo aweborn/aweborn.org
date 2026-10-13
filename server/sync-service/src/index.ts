@@ -4,7 +4,7 @@ import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
 import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword } from "./auth.js";
-import { listCharacters, switchCharacter, waysIn, worldIndex } from "./identity.js";
+import { listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 
@@ -100,7 +100,45 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
  *   GET  /api/player/me         { playerId, characters, methods, worldIndex }
  *   POST /api/player/character  { id } → this device now plays that character
  *   POST /api/player/password   { password } → add or change this player's password
+ *   POST /api/player/world-index/sighted  { sightings: { worldId, at? }[] (≤ 20) } → { results }
+ *        Came close enough to see them. The client reports these (it may have
+ *        been offline: `at` = when, up to 30 days back). Only real, live worlds
+ *        count, rate-limited per account; legitimacy checks are still to come.
+ *   POST /api/player/world-index/arrived  { worldId } → result
+ *        Landed next to it by link or card tap = sighted (entering then visits).
+ *        Each result: { worldId, isNew, firstVisit }.
  */
+
+/** Sightings per account per minute (a busy flight past a cluster stays well under). */
+const SIGHTINGS_PER_MIN = 60;
+const MAX_SIGHTED_BATCH = 20;
+/** Oldest offline sighting we accept. */
+const MAX_SIGHTING_AGE_MS = 30 * 24 * 3600_000;
+const sightingWindows = new Map<string, { start: number; count: number }>();
+
+/** Take `n` from the account's sighting budget; false = over the limit. */
+function takeSightings(accountId: string, n: number, now = Date.now()): boolean {
+  let w = sightingWindows.get(accountId);
+  if (!w || now - w.start >= 60_000) {
+    w = { start: now, count: 0 };
+    sightingWindows.set(accountId, w);
+  }
+  if (w.count + n > SIGHTINGS_PER_MIN) return false;
+  w.count += n;
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, w] of sightingWindows) if (now - w.start >= 60_000) sightingWindows.delete(k);
+}, 5 * 60_000).unref();
+
+/** A live world id (normalised), or null. */
+function knownWorld(id: unknown): string | null {
+  if (typeof id !== "string") return null;
+  const worldId = id.toLowerCase();
+  return isWorldId(worldId) && rooms.lookupWorld(worldId) ? worldId : null;
+}
+
 async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const json = (status: number, body: unknown) => {
     res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -132,6 +170,34 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     const body = (await readJson(req).catch(() => null)) as { password?: unknown } | null;
     const r = await setPlayerPassword(auth, fromNodeHeaders(req.headers), body?.password);
     return r.ok ? json(200, { changed: r.changed }) : json(r.status, { code: r.code, message: r.message });
+  }
+  if (path === "/api/player/world-index/sighted" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { sightings?: unknown } | null;
+    const raw = body?.sightings;
+    if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_SIGHTED_BATCH) {
+      return json(400, { error: "bad_request" });
+    }
+    const now = Date.now();
+    const seen = new Map<string, number>();
+    for (const s of raw as { worldId?: unknown; at?: unknown }[]) {
+      const worldId = knownWorld(s?.worldId);
+      if (!worldId) continue;
+      const at = typeof s.at === "number" && Number.isFinite(s.at) ? Math.min(s.at, now) : now;
+      if (at < now - MAX_SIGHTING_AGE_MS) continue;
+      seen.set(worldId, Math.min(at, seen.get(worldId) ?? at));
+    }
+    if (!takeSightings(accountId, seen.size)) return json(429, { error: "slow_down" });
+    const results = [...seen].map(([worldId, at]) => ({
+      worldId,
+      ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "flight", at),
+    }));
+    return json(200, { results });
+  }
+  if (path === "/api/player/world-index/arrived" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown } | null;
+    const worldId = knownWorld(body?.worldId);
+    if (!worldId) return json(404, { error: "not_found" });
+    return json(200, { worldId, ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "link") });
   }
   return json(404, { error: "not_found" });
 }

@@ -213,6 +213,40 @@ export interface PlayerPresence {
   color: string;
 }
 
+// ── World Index (per account; Phase 08B) ─────────────────────────────
+
+/**
+ * - `sighted`: came close enough to see it (flying, or arriving by link/card
+ *   next to it). Face-down card; can warp there.
+ * - `visited`: went inside. Full art.
+ * A world only ever moves sighted → visited.
+ */
+export type WorldIndexState = "sighted" | "visited";
+
+/**
+ * How a world was first found: flying up to it, or arriving by link (a
+ * physical card is a link). Warping adds nothing: you can only warp to
+ * worlds already in your index.
+ */
+export type DiscoveryMethod = "flight" | "link";
+
+export interface WorldIndexEntry {
+  worldId: string;
+  state: WorldIndexState;
+  method: DiscoveryMethod;
+  /** The character that found it first. */
+  characterId: string | null;
+  /** First found (sighted or visited). */
+  discoveredAt: number;
+  /** First visit, or null while only sighted. */
+  visitedAt: number | null;
+  /** Times entered; re-entering within 30 s counts once. */
+  visitCount: number;
+  lastVisitedAt: number | null;
+  /** Client only: found while offline, not yet confirmed by the server. */
+  pending?: boolean;
+}
+
 // ── WebSocket Protocol ───────────────────────────────────────────────
 
 /**

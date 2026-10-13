@@ -15,6 +15,7 @@
  */
 
 import type Database from "better-sqlite3";
+import type { DiscoveryMethod, WorldIndexEntry, WorldIndexState } from "../../../shared/crdt-schema.js";
 
 let db: Database.Database;
 
@@ -41,6 +42,21 @@ export function initIdentity(database: Database.Database): void {
       PRIMARY KEY (accountId, worldId)
     );
   `);
+  // 08B: two states + how it was found. Rows from before this were all
+  // recorded by entering a world, i.e. visited by flight.
+  const cols = new Set((db.prepare(`PRAGMA table_info(world_index)`).all() as { name: string }[]).map((c) => c.name));
+  const add = (name: string, def: string) => {
+    if (!cols.has(name)) db.exec(`ALTER TABLE world_index ADD COLUMN ${name} ${def}`);
+  };
+  add("state", "TEXT NOT NULL DEFAULT 'visited'");
+  add("method", "TEXT NOT NULL DEFAULT 'flight'");
+  add("visitCount", "INTEGER NOT NULL DEFAULT 1");
+  add("visitedAt", "INTEGER");
+  add("lastVisitedAt", "INTEGER");
+  db.exec(
+    `UPDATE world_index SET visitedAt = discoveredAt, lastVisitedAt = discoveredAt
+       WHERE state = 'visited' AND visitedAt IS NULL`,
+  );
 }
 
 /** Make sure a character row exists. Never steals one owned by another account. */
@@ -109,12 +125,20 @@ export function absorbAnonymous(anonUserId: string, anonPlayerId: string, intoUs
     ensureCharacter(anonPlayerId, anonUserId);
     db.prepare(`UPDATE character SET accountId = ? WHERE accountId = ?`).run(intoUserId, anonUserId);
     db.prepare(
-      `INSERT INTO world_index (accountId, worldId, characterId, discoveredAt)
-         SELECT ?, worldId, characterId, discoveredAt FROM world_index WHERE accountId = ?
+      `INSERT INTO world_index (accountId, worldId, characterId, discoveredAt, state, method, visitCount, visitedAt, lastVisitedAt)
+         SELECT ?, worldId, characterId, discoveredAt, state, method, visitCount, visitedAt, lastVisitedAt
+           FROM world_index WHERE accountId = ?
        ON CONFLICT(accountId, worldId) DO UPDATE SET
          characterId = CASE WHEN excluded.discoveredAt < world_index.discoveredAt
                             THEN excluded.characterId ELSE world_index.characterId END,
-         discoveredAt = MIN(world_index.discoveredAt, excluded.discoveredAt)`,
+         method = CASE
+                       WHEN excluded.discoveredAt < world_index.discoveredAt THEN excluded.method
+                       ELSE world_index.method END,
+         discoveredAt = MIN(world_index.discoveredAt, excluded.discoveredAt),
+         state = CASE WHEN 'visited' IN (excluded.state, world_index.state) THEN 'visited' ELSE 'sighted' END,
+         visitCount = world_index.visitCount + excluded.visitCount,
+         visitedAt = MIN(COALESCE(world_index.visitedAt, excluded.visitedAt), COALESCE(excluded.visitedAt, world_index.visitedAt)),
+         lastVisitedAt = MAX(COALESCE(world_index.lastVisitedAt, excluded.lastVisitedAt), COALESCE(excluded.lastVisitedAt, world_index.lastVisitedAt))`,
     ).run(intoUserId, anonUserId);
     db.prepare(`DELETE FROM world_index WHERE accountId = ?`).run(anonUserId);
   })();
@@ -165,18 +189,78 @@ export function countWaysIn(w: WaysIn): number {
 
 // ── World Index ──────────────────────────────────────────────────────────────
 
-/** Record that an account found a world (first time wins; later visits no-op). */
-export function recordDiscovery(accountId: string, worldId: string, characterId: string | null): boolean {
-  const res = db
-    .prepare(
-      `INSERT OR IGNORE INTO world_index (accountId, worldId, characterId, discoveredAt) VALUES (?, ?, ?, ?)`,
-    )
-    .run(accountId, worldId, characterId, Date.now());
-  return res.changes > 0;
+/** Arrivals closer together than this count as one visit (reconnects, hopping in and out). */
+export const VISIT_DEDUPE_MS = 30_000;
+
+export interface DiscoveryResult {
+  /** First time this account has found the world at all. */
+  isNew: boolean;
+  /** This event turned it visited (new or sighted → visited): the card reveal. */
+  firstVisit: boolean;
 }
 
-export function worldIndex(accountId: string): { worldId: string; characterId: string | null; discoveredAt: number }[] {
+/**
+ * Record a sighting or a visit. A world only moves sighted → visited; a
+ * sighting of a known world changes nothing, except that an earlier `now`
+ * (an offline sighting arriving late) moves the discovery earlier.
+ */
+export function recordDiscovery(
+  accountId: string,
+  worldId: string,
+  characterId: string | null,
+  state: WorldIndexState = "visited",
+  method: DiscoveryMethod = "flight",
+  now: number = Date.now(),
+): DiscoveryResult {
+  return db.transaction((): DiscoveryResult => {
+    const row = db
+      .prepare(`SELECT state, discoveredAt, lastVisitedAt FROM world_index WHERE accountId = ? AND worldId = ?`)
+      .get(accountId, worldId) as
+      | { state: WorldIndexState; discoveredAt: number; lastVisitedAt: number | null }
+      | undefined;
+    const visited = state === "visited";
+    if (!row) {
+      db.prepare(
+        `INSERT INTO world_index (accountId, worldId, characterId, discoveredAt, state, method, visitCount, visitedAt, lastVisitedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        accountId,
+        worldId,
+        characterId,
+        now,
+        state,
+        method,
+        visited ? 1 : 0,
+        visited ? now : null,
+        visited ? now : null,
+      );
+      return { isNew: true, firstVisit: visited };
+    }
+    if (now < row.discoveredAt) {
+      db.prepare(
+        `UPDATE world_index SET discoveredAt = ?, characterId = ?, method = ? WHERE accountId = ? AND worldId = ?`,
+      ).run(now, characterId, method, accountId, worldId);
+    }
+    if (!visited) return { isNew: false, firstVisit: false };
+    const firstVisit = row.state === "sighted";
+    const repeat = !firstVisit && row.lastVisitedAt !== null && now - row.lastVisitedAt < VISIT_DEDUPE_MS;
+    db.prepare(
+      `UPDATE world_index SET
+         state = 'visited',
+         visitCount = visitCount + ?,
+         visitedAt = COALESCE(visitedAt, ?),
+         lastVisitedAt = ?
+       WHERE accountId = ? AND worldId = ?`,
+    ).run(repeat ? 0 : 1, now, now, accountId, worldId);
+    return { isNew: false, firstVisit };
+  })();
+}
+
+export function worldIndex(accountId: string): WorldIndexEntry[] {
   return db
-    .prepare(`SELECT worldId, characterId, discoveredAt FROM world_index WHERE accountId = ? ORDER BY discoveredAt`)
-    .all(accountId) as { worldId: string; characterId: string | null; discoveredAt: number }[];
+    .prepare(
+      `SELECT worldId, state, method, characterId, discoveredAt, visitedAt, visitCount, lastVisitedAt
+         FROM world_index WHERE accountId = ? ORDER BY discoveredAt`,
+    )
+    .all(accountId) as WorldIndexEntry[];
 }

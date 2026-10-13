@@ -19,6 +19,7 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 | NFC | NDEF URL records (OS-handled, not Web NFC API) | Works on both iOS and Android natively |
 | Reconnect strategy | Yjs auto-merge + server spatial resolution | CRDT guarantees no conflicts |
 | Dual-mode | Online (custom WebSocket room protocol to VPS) + Offline (y-webrtc P2P) simultaneously | Seamless transition. *Note: the online path is not y-websocket (see phases/README Technical Notes), so reconnect/state-vector sync must go through the `universe-sync` / `world-sync` messages.* |
+| Player movement offline / in a mesh | **[Phase 09](./09-authoritative-flight.md)** shared sim: peers exchange *inputs* and simulate each other; each player's input log is replayed by the server on reconnect | Same code online, offline and in a mesh; offline cheating capped at what a perfect honest flier could do (2026-10-12) |
 
 ## Tasks
 
@@ -34,7 +35,7 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - `[ ]` Install `y-webrtc` and configure alongside the existing WebSocket room protocol (`useCRDT.ts`)
 - `[ ]` Dual provider setup: Yjs doc syncs over both WebSocket AND WebRTC
 - `[ ]` P2P connection management (discover peers on same LAN via signaling)
-- `[ ]` Ephemeral data over DataChannels (avatar positions, voice) — *replaces/augments the current WebSocket presence relay (msg `0x09`) for scale*
+- `[ ]` Ephemeral data over DataChannels (avatar positions, voice) — *replaces/augments the current WebSocket presence relay (msg `0x09`) for scale*. **Phase 09:** movement goes over DataChannels as *inputs*, not positions (milestone 9E)
 - `[ ]` Graceful fallback: WebRTC fails → WebSocket only, and vice versa
 
 ### QR Code Signaling (QWBP)
@@ -68,6 +69,7 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 
 ### Offline Reconnect
 - `[ ]` On reconnect: re-run `universe-sync` / `world-sync` state-vector exchange over the room protocol to push local state to the VPS
+- `[ ]` On reconnect: upload the offline input log for server replay ([Phase 09](./09-authoritative-flight.md) 9C); the IndexedDB store here hosts it
 - `[ ]` Server validates structural changes, resolves collisions
 - `[ ]` Offline creations sync as Ghost worlds
 - `[ ]` If offline creation collides with online creation → server nudges it to nearest open space

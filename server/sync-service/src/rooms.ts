@@ -169,12 +169,12 @@ export class RoomManager {
 
     room.clients.add(ws);
 
-    // World Index: entering a world counts as discovering it (first visit wins).
+    // World Index: entering a world is a visit (sighted → visited, or new).
     const accountId = this.accountIds.get(ws);
     if (accountId) {
       try {
-        if (recordDiscovery(accountId, worldId, this.playerIds.get(ws) ?? null)) {
-          console.log(`[rooms] world "${worldId}" discovered`);
+        if (recordDiscovery(accountId, worldId, this.playerIds.get(ws) ?? null).firstVisit) {
+          console.log(`[rooms] world "${worldId}" visited for the first time`);
         }
       } catch (err) {
         console.warn("[rooms] could not record discovery:", err);

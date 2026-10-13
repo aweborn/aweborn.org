@@ -80,7 +80,7 @@ interface GenerateResult {
 
 - `[ ]` Create `src/systems/InteriorController.ts`: first/third-person movement using the Phase 04 interior action map (V=jump/jetpack, W/E=look, Q/R=move, A/F=strafe, S=back, Space=crouch, K=sprint)
 - `[ ]` Read per-world physics from World CRDT `Y.Map("physics")` (gravity vector, friction, air resistance, bounce, water level) and apply to player movement
-- `[ ]` Choose physics engine (e.g., Rapier via `@react-three/rapier`) vs. custom kinematic controller — decide and log
+- `[ ]` Choose physics engine (e.g., Rapier via `@react-three/rapier`) vs. custom kinematic controller — decide and log. **Constraint ([Phase 09](./09-authoritative-flight.md), 2026-10-12):** movement must be a deterministic step in `shared/sim` that also runs on the server (prediction + authority + offline replay). Rapier only with its cross-platform determinism build
 - `[ ]` Collision with ground grid + placed objects (Solid worlds only; Ghost worlds = no collision, per ROADMAP)
 - `[ ]` Camera for interiors (reuse `CameraController` presets where possible)
 - `[ ]` Broadcast interior position via presence (`inWorld: worldId`) so players see each other inside worlds
