@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Float, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useUniverseStore } from '../stores/universeStore'
+import { SIGHT_DISTANCE } from '../stores/worldIndexStore'
 import type { WorldEntry } from '@aweborn/shared/crdt-schema'
 import {
   createWorldGlowMaterial,
@@ -25,7 +26,7 @@ import {
  */
 
 // ── Scale constants ──────────────────────────────────────────────────────────
-const CLOSE_DIST = 100         // Full mesh LOD
+const CLOSE_DIST = SIGHT_DISTANCE // Full mesh LOD (= where a world counts as sighted)
 const MEDIUM_DIST = 200        // Billboard LOD
 
 /** Deterministic hash from string → [0, 1) */

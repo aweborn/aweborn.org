@@ -6,6 +6,7 @@ import { warpSystem } from '../systems/WarpSystem'
 import { starModSlots } from '../systems/StarModSlots'
 import { RadarMinimap } from './RadarMinimap'
 import { PlayerAccount } from './PlayerAccount'
+import { WorldIndexChip } from './WorldIndex'
 
 interface HUDProps {
   showPrompt: boolean
@@ -54,6 +55,7 @@ const KEY_TO_ACTION_MAP: Record<string, ActionKey> = {
   K: 'warp',
   L: 'scan',
   N: 'interact',
+  M: 'worldIndex',
   '1': 'cameraClose',
   '2': 'cameraMedium',
   '3': 'cameraFar',
@@ -86,6 +88,7 @@ const KEY_LABELS: Record<string, string> = {
   K: 'Warp',
   L: 'Scan',
   N: 'Interact',
+  M: 'World Index',
   '1': 'Close cam',
   '2': 'Medium cam',
   '3': 'Far cam',
@@ -107,6 +110,11 @@ const KeyCap = memo(function KeyCap({ keyName, pressed, wide }: { keyName: strin
     </div>
   )
 })
+
+/** 12.3 nearby; 1,204 across the universe (World Index locks). */
+function formatDistance(d: number): string {
+  return d < 1000 ? d.toFixed(1) : Math.round(d).toLocaleString()
+}
 
 /**
  * HUD overlay — displays flight telemetry, warp status, mod slots,
@@ -138,6 +146,9 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
   const framesRef = useRef(0)
   const lastTimeRef = useRef(performance.now())
   const prevKeysRef = useRef<string>('')
+  // Warp lock changes don't touch any store (e.g. a World Index lock while stationary): poll them too.
+  const [, setWarpKey] = useState('')
+  const prevWarpRef = useRef('')
 
   useEffect(() => {
     let rafId: number
@@ -169,6 +180,13 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
         setPressedKeys(active)
       }
 
+      const w = warpSystem.getState()
+      const warpKey = `${w.phase}:${w.lockedTarget?.id ?? ''}:${Math.round(w.chargeProgress * 50)}`
+      if (warpKey !== prevWarpRef.current) {
+        prevWarpRef.current = warpKey
+        setWarpKey(warpKey)
+      }
+
       rafId = requestAnimationFrame(tick)
     }
     rafId = requestAnimationFrame(tick)
@@ -183,6 +201,7 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
       <div className="hud-top-left">
         <div className="hud-brand">aweborn</div>
         <PlayerAccount />
+        <WorldIndexChip />
       </div>
 
       {/* Top right — Context mode */}
@@ -211,7 +230,7 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
               ◇ {warp.lockedTarget.name}
             </div>
             <div className="hud-target-distance">
-              {warp.candidates.find((c) => c.world.id === warp.lockedTarget?.id)?.distance.toFixed(1) ?? '?'} u
+              {warp.lockedTargetPosition ? formatDistance(warp.lockedTargetPosition.distanceTo(flightController.position)) : '?'} u
             </div>
           </div>
         </div>
@@ -332,6 +351,7 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
             {/* N row */}
             <div className="hud-key-row hud-key-row--offset-2">
               <KeyCap keyName="N" pressed={isPressed('N')} />
+              <KeyCap keyName="M" pressed={isPressed('M')} />
             </div>
           </div>
         </div>

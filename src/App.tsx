@@ -6,6 +6,9 @@ import { DonationModal } from './components/DonationModal'
 import { CRDTDevOverlay } from './components/CRDTDevOverlay'
 import { TeleportToast } from './components/TeleportToast'
 import { teleportSystem } from './systems/TeleportSystem'
+import { WorldIndex } from './components/WorldIndex'
+import { CardReveal } from './components/CardReveal'
+import { startWorldIndex } from './stores/worldIndexStore'
 
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
 import { FallbackScene } from './components/FallbackScene'
@@ -40,6 +43,11 @@ export default function App() {
   // Starts during the loading screen so the lookup overlaps asset loading.
   useEffect(() => {
     if (webglSupported) void teleportSystem.handleBootLink()
+  }, [webglSupported])
+
+  // World Index: sightings, visits, offline queue (from boot, so link arrivals count).
+  useEffect(() => {
+    if (webglSupported) startWorldIndex()
   }, [webglSupported])
 
   const handlePortalActivate = useCallback(() => {
@@ -92,6 +100,10 @@ export default function App() {
 
       {/* Teleport link arrival / error notice */}
       {isLoaded && <TeleportToast />}
+
+      {/* World Index (M) + first-visit card reveal */}
+      {isLoaded && webglSupported && <WorldIndex />}
+      {isLoaded && webglSupported && <CardReveal />}
 
       {/* Donation modal */}
       <DonationModal

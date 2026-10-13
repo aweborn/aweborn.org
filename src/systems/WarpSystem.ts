@@ -112,6 +112,11 @@ class WarpSystem {
   /** Set by requestArrivalEffect(), cleared by consumeArrivalEffect(). */
   private _arrivalEffectRequested = false
 
+  /** The lock came from the World Index: no range limit (the world may be anywhere). */
+  private _remote = false
+  /** A remote leap just finished: the camera should snap, not chase across the universe. */
+  private _snapRequested = false
+
   /**
    * Update the warp system for one frame.
    *
@@ -171,8 +176,8 @@ class WarpSystem {
           this._phase = 'charging'
           this._chargeProgress = 0
         }
-        // Escape or target out of range → cancel lock
-        if (events.justPressed.has('escape') || !this._isTargetInRange(playerPos)) {
+        // Escape or target out of range → cancel lock (World Index locks have no range)
+        if (events.justPressed.has('escape') || (!this._remote && !this._isTargetInRange(playerPos))) {
           this._cancelLock()
         }
         break
@@ -282,6 +287,27 @@ class WarpSystem {
   }
 
   /**
+   * Lock onto a world anywhere in the universe (World Index "Warp"). Then the
+   * usual hold-K charge and leap; free, no cooldown. J or Esc drops it.
+   */
+  lockRemote(world: WorldEntry): void {
+    if (this._phase === 'leaping' || this._phase === 'arriving') return
+    this._lockOn({
+      world,
+      scenePos: new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z),
+    })
+    this._remote = true
+    this._firstSpawnDone = true
+  }
+
+  /** Used by Scene: true once after a remote leap lands. */
+  consumeSnapRequest(): boolean {
+    const requested = this._snapRequested
+    this._snapRequested = false
+    return requested
+  }
+
+  /**
    * Set the screen-space position of the locked target.
    * Called by FlightSystem each frame after projecting the 3D position.
    * @param pos  Normalized screen coords (x: 0-100%, y: 0-100%), or null to clear.
@@ -317,6 +343,7 @@ class WarpSystem {
     this._lockedTargetPosition = candidate.scenePos.clone()
     this._phase = 'locked'
     this._chargeProgress = 0
+    this._remote = false
   }
 
   private _cycleTarget(): void {
@@ -336,6 +363,7 @@ class WarpSystem {
     this._lockedTargetPosition = null
     this._chargeProgress = 0
     this._leapProgress = 0
+    this._remote = false
   }
 
   private _isTargetInRange(playerPos: THREE.Vector3): boolean {
@@ -366,6 +394,8 @@ class WarpSystem {
     flightController.brake()
 
     // Reset lock state
+    if (this._remote) this._snapRequested = true
+    this._remote = false
     this._lockedTarget = null
     this._lockedTargetPosition = null
     this._chargeProgress = 0

@@ -23,6 +23,7 @@ import {
 import { flightController } from './FlightController'
 import { warpSystem } from './WarpSystem'
 import { useUniverseStore } from '../stores/universeStore'
+import { recordArrival } from '../stores/worldIndexStore'
 
 // ── Config ───────────────────────────────────────────────────────────
 
@@ -51,6 +52,8 @@ export interface WorldLookup {
   id: string
   name: string
   color: string
+  /** Added for the World Index; absent on older servers. */
+  creator?: string
   solidified: boolean
   sector: string
   position: Vec3
@@ -80,7 +83,7 @@ export const useTeleportStore = create<TeleportState>((set) => ({
   dismiss: () => set({ notice: null }),
 }))
 
-function showNotice(notice: TeleportNotice): void {
+export function showNotice(notice: TeleportNotice): void {
   useTeleportStore.setState((s) => ({ notice, noticeSeq: s.noticeSeq + 1 }))
 }
 
@@ -170,6 +173,7 @@ class TeleportSystem {
     flightController.reset(arrivalPos, new THREE.Quaternion())
     this._snapRequested = true
     warpSystem.requestArrivalEffect()
+    recordArrival(world) // sighted by link (a card tap is a link)
 
     // The portal has no interior, so `?a=in` on Origin still orbits.
     const enter = arrival === 'in' && !world.isOrigin

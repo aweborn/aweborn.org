@@ -586,7 +586,7 @@ It's a sci-fi token that links the real world to the virtual one. Cards are chea
    (the client only subscribes to nearby sectors, so this needs a direct lookup by ID)
 5. Teleport: warp-arrival effect plays, player star placed at the world's resolvedPosition
 6. Arrival mode applied (default: captured orbit around the world's sun)
-7. World Index: entry added (method = "card") if new → First Discovery reward fires
+7. World Index: entry added as sighted (method = "link"; a card tap is a link) or visited with `?a=in` → first visit fires the reward
 ```
 
 **Arrival modes (configurable per card, default = orbit):**
@@ -611,23 +611,28 @@ The arrival mode is chosen when the card is designed, and it's encoded in the UR
 The World Index is the player's **personal, persistent index of every world they've discovered**. It's how a player remembers the universe, and it replaces the temporary `CRDTDevOverlay` world list.
 
 ```js
-// One World Index entry per discovered world (per player)
+// One World Index entry per discovered world (per account)
 {
   worldId: "3f9c2a1e-…-uuidv4",
-  state: "sighted" | "visited",   // see open question on discovery thresholds
+  state: "sighted" | "visited",   // sighted = came within 100 u or landed beside it; visited = went inside
+  method: "flight" | "link",      // how you first found it (a card tap is a link)
+  characterId: "…",               // which character found it first
   discoveredAt: 1727971200000,
-  method: "flight" | "card" | "link" | "warp",  // how you first found it (a card-found entry gets a tactile badge)
-  visitCount: 4,
+  visitedAt: 1727980000000,       // null while sighted
+  visitCount: 4,                  // repeats within 30 s count once
   lastVisitedAt: 1727999999000,
-  pending: false                  // true = tapped offline, not yet resolved
+  pending: false                  // client only: found offline, not yet confirmed
 }
 ```
 
 - **Any discovery counts.** Flying in manually, tapping a card, or opening a shared link all add entries. Cards are just the most magical way to fill it.
-- **World Index Warp.** From anywhere in the universe, choose a World Index entry and warp straight there. This is the in-game version of tapping the card again. It uses the warp charge/leap visuals.
-- **Collector view.** Entries are shown as cards using the same art as the physical card. Collections are grouped by set (Origin Set, event sets, print-your-world). Per-set progress ("7 / 12 discovered") gives people a reason to collect without any scarcity mechanics.
-- **Card-found badge.** Entries discovered by a physical card tap (`method: "card"`) get a subtle tactile mark in the UI, a nod to the real-world artifact. This is decoration, not proof of ownership.
-- **Persistence requires identity.** The current `playerId` lives in `sessionStorage` and is lost when the tab closes. The World Index needs at least a device-persistent identity, and eventually cross-device identity (see open questions).
+- **Two states.** *Sighted* worlds show face-down and can be warped to; *visited* worlds flip to full art. Sightings work offline: they are queued with their time and replayed when back online.
+- **World Index Warp.** From anywhere in the universe, choose a World Index entry and warp straight there. This is the in-game version of tapping the card again. It uses the warp charge/leap visuals. Free, standard K charge, no cooldown (movement never costs mana).
+- **Opened with `M`** (think Map) or the HUD chip.
+- **Collector view.** Entries are shown as cards using the same art as the physical card; worlds without art get a generated card from the same front template. Collections are grouped by set (Origin Set, event sets, print-your-world). Per-set progress ("7 / 12 discovered") gives people a reason to collect without any scarcity mechanics.
+- **No card-found badge.** Card taps aren't told apart from shared links (decided 2026-10-12).
+- **Persistence via identity.** The World Index is stored per account on the server (Phase 08 → Persistent Player Identity) and cached on the device.
+- **Anti-cheat.** Sightings are client-reported with cheap server checks for now; [Phase 09](./phases/09-authoritative-flight.md) (server-authoritative flight) lets the server derive them itself.
 
 #### First Discovery Rewards
 
@@ -996,14 +1001,14 @@ The offline experience is still rich and beautiful: Ghost worlds have their own 
 - **⬜ World Interiors:** What can players actually do inside a world? (place objects, sculpt, draw, just hang out?)
 - **⬜ Universe Entry Point:** What does a brand-new player see when they first open aweborn.org? How do they orient?
 - **⬜ Mana Tuning:** Finalize dollar-to-mana ratio, solar cycle parameters
-- **⬜ Discovery threshold (World Index):** Does a world enter the World Index when *sighted* (close LOD range / scanned with L) or only when *visited* (entered with N / card tap)? Proposal: two states, *sighted* (can warp to) and *visited* (full card art revealed).
-- **⬜ World Index Warp rules:** Free? Cooldown? Charge time scaling with distance? Proposal: free, standard K charge animation, no cooldown (movement never costs mana).
-- **⬜ World Index key binding:** The keyboard layout has no free slot. Proposal: `;` tap = Map/Compass (existing), hold = open World Index.
-- **✅ Player identity persistence (decided 2026-10-11):** One player across tabs and devices. Anonymous first (no signup wall). Every sign-in method attaches to the same `playerId`: QR device linking, passkeys, email magic link, social sign-in (Google, Facebook, Apple, …) and email + password. The public `playerId` is never a credential; each device holds its own revocable session. When several screens are open, one screen steers and the others follow live. Open: auth stack (self-hosted library vs hosted provider). Tasks: Phase 08 → Persistent Player Identity.
+- **✅ Discovery threshold (World Index) (decided 2026-10-12):** Two states. *Sighted* = within close range (100 u) or landed beside it by link/card/warp: face-down card, can warp to it. *Visited* = went inside: full card art. Sightings work offline (queued, replayed later). Anti-cheat: cheap server checks now, server-derived sightings in Phase 09.
+- **✅ World Index Warp rules (decided 2026-10-12):** free, standard K charge animation, no cooldown (movement never costs mana).
+- **✅ World Index key binding (decided 2026-10-12):** `M` (think Map) + a HUD chip for touch. Gamepad later.
+- **✅ Player identity persistence (decided 2026-10-11, built 2026-10-12):** One player across tabs and devices. Anonymous first (no signup wall). Ways in: passkeys, Google, email code (instead of a magic link) and email + password; Apple/Facebook deferred. An account owns *characters*; saved players never merge. The public `playerId` is never a credential; each device holds its own revocable session (Better Auth). Deferred: QR device linking, one screen steers. Tasks: Phase 08 → Persistent Player Identity.
 - **⬜ Personal discovery rewards:** Beyond awe-to-pool + the World Index entry, is there a personal reward (cosmetic badges at discovery milestones, set-completion flair)? Must stay cosmetic-only.
 - **⬜ Print-your-world → patronage:** Should a card order for a Ghost world fund that world's solidification automatically, opt-in, or not at all?
-- **⬜ Card format:** TCG standard (63×88 mm, fits sleeves/binders) vs. CR80 credit-card size (85.6×54 mm, cheapest NFC PVC stock). Proposal: TCG size for collector feel.
-- **⬜ QR fallback:** Include a small QR code (same URL) on the card front for phones without NFC / desktop? (The back must stay identical on every card, and a QR is unique per world, so it can only go on the front.)
-- **⬜ Card art pipeline:** How is a world's portrait produced — player-taken in-game snapshot, automatic server-side render, or AI-generated (Phase 07)?
+- **✅ Card format (decided 2026-10-04):** TCG standard, 63×88 mm.
+- **✅ QR fallback (decided 2026-10-04):** yes, a small QR (same URL) on the front.
+- **⬜ Card art pipeline:** How is a world's portrait produced — player-taken in-game snapshot, automatic server-side render, or AI-generated (Phase 07)? In the World Index, worlds without art get a generated card (decided 2026-10-12).
 - **⬜ Print + encode vendor:** Which vendor prints full-color NFC cards and encodes + locks a unique URL per card at small minimums? Or encode in-house with a USB NFC writer?
 - **⬜ Product name:** "Aweborn Cards", "Worldcards", "Star Cards", "Portal Cards"…? (World Index is settled.)

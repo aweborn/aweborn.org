@@ -11,11 +11,20 @@
  *
  * Template + colours: scripts/cards/lib/back.mjs (BACK_DEFAULTS).
  */
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderBack } from "./lib/back.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-await writeFile(path.join(root, "cards/templates/back.svg"), renderBack());
+const back = renderBack();
+await writeFile(path.join(root, "cards/templates/back.svg"), back);
 console.log("Wrote cards/templates/back.svg");
+
+// In-game copy for face-down World Index cards: same art, cropped to the
+// 63 × 88 trim (no bleed) and sized by CSS.
+const trimmed = back.replace(/width="69mm" height="94mm" viewBox="0 0 69 94"/, 'viewBox="3 3 63 88"');
+if (trimmed === back) throw new Error("back.svg header changed: update the trim crop");
+await mkdir(path.join(root, "public/cards"), { recursive: true });
+await writeFile(path.join(root, "public/cards/back.svg"), trimmed);
+console.log("Wrote public/cards/back.svg");

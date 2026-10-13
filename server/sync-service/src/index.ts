@@ -38,7 +38,7 @@ function corsHeaders(req: IncomingMessage): Record<string, string> {
 /**
  * `GET /worlds/:id`: resolve a world for teleport links (`/w/<id>`).
  * Permanent public API (printed NFC cards depend on it): only ever add fields.
- *  200 { id, name, color, solidified, sector, position, isOrigin }
+ *  200 { id, name, color, creator, solidified, sector, position, isOrigin }
  *  400 { error: "invalid_id" }   not a UUIDv4
  *  404 { error: "not_found" }    unknown, or faded (worlds are never hard-deleted)
  */
@@ -66,6 +66,7 @@ function handleWorldLookup(req: IncomingMessage, res: ServerResponse, id: string
       id: w.id,
       name: w.name,
       color: w.color,
+      creator: w.creator,
       solidified: w.solidified,
       sector: w.sector,
       position: w.resolvedPosition,
@@ -157,7 +158,15 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
       playerId: session.playerId,
       characters: listCharacters(accountId),
       methods: waysIn(accountId),
-      worldIndex: worldIndex(accountId),
+      worldIndex: worldIndex(accountId).map((e) => {
+        const w = rooms.lookupWorld(e.worldId);
+        return {
+          ...e,
+          world: w
+            ? { name: w.name, color: w.color, creator: w.creator, position: w.resolvedPosition, sector: w.sector }
+            : null,
+        };
+      }),
     });
   }
   if (path === "/api/player/character" && req.method === "POST") {

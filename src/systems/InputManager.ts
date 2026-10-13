@@ -64,6 +64,7 @@ export interface ActionState {
   modEmote: boolean      // P
 
   // ── System ──
+  worldIndex: boolean    // M ("think Map"; the panel toggles itself)
   escape: boolean        // Escape
 }
 
@@ -117,6 +118,7 @@ const KEY_TO_ACTION: Record<string, keyof ActionState> = {
   KeyP: 'modEmote',
 
   // System
+  KeyM: 'worldIndex',
   Escape: 'escape',
 }
 
@@ -163,6 +165,7 @@ function createEmptyState(): ActionState {
     modAura: false,
     modShape: false,
     modEmote: false,
+    worldIndex: false,
     escape: false,
   }
 }

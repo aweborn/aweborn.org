@@ -243,8 +243,19 @@ export interface WorldIndexEntry {
   /** Times entered; re-entering within 30 s counts once. */
   visitCount: number;
   lastVisitedAt: number | null;
+  /** The world as it is now (for the card); null = it has faded. */
+  world?: WorldIndexWorld | null;
   /** Client only: found while offline, not yet confirmed by the server. */
   pending?: boolean;
+}
+
+/** What a World Index card shows about its world. */
+export interface WorldIndexWorld {
+  name: string;
+  color: string;
+  creator: string;
+  position: Vec3;
+  sector: string;
 }
 
 // ── WebSocket Protocol ───────────────────────────────────────────────

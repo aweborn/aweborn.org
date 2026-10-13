@@ -16,7 +16,7 @@ import { passkeyClient } from "@better-auth/passkey/client";
 
 const SYNC_URL: string = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 /** Auth lives on the sync-service origin (same site as aweborn.org). */
-const AUTH_URL: string = import.meta.env.VITE_AUTH_URL ?? SYNC_URL.replace(/^ws/, "http");
+export const AUTH_URL: string = import.meta.env.VITE_AUTH_URL ?? SYNC_URL.replace(/^ws/, "http");
 
 /** Give up on auth after this long and play as a guest (never block play). */
 const AUTH_TIMEOUT_MS = 5_000;

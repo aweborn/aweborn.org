@@ -180,8 +180,10 @@ function FlightSystem() {
       substeps++
     }
 
-    // ── Camera (per-frame for smooth visuals; snap on first frame + after teleports) ──
-    if (!hasSnapped.current || teleportSystem.consumeSnapRequest()) {
+    // ── Camera (per-frame for smooth visuals; snap on first frame + after teleports / remote warps) ──
+    const teleportSnap = teleportSystem.consumeSnapRequest()
+    const warpSnap = warpSystem.consumeSnapRequest()
+    if (!hasSnapped.current || teleportSnap || warpSnap) {
       cameraController.snapToTarget(camera, flightController.position, flightController.quaternion)
       hasSnapped.current = true
     } else {
