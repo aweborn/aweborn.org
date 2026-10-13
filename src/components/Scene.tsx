@@ -115,6 +115,9 @@ function FlightSystem() {
 
     if (isInWorld) return // Flight is disabled inside worlds
 
+    // Latch J / Esc for the fixed-step warp logic below (a frame may have 0..4 steps)
+    warpSystem.captureInput()
+
     // ── Fixed-timestep physics accumulator ──
     // Accumulate frame time, then step physics in fixed increments.
     // This ensures gravity, thrust, and slingshot behavior is identical

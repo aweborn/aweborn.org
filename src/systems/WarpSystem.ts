@@ -118,6 +118,23 @@ class WarpSystem {
   private _snapRequested = false
 
   /**
+   * J / Esc presses latched once per render frame by `captureInput()` and
+   * consumed by the next physics step. Input edges are computed per render
+   * frame, but `update()` runs per fixed 60 Hz step: on a 120 Hz display half
+   * the frames have no step (edge lost), at low fps a frame has several
+   * (edge seen twice).
+   */
+  private _pendingLockOn = false
+  private _pendingEscape = false
+
+  /** Call once per render frame, right after `inputManager.beginFrame()`. */
+  captureInput(): void {
+    const events = inputManager.getEvents()
+    if (events.justPressed.has('lockOn')) this._pendingLockOn = true
+    if (events.justPressed.has('escape')) this._pendingEscape = true
+  }
+
+  /**
    * Update the warp system for one frame.
    *
    * @param delta  Time step in seconds
@@ -129,8 +146,11 @@ class WarpSystem {
     playerPos: THREE.Vector3,
     worlds: Map<string, WorldEntry>,
   ): void {
-    const events = inputManager.getEvents()
     const actions = inputManager.getActions()
+    const lockOnPressed = this._pendingLockOn
+    const escapePressed = this._pendingEscape
+    this._pendingLockOn = false
+    this._pendingEscape = false
 
     // ── Update candidates (distance-sorted worlds) ──
     this._updateCandidates(playerPos, worlds)
@@ -143,7 +163,7 @@ class WarpSystem {
         }
 
         // J pressed → cycle to next candidate (or lock nearest if not auto-locked)
-        if (events.justPressed.has('lockOn') && this._candidates.length > 0) {
+        if (lockOnPressed && this._candidates.length > 0) {
           this._lockOn(this._candidates[0])
         }
 
@@ -168,7 +188,7 @@ class WarpSystem {
 
       case 'locked':
         // J pressed again → cycle to next candidate
-        if (events.justPressed.has('lockOn')) {
+        if (lockOnPressed) {
           this._cycleTarget()
         }
         // K pressed → start charging
@@ -177,7 +197,7 @@ class WarpSystem {
           this._chargeProgress = 0
         }
         // Escape or target out of range → cancel lock (World Index locks have no range)
-        if (events.justPressed.has('escape') || (!this._remote && !this._isTargetInRange(playerPos))) {
+        if (escapePressed || (!this._remote && !this._isTargetInRange(playerPos))) {
           this._cancelLock()
         }
         break
@@ -186,9 +206,9 @@ class WarpSystem {
         // K still held → charge up
         if (actions.warp) {
           this._chargeProgress = Math.min(1, this._chargeProgress + delta / FULL_CHARGE_TIME)
-        }
-        // K released → leap if charged enough, otherwise cancel
-        if (events.justReleased.has('warp')) {
+        } else {
+          // K no longer held → leap if charged enough, otherwise back to locked.
+          // Held state, not the release edge, so a release can never be missed.
           if (this._chargeProgress >= MIN_CHARGE_THRESHOLD && this._lockedTargetPosition) {
             this._startLeap(playerPos)
           } else {
@@ -197,7 +217,7 @@ class WarpSystem {
           }
         }
         // Escape → cancel
-        if (events.justPressed.has('escape')) {
+        if (escapePressed) {
           this._cancelLock()
         }
         break
