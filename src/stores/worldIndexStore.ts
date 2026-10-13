@@ -97,7 +97,14 @@ export function formatCoords(p: { x: number; y: number; z: number }): string {
 }
 
 function metaOf(w: WorldEntry): WorldIndexWorld {
-  return { name: w.name, color: w.color, creator: w.creator, position: { ...w.resolvedPosition }, sector: w.sector }
+  return {
+    name: w.name,
+    color: w.color,
+    creator: w.creator,
+    position: { ...w.resolvedPosition },
+    sector: w.sector,
+    solidified: w.solidified,
+  }
 }
 
 /** The world's live entry if we have it, else rebuilt from the card's snapshot. */
@@ -116,7 +123,7 @@ export function worldEntryFor(e: WorldIndexEntry): WorldEntry | null {
     resolvedAt: 0,
     color: w.color,
     sector: w.sector,
-    solidified: true,
+    solidified: w.solidified ?? true,
     solidifiedAt: 0,
     playerCount: 0,
     lastActive: 0,
@@ -389,6 +396,7 @@ export function recordArrival(world: WorldLookup): void {
       creator: world.creator ?? (world.isOrigin ? 'system' : ''),
       position: { ...world.position },
       sector: world.sector,
+      solidified: world.solidified,
     }
     upsert([newEntry(world.id, meta, 'link', player?.playerId ?? null, now)])
     if (world.isOrigin) playReveal(world.id)

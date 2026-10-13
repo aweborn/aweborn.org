@@ -163,7 +163,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
         return {
           ...e,
           world: w
-            ? { name: w.name, color: w.color, creator: w.creator, position: w.resolvedPosition, sector: w.sector }
+            ? { name: w.name, color: w.color, creator: w.creator, position: w.resolvedPosition, sector: w.sector, solidified: w.solidified }
             : null,
         };
       }),

@@ -54,7 +54,7 @@ export function CardReveal() {
       <div className="cr-fly">
         <div className="cr-flip">
           <WorldCard entry={entry} myCharacters={player?.characters ?? NO_CHARACTERS} face="back" className="cr-side cr-side--back" />
-          <WorldCard entry={entry} myCharacters={player?.characters ?? NO_CHARACTERS} face="front" className="cr-side cr-side--front" />
+          <WorldCard entry={entry} myCharacters={player?.characters ?? NO_CHARACTERS} face="front" live className="cr-side cr-side--front" />
         </div>
       </div>
       <p className="cr-caption">

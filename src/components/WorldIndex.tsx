@@ -295,7 +295,7 @@ function WorldDetail({
       </button>
       <div className="wi-detail-body">
         <div className="wi-detail-card">
-          <WorldCard entry={entry} myCharacters={characters} tilt />
+          <WorldCard entry={entry} myCharacters={characters} tilt live />
         </div>
         <div className="wi-detail-info">
           <span className={`wi-state wi-state--${isFaceUp(entry) ? 'visited' : 'sighted'}`}>

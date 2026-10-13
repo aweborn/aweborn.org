@@ -111,7 +111,7 @@ export default function App() {
         onClose={handleCloseDonation}
       />
 
-      {/* CRDT overlay — world index (shown in all environments for now) */}
+      {/* Sync connection + dev panel (` toggles; hidden by default in production) */}
       <CRDTDevOverlay />
     </>
   )

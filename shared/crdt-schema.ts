@@ -256,6 +256,8 @@ export interface WorldIndexWorld {
   creator: string;
   position: Vec3;
   sector: string;
+  /** Ghost or solid (card art). Absent on entries cached before 2026-10-13. */
+  solidified?: boolean;
 }
 
 // ── WebSocket Protocol ───────────────────────────────────────────────

@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import type { WebSocket } from "ws";
 import { recordDiscovery } from "./identity.js";
+import { onFirstDiscovery } from "./awe.js";
 import type { WorldEntry, Vec3 } from "../../../shared/crdt-schema.js";
 import {
   positionToSector,
@@ -173,8 +174,22 @@ export class RoomManager {
     const accountId = this.accountIds.get(ws);
     if (accountId) {
       try {
-        if (recordDiscovery(accountId, worldId, this.playerIds.get(ws) ?? null).firstVisit) {
-          console.log(`[rooms] world "${worldId}" visited for the first time`);
+        const characterId = this.playerIds.get(ws) ?? null;
+        if (recordDiscovery(accountId, worldId, characterId).firstVisit) {
+          // Shared awe counts other *players*: guests count, your own other tabs don't.
+          const others = new Set<string>();
+          for (const c of room.clients) {
+            if (c === ws) continue;
+            const other = this.accountIds.get(c) ?? this.playerIds.get(c);
+            if (other !== accountId) others.add(other ?? `guest:${others.size}`);
+          }
+          onFirstDiscovery({
+            accountId,
+            worldId,
+            characterId,
+            companions: others.size,
+            at: Date.now(),
+          });
         }
       } catch (err) {
         console.warn("[rooms] could not record discovery:", err);

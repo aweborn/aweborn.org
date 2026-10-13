@@ -14,10 +14,16 @@ import { adjacentSectorKeys } from "@aweborn/shared/crdt-schema";
  * buttons for creating/entering worlds, placing objects, and chatting.
  *
  * Press ` (backtick) to toggle visibility.
- * Only shown in development mode.
+ *
+ * Always mounted: it owns the sync connection (universe/world rooms, presence),
+ * so hiding the panel must never unmount it. In production the panel starts
+ * hidden and has no world list (the World Index on M replaces it, Phase 08);
+ * backtick still opens it, as it is the only world-creation tool until Phase 07.
  */
+const IS_DEV = import.meta.env.DEV;
+
 export function CRDTDevOverlay() {
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(IS_DEV);
   const [worldName, setWorldName] = useState("");
   const [worldColor, setWorldColor] = useState("#ff7b54");
   const [chatInput, setChatInput] = useState("");
@@ -194,8 +200,8 @@ export function CRDTDevOverlay() {
         </div>
       )}
 
-      {/* Worlds list */}
-      <div style={styles.section}>
+      {/* Worlds list (dev only; production uses the World Index on M) */}
+      {IS_DEV && <div style={styles.section}>
         <div style={styles.sectionTitle}>Worlds ({worldsList.length})</div>
         {worldsList.length === 0 ? (
           <div style={styles.empty}>No worlds yet</div>
@@ -212,7 +218,7 @@ export function CRDTDevOverlay() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Create world */}
       {!activeWorldId && (
