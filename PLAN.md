@@ -69,7 +69,7 @@ Tailnet (ops only)
 | Real-time transport | **Native WebSockets** (sync-service container, custom binary room protocol over Yjs) | In-memory CRDT merge, near-zero cost |
 | Player presence (current) | **WebSocket relay through sync-service** (msg `0x09`) | Shipped Aug 24, 2026 for cross-browser presence. ROADMAP's WebRTC P2P ephemeral channel remains the target for scale (Phase 06) |
 | Gen AI backend | **genai-service** container (Node.js, proxies to external APIs) | Isolated from sync service, independently scalable |
-| Mana cost model | **Mana = compute** (`K = 100`: 1 mana = $0.01 of real compute, no margin). One universal pool: gifts fill it (`K · α · net`, `α = 0.5`), manifesting drains it; players hold none (2026-10-13, [Phase 05 formula](./phases/05-mana-economy.md#the-mana-pool-formula)) | Spend can never outrun donors; every gift is a pure gift |
+| Mana cost model | **Mana = compute** (`K = 100`: 1 mana = $0.01 of real compute, no margin). One universal pool **= the treasury**: all money in at `K`, every draw categorized; players manifest from the creative share (`α = 0.5` of unrestricted income) and hold none (2026-10-13/14, [Phase 05 formula](./phases/05-mana-economy.md#the-mana-pool-formula)) | Spend can never outrun donors; every gift is a pure gift |
 | Creation model | **Online = AI prompt (draws mana from the shared pool), Offline = edit/arrange (free)** | AI calls need network; editing is local-only |
 | Offline transport | **WebRTC DataChannels (y-webrtc)** | Browser-native, no server needed for P2P |
 | QR signaling | **QWBP** | Compresses SDP to 55-100 bytes |

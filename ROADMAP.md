@@ -49,10 +49,10 @@
     + [Chip, URL & Security Model](#chip-url--security-model)
     + [Card Invariants](#card-invariants)
 - [The Mana Mechanic: The Frontier of Dreams](#the-mana-mechanic-the-frontier-of-dreams)
-    + [Two Numbers: the Pool and the High-Water Line](#two-numbers-the-pool-and-the-high-water-line)
+    + [Three Numbers: the Pool, the Creative Share and the High-Water Line](#three-numbers-the-pool-the-creative-share-and-the-high-water-line)
     + [The Mana Pool Formula](#the-mana-pool-formula)
-    + [Where a Gift Goes (`α`)](#where-a-gift-goes-α)
-    + [Flow: How the Pool Is Shared](#flow-how-the-pool-is-shared)
+    + [Where Money Goes (`α`)](#where-money-goes-α)
+    + [Flow: How the Creative Share Is Shared](#flow-how-the-creative-share-is-shared)
     + [Mana Costs](#mana-costs)
     + [Experience and Levels](#experience-and-levels)
       - [Awe — How Wonder Grows You and the Universe](#awe--how-wonder-grows-you-and-the-universe)
@@ -653,10 +653,10 @@ Both programs exist side by side:
 
 #### Cards & the Mana Economy
 
-- **Card sales are donations.** Proceeds above production and fulfillment cost go through the existing Stripe → Lambda → mana pipeline as an ordinary gift (`K · α · net` mana), the Frontier expands, and the golden solidification wave plays.
+- **Cards are mission, not merchandise** (2026-10-14): they bring people into the game, and their play feeds the research. ~$8–10 per card. **All card money enters the pool** (the treasury); production and shipping are drawn out as the `cards` category, `α` of the surplus becomes creative share, the Frontier expands, and the golden solidification wave plays.
 - ~~**Print-your-world as patronage (idea).** Ordering cards of your own **Ghost** world could put the order's surplus toward solidifying that world specifically (a targeted Patron donation that creates an Oasis). Printing your world makes it real. *(Open question: automatic, opt-in, or not at all.)*~~ **Removed 2026-10-13: no patronage.**
 - **Free giveaway cards still generate value.** Every first tap is awe: experience for the player and reach for the Frontier. A free card at a meetup is a small, permanent contribution to the universe.
-- **No pay-to-win.** Owning a card grants nothing a free player can't get by flying to the world. Cards are a shortcut, a souvenir, and a key to a collection, never power.
+- **Shortcut and souvenir, never the only door** (decided 2026-10-14). The cosmos is vast, so a card is the fastest way to any world, even the far reaches, and a keepsake to hold and give. Every world stays reachable by flying or, once earned, by warp. Owning a card grants nothing a free player can't get by playing.
 
 #### Chip, URL & Security Model
 
@@ -698,24 +698,27 @@ These must hold forever, because printed cards can't be patched:
 
 ## The Mana Mechanic: The Frontier of Dreams
 
-> **Rewritten 2026-10-14 for the October model** (design sessions of 2026-10-13/14; details, tasks and session log in [phases/05-mana-economy.md](./phases/05-mana-economy.md)). The August model (awe as the primary mana source, natural regeneration, donation afterglow, a per-player flow rate with diminishing returns, fixed game-design prices, targeted patronage, donor cosmetics) is retired.
+> **Rewritten 2026-10-14 for the October model; updated the same day to v3, "the pool is the treasury"** (design sessions of 2026-10-13/14; details, tasks and session log in [phases/05-mana-economy.md](./phases/05-mana-economy.md)). The August model (awe as the primary mana source, natural regeneration, donation afterglow, a per-player flow rate with diminishing returns, fixed game-design prices, targeted patronage, donor cosmetics) is retired.
 
-Mana is the creative energy of the universe, **and it is literally compute.** There is one universal pool. Gifts fill it; manifesting things with Gen AI drains it at exactly what that compute costs. **Nobody holds mana**, so every gift is a pure gift that empowers everyone.
+Mana is the creative energy of the universe, **and it is literally money: 1 mana = 1 cent.** There is one universal pool, and **it is the treasury**: **all money entering Aweborn** (gifts, card sales, grants) flows in, and **every dollar out** is a labeled draw (creations, servers, cards, people, research, fundraising). So the pool is a **live picture of how much money Aweborn has**, radical transparency for a non-profit. Players create with the **creative share**, half of what comes in: manifesting things with Gen AI draws on it at exactly what that compute costs. **Nobody holds mana**, so every gift is a pure gift that empowers everyone.
 
-The universe also has a physical boundary, the **Living Frontier**: a sphere of light whose radius follows the **high-water line**, everything that has ever flowed into the pool plus the reach of awe. Inside the Frontier, worlds are solid, colorful and alive with physics. Outside lies the **Deep Dark**, where creations exist as translucent **Ghosts** (wireframes of light).
+The universe also has a physical boundary, the **Living Frontier**: a sphere of light whose radius follows the **high-water line**, all the money that has ever flowed into the pool plus the reach of awe. Inside the Frontier, worlds are solid, colorful and alive with physics. Outside lies the **Deep Dark**, where creations exist as translucent **Ghosts** (wireframes of light).
 
-**Anyone can dream anything, anywhere, at any time, for free, even offline.** Dreaming (placing, arranging, building Ghosts) never needs mana. **Manifesting** (channeling mana through a Gen AI prompt to make a new mesh, terrain, sound, or a whole world) draws on the shared pool. When the high-water line rises, the Frontier expands, and Ghost worlds caught in the wave of light **solidify**.
+**Anyone can dream anything, anywhere, at any time, for free, even offline.** Dreaming (placing, arranging, building Ghosts) never needs mana. **Manifesting** (channeling mana through a Gen AI prompt to make a new mesh, terrain, sound, or a whole world) draws on the creative share. When the high-water line rises, the Frontier expands, and Ghost worlds caught in the wave of light **solidify**.
 
 **Donations don't buy anything. Donations expand what everyone can make.** A donor watches a wave of golden light sweep outward from the Aweborn Portal. That is the defining visual moment of Aweborn.
 
 **Awe is about growth, not energy.** Exploring, and the reactions other players have to what you made, earn experience and push the Frontier outward. Awe never mints spendable mana.
 
-#### Two Numbers: the Pool and the High-Water Line
+#### Three Numbers: the Pool, the Creative Share and the High-Water Line
 
 | Number | What it is | Goes up when | Goes down when |
 |---|---|---|---|
-| **Pool** | Mana available to flow right now (prepaid compute) | A gift lands | Someone manifests something |
-| **High-water line** | Everything that has ever flowed in, plus awe reach | A gift lands, or awe happens | **Never** |
+| **Pool** | The treasury: all the money Aweborn has, in mana | Any money comes in | Any money goes out (every draw is categorized) |
+| **Creative share** | What players can create with right now (always ≤ the pool) | `α` of unrestricted money in | Someone manifests something |
+| **High-water line** | All money that has ever come in, plus awe reach | Money comes in, or awe happens | **Never** |
+
+Players draw only from the creative share; salaries and servers draw only from the rest. If non-creative spending would push the pool below the creative share, that's a budget alarm, never a quiet raid on players' mana. The pool is displayed smoothed (e.g. a 30-day average) so payday reads as a calm breath, not a crash.
 
 The Frontier is set by the high-water line, so **spending never shrinks reality** and solidified worlds never revert. If gifts slow down, the Frontier simply waits.
 
@@ -723,12 +726,13 @@ The Frontier is set by the high-water line, so **spending never shrinks reality*
 // Universe CRDT — top level (server-written)
 Y.Map("universe") {
   mana: {
-    pool: 250_000,          // spendable now (mana)
+    pool: 250_000,          // the treasury now (all money in − all draws out)
+    creative: 120_000,      // creative share players can draw now (≤ pool)
     reserved: 1_200,        // estimates held for in-flight manifestations
     highWater: 900_000,     // Σ inflow + Σ awe reach; never falls
     frontierRadius: 5000,   // c · ∛(highWater)
-    totalIn: 800_000,       // lifetime mana from gifts
-    totalDrawn: 550_000,    // lifetime mana drawn by manifesting
+    totalIn: 800_000,       // lifetime mana in, all sources
+    drawnBy: { creations: 280_000, infra: 90_000, cards: 60_000, people: 80_000, research: 30_000, fundraising: 10_000 },
     params: { K: 100, alpha: 0.5, tauDays: 30 },
     lastDonationAt: 1723848000,
   }
@@ -738,35 +742,37 @@ Y.Map("universe") {
 #### The Mana Pool Formula
 
 ```text
-K = 100 mana per compute-dollar            1 mana = $0.01 of real compute
-α = 0.5  creative share of each gift       (see "Where a gift goes")
-τ = 30 days                                 drain horizon (see "Flow")
+K = 100 mana per dollar                    1 mana = $0.01
+α = 0.5  creative fraction of unrestricted money in   (see "Where money goes")
+τ = 30 days                                 drain horizon of the creative share (see "Flow")
 
-Gift lands (net of processor fees)   inflow = K · α · net        pool += inflow;  highWater += inflow
+Money in (any source, net of fees)   m = K · net        pool += m;  highWater += m;  creative += α · m'
+                                     (m' = m for gifts; card sales after production + shipping; restricted grants: 0)
+Money out (categorized)              pool −= K · amount             (creations · infra · cards · people · research · fundraising)
+Manifestation settles                creative −= cost × K;  pool −= cost × K
 Awe happens                          highWater += reach(awe);    xp[player] += xp(awe)
-Manifestation settles                pool −= real compute cost × K
 Frontier                             frontierRadius = c · ∛(highWater)
 ```
 
-Linear in money: every dollar adds the same mana, every manifestation subtracts its real cost, and nothing else touches the pool. No regeneration, no afterglow, no markup.
+Linear in money: every dollar in adds the same mana, every dollar out subtracts it, and nothing else touches the pool. No regeneration, no afterglow, no markup.
 
-#### Where a Gift Goes (`α`)
+#### Where Money Goes (`α`)
 
-Half of every gift becomes mana; the other half funds the MatchRank research the game exists for (see [RESEARCH.md](./RESEARCH.md)), the people who run Aweborn, and fundraising. Draft split: **50% mana (compute), 20% research, 30% operations and fundraising.** Rationale and references are in [phases/05-mana-economy.md → Why α = 0.5](./phases/05-mana-economy.md#why-α--05-and-τ--30-days). In short: it keeps program spending (mana + research) at 70%, above the BBB Wise Giving Alliance's 65% standard, without starving the organization, and it is a single honest number donors can understand. The board revisits `α` yearly; if a founding grant covers operations, `α` for individual gifts can rise toward 1.
+All of every gift becomes mana in the pool. Half of it is the creative share; the other half funds the MatchRank research the game exists for (see [RESEARCH.md](./RESEARCH.md)), the people who run Aweborn, and fundraising. Draft split: **50% creative share (compute), 20% research, 30% operations and fundraising.** Rationale and references are in [phases/05-mana-economy.md → Why α = 0.5](./phases/05-mana-economy.md#why-α--05-and-τ--30-days). In short: it keeps program spending (mana + research) at 70%, above the BBB Wise Giving Alliance's 65% standard, without starving the organization, and it is a single honest number donors can understand. The board revisits `α` yearly; if a founding grant covers operations, `α` for individual gifts can rise toward 1.
 
-#### Flow: How the Pool Is Shared
+#### Flow: How the Creative Share Is Shared
 
 ```text
-Global flow per minute     G = max(pool / τ, p_solo)          never more than the pool itself
+Global flow per minute     G = max(creative / τ, p_solo)      never more than the creative share itself
 Active players             N = distinct players active in the last 30 minutes
 Personal cap               p_i = base(level_i) × solar_i       solar_i ∈ [0.9, 1.1]
 Each player's flow         max-min fair split of G among the N active players, each capped at p_i
 ```
 
-- **One player alone** gets their full personal cap, straight from the pool (`G` is never below one player's cap while the pool has mana).
+- **One player alone** gets their full personal cap, straight from the creative share (`G` is never below one player's cap while there is creative mana).
 - **A thousand players** share `G`: each gets `G / N`, and whatever a player doesn't use is redistributed to those who want more (max-min fairness, "water-filling"). Nobody is ever capped *below* their fair share, and nobody gets more than their personal cap.
-- **`τ = 30 days`:** the pool can never shrink by more than ~3.3% of itself per day, so a single busy afternoon can never drain it and a dry spell drains it gently over weeks instead of crashing. (90 days was simulated too: gifts piled up unused while players were throttled almost every day.)
-- **Requests are ordered** (priority order; formula later). Each one asks *"how much compute does this take?"* If the estimate exceeds what the pool, `G` or the player's cap allows right now, it's no-dice and the universe whispers: *"The world must be replenished…"* (gentle, never punitive). Admission reserves the estimate; the real cost is drawn when it finishes; failures draw nothing.
+- **`τ = 30 days`:** the creative share can never shrink by more than ~3.3% of itself per day, so a single busy afternoon can never drain it and a dry spell drains it gently over weeks instead of crashing. (90 days was simulated too: gifts piled up unused while players were throttled almost every day.)
+- **Requests are ordered** (priority order; formula later). Each one asks *"how much compute does this take?"* If the estimate exceeds what the creative share, `G` or the player's cap allows right now, it's no-dice and the universe whispers: *"The world must be replenished…"* (gentle, never punitive). Admission reserves the estimate; the real cost is drawn when it finishes; failures draw nothing.
 
 #### Mana Costs
 
@@ -782,7 +788,7 @@ The per-modality table lives in Phase 07 (`MANA_COSTS.md`), measured from real A
 
 #### Experience and Levels
 
-Levels unlock abilities: a scaffolded, studio-like journey through every creation tool (and **warp**, because movement in 3D is already a lot to learn). Money never unlocks anything. A level measures **a mix of**:
+Levels unlock abilities: a scaffolded, studio-like journey through every creation tool. **Warp comes last** (2026-10-14): move → steer → drive/neutral → enter a world → place objects → the maker tutorials → master your immediately accessible space *and* explore enough of the universe → warp. Money never unlocks anything. A level measures **a mix of**:
 
 - **Mana successfully channeled into creations** (settled and still standing; concave scaling so it can't be ground out by burning the shared pool), and
 - **Breadth of skills** along the creator's journey (first successful use of each tool; reaching level *n* requires *k* distinct skills).
@@ -827,7 +833,7 @@ The mana pool is not a hidden number. The entire universe reflects its state thr
 | **Low (<30%)** | Dim, desaturated | Thin, wispy | Sparse, slow-moving | Short, faint | Space feels emptier |
 | **Critical (<5%)** | Nearly dark | Gone | Gone | Barely visible | Subtle aurora near Aweborn Portal — a hint that donations can restore energy |
 
-*(Percent of what is open: e.g. the pool relative to 30 days of typical draw.)*
+*(Percent of what is open: e.g. the creative share relative to 30 days of typical draw. The treasury pool itself is shown smoothed.)*
 
 **Audio** — the universe breathes:
 
@@ -845,8 +851,8 @@ The mana pool is not a hidden number. The entire universe reflects its state thr
 ```
 Player donates $10 via Stripe
   → Lambda receives webhook (payment_intent.succeeded)
-  → net of fees ≈ $9.41 → inflow = K · α · net = 100 × 0.5 × 9.41 ≈ 470 mana
-  → pool += 470, highWater += 470, ledger entry written (via the VPS)
+  → net of fees ≈ $9.41 → m = K · net = 100 × 9.41 ≈ 941 mana
+  → pool += 941, highWater += 941, creative += α · 941 ≈ 470, ledger entry written (via the VPS)
   → VPS recalculates frontierRadius, broadcasts the expansion
   → ALL PLAYERS SEE: golden solidification wave (with the donor's name, if they opted in)
   → Ghost worlds caught in the wave: wireframes fill with color, physics activate
@@ -859,12 +865,12 @@ Player donates $10 via Stripe
 Mana is one of the few things that **must be server-authoritative** (the VPS validates every draw; Lambda handles donation ingestion):
 
 1. Client asks to manifest: "generate this terrain" (estimate: 40 mana)
-2. VPS checks: pool − reserved enough? Fits the global flow `G` and this player's fair share and personal cap? Action legitimate?
+2. VPS checks: creative share − reserved enough? Fits the global flow `G` and this player's fair share and personal cap? Action legitimate?
 3. VPS reserves the estimate, writes the ledger, confirms
 4. Generation runs; the real cost is drawn on completion (failures draw nothing)
 5. If denied → *"The world must be replenished…"*
 
-**Dreaming is free and needs no server validation.** Ghost worlds, placing and arranging, and everything offline never touch the pool. There is nothing to double-spend.
+**Dreaming is free and needs no server validation.** Ghost worlds, placing and arranging, and everything offline never touch the creative share. There is nothing to double-spend.
 
 #### Offline Creation — The Dream State
 
@@ -904,13 +910,13 @@ The offline experience is still rich and beautiful: Ghost worlds have their own 
 
 - **⬜ World Interiors:** What can players actually do inside a world? (place objects, sculpt, draw, just hang out?)
 - **⬜ Universe Entry Point:** What does a brand-new player see when they first open aweborn.org? How do they orient?
-- **🟡 Mana Tuning (drafted 2026-10-14):** `K = 100` mana per compute-dollar, `α = 0.5`, `τ = 30` days, solar ±10% on personal caps. Still open: personal cap per level, priority formula, level curve. See [Phase 05](./phases/05-mana-economy.md)
+- **🟡 Mana Tuning (drafted 2026-10-14):** `K = 100` (1 mana = 1 cent), the pool is the treasury, `α = 0.5` creative share, `τ = 30` days, solar ±10% on personal caps, founding gift $1,000. Still open: personal cap per level, priority formula, level curve, warp thresholds ("mastered", "explored enough"), public per-category display, retuning the Frontier constant `c`. See [Phase 05](./phases/05-mana-economy.md)
 - **✅ Discovery threshold (World Index) (decided 2026-10-12):** Two states. *Sighted* = within close range (100 u) or landed beside it by link/card/warp: face-down card, can warp to it. *Visited* = went inside: full card art. Sightings work offline (queued, replayed later). Anti-cheat: cheap server checks now, server-derived sightings in Phase 09.
 - **✅ World Index Warp rules (decided 2026-10-12, amended 2026-10-13):** free, standard K charge animation, no cooldown (movement never costs mana), **once unlocked by level**. Card/link arrival is never gated.
 - **✅ World Index key binding (decided 2026-10-12):** `M` (think Map) + a HUD chip for touch. Gamepad later.
 - **✅ Player identity persistence (decided 2026-10-11, built 2026-10-12):** One player across tabs and devices. Anonymous first (no signup wall). Ways in: passkeys, Google, email code (instead of a magic link) and email + password; Apple/Facebook deferred. An account owns *characters*; saved players never merge. The public `playerId` is never a credential; each device holds its own revocable session (Better Auth). Deferred: QR device linking, one screen steers. Tasks: Phase 08 → Persistent Player Identity.
 - **🟡 Personal discovery rewards:** Discovery awe now gives XP (levels) and Frontier reach. Beyond that, any badge or set-completion flair stays cosmetic and can never be bought.
-- **✅ Print-your-world → patronage (decided 2026-10-13):** no. Patronage is removed; a card order's surplus is an ordinary gift to the pool.
+- **✅ Print-your-world → patronage (decided 2026-10-13):** no. Patronage is removed. All card money enters the pool; `α` of the surplus becomes creative share (2026-10-14).
 - **✅ Card format (decided 2026-10-04):** TCG standard, 63×88 mm.
 - **✅ QR fallback (decided 2026-10-04):** yes, a small QR (same URL) on the front.
 - **⬜ Card art pipeline:** How is a world's portrait produced — player-taken in-game snapshot, automatic server-side render, or AI-generated (Phase 07)? In the World Index, worlds without art get a generated card (decided 2026-10-12).
