@@ -7,7 +7,7 @@
 
 ## Goal
 
-Players can create rich, AI-generated content inside worlds: 3D avatars/characters, objects, landscapes, textures, music, ambient sounds, voices, and text/lore — all via natural language prompts. Each generation draws its **real compute cost** (× `K` = 1,000 mana per compute-dollar) from the **universal mana pool**: nobody holds mana, gifts fill the pool (see [Phase 05 formula](./05-mana-economy.md#the-mana-pool-formula), 2026-10-13). Editing and arranging existing objects is free and works offline.
+Players can create rich, AI-generated content inside worlds: 3D avatars/characters, objects, landscapes, textures, music, ambient sounds, voices, and text/lore — all via natural language prompts. Each generation draws its **real compute cost** (× `K` = 100 mana per compute-dollar, so 1 mana = 1 cent) from the **universal mana pool**: nobody holds mana, gifts fill the pool (see [Phase 05 formula](./05-mana-economy.md#the-mana-pool-formula), 2026-10-13). Editing and arranging existing objects is free and works offline.
 
 This phase answers the ROADMAP's open question: **"What can players actually do inside a world?"**
 
@@ -98,18 +98,18 @@ interface GenerateResult {
 - `[ ]` Design abstract mana cost formula:
   - NOT tied to specific model/provider (so we can swap)
   - Based on observable output metrics where possible (e.g., complexity, duration, resolution)
-  - Real cost × `K` (1 mana = $0.001 of compute); **no margin** (retired 2026-10-13)
+  - Real cost × `K` (`K = 100`, 1 mana = $0.01 of compute); **no margin** (retired 2026-10-13)
   - Document in a `MANA_COSTS.md` reference file
-- `[ ]` Define cost tiers (rough starting point from the August ROADMAP; **replace with measured cost × K**):
+- `[ ]` Define cost tiers (August ROADMAP placeholders rescaled to `K = 100`; replace with measured cost × K, e.g. a $0.30 generation = 30 mana):
   ```
-  Simple object (low-poly, basic shape):    100-500 mana
-  Complex object (detailed, textured):      500-2,000 mana
-  Character/avatar (full 3D model):         2,000-10,000 mana
-  Texture/image (applied to object):        50-200 mana
-  Music loop (30-60 seconds):               500-2,000 mana
-  Voice clip (10-30 seconds):               200-1,000 mana
-  Text/lore (paragraph):                    10-50 mana
-  Terrain patch (landscape section):        1,000-5,000 mana
+  Simple object (low-poly, basic shape):    10-50 mana
+  Complex object (detailed, textured):      50-200 mana
+  Character/avatar (full 3D model):         200-1k mana
+  Texture/image (applied to object):        5-20 mana
+  Music loop (30-60 seconds):               50-200 mana
+  Voice clip (10-30 seconds):               20-100 mana
+  Text/lore (paragraph):                    1-5 mana
+  Terrain patch (landscape section):        100-500 mana
   ```
 
 ### genai-service: Core Framework

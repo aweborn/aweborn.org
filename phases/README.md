@@ -49,7 +49,7 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **☀️ MORNING PICKUP (2026-10-14): Phase 05 mana design, continue from the [last session-log row](./05-mana-economy.md#session-log).** The October model is now written down: [The Mana Pool Formula](./05-mana-economy.md#the-mana-pool-formula) (gifts fill one pool linearly, manifesting drains it at real compute cost, global cap `pool / τ`, personal caps, ordered requests with priority, gentle denial) + [chart](./assets/mana-pool-model.png). Patronage scrapped; XP comes from reactions; all August mana docs refreshed **except ROADMAP.md**. **Open, in order:** (a) Alex: apply [the ROADMAP rewrite proposal](./05-roadmap-mana-rewrite.md)? (b) pick `α` (creative share), `τ`, `floor`; seed grant? (c) donor perks = wave recognition only? (d) solar cycle: visual-only or cap modifier? (e) Q16: what a level measures → unlock ladder (warp gated); then business plan v0.4 (donation-led). Working tree: docs only.
+> **➡️ NEXT UP: Phase 05 mana, continue from the [last session-log row](./05-mana-economy.md#session-log).** Decided 2026-10-14: **`K = 100`** (1 mana = 1 cent), **`α = 0.5`** (research-backed, [why](./05-mana-economy.md#why-α--05-and-τ--30-days)), **`τ = 30` days**, flow split max-min fairly among players active in the last 30 min (a lone player gets their full cap), solar = visual + ±10% on personal caps, donor perk = opt-in name in the wave, **a level = mana channeled into creations + breadth of skills**. **ROADMAP mana section rewritten** to the October model. **Open, in order:** (a) Alex: OK that `N` splits the flow rather than scaling `τ`? (b) seed grant size; (c) level curve + skill ladder (where warp unlocks); (d) one-line gift split in Terms + a public "Where your gift goes" page with the references; (e) business plan v0.4 (donation-led); then implementation (Universal Mana Pool & Ledger).
 >
 > **Previous priority: Phase 08, [Milestone 8B: The World Index](./08-nfc-trading-cards.md#milestone-8b--the-world-index)** (shipped; follow-ups below): persistent player identity first, then the data model, discovery tracking, card reveal, World Index UI and warp.
 >
@@ -105,7 +105,7 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 | Awe generation | ~~Awe ∝ object cost, mints mana~~ **Awe → XP + high-water reach, never pool mana; reactions to your creations are the main XP source** (Oct 13) | Aug 19, 2026 → Oct 13 |
 | Object removal | 3-tier governance: Creator / Placer / Co-Creator | Aug 19, 2026 |
 | Frontier radius formula | r ∝ ∛(**high-water line**), not the spendable pool (Oct 13) | Aug 19, 2026 → Oct 13 |
-| Mana model | **Mana = compute** (1 mana = $0.001); one universal pool, gifts add `K · α · net`, manifesting draws real cost; global cap `pool / τ` + personal caps; ordered requests with priority; patronage scrapped. See [formula](./05-mana-economy.md#the-mana-pool-formula) | Oct 13, 2026 |
+| Mana model | **Mana = compute** (`K = 100`, 1 mana = $0.01); one universal pool, gifts add `K · α · net` (`α = 0.5`), manifesting draws real cost; global flow `max(pool / τ, p_solo)`, `τ = 30` days, split max-min fairly among players active in the last 30 min; personal caps by level × solar (±10%); ordered requests with priority; patronage scrapped; donor perk = opt-in name in the wave (Oct 14). See [formula](./05-mana-economy.md#the-mana-pool-formula) | Oct 13, 2026 |
 | NFC trading cards | Physical cards teleport to a world via `aweborn.org/w/<uuidv4>`; static Aweborn back; per-card arrival mode (default orbit) | Oct 3, 2026 |
 | World ID format | Migrate 5-char random IDs → UUIDv4 before any card is printed | Oct 3, 2026 |
 | Card security | No per-card serials, no anti-clone (low stakes); tags locked read-only to prevent rewrites | Oct 3, 2026 |
@@ -124,7 +124,7 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 |----------|---------------|-------|
 | What can players do inside a world? | Phase 07 | Place objects, sculpt terrain, hang out — specifics TBD |
 | New player onboarding flow | Phase 07 / 08 | Drop in at origin? Tutorial? Note: players arriving via an NFC card or `/w/` link start at a world, not the origin (Phase 08) |
-| Mana tuning | Phase 05 | `α` (creative share), `τ` (drain horizon), floor, window, personal caps, priority formula. Formula drafted 2026-10-13 |
+| Mana tuning | Phase 05 | Decided 2026-10-14: `K = 100`, `α = 0.5`, `τ = 30` days. Open: personal caps per level, seed grant, window size, priority formula |
 | World Index details (discovery threshold, warp rules, key binding) | Phase 08 | Proposals in [08-nfc-trading-cards.md](./08-nfc-trading-cards.md#open-questions-mirrored-in-roadmap) |
 | Card format, art pipeline, vendor, product name | Phase 08 | See Phase 08 open questions |
 | Multiple servers sharing world sync | New phase? (overlaps Phase 06) | Raised 2026-10-11. Today: one sync-service, single-writer SQLite. Options include server-to-server Yjs replication over the Tailnet, player routing, and data ownership. Needs a design session (`/grill-me`) before any code. Prerequisite: [auto-join](./ops-tailscale-autojoin.md) |

@@ -49,14 +49,14 @@
     + [Chip, URL & Security Model](#chip-url--security-model)
     + [Card Invariants](#card-invariants)
 - [The Mana Mechanic: The Frontier of Dreams](#the-mana-mechanic-the-frontier-of-dreams)
-    + [The Universal Mana Pool](#the-universal-mana-pool)
-    + [Mana Sources](#mana-sources)
-      - [Awe Generation — How Wonder Creates Energy](#awe-generation--how-wonder-creates-energy)
+    + [Two Numbers: the Pool and the High-Water Line](#two-numbers-the-pool-and-the-high-water-line)
+    + [The Mana Pool Formula](#the-mana-pool-formula)
+    + [Where a Gift Goes (`α`)](#where-a-gift-goes-α)
+    + [Flow: How the Pool Is Shared](#flow-how-the-pool-is-shared)
+    + [Mana Costs](#mana-costs)
+    + [Experience and Levels](#experience-and-levels)
+      - [Awe — How Wonder Grows You and the Universe](#awe--how-wonder-grows-you-and-the-universe)
       - [Solar Tidal Cycle — The Universe Breathes With the Sun](#solar-tidal-cycle--the-universe-breathes-with-the-sun)
-    + [Mana Costs — Frontier Expansion & Solidification](#mana-costs--frontier-expansion--solidification)
-    + [Draw Mechanics — Fairness + Donor Empowerment](#draw-mechanics--fairness--donor-empowerment)
-      - [Donor Empowerment (Cosmetic Only)](#donor-empowerment-cosmetic-only)
-      - [Diminishing Returns on Daily Draw](#diminishing-returns-on-daily-draw)
     + [Mana Is Visible, Audible, and Tangible](#mana-is-visible-audible-and-tangible)
     + [The Donation → Mana → Frontier Pipeline](#the-donation-%E2%86%92-mana-%E2%86%92-frontier-pipeline)
     + [Server Authority for Mana](#server-authority-for-mana)
@@ -222,8 +222,8 @@ The system uses two nested CRDT layers. The stateful VPS holds active documents 
   resolvedPosition: { x: 1435, y: -380, z: 9115 },   // Written ONLY by server
   resolvedAt: 1723848500,                            // Server resolution timestamp
   color: "#ff7b54",
-  solidified: true,         // false = Ghost world (outside Living Frontier or awaiting patronage)
-  solidifiedAt: 1723848200, // When the Frontier reached this world (or Patron funded it)
+  solidified: true,         // false = Ghost world (outside the Living Frontier)
+  solidifiedAt: 1723848200, // When the Frontier reached this world
   playerCount: 3,           // Ephemeral presence count
   lastActive: 1723848000
 }
@@ -244,7 +244,7 @@ Y.Doc (one per world)
 │   ├── creator: "player-abc"           (immutable)
 │   ├── createdAt: 1723848000           (immutable)
 │   ├── color: "#ff7b54"               (last-writer-wins)
-│   └── solidified: true                (server-written — false until Frontier reaches or Patron funds)
+│   └── solidified: true                (server-written — false until the Frontier reaches it)
 │
 ├── Y.Map("physics")                    ← PER-WORLD PHYSICS RULES
 │   ├── gravityX: 0
@@ -374,12 +374,11 @@ The universe has two spatial zones — the **Living Frontier** (funded, lit, sol
 |-------|--------|-------------|
 | **Solid world (inside Living Frontier)** | Full color, vibrant glow, particles, physics, collision | Fully interactive — build, explore, play |
 | **Ghost world (outside Frontier / offline-created)** | Translucent wireframe with soft ethereal glow, no collision, no physics | Can enter and explore/build, but everything is ghostly. A dream waiting to solidify |
-| **Oasis (Patron-funded Ghost in the Deep Dark)** | Localized bubble of warm light in the darkness, fully solid inside | Fully interactive — an island of reality in the void |
 | **Visited worlds (offline)** | Normal rendering with a subtle frost/ice shader, reduced glow | Can enter and explore the cached snapshot solo |
 | **Unvisited worlds (offline)** | Dim, desaturated silhouettes | Tapping shows "Come back online to explore" |
 | **Your own worlds (offline)** | Fully bright and interactive | Can keep building offline. All offline creations sync as Ghosts on reconnect |
 
-**The reconnect moment:** Yjs automatically syncs all offline edits. If someone else edited the same world while you were away, the CRDT resolves it — no conflicts, no overwrites. Both sets of changes just appear. Your offline creations sync as Ghost worlds, awaiting the Living Frontier's expansion (or a Patron's generosity) to solidify.
+**The reconnect moment:** Yjs automatically syncs all offline edits. If someone else edited the same world while you were away, the CRDT resolves it — no conflicts, no overwrites. Both sets of changes just appear. Your offline creations sync as Ghost worlds, awaiting the Living Frontier's expansion to solidify.
 
 ## Navigation & Interaction
 
@@ -596,7 +595,7 @@ It's a sci-fi token that links the real world to the virtual one. Cards are chea
 **Edge cases:**
 - **Fresh visitor / first-ever load:** the card *is* their onboarding. Their first view of Aweborn is arriving at a specific world instead of the origin (relates to the open "Universe Entry Point" question).
 - **Offline tap:** the PWA (Phase 06) opens from cache. If the world snapshot is cached, teleport to it. If not, add a *pending* World Index entry and show "This world awaits. Come back online to arrive." Resolve on reconnect.
-- **Ghost world:** teleport works the same. The player arrives at a Ghost (wireframe) world. This also nudges people toward funding it (see [Cards & the Mana Economy](#cards--the-mana-economy)).
+- **Ghost world:** teleport works the same. The player arrives at a Ghost (wireframe) world. When the Frontier reaches it, it solidifies (see [Cards & the Mana Economy](#cards--the-mana-economy)).
 - **Desktop / no NFC:** the URL works in any browser. It's just a link.
 
 #### The World Index
@@ -620,7 +619,7 @@ The World Index is the player's **personal, persistent index of every world they
 
 - **Any discovery counts.** Flying in manually, tapping a card, or opening a shared link all add entries. Cards are just the most magical way to fill it.
 - **Two states.** *Sighted* worlds show face-down and can be warped to; *visited* worlds flip to full art. Sightings work offline: they are queued with their time and replayed when back online.
-- **World Index Warp.** From anywhere in the universe, choose a World Index entry and warp straight there. This is the in-game version of tapping the card again. It uses the warp charge/leap visuals. Free, standard K charge, no cooldown (movement never costs mana).
+- **World Index Warp.** From anywhere in the universe, choose a World Index entry and warp straight there. This is the in-game version of tapping the card again. It uses the warp charge/leap visuals. Free, standard K charge, no cooldown (movement never costs mana), once warp is unlocked by level.
 - **Opened with `M`** (think Map) or the HUD chip.
 - **Collector view.** Entries are shown as cards using the same art as the physical card; worlds without art get a generated card from the same front template. Collections are grouped by set (Origin Set, event sets, print-your-world). Per-set progress ("7 / 12 discovered") gives people a reason to collect without any scarcity mechanics.
 - **No card-found badge.** Card taps aren't told apart from shared links (decided 2026-10-12).
@@ -631,12 +630,12 @@ The World Index is the player's **personal, persistent index of every world they
 
 The first time a player discovers a world, by any method:
 
-1. **Awe → universal pool.** This fires the existing `first-world-visit` awe event (500 mana). Per the awe rules, that mana flows into the **universal pool**, not to the individual. Tapping a new card makes the universe richer for everyone.
+1. **Awe → experience + Frontier.** This fires the existing `first-world-visit` awe event: the player gains experience, and the high-water line (and the Frontier) moves outward for everyone. Awe never mints spendable mana.
 2. **Discovery moment (personal).** A card-reveal animation: the world's card flips from the static Aweborn back to its front art and slides into the World Index. This is the personal reward and the dopamine hit.
 3. **World Index entry.** The world can now be warped to from anywhere, forever.
 4. **Shared-awe still applies.** Tapping cards together at an event (several players discovering at once) gets the 2× shared-awe multiplier.
 
-Repeat taps of an already-discovered world just teleport, with no new reward (awe exhaustion applies as usual). Any further personal reward (cosmetics, discovery-count badges) has to follow the **cosmetic-only** rule. See open questions.
+Repeat taps of an already-discovered world just teleport, with no new reward (awe exhaustion applies as usual). Any further personal reward (discovery-count badges, set flair) stays cosmetic and can never be bought. See open questions.
 
 #### Card Programs: Curated Sets & Print-Your-World
 
@@ -650,13 +649,13 @@ Both programs exist side by side:
 
 **Distribution:** sold (fundraiser) **and** given free (outreach at events and meetups). Low stakes, high delight.
 
-**Example (events):** a conference prints 2,000 cards for its venue world. Attendees tap at the badge desk and land inside a virtual version of the conference hall. Every first tap adds 500 mana of awe to the universal pool, and shared-awe doubles it when people tap together. The conference just expanded the Living Frontier for everyone.
+**Example (events):** a conference prints 2,000 cards for its venue world. Attendees tap at the badge desk and land inside a virtual version of the conference hall. Every first tap is a moment of awe: attendees gain experience and the Living Frontier moves outward, doubled by shared awe when people tap together. The conference just expanded the universe for everyone.
 
 #### Cards & the Mana Economy
 
-- **Card sales are donations.** Proceeds above production and fulfillment cost go through the existing Stripe → Lambda → mana pipeline: `$1 → 1,000 mana`, Frontier expands, and the golden solidification wave plays.
-- **Print-your-world as patronage (idea).** Ordering cards of your own **Ghost** world could put the order's surplus toward solidifying that world specifically (a targeted Patron donation that creates an Oasis). Printing your world makes it real. *(Open question: automatic, opt-in, or not at all.)*
-- **Free giveaway cards still generate value.** Every first tap is awe into the pool. A free card at a meetup is a small, permanent contribution to the universe.
+- **Card sales are donations.** Proceeds above production and fulfillment cost go through the existing Stripe → Lambda → mana pipeline as an ordinary gift (`K · α · net` mana), the Frontier expands, and the golden solidification wave plays.
+- ~~**Print-your-world as patronage (idea).** Ordering cards of your own **Ghost** world could put the order's surplus toward solidifying that world specifically (a targeted Patron donation that creates an Oasis). Printing your world makes it real. *(Open question: automatic, opt-in, or not at all.)*~~ **Removed 2026-10-13: no patronage.**
+- **Free giveaway cards still generate value.** Every first tap is awe: experience for the player and reach for the Frontier. A free card at a meetup is a small, permanent contribution to the universe.
 - **No pay-to-win.** Owning a card grants nothing a free player can't get by flying to the world. Cards are a shortcut, a souvenir, and a key to a collection, never power.
 
 #### Chip, URL & Security Model
@@ -699,196 +698,121 @@ These must hold forever, because printed cards can't be patched:
 
 ## The Mana Mechanic: The Frontier of Dreams
 
-Mana is the creative energy of the universe. It does not buy objects — it **expands reality itself.** The universe has a physical boundary called the **Living Frontier**: a sphere of light whose radius is a direct function of the global mana pool. Inside the Frontier, worlds are solid, colorful, and alive with physics. Outside it lies the **Deep Dark** — infinite, dim, unpowered space where creations exist only as translucent **Ghosts** (wireframes of light).
+> **Rewritten 2026-10-14 for the October model** (design sessions of 2026-10-13/14; details, tasks and session log in [phases/05-mana-economy.md](./phases/05-mana-economy.md)). The August model (awe as the primary mana source, natural regeneration, donation afterglow, a per-player flow rate with diminishing returns, fixed game-design prices, targeted patronage, donor cosmetics) is retired.
 
-**Anyone can create anything, anywhere, at any time, for free — even offline.** But creations outside the Living Frontier are Ghosts: ethereal, collision-less, dreamlike. They represent *potential* — ideas waiting to become real. When the mana pool grows (via donations or awe), the Frontier physically expands, and any Ghost worlds caught in the wave of light are instantly **solidified** — wireframes fill with color, physics switch on, and the dream becomes a permanent monument.
+Mana is the creative energy of the universe, **and it is literally compute.** There is one universal pool. Gifts fill it; manifesting things with Gen AI drains it at exactly what that compute costs. **Nobody holds mana**, so every gift is a pure gift that empowers everyone.
 
-**Donations don't buy cosmetics. Donations expand the universe.** A donor watches a wave of golden light sweep outward from the Aweborn Portal, turning ghost-dreams into solid reality. That is the defining visual moment of Aweborn.
+The universe also has a physical boundary, the **Living Frontier**: a sphere of light whose radius follows the **high-water line**, everything that has ever flowed into the pool plus the reach of awe. Inside the Frontier, worlds are solid, colorful and alive with physics. Outside lies the **Deep Dark**, where creations exist as translucent **Ghosts** (wireframes of light).
 
-#### The Universal Mana Pool
+**Anyone can dream anything, anywhere, at any time, for free, even offline.** Dreaming (placing, arranging, building Ghosts) never needs mana. **Manifesting** (channeling mana through a Gen AI prompt to make a new mesh, terrain, sound, or a whole world) draws on the shared pool. When the high-water line rises, the Frontier expands, and Ghost worlds caught in the wave of light **solidify**.
 
-A single shared number in the Universe CRDT. Mana powers the **Living Frontier's radius** — the physical size of reality.
+**Donations don't buy anything. Donations expand what everyone can make.** A donor watches a wave of golden light sweep outward from the Aweborn Portal. That is the defining visual moment of Aweborn.
+
+**Awe is about growth, not energy.** Exploring, and the reactions other players have to what you made, earn experience and push the Frontier outward. Awe never mints spendable mana.
+
+#### Two Numbers: the Pool and the High-Water Line
+
+| Number | What it is | Goes up when | Goes down when |
+|---|---|---|---|
+| **Pool** | Mana available to flow right now (prepaid compute) | A gift lands | Someone manifests something |
+| **High-water line** | Everything that has ever flowed in, plus awe reach | A gift lands, or awe happens | **Never** |
+
+The Frontier is set by the high-water line, so **spending never shrinks reality** and solidified worlds never revert. If gifts slow down, the Frontier simply waits.
 
 ```js
-// Universe CRDT — top level
+// Universe CRDT — top level (server-written)
 Y.Map("universe") {
   mana: {
-    pool: 1_000_000,              // Current available mana (shared by ALL)
-    frontierRadius: 5000,          // Units from origin — the Living Frontier boundary
-    totalEverGenerated: 5_000_000, // Lifetime (donations + awe + regen)
-    totalEverSpent: 4_000_000,     // Lifetime consumed by frontier expansion + solidification
-    regenRate: 100,                // Mana regenerated per hour (baseline)
-    donationMultiplier: 1.0,       // Boost from recent donations (24hr decay)
+    pool: 250_000,          // spendable now (mana)
+    reserved: 1_200,        // estimates held for in-flight manifestations
+    highWater: 900_000,     // Σ inflow + Σ awe reach; never falls
+    frontierRadius: 5000,   // c · ∛(highWater)
+    totalIn: 800_000,       // lifetime mana from gifts
+    totalDrawn: 550_000,    // lifetime mana drawn by manifesting
+    params: { K: 100, alpha: 0.5, tauDays: 30 },
     lastDonationAt: 1723848000,
-    solarCycle: {                  // Tidal mana flow based on local solar position
-      enabled: true,
-      peakMultiplier: 1.5,        // Flow bonus at solar noon
-      troughMultiplier: 0.6       // Flow reduction at midnight
-    }
   }
 }
 ```
 
-#### Mana Sources
+#### The Mana Pool Formula
 
-| Source | Priority | How It Works | Rate |
-|--------|----------|-------------|------|
-| **Awe (Exploration)** | **PRIMARY** | Visiting a new world, seeing a new creation, reaching unexplored space generates mana. Novelty = energy. Revisiting the same places generates less. The universe rewards curiosity. | Variable — scales with novelty |
-| **Donations** | **BURST** | $1 USD = 1,000 mana added to the pool. Instant, powerful, physically expands the Living Frontier for everyone. | Instant burst |
-| **Natural Regeneration** | **BASELINE** | Universe slowly regenerates mana — the Frontier slowly expands on its own, but donations dramatically accelerate it. | ~100/hr baseline |
-| **Donation Afterglow** | **BOOST** | For 24hr after any donation, regen rate is boosted — the universe is "energized" | 2x-5x multiplier, decaying |
-| **Solar Tidal Cycle** | **RHYTHM** | Mana flow follows the player's local sunrise/sunset. High flow during daylight, low flow at night. Quietly nudges healthy real-world sleep/activity cycles — the game doesn't want you lost in it at 3am. | ±50% flow modifier |
+```text
+K = 100 mana per compute-dollar            1 mana = $0.01 of real compute
+α = 0.5  creative share of each gift       (see "Where a gift goes")
+τ = 30 days                                 drain horizon (see "Flow")
 
-**No recycling.** Mana spent on frontier expansion and solidification is gone forever. **The frontier never contracts** (resolved Aug 19, 2026). It's a high-water mark: if mana generation slows, the frontier simply stops expanding, and solidified worlds never revert to Ghosts. Every act of generosity permanently contributes to the universe's high-water mark.
-
-##### Awe Generation — How Wonder Creates Energy
-
-Awe is tracked per-player but the mana it generates flows into the **universal pool** (not to the individual). You explore, the universe gets richer — for everyone.
-
-```js
-// Awe events — each generates mana into the universal pool
-{
-  "first-world-visit":     500,   // First time entering a world you've never seen
-  "first-creation-seen":   50,    // Seeing an object placed by another player for the first time
-  "distance-milestone":    200,   // Reaching a new distance-from-origin record
-  "slingshot-chain":       100,   // Successfully chaining gravity slingshots (3+ in a row)
-  "cluster-discovery":     300,   // Finding a constellation/cluster of worlds you haven't visited
-  "long-absence-return":   1000,  // Returning after 7+ days away — the universe missed you
-  "shared-awe":            2x,    // Multiplier when experiencing awe near other players
-}
+Gift lands (net of processor fees)   inflow = K · α · net        pool += inflow;  highWater += inflow
+Awe happens                          highWater += reach(awe);    xp[player] += xp(awe)
+Manifestation settles                pool −= real compute cost × K
+Frontier                             frontierRadius = c · ∛(highWater)
 ```
 
-The **shared-awe multiplier** is key: experiencing wonder *together* generates double the mana. Two players visiting a world at the same time produce more energy than two players visiting separately. This makes social exploration intrinsically valuable — the universe literally rewards togetherness.
+Linear in money: every dollar adds the same mana, every manifestation subtracts its real cost, and nothing else touches the pool. No regeneration, no afterglow, no markup.
 
-**Diminishing novelty:** Revisiting the same world generates less awe each time (exponential decay). The universe gently pushes you toward the new, the unexplored, the edge. But there's always a small baseline — even coming home generates a trickle of warmth.
+#### Where a Gift Goes (`α`)
+
+Half of every gift becomes mana; the other half funds the MatchRank research the game exists for (see [RESEARCH.md](./RESEARCH.md)), the people who run Aweborn, and fundraising. Draft split: **50% mana (compute), 20% research, 30% operations and fundraising.** Rationale and references are in [phases/05-mana-economy.md → Why α = 0.5](./phases/05-mana-economy.md#why-α--05-and-τ--30-days). In short: it keeps program spending (mana + research) at 70%, above the BBB Wise Giving Alliance's 65% standard, without starving the organization, and it is a single honest number donors can understand. The board revisits `α` yearly; if a founding grant covers operations, `α` for individual gifts can rise toward 1.
+
+#### Flow: How the Pool Is Shared
+
+```text
+Global flow per minute     G = max(pool / τ, p_solo)          never more than the pool itself
+Active players             N = distinct players active in the last 30 minutes
+Personal cap               p_i = base(level_i) × solar_i       solar_i ∈ [0.9, 1.1]
+Each player's flow         max-min fair split of G among the N active players, each capped at p_i
+```
+
+- **One player alone** gets their full personal cap, straight from the pool (`G` is never below one player's cap while the pool has mana).
+- **A thousand players** share `G`: each gets `G / N`, and whatever a player doesn't use is redistributed to those who want more (max-min fairness, "water-filling"). Nobody is ever capped *below* their fair share, and nobody gets more than their personal cap.
+- **`τ = 30 days`:** the pool can never shrink by more than ~3.3% of itself per day, so a single busy afternoon can never drain it and a dry spell drains it gently over weeks instead of crashing. (90 days was simulated too: gifts piled up unused while players were throttled almost every day.)
+- **Requests are ordered** (priority order; formula later). Each one asks *"how much compute does this take?"* If the estimate exceeds what the pool, `G` or the player's cap allows right now, it's no-dice and the universe whispers: *"The world must be replenished…"* (gentle, never punitive). Admission reserves the estimate; the real cost is drawn when it finishes; failures draw nothing.
+
+#### Mana Costs
+
+Mana does not gate dreaming. A manifestation costs **its real compute cost × `K`**, priced by complexity and abstracted from any specific AI provider:
+
+| Kind of action | Cost |
+|---|---|
+| Place, move, arrange, delete, build Ghosts, anything offline | Free or nominal |
+| Meshes, terrain, textures, sound and music, voices | Real compute × K (a lot) |
+| A whole new world with its own meshes and sounds | Real compute × K (a lot more) |
+
+The per-modality table lives in Phase 07 (`MANA_COSTS.md`), measured from real API bills. Removing an object returns no mana: energy spent is spent.
+
+#### Experience and Levels
+
+Levels unlock abilities: a scaffolded, studio-like journey through every creation tool (and **warp**, because movement in 3D is already a lot to learn). Money never unlocks anything. A level measures **a mix of**:
+
+- **Mana successfully channeled into creations** (settled and still standing; concave scaling so it can't be ground out by burning the shared pool), and
+- **Breadth of skills** along the creator's journey (first successful use of each tool; reaching level *n* requires *k* distinct skills).
+
+Awe (exploring, discovering worlds) and **reactions** (other players' awe at what you made) also give experience. Card taps and `/w/<uuid>` links always deliver a player inside a world, at any level.
+
+##### Awe — How Wonder Grows You and the Universe
+
+Awe is tracked per player. Each event gives that player **experience** and pushes the **high-water line** (and the Frontier) outward for everyone. It never adds spendable mana.
+
+```js
+// Awe events — each gives XP + high-water reach (amounts set with the levels design)
+"first-world-visit"     // first time entering a world you've never seen
+"first-creation-seen"   // seeing an object placed by another player for the first time
+"distance-milestone"    // reaching a new distance-from-origin record
+"slingshot-chain"       // chaining gravity slingshots (3+ in a row)
+"cluster-discovery"     // finding a cluster of worlds you haven't visited
+"long-absence-return"   // returning after 7+ days away — the universe missed you
+"reaction"              // someone else's awe at a world you made credits you
+"shared-awe"            // 2× when experiencing awe near other players
+```
+
+**Shared awe** makes social exploration intrinsically valuable. **Diminishing novelty:** revisits give less each time, with a small warm baseline for coming home.
 
 ##### Solar Tidal Cycle — The Universe Breathes With the Sun
 
-Mana flow follows the player's **local solar position** using the browser's timezone and a sunrise/sunset API:
+Two gentle effects from the player's local solar position (browser timezone + sunrise/sunset):
 
-```
-                    ☀️ Solar Noon
-                   ╱  ╲     Flow: 1.5x
-                  ╱    ╲    Universe is bright, creation is fluid
-                 ╱      ╲
-────────────────╱────────╲──────────────────── 1.0x baseline
-               ╱          ╲
-              ╱            ╲
-             ╱              ╲
-            ╱                ╲   Flow: 0.6x
-           ╱                  ╲  Universe dims gently
-          🌙 Midnight          🌙
-```
-
-This isn't punitive — you *can* create at night, just slower. The universe is resting. So should you. Players in different timezones experience different tidal phases simultaneously — the mana pool receives a blended flow from the global community's collective daylight.
-
-The visual effect: during your local daytime, the universe is subtly warmer-toned and more vivid. At night, it shifts cooler, deeper, more contemplative. You can still explore and create — the universe just whispers "maybe rest soon."
-
-#### Mana Costs — Frontier Expansion & Solidification
-
-Mana does not gate creation. **Anyone can build anything, anywhere, for free — even offline.** Mana powers the *reality* of those creations: expanding the Living Frontier, solidifying Ghost worlds, and modifying the physics of solidified worlds.
-
-**Frontier Expansion (Automatic):**
-
-As the mana pool grows, the Living Frontier's radius expands. This is the primary mana "cost" — maintaining and growing the sphere of reality. The server continuously recalculates `frontierRadius` as a function of the pool. Ghost worlds caught in the expansion automatically solidify.
-
-**Targeted Solidification (Patronage):**
-
-| Action | Mana Cost | Notes |
-|--------|----------|-------|
-| Solidify a Ghost world (targeted Patron donation) | 5,000 | Creates an **Oasis** — a localized bubble of light in the Deep Dark |
-| Expand an Oasis radius | 1,000 per tier | Grow the bubble of reality around a patronized world |
-
-**In-World Modifications (Solidified Worlds Only):**
-
-These actions draw mana from the universal pool and require a solidified world. In Ghost worlds, these actions are "queued" and take effect upon solidification.
-
-| Action | Mana Cost | Notes |
-|--------|----------|-------|
-| Place a basic object (cube, sphere, ramp) | 10-50 | Free as Ghost; costs mana only in solidified worlds |
-| Place a complex object (tree, structure, vehicle) | 100-500 | Same |
-| Custom sculpt (freeform 3D) | 50-200 per edit | Same |
-| Import/paste from another world | 50% of original cost | Same |
-| Remove an object | Free | **No mana returned** — energy is spent, not recycled |
-| Move/rearrange an object | Free | Repositioning doesn't cost mana |
-
-**Object removal policy:** Objects can be removed under reasonable circumstances (by the world creator, or by the player who placed them, or through a future permissions/governance system). Removal is free but **does not return mana** to the pool.
-
-**Physics & Rules (Solidified Worlds Only):**
-
-| Action | Mana Cost |
-|--------|----------|
-| Change gravity | 500 |
-| Change friction / bounce / air resistance | 200 each |
-| Set water level | 300 |
-| Create a custom physics zone (localized gravity) | 1,000 |
-
-**Avatar / Star Customization:**
-
-| Action | Mana Cost |
-|--------|----------|
-| Change trail style | 50 |
-| Change aura effect | 50 |
-| Change star shape | 100 |
-| Change star color | 25 |
-| Unlock a new costume/skin | 200-1,000 |
-| Emote / signal | 5 per use |
-
-**Sound & Music (Solidified Worlds Only):**
-
-| Action | Mana Cost |
-|--------|----------|
-| Place an ambient sound source | 100 |
-| Compose a music loop (in-world sequencer) | 200-500 |
-| Record a voice message (embedded in world) | 50 |
-| Change world ambient soundtrack | 300 |
-
-**Gameplay & System Mods (Solidified Worlds Only):**
-
-| Action | Mana Cost |
-|--------|----------|
-| Custom keyboard remapping (for your world) | 500 |
-| Create a gameplay rule (win condition, scoring) | 1,000 |
-| Set an entry cost (visitors spend mana to enter) | Requires 2,000+ mana in world |
-
-#### Draw Mechanics — Fairness + Donor Empowerment
-
-Each player has a **flow rate** — the maximum speed at which they can draw mana from the universal pool. **The pipe is the same diameter for everyone, donor or not** (resolved Aug 19, 2026: donor advantages are cosmetic only; see below).
-
-```
-flowRate = baseRate * activityMultiplier * solarModifier * diminishingReturns
-
-where:
-  baseRate           = 100 mana/minute (same for every player, always)
-  activityMultiplier = 1.0-2.0 (exploring/awe earns faster draw)
-  solarModifier      = 0.6-1.5 (based on local sun position)
-  diminishingReturns = decreases as you draw more in a 24hr window
-```
-
-##### Donor Empowerment (Cosmetic Only)
-
-The design intent: **donating should feel empowering**, but we strictly avoid "pay-to-win" or functional advantages. The flow rate of mana is identical for everyone (free and donor players alike). 
-
-Instead, donors are rewarded with exclusive cosmetic flair:
-- Unique star shapes and aura colors
-- Special titles, badges, and companion "pets" (small orbiting bodies)
-- The profound visual feedback of seeing the universe physically expand outward from their donation.
-
-A $0 player can build everything a $500 player can, at the exact same speed. The gap is purely visual and never gatekeeping.
-
-##### Diminishing Returns on Daily Draw
-
-Regardless of flow rate (base or boosted), heavy creation in a single session slows down:
-
-| Mana drawn in last 24hr | Flow rate multiplier |
-|--------------------------|---------------------|
-| 0 - 1,000 | 1.0x (full speed) |
-| 1,000 - 5,000 | 0.7x (slowing) |
-| 5,000 - 10,000 | 0.4x (slow) |
-| 10,000 - 20,000 | 0.2x (trickle) |
-| 20,000+ | 0.05x (drip — still works, just slowly) |
-
-Not a hard cap — a soft pressure to share the universe's energy. Come back tomorrow and your rate resets. This applies equally to free and donor players.
+1. **Visual:** warmer and more vivid by day, cooler and deeper at night.
+2. **A small modifier on personal caps:** 1.1× at solar noon down to 0.9× at midnight, sinusoidal. You *can* create at night, just a little slower. The universe whispers "maybe rest soon."
 
 #### Mana Is Visible, Audible, and Tangible
 
@@ -903,6 +827,8 @@ The mana pool is not a hidden number. The entire universe reflects its state thr
 | **Low (<30%)** | Dim, desaturated | Thin, wispy | Sparse, slow-moving | Short, faint | Space feels emptier |
 | **Critical (<5%)** | Nearly dark | Gone | Gone | Barely visible | Subtle aurora near Aweborn Portal — a hint that donations can restore energy |
 
+*(Percent of what is open: e.g. the pool relative to 30 days of typical draw.)*
+
 **Audio** — the universe breathes:
 
 | Pool Level | Ambient | Creation Sound |
@@ -912,47 +838,33 @@ The mana pool is not a hidden number. The entire universe reflects its state thr
 | **Low** | Near-silence — occasional distant tone | Creation sound is thinner, more effortful |
 | **Critical** | Silence — the universe is dormant | A strained whisper — creation is possible but the universe is tired |
 
-**The Donation Moment — The Solidification Wave:** When someone donates while players are online, the mana pool swells and the Living Frontier physically expands. A **wave of golden light ripples outward from the Aweborn Portal** at the center of the universe. As the wave passes through the Deep Dark, Ghost worlds caught in its path **solidify in real-time** — wireframes fill with color, physics switch on, particles burst. Every player sees and feels it simultaneously. Donor recognition is **optional and configurable** — the donor can choose to be named ("A wave of light from ★ Alex") or stay anonymous ("A wave of light from ★ a generous soul").
+**The Donation Moment — The Solidification Wave:** When someone donates while players are online, the pool swells, the high-water line rises and the Living Frontier physically expands. A **wave of golden light ripples outward from the Aweborn Portal**. Ghost worlds caught in its path **solidify in real time**: wireframes fill with color, physics switch on, particles burst. Every player sees and feels it. **The only donor perk is recognition, and it's opt-in:** "A wave of light from ★ Alex" or "A wave of light from ★ a generous soul".
 
 #### The Donation → Mana → Frontier Pipeline
 
 ```
 Player donates $10 via Stripe
   → Lambda receives webhook (payment_intent.succeeded)
-  → Lambda calculates: $10 × 1,000 = 10,000 mana
-  → Lambda atomically adds to universe.mana.pool
-  → Lambda updates donor's lifetimeDonations (for cosmetic unlocks — not flow rate)
-  → Lambda writes donation event to manaLedger
-  → Lambda sets donationMultiplier boost (24hr afterglow)
-  → VPS receives CRDT update, recalculates frontierRadius
-  → VPS broadcasts frontier expansion to all connected clients
-  → ALL PLAYERS SEE: Golden solidification wave sweeps outward
-  → Ghost worlds caught in wave: wireframes fill with color, physics activate
-  → DONOR SEES: New cosmetic flares unlocked + the wave they caused
+  → net of fees ≈ $9.41 → inflow = K · α · net = 100 × 0.5 × 9.41 ≈ 470 mana
+  → pool += 470, highWater += 470, ledger entry written (via the VPS)
+  → VPS recalculates frontierRadius, broadcasts the expansion
+  → ALL PLAYERS SEE: golden solidification wave (with the donor's name, if they opted in)
+  → Ghost worlds caught in the wave: wireframes fill with color, physics activate
 ```
 
-| Donation | Mana Added | Rough Impact |
-|----------|-----------|-------------|
-| $5 | 5,000 | Frontier expands ~1 sector. Nearby ghost worlds solidify. Donor unlocks basic flare. |
-| $10 | 10,000 | Noticeable expansion. Multiple ghost worlds solidify. |
-| $25 | 25,000 | Major expansion. Deep Dark explorers see their builds light up. |
-| $50 | 50,000 | Sweeping wave — a whole frontier ring solidifies. |
-| $100 | 100,000 | Massive burst — the Deep Dark retreats visibly. |
-| $500 | 500,000 | "Golden age" — the Living Frontier leaps outward. Ghost galleries become real. |
+(Impact per amount depends on how big the universe already is: early gifts move the Frontier dramatically, because radius grows as the cube root of the high-water line.)
 
 #### Server Authority for Mana
 
-Mana is one of the few things that **must be server-authoritative** (the VPS validates all draws for solidified-world actions; Lambda handles donation ingestion):
+Mana is one of the few things that **must be server-authoritative** (the VPS validates every draw; Lambda handles donation ingestion):
 
-1. Client requests a draw: "I want to change gravity in my solidified world (500 mana)"
-2. VPS checks: pool sufficient? Flow rate within limits (including donor bonus and solar modifier)? Action legitimate? World solidified?
-3. VPS deducts atomically, writes transaction to ledger CRDT
-4. VPS confirms → client proceeds with modification
-5. If denied → client sees "The universe needs more energy" (gentle, not punitive)
+1. Client asks to manifest: "generate this terrain" (estimate: 40 mana)
+2. VPS checks: pool − reserved enough? Fits the global flow `G` and this player's fair share and personal cap? Action legitimate?
+3. VPS reserves the estimate, writes the ledger, confirms
+4. Generation runs; the real cost is drawn on completion (failures draw nothing)
+5. If denied → *"The world must be replenished…"*
 
-Note: **Ghost creation is free and requires no server validation.** Players can build unlimited Ghost worlds offline or in the Deep Dark without any mana check. Only solidification and in-world modifications to solidified worlds draw from the pool. This eliminates the offline mana paradox entirely — there is nothing to double-spend.
-
-Donor status and cosmetic unlocks are stored server-side (tied to verified Stripe payment history), so they can't be spoofed.
+**Dreaming is free and needs no server validation.** Ghost worlds, placing and arranging, and everything offline never touch the pool. There is nothing to double-spend.
 
 #### Offline Creation — The Dream State
 
@@ -960,29 +872,29 @@ Players can create **freely and without limits** while offline. Every offline cr
 
 **Offline Reconnect Collisions:** Because the server has ultimate authority on spatial positioning (to prevent overlap), when the offline player reconnects, their client syncs the CRDT. If their offline creation collides with an online creation, the server detects the collision. Rather than deleting the offline player's creation, the server's spatial resolver deterministically "nudges" the offline object along an outward vector to the nearest unoccupied space and updates the canonical CRDT. The client sees their object gently slide into an open slot.
 
-The offline experience is still rich and beautiful: Ghost worlds have their own ethereal aesthetic (translucent wireframes, soft glow, dreamlike particle effects). Building offline feels like sculpting in the realm of pure imagination. When you reconnect, your dreams appear in the Deep Dark, waiting for the Living Frontier to reach them — or for a Patron to bring them to life.
+The offline experience is still rich and beautiful: Ghost worlds have their own ethereal aesthetic (translucent wireframes, soft glow, dreamlike particle effects). Building offline feels like sculpting in the realm of pure imagination. When you reconnect, your dreams appear in the Deep Dark, waiting for the Living Frontier to reach them.
 
 #### Emergent Behaviors
 
 - **"The Frontier Is Expanding!"** — A donation lands and a wave of golden light sweeps outward. Ghost worlds solidify in its wake. Every player online witnesses it. The defining moment of Aweborn.
-- **"Deep Dark Explorers"** — Adventurous players fly beyond the Living Frontier into the Deep Dark to build Ghost worlds on the edge, hoping their creations are beautiful enough that a Patron will fund them into reality, or that the Frontier will reach them.
-- **"The Patron"** — Donors can browse Ghost worlds in the Deep Dark and choose which dreams to fund. A targeted donation creates an Oasis — a bubble of light and reality far from the Frontier.
+- **"Deep Dark Explorers"** — Adventurous players fly beyond the Living Frontier into the Deep Dark to build Ghost worlds on the edge, waiting for the Frontier to reach them, and their exploring pushes it outward.
 - **"Ghost Galleries"** — Beautiful Ghost structures in the Deep Dark become tourist attractions even before solidification. Players visit to admire the wireframe art, knowing it might solidify any day.
 - **The Golden Wave** — The most impactful visual in the game. Someone donates, and the universe physically grows. Not a notification — a visceral, visible expansion of reality.
-- **Exploration as the Engine** — Awe is the primary mana source. Free-to-play players who explore actively generate more mana for the universe than passive players. Curiosity literally expands the Frontier.
-- **Shared Wonder** — Experiencing awe near other players generates 2x mana. The universe rewards togetherness. Social exploration is the most efficient way to expand reality.
+- **Exploration as the Engine** — Awe levels you up and pushes the Frontier outward for everyone. Curiosity literally expands reality.
+- **Making Things People Love** — Other players' awe at your world is how makers grow. The universe rewards creations that move people, not volume.
+- **Shared Wonder** — Awe experienced near other players counts double. Social exploration is the most efficient way to expand reality.
 - **The Museum of Everything** — Worlds persist forever. No decay, no recycling, no harvesting. The universe is an ever-growing museum of everything anyone ever made. Walk far enough and you'll find worlds from the very first day.
-- **No Grinding** — Nothing to farm, hoard, or trade. Mana comes from wonder and generosity, not repetitive action. Creation is always free (as a Ghost).
+- **No Grinding** — Nothing to farm, hoard, or trade. Nobody holds mana. Dreaming is always free (as a Ghost).
 - **Healthy Rhythms** — Solar tidal cycles nudge players toward real-world daylight activity. The game doesn't want you at 3am — the universe dims to match.
-- **The Ever-Expanding Universe** — The universe never shrinks and creations never fade back to Ghosts. The universe's expansion is an accelerating high-water mark of human generosity and engagement. If mana generation slows, the frontier simply stops expanding and waits for the next surge of Awe or donations.
+- **The Ever-Expanding Universe** — The universe never shrinks and creations never fade back to Ghosts. The Frontier is a high-water mark of generosity and wonder. If gifts slow, it simply waits for the next surge.
 
 #### System Rules & Validation
 
-- **Frontier radius formula:** If Mana represents the *volume* of reality, then $Volume \propto Mana$. Since $Volume = \frac{4}{3}\pi r^3$, the radius of the frontier grows as the cube root of the mana pool ($r \propto \sqrt[3]{Mana}$). Early donations expand the universe rapidly, but as the universe gets massive, it takes exponentially more mana to push the frontier outward.
-- **Targeted Sector Expansion:** The frontier isn't a perfect sphere. The universe is mapped as a 3D grid of **Sectors**. Each sector has its own `solidificationLevel`. When awe is generated in a specific sector, that sector expands outward organically like a nebula. Targeted patronage creates massive outward "bulges" in specific directions.
+- **Frontier radius formula:** If Mana represents the *volume* of reality, then $Volume \propto Mana$. Since $Volume = \frac{4}{3}\pi r^3$, the radius of the frontier grows as the cube root of the **high-water line** ($r \propto \sqrt[3]{H}$), not of the spendable pool, so spending never shrinks reality (decided 2026-10-13). Early gifts expand the universe rapidly, but as the universe gets massive, it takes far more to push the frontier outward.
+- **Targeted Sector Expansion:** The frontier isn't a perfect sphere. The universe is mapped as a 3D grid of **Sectors**. Each sector has its own `solidificationLevel`. When awe is generated in a specific sector, that sector expands outward organically like a nebula, creating outward "bulges" where players explore most. (Targeted patronage was removed 2026-10-13.)
 - **Client/Server Validation Architecture:** We use **Client-Side Prediction with Server Reconciliation**. When a player places an object, the client instantly validates it locally (checking for collisions, etc.) and renders it immediately. It sends the action to the server. The VPS runs a lightweight authoritative check. If a player hacks their client to place objects inside walls, the server rejects the CRDT update and forces a reversion, snapping the object back.
 - **Solidification wave visual/audio design:** A golden, translucent shockwave that distorts the stars behind it (refraction shader). As it hits a Ghost world, the wireframes shatter into glowing particles and instantly reform as solid, textured objects. A deep, resonant bass note sweeps across the audio spectrum, leaving a warm orchestral hum in its wake.
-- **Awe generation:** The awe generated by seeing an object is equal to the mana cost of the object. A massive sculpture generates massive awe. To prevent farming, each player has an "Awe Exhaustion" curve per object/world. First view = 100% awe, second view = 10%, thereafter = 0%. The universe demands fresh exploration.
+- **Awe generation:** The awe generated by seeing an object is proportional to the mana it took to manifest (as XP and high-water reach, never spendable mana). A massive sculpture generates massive awe. To prevent farming, each player has an "Awe Exhaustion" curve per object/world. First view = 100% awe, second view = 10%, thereafter = 0%. The universe demands fresh exploration.
 - **Object removal governance (World Ownership):**
   1. **The Creator:** Has ultimate power to delete/move anything in their world. Future additions may include configurable roles (e.g., Observer, Builder).
   2. **The Placer:** You can always delete/move an object *you* placed.
@@ -992,13 +904,13 @@ The offline experience is still rich and beautiful: Ghost worlds have their own 
 
 - **⬜ World Interiors:** What can players actually do inside a world? (place objects, sculpt, draw, just hang out?)
 - **⬜ Universe Entry Point:** What does a brand-new player see when they first open aweborn.org? How do they orient?
-- **⬜ Mana Tuning:** Finalize dollar-to-mana ratio, solar cycle parameters
+- **🟡 Mana Tuning (drafted 2026-10-14):** `K = 100` mana per compute-dollar, `α = 0.5`, `τ = 30` days, solar ±10% on personal caps. Still open: personal cap per level, priority formula, level curve. See [Phase 05](./phases/05-mana-economy.md)
 - **✅ Discovery threshold (World Index) (decided 2026-10-12):** Two states. *Sighted* = within close range (100 u) or landed beside it by link/card/warp: face-down card, can warp to it. *Visited* = went inside: full card art. Sightings work offline (queued, replayed later). Anti-cheat: cheap server checks now, server-derived sightings in Phase 09.
-- **✅ World Index Warp rules (decided 2026-10-12):** free, standard K charge animation, no cooldown (movement never costs mana).
+- **✅ World Index Warp rules (decided 2026-10-12, amended 2026-10-13):** free, standard K charge animation, no cooldown (movement never costs mana), **once unlocked by level**. Card/link arrival is never gated.
 - **✅ World Index key binding (decided 2026-10-12):** `M` (think Map) + a HUD chip for touch. Gamepad later.
 - **✅ Player identity persistence (decided 2026-10-11, built 2026-10-12):** One player across tabs and devices. Anonymous first (no signup wall). Ways in: passkeys, Google, email code (instead of a magic link) and email + password; Apple/Facebook deferred. An account owns *characters*; saved players never merge. The public `playerId` is never a credential; each device holds its own revocable session (Better Auth). Deferred: QR device linking, one screen steers. Tasks: Phase 08 → Persistent Player Identity.
-- **⬜ Personal discovery rewards:** Beyond awe-to-pool + the World Index entry, is there a personal reward (cosmetic badges at discovery milestones, set-completion flair)? Must stay cosmetic-only.
-- **⬜ Print-your-world → patronage:** Should a card order for a Ghost world fund that world's solidification automatically, opt-in, or not at all?
+- **🟡 Personal discovery rewards:** Discovery awe now gives XP (levels) and Frontier reach. Beyond that, any badge or set-completion flair stays cosmetic and can never be bought.
+- **✅ Print-your-world → patronage (decided 2026-10-13):** no. Patronage is removed; a card order's surplus is an ordinary gift to the pool.
 - **✅ Card format (decided 2026-10-04):** TCG standard, 63×88 mm.
 - **✅ QR fallback (decided 2026-10-04):** yes, a small QR (same URL) on the front.
 - **⬜ Card art pipeline:** How is a world's portrait produced — player-taken in-game snapshot, automatic server-side render, or AI-generated (Phase 07)? In the World Index, worlds without art get a generated card (decided 2026-10-12).

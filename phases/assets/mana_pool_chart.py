@@ -1,27 +1,30 @@
 """Illustrative simulation of the universal mana pool (Phase 05, draft model v1).
 
 Regenerate the chart:
-    python3 phases/assets/mana_pool_chart.py
+    python3 phases/assets/mana_pool_chart.py          # tau = 30 days -> mana-pool-model.png
+    python3 phases/assets/mana_pool_chart.py 90       # comparison     -> mana-pool-model-tau90.png
 
 Model (see phases/05-mana-economy.md -> "The Mana Pool Formula"):
     inflow_t   = K * ALPHA * net_donations_t            (linear in money)
-    cap_t      = max(F_MIN, pool_t / TAU)               (global flow cap per day)
+    cap_t      = max(pool_t / TAU, P_SOLO)              (global flow per day; never below one player's cap)
     drawn_t    = min(demand_t, cap_t, pool_t + inflow_t) (requests above this are "whispered")
+    (The per-player max-min fair split of cap_t among active players is not simulated here.)
     pool_t+1   = pool_t + inflow_t - drawn_t
     highwater  = cumulative mana ever donated + awe reach (never falls)
 
 All numbers are made up to show the shape, not forecasts.
 """
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-K = 1_000  # mana per compute-dollar (1 mana = $0.001 of real compute)
-ALPHA = 0.6  # share of each net donation routed to the creative pool (rest: research, ops, people)
-TAU = 14  # days: the pool can never drain faster than ~1/14 of itself per day
-F_MIN = 2_000  # mana/day: small floor so a tiny pool still lets people manifest a little
+K = 100  # mana per compute-dollar (1 mana = $0.01 of real compute)
+ALPHA = 0.5  # creative share: half of each net gift becomes mana (rest: research, ops, fundraising)
+TAU = int(sys.argv[1]) if len(sys.argv) > 1 else 30  # days: pool shrinks by at most 1/TAU of itself per day
+P_SOLO = 300  # mana/day: one level-1 player's personal cap (placeholder until Phase 07 costs)
 DAYS = 120
 
 rng = np.random.default_rng(7)
@@ -36,19 +39,19 @@ donations[100] += 600
 
 # Demand (mana/day players *want* to manifest): grows with the community, weekend bumps.
 players = 20 + days * 0.6
-demand = players * rng.gamma(4.0, 62.5, DAYS) * (1 + 0.3 * (days % 7 >= 5))  # ~250 mana/player/day
+demand = players * rng.gamma(4.0, 6.25, DAYS) * (1 + 0.3 * (days % 7 >= 5))  # ~25 mana ($0.25)/player/day
 
 pool = np.zeros(DAYS + 1)
-pool[0] = 30_000  # seed
+pool[0] = 20_000  # seed grant ($200 of compute)
 inflow = K * ALPHA * donations
 drawn = np.zeros(DAYS)
 cap = np.zeros(DAYS)
 for t in days:
-    cap[t] = max(F_MIN, pool[t] / TAU)
+    cap[t] = min(max(pool[t] / TAU, P_SOLO), pool[t] + inflow[t])
     drawn[t] = min(demand[t], cap[t], pool[t] + inflow[t])
     pool[t + 1] = pool[t] + inflow[t] - drawn[t]
 
-awe_reach = np.cumsum(rng.poisson(1.0, DAYS) * 300)  # awe raises the high-water line, not the pool
+awe_reach = np.cumsum(rng.poisson(1.0, DAYS) * 30)  # awe raises the high-water line, not the pool
 highwater = pool[0] + np.cumsum(inflow) + awe_reach
 
 # ---- plot ----
@@ -82,19 +85,19 @@ ax1.legend(facecolor="#161a35", edgecolor="#33375a", labelcolor="#e6e7f5", fonts
 ax2.bar(days, inflow, color=teal, alpha=0.75, label="Inflow = K x alpha x donations")
 ax2.bar(days, -drawn, color=gold, alpha=0.75, label="Drawn by manifesting")
 ax2.plot(days, -demand, color=rose, lw=1, alpha=0.9, label="Demand (what players asked for)")
-ax2.plot(days, -cap, color=violet, lw=1.2, ls=":", label="Global flow cap = max(floor, pool / tau)")
-LIM = 45_000
+ax2.plot(days, -cap, color=violet, lw=1.2, ls=":", label="Global flow = max(pool / tau, one player's cap)")
+LIM = 4_500
 ax2.set_ylim(-LIM, LIM)
 for d in days[inflow > LIM]:
-    ax2.annotate(f"+{inflow[d] / 1000:.0f}k", (d, LIM), xytext=(0, -10), textcoords="offset points",
+    ax2.annotate(f"+{inflow[d] / 1000:.1f}k", (d, LIM), xytext=(0, -10), textcoords="offset points",
                  ha="center", color=teal, fontsize=8)
 ax2.set_ylabel("mana / day", color="#c9cbe0")
 ax2.set_xlabel("day", color="#c9cbe0")
 ax2.legend(facecolor="#161a35", edgecolor="#33375a", labelcolor="#e6e7f5", fontsize=8, loc="lower left", ncol=2)
 
-fig.text(0.01, 0.005, f"Illustrative only. K={K} mana per compute-$, alpha={ALPHA}, tau={TAU} days, floor={F_MIN} mana/day.",
+fig.text(0.01, 0.005, f"Illustrative only. K={K} mana per compute-$ (1 mana = 1 cent), alpha={ALPHA}, tau={TAU} days, solo cap={P_SOLO} mana/day.",
          color="#8a8db3", fontsize=8)
 fig.tight_layout(rect=(0, 0.02, 1, 1))
-out = Path(__file__).with_name("mana-pool-model.png")
+out = Path(__file__).with_name("mana-pool-model.png" if TAU == 30 else f"mana-pool-model-tau{TAU}.png")
 fig.savefig(out, dpi=150, facecolor=fig.get_facecolor())
 print(f"wrote {out}")
