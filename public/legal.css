@@ -1,4 +1,4 @@
-/* Shared styles for the static legal pages (privacy.html, terms.html).
+/* Shared styles for the static pages (privacy.html, terms.html, giving.html).
    Mirrors the design tokens in src/index.css; kept standalone so these
    pages load without the 3D app. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap');
@@ -93,11 +93,76 @@ footer {
   font-size: 0.85rem;
 }
 
+/* ---- giving.html: the split ---- */
+.note { color: var(--text-3); font-size: 0.92rem; }
+
+.split-mana { --seg: var(--accent); --seg-2: var(--accent-soft); }
+.split-research { --seg: #9b8cff; --seg-2: #c4b9ff; }
+.split-people { --seg: #5fa8e8; --seg-2: #9fd0f5; }
+
+.split-bar {
+  display: flex;
+  height: 2.75rem;
+  margin: 1rem 0 1.25rem;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 0 32px rgba(232, 185, 74, 0.18);
+}
+.split-seg {
+  flex: 0 0 var(--share);
+  display: grid;
+  place-items: center;
+  font: 600 0.95rem Outfit, sans-serif;
+  color: #0a0a1e;
+  background: linear-gradient(135deg, var(--seg-2), var(--seg));
+  transform-origin: left;
+  animation: grow 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.split-seg:nth-child(2) { animation-delay: 0.12s; }
+.split-seg:nth-child(3) { animation-delay: 0.24s; }
+
+.split-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+@media (max-width: 40rem) {
+  .split-list { grid-template-columns: 1fr; }
+}
+.split-item {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--seg);
+  border-radius: 14px;
+  background: rgba(238, 240, 246, 0.03);
+  transition: transform 0.2s, background 0.2s;
+}
+.split-item:hover { transform: translateY(-2px); background: rgba(238, 240, 246, 0.06); }
+.split-pct { font: 700 1.6rem Outfit, sans-serif; color: var(--seg-2); }
+.split-name { font-weight: 600; color: var(--text); }
+.split-desc { font-size: 0.92rem; }
+
+.refs li { margin: 0.7rem 0; }
+
+@keyframes grow {
+  from { transform: scaleX(0); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
 @keyframes rise {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  main { animation: none; }
+  main, .split-seg { animation: none; }
+  .split-item { transition: none; }
+  .split-item:hover { transform: none; }
 }

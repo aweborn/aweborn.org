@@ -826,6 +826,14 @@ html, body, #root {
   line-height: 1.5;
 }
 
+.modal-subtitle a {
+  color: #f0d78c;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.modal-subtitle a:hover,
+.modal-subtitle a:focus-visible { color: #e8b94a; }
+
 /* Donation Amount Grid */
 .amount-grid {
   display: grid;
