@@ -279,7 +279,7 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
           <div className="modal-step modal-step-amount">
             <h2 className="modal-title">Support Aweborn</h2>
             <p className="modal-subtitle">
-              Half of every gift becomes shared mana for all players; the rest funds our research.{' '}
+              Every gift becomes mana in the universe’s pool. Half is the creative share all players create with; the rest funds our research.{' '}
               <a href="/giving.html" target="_blank" rel="noopener" id="donation-giving-link">Where your gift goes</a>
             </p>
 

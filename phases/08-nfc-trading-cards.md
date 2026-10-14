@@ -244,7 +244,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[ ]` Order status page / email
 
 ### Economy Hooks
-- `[ ]` Order surplus (price − production − shipping) → donation pipeline → mana pool (golden wave)
+- `[ ]` Card order → treasury pool: full net amount in; production + shipping drawn out as category `cards`; `α` of the surplus (price − production − shipping) → creative share (golden wave). See [Phase 05 formula v3](./05-mana-economy.md#the-mana-pool-formula)
 - `[-]` ~~Ghost world order → targeted patronage toward solidifying that world~~ **Scrapped 2026-10-13 (Alex): no patronage**
 - `[ ]` Moderation: review world name/art before printing (printed content is permanent)
 
@@ -277,7 +277,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 | Identity: device vs cross-device? | ✅ **Decided 2026-10-11:** anonymous first + QR device linking + passkeys + email magic link + social (Google/Facebook/Apple…) + email/password, all one `playerId`; per-device sessions. One screen steers. Open: auth stack (I0) |
 | Personal discovery rewards beyond awe + entry? | Cosmetic-only milestone badges / set-completion flair |
 | Distinguish card taps from shared links? | ✅ **Decided 2026-10-12 (Alex): no.** A card is a link; both carry the existing enter-or-not parameter. No marker param, no card-found badge |
-| Print-your-world → patronage? | ✅ **Decided 2026-10-13 (Alex): no.** Patronage scrapped; card surplus is an ordinary gift to the pool |
+| Print-your-world → patronage? | ✅ **Decided 2026-10-13 (Alex): no.** Patronage scrapped. **2026-10-14:** all card money enters the treasury pool; `α` of the surplus becomes creative share |
 | Card size? | TCG 63×88 mm |
 | QR fallback on front? | Yes, small corner QR |
 | Art pipeline? | v1 in-game photo mode; later Phase 07 AI art. **World Index (decided 2026-10-12):** worlds without art get a generated card from the same front template (name, creator, coordinates) with a live mini-render of the world in the art window |

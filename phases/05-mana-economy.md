@@ -20,8 +20,9 @@ Implement the mana economy. **Mana is the universe's creative energy, and it is 
 | Mana authority | **Server-authoritative** for manifesting (solid worlds, AI generation). **Dreaming stays free, manifesting draws on the universal pool** (Alex, 2026-10-13): ghost/offline creation needs no mana and no validation | Prevents cheating while allowing unlimited offline creativity |
 | Who holds mana | **Nobody. Players hold no mana at all** (Alex, 2026-10-13 evening). There is one **universal pool**; giving to the mission swells it. *Supersedes the morning's personal reserve, mana purchases, creator earnings and the Curiosity Budget.* | Every gift is a pure gift: no personal benefit, so no purchase-vs-donation or unrelated-business-income problem |
 | What mana is | **Mana = compute.** 1 mana = $0.01 of real compute (**`K = 100`** mana per compute-dollar; Alex, 2026-10-14). A manifestation costs exactly what it costs us, converted at `K`. No markup | The pool is honestly "how much imagination the donors have paid for" |
-| Pool | **Linear in money:** each net donation adds `K · α · amount`; each manifestation subtracts its cost. Up with gifts, down with creation (Alex, 2026-10-13 night). See [formula](#the-mana-pool-formula) | Simple, explainable, auditable |
-| Creative share `α` | **`α = 0.5`** (2026-10-14, from research: see [Why α = 0.5 and τ = 30 days](#why-α--05-and-τ--30-days)). Half of each net gift becomes mana; draft split of the rest: 20% research, 30% operations + fundraising. Board revisits yearly; may rise toward 1 if a founding grant covers operations | Not every donated dollar can be compute |
+| Pool | **The pool is the treasury** (Alex, 2026-10-14, option a): **all money entering the system counts**, at `K`: gifts, card sales, grants, the founding gift. **Every dollar out is a categorized draw**: creations, servers & infra, cards (production + shipping), people (salaries), research, fundraising. So mana is a **live representation of how much money Aweborn has**. *Supersedes "each gift adds `K · α · amount`" (2026-10-13 night).* See [formula](#the-mana-pool-formula) | Radical transparency for a non-profit; one number tells the truth |
+| Creative share | **Players draw only from the creative share** `C` (Alex, 2026-10-14): `α` of each unrestricted inflow (card sales count after their own production + shipping; restricted grants add 0). `C ≤ pool` always. Creations can't spend salary money, and salaries can't spend creative money (if non-creative spending would push the pool below `C`, that's a budget alarm, not a quiet clip) | Keeps the guarantee "compute ≤ α × income" inside the treasury model |
+| Creative fraction `α` | **`α = 0.5`** (2026-10-14, from research: see [Why α = 0.5 and τ = 30 days](#why-α--05-and-τ--30-days)). Half of each net gift becomes mana; draft split of the rest: 20% research, 30% operations + fundraising. Board revisits yearly; may rise toward 1 if a founding grant covers operations | Not every donated dollar can be compute |
 | Flow rate | **The universe's flow rate rises for everyone as the pool grows** (Alex, 2026-10-13 evening). Global flow `G = max(pool / τ, p_solo)` per window, **`τ = 30 days`** (chosen by simulation, 2026-10-14). `G` is split **max-min fairly among players active in the last 30 minutes** (Alex: one player alone gets the whole pool at their own cap; with 1,000 players the global flow binds before personal caps) | Compute spend can never outrun what donors give; the pool can't be drained in an afternoon |
 | Personal caps | **Per-player cap per window, tunable during play**: `p_i = base(level) × solar` with solar ∈ [0.9, 1.1]. Fairness under scarcity, not a paywall: when the pool is healthy the caps are generous (Alex, 2026-10-13 night) | "Unlimited imagination" for everyone, shared fairly when energy is low |
 | Admission & order | **Requests are ordered; each asks "how much compute does this take?"** If it exceeds what the pool (and caps) allow → no-dice and the universe whispers *the world must be replenished*. **Priority order, formula deferred** (Alex, 2026-10-13 night). Reserve the estimate, settle the actual, refund on failure | No literal simultaneity; a queue with a gentle denial |
@@ -30,7 +31,7 @@ Implement the mana economy. **Mana is the universe's creative energy, and it is 
 | Experience & levels | **Levels unlock abilities** (e.g. warp, creating a sound): a scaffolded, studio-like path through every Gen AI tool (Alex, 2026-10-13 evening). **Q16 (Alex, 2026-10-14): a level measures a mix of mana successfully channeled into creations and breadth of skills** along the creator's journey. Plus XP from reactions (others' awe at what you made) and your own awe (2026-10-13). Channeled-mana XP uses concave scaling and counts only creations that settle and stay, so burning the shared pool isn't a shortcut. **Warp gated behind a level** (Q14 b). Card taps / `/w/<uuid>` links always deliver a player inside the world | Rewards real creating and learning every tool; manifesting stays open to all |
 | Unlock ladder | **Warp comes last** (Alex, 2026-10-14). Order: move → steer → drive/neutral → enter a world → place objects → the other maker tutorials → **mastery of your immediately accessible space + enough exploration of the universe** → warp. "Warp only goes to players who have mastered their local space" | You learn the universe by moving through it; warp is a reward for knowing it, not a shortcut past it |
 | Seed grant | **Alex makes the founding gift** (2026-10-14) that seeds the pool before the first players arrive; **$1,000** (Alex, 2026-10-14; 5× the simulation's $200 floor). At the standard split that is ~50,000 mana; whether the founding gift goes 100% to the pool (~100,000 mana) is open. Cloud bills already paid personally: ~$1K (in-kind vs reimbursement → CPA, business plan v0.4 §9) | Without a seed the first players hit the cap constantly |
-| Two numbers | **High-water line** = everything that has ever flowed in + awe reach (sets the Frontier, never falls) + **Pool** = mana available to flow now (decided 2026-10-13, Alex) | Spending never shrinks reality |
+| Three numbers | **High-water line** = all mana that has ever come in + awe reach (sets the Frontier, never falls); **Pool** = the treasury now; **Creative share** = what players can create with now (2026-10-14; was two numbers on 2026-10-13) | Spending never shrinks reality; the pool is honest; the creative share is fair |
 | Awe | **Awe gives experience *and* raises the high-water line** (Alex, 2026-10-13 evening, Q13 a). Only donations fill the pool / raise the flow | Curiosity is rewarded without minting spendable mana |
 | Patronage | **Scrapped** (Alex, 2026-10-13 night): no targeted solidification, no Oasis, no print-your-world patronage | Donations buy no personal advantage; the Frontier belongs to everyone |
 | Donor perks | **Close to zero: opt-in name in the golden wave** (confirmed by Alex, 2026-10-14; replaces Aug 19 "cosmetics only") | Pure gifts, with a nice touch |
@@ -45,25 +46,34 @@ Implement the mana economy. **Mana is the universe's creative energy, and it is 
 
 ## The Mana Pool Formula
 
-> v2 (2026-10-14): `K = 100`, `α = 0.5`, `τ = 30 days`, max-min fair split among active players, solar ±10% on personal caps. v1 (2026-10-13 night) was written from Alex's description: *money in → mana pools up → players manifest → pool drains a little*.
+> v3 (2026-10-14, Alex): **the pool is the treasury**: all money in, every categorized draw out; players draw only from the creative share. v2 (2026-10-14): `K = 100`, `α = 0.5`, `τ = 30 days`, max-min fair split among active players, solar ±10% on personal caps. v1 (2026-10-13 night) was written from Alex's description: *money in → mana pools up → players manifest → pool drains a little*.
 
 ```text
 Constants (tunable, public)
-  K      = 100 mana per compute-dollar        1 mana = $0.01 of real compute
-  α      = 0.5   creative share of each gift   (see "Why α = 0.5")
-  τ      = 30 days   drain horizon             (see "Why τ = 30 days")
+  K      = 100 mana per dollar                1 mana = $0.01
+  α      = 0.5   creative fraction of each unrestricted inflow   (see "Why α = 0.5")
+  τ      = 30 days   drain horizon of the creative share          (see "Why τ = 30 days")
 
-When a gift lands (Stripe webhook, net of processor fees)
-  inflow     = K · α · net_amount             $10 gift ≈ $9.41 net → ≈ 470 mana
-  pool      += inflow
-  highWater += inflow                         never falls
+Money in: every source (gifts, card sales, grants, founding gift), net of processor fees
+  m          = K · net_amount                 $10 gift ≈ $9.41 net → ≈ 941 mana
+  pool      += m                              the treasury, live
+  highWater += m                              never falls
+  creative  += α · m'                         m' = m for gifts; card sales after their own production + shipping;
+                                              restricted grants: 0 (tracked against their purpose)
+                                              $10 gift → ≈ 470 creative mana
+
+Money out: every draw has a category
+  creations · servers & infra · cards · people · research · fundraising · other
+  pool      -= K · amount
+  creations only:  creative -= actual         players never draw on any other category
+  invariant: 0 ≤ creative ≤ pool              a non-creative draw that would break it → budget alarm
 
 When awe happens
-  highWater += reach(awe)                     never touches the pool
+  highWater += reach(awe)                     never touches pool or creative
   xp[player] += xp(awe)
 
-Flow, per window (e.g. per minute)
-  G    = min(pool, max(pool / τ, p_solo))     global flow; never below one player's cap
+Flow, per window (e.g. per minute), on the creative share only
+  G    = min(creative, max(creative / τ, p_solo))   never below one player's cap
   N    = distinct players active in the last 30 minutes
   p_i  = base(level_i) × solar_i              personal cap, solar_i ∈ [0.9, 1.1]
   flow_i = max-min fair share of G among the N players, capped at p_i
@@ -71,20 +81,23 @@ Flow, per window (e.g. per minute)
 
 When a player asks to manifest r (requests are processed in priority order; formula later)
   est = estimate(r)                           real compute cost × K
-  admit if   est ≤ pool − reserved   and   est fits flow_i this window
-  admit  → reserved += est → generate → pool −= actual, reserved −= est
+  admit if   est ≤ creative − reserved   and   est fits flow_i this window
+  admit  → reserved += est → generate → creative −= actual, pool −= actual, reserved −= est
            (failure → nothing drawn)
   reject → whisper: "The world must be replenished…"   (gentle, not punitive)
 
+Display
+  pool shown smoothed (e.g. 30-day average) so payday reads as a calm breath, not a crash
+
 Frontier
-  frontierRadius = c · ∛(highWater)
+  frontierRadius = c · ∛(highWater)           retune c: highWater now grows with all money, not α of it
 ```
 
 ![τ = 30 days (chosen): throttling only on demand spikes; the dry spell drains gently](./assets/mana-pool-model.png)
 
 ![τ = 90 days (rejected): gifts pile up unused while players are throttled almost every day](./assets/mana-pool-model-tau90.png)
 
-*Illustrative only, made-up numbers. Regenerate with `python3 phases/assets/mana_pool_chart.py` (and `… 90` for the comparison). Top: the pool (gold) jumps with gifts and drains while people manifest; the high-water line (violet) only rises. Bottom: daily inflow vs mana drawn, players' demand, and the global flow. The per-player fair split isn't simulated.*
+*Charts predate v3: the gold line there is today's creative share. Illustrative only, made-up numbers. Regenerate with `python3 phases/assets/mana_pool_chart.py` (and `… 90` for the comparison). Top: the pool (gold) jumps with gifts and drains while people manifest; the high-water line (violet) only rises. Bottom: daily inflow vs mana drawn, players' demand, and the global flow. The per-player fair split isn't simulated.*
 
 **What the charts show:**
 
@@ -118,22 +131,23 @@ Frontier
 - `[ ]` Extend the existing `ManaState` in `shared/crdt-schema.ts` (don't redefine) to the October model:
   ```typescript
   interface ManaState {
-    pool: number;          // spendable now (mana)
+    pool: number;          // the treasury now (mana; all money in − all draws out)
+    creative: number;      // creative share players can draw now (≤ pool)
     reserved: number;      // estimates held for in-flight manifestations
     highWater: number;     // Σ inflow + Σ awe reach; never falls; sets the Frontier
     frontierRadius: number;
-    totalIn: number;       // lifetime mana from gifts
-    totalDrawn: number;    // lifetime mana drawn by manifesting
+    totalIn: number;       // lifetime mana in, all sources
+    drawnBy: Record<'creations' | 'infra' | 'cards' | 'people' | 'research' | 'fundraising' | 'other', number>;
     params: { K: number; alpha: number; tauDays: number };   // 100, 0.5, 30
     lastDonationAt: number;
   }
   ```
-- `[ ]` Append-only ledger on the VPS (SQLite): gifts, reservations, settlements, refunds, awe reach. The CRDT shows totals; the ledger is the audit trail
+- `[ ]` Append-only ledger on the VPS (SQLite): every inflow (source, restricted?) and every draw (category), reservations, settlements, refunds, awe reach. Non-player draws (salaries, servers, cards) are entered by an admin tool or imported from statements (Stripe, AWS Cost Explorer, provider invoices). The CRDT shows totals; the ledger is the audit trail
 - `[ ]` Server writes mana state to the Universe CRDT (authoritative); clients read it reactively
 
 ### Flow & Admission (server)
 - `[ ]` `server/sync-service/src/mana.ts`: `requestDraw(player, estimate)` → admit / reject per [the formula](#the-mana-pool-formula)
-- `[ ]` Global flow per window `G = max(pool / τ, p_solo)` (never more than the pool); personal cap `p_i = base(level) × solar`
+- `[ ]` Global flow per window `G = max(creative / τ, p_solo)` (never more than the creative share); personal cap `p_i = base(level) × solar`
 - `[ ]` Active players `N` = distinct players active in the last 30 minutes; split `G` max-min fairly (water-filling) among those requesting, each capped at `p_i`
 - `[ ]` Ordered request queue with a priority hook (`priority(request)` returns 0 for now; formula deferred)
 - `[ ]` Reserve → settle actual → release on failure, atomically with the ledger
@@ -141,7 +155,7 @@ Frontier
 - `[ ]` Ghost creation requires **no validation** (free, unlimited)
 
 ### Donation → Mana Pipeline (Extend Lambda)
-- `[ ]` On `payment_intent.succeeded`: `inflow = K · α · net_amount` (100 × 0.5 × net) → pool + highWater + ledger (via VPS API)
+- `[ ]` On `payment_intent.succeeded`: `m = K · net_amount` → pool + highWater; `α · m` → creative; ledger (via VPS API). Card orders: full net → pool, creative only after production + shipping
 - `[ ]` VPS recalculates `frontierRadius`, broadcasts the expansion, triggers the solidification wave for everyone online
 - `[ ]` Opt-in donor recognition in the wave ("A wave of light from ★ name" or "a generous soul"). No other donor perks
 - `[ ]` Product-agnostic so [Phase 08](./08-nfc-trading-cards.md) card-order surplus flows in as ordinary gifts
@@ -249,3 +263,4 @@ Frontier
 | 2026-10-14 (morning) | Alex: **`N` vs `τ` approved.** **Founding gift:** Alex seeds the pool himself (cloud bills already ~$1K). **Ladder: warp last**: move → steer → drive/neutral → enter world → place → maker tutorials → master local space + explore enough → warp (see [Experience & Levels](#experience--levels)). **Done:** public [`giving.html`](../public/giving.html) ("Where your gift goes": 50/20/30 bar + cards, how half becomes mana, what a gift doesn't buy, why half with the 4 references, taxes); Terms donations line now states the split and links the page; the donation modal subtitle states the split and links the page; Privacy unchanged. **Business plan v0.4** (donation-led) written in Drive; v0.3 archived alongside it. | Alex: push/deploy the giving page + Terms + modal? Seed amount; chapter-6 thresholds; `base(level)` after Phase 07 costs; priority formula |
 | 2026-10-14 (08:08) | Alex: **founding gift = $1,000**. **Pushed** `1366bab`..this commit to main (deploys the giving page, Terms split line, donation-modal link). Remaining questions deferred to the next session. | Next session: does the founding gift follow the 50/20/30 split or go 100% to the pool? Chapter-6 thresholds ("mastered", "explored enough"); `base(level)` / `p_solo` after Phase 07 costs; priority formula; then implementation |
 | 2026-10-14 (08:21) | **Cards** (see [Phase 08](./08-nfc-trading-cards.md#architecture-decisions)): shortcut and souvenir, never the only door; cards are mission (outreach), not plain merchandise. Business plan v0.4 updated with card numbers. Open: does card surplus follow the 50/20/30 split (current rule: "ordinary gift to the pool") or go to people + operations? | As above |
+| 2026-10-14 (08:30) | **The pool is the treasury** (Alex: "alllll money entering the system" counts, so mana is a live picture of the company's money). Option (a) chosen over (b) everything through the split and (c) players draw on everything (rejected: creations could eat salaries). **All inflows** (gifts, cards, grants, founding gift) add `K · net` to pool and high-water; **every outflow is a categorized draw** (creations, infra, cards, people, research, fundraising); **players draw only from the creative share** (`α` of unrestricted inflow; cards after their direct costs). Formula v3, ManaState, ledger and pipeline tasks updated. Giving page, Terms and donation modal reworded ("every gift becomes mana in the pool; half is the creative share"). **ROADMAP mana section not yet updated to v3** (needs Alex's OK). | Alex: OK to update ROADMAP to v3 and deploy the rewording? Display: smoothed pool, show draws by category publicly? Retune Frontier `c` |
