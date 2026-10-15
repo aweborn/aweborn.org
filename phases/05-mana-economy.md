@@ -189,7 +189,7 @@ Frontier
 
 ### Experience & Levels
 - `[x]` Decide what a level measures → **mix of mana channeled into creations + breadth of skills** (Alex, 2026-10-14)
-- `[ ]` XP curve: concave per creation and per day for channeled mana; only settled creations that still stand after N hours count
+- `[ ]` XP curve: concave per creation and per day for channeled mana; **usage is enough** (Alex, 2026-10-14: no "still standing after N hours" rule)
 - `[ ]` Skill list (move, place, terrain, mesh, texture, sound, music, voice, world…) and the breadth gate (level *n* needs *k* distinct skills)
 - `[x]` Unlock ladder order → **warp last** (Alex, 2026-10-14). Draft chapters:
   1. **First light:** move, steer
@@ -200,7 +200,13 @@ Frontier
   6. **Local mastery + explorer:** every skill above used in your immediately accessible space, *and* enough of the universe explored (visit *N* worlds, sight *M*, distance milestones)
   7. **Warp unlocked:** K-warp and the World Index "Warp here" button
   Beyond warp, levels keep coming from channeled mana + reactions + breadth
-- `[ ]` Thresholds for chapter 6 (*N*, *M*, distances; what "mastered" means per skill)
+- `[x]` Thresholds for chapter 6 (Alex, 2026-10-14 evening; fixed numbers, because the Frontier is the beginner's acclimation space):
+  - **Mastered a skill** = used it successfully 3 times (usage alone; nothing has to survive)
+  - **Local space = inside the Frontier**
+  - **Visit `N = 10` worlds, sight `M = 30`**
+  - **Distance:** 5,000 u flown in total, plus one flight ≥ 1,000 u from Origin *(open: conflicts with the cradle while the Frontier is < 1,000 u; see session log)*
+  - **Safety valve:** `N = min(10, worlds inside the Frontier)`, `M = min(30, …)`, so a sparse universe never locks anyone out
+- `[ ]` **Beginner cradle:** until warp unlocks, a soft leash keeps the player near a beginner baseline inside the Frontier and gently turns them back if they stray too far (lots of controls, and it's 3D: cradle them in). Arrivals by card or `/w/` link are never yanked back
 - `[ ]` Map chapters 1–4 onto the existing tutorial steps; chapter 5 needs `base(level)` > 0 for each tool
 - `[ ]` Gate the live K-warp and World Index "Warp here" button behind chapter 7 (link/card arrival never gated)
 
@@ -304,3 +310,4 @@ Frontier
 | 2026-10-14 (evening) | Alex loves the radical transparency: **categorize every output as shooting stars leaving the universe to compute**, and **every in-game card purchase swells the universe**. Drafted [Shooting Stars](#shooting-stars-every-draw-is-visible-alex-2026-10-14-evening): one color per category (creations gold, infra blue, cards rose, people amber, research violet, other silver), non-player draws smoothed over their period, tap a star to see what it was. Phase 08: card checkout in-game for **any** world, not only your own. Also repaired four business-plan lines that Google Docs had garbled (`$…$` read as math). | Alex: colors/categories OK? People-pay privacy (combine until ≥ 3 paid)? ROADMAP update for shooting stars + in-game card checkout? Remaining evening items: Frontier `c`, warp thresholds, `base(level)`, priority, budget alarm |
 | 2026-10-14 (20:13) | Alex: shooting stars approved ("love it"); **pay combined, and the categories made financially real**: stars now follow **Form 990 Part IX** (color = function: program gold, management & general blue, fundraising silver; motion = in-game purpose; tap = natural expense line). Compensation is one combined line allocated across functions by time; individual pay never shown. **ROADMAP updated** with shooting stars + in-game card checkout for any world (Alex: "please"). | Next session: Frontier `c`, warp thresholds, `base(level)` / `p_solo`, priority formula, budget alarm; CPA: allocation keys, cards as program |
 | 2026-10-14 (21:07) | **Frontier `c` retuned (Alex: option A, tight):** `c = ∛10 ≈ 2.154`, i.e. `r = 100 u · ∛($ ever in / $1,000)`. Founding gift → 100 u (Origin's sighting bubble), $1M → 1,000 u (one sector); most worlds stay Ghost for a long time. Scale refs: sector 1,000 u, radar 80 u, sighting 100 u; the live placeholder `frontierRadius = 5000` goes away at implementation. Flagged: at this scale a $10 gift moves the edge only ≈ 0.3 u (at $1k in), so the edge alone can't carry the moment → **the wave is the same size for every gift** (Alex; celebration, not to scale). ROADMAP not touched (its formula is `r ∝ ∛`, still true). | Next: (c) chapter-6 thresholds ("mastered" + "explored enough"), (d) `base(level)` / `p_solo`, (e) budget alarm; then Universal Mana Pool & Ledger |
+| 2026-10-14 (21:29) | **Chapter-6 gates (Alex):** mastery = **3 successful uses** (usage is enough; the "still standing after N hours" rule is dropped from XP too); local space = **inside the Frontier**; **`N = 10` visited, `M = 30` sighted**, fixed (the Frontier is the beginner's acclimation space); distance 5,000 u total + one ≥ 1,000 u flight ("love that"); safety valve `min(N, worlds inside the Frontier)`. New task: **beginner cradle**, a soft leash that turns pre-warp players back toward a beginner baseline (link/card arrivals exempt). **Conflict flagged:** with `c = ∛10` the Frontier is 100 u at $1k, so the cradle forbids the 1,000 u flight. | Alex: resolve the 1,000 u flight vs cradle; then (d) `base(level)` / `p_solo`, (e) budget alarm |
