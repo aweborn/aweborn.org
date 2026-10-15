@@ -58,6 +58,7 @@
       - [Awe — How Wonder Grows You and the Universe](#awe--how-wonder-grows-you-and-the-universe)
       - [Solar Tidal Cycle — The Universe Breathes With the Sun](#solar-tidal-cycle--the-universe-breathes-with-the-sun)
     + [Mana Is Visible, Audible, and Tangible](#mana-is-visible-audible-and-tangible)
+    + [Shooting Stars: Every Draw Is Visible](#shooting-stars-every-draw-is-visible)
     + [The Donation → Mana → Frontier Pipeline](#the-donation-%E2%86%92-mana-%E2%86%92-frontier-pipeline)
     + [Server Authority for Mana](#server-authority-for-mana)
     + [Offline Creation — The Dream State](#offline-creation--the-dream-state)
@@ -656,6 +657,7 @@ Both programs exist side by side:
 - **Cards are mission, not merchandise** (2026-10-14): they bring people into the game, and their play feeds the research. ~$8–10 per card. **All card money enters the pool** (the treasury); production and shipping are drawn out as the `cards` category, `α` of the surplus becomes creative share, the Frontier expands, and the golden solidification wave plays.
 - ~~**Print-your-world as patronage (idea).** Ordering cards of your own **Ghost** world could put the order's surplus toward solidifying that world specifically (a targeted Patron donation that creates an Oasis). Printing your world makes it real. *(Open question: automatic, opt-in, or not at all.)*~~ **Removed 2026-10-13: no patronage.**
 - **Free giveaway cards still generate value.** Every first tap is awe: experience for the player and reach for the Frontier. A free card at a meetup is a small, permanent contribution to the universe.
+- **In-game card checkout for any world** (decided 2026-10-14): "Get this card" from the World Index or a world's settings: favorite worlds, far-away worlds, your own. Every purchase swells the universe (see [Shooting Stars](#shooting-stars-every-draw-is-visible)).
 - **Shortcut and souvenir, never the only door** (decided 2026-10-14). The cosmos is vast, so a card is the fastest way to any world, even the far reaches, and a keepsake to hold and give. Every world stays reachable by flying or, once earned, by warp. Owning a card grants nothing a free player can't get by playing.
 
 #### Chip, URL & Security Model
@@ -845,6 +847,18 @@ The mana pool is not a hidden number. The entire universe reflects its state thr
 | **Critical** | Silence — the universe is dormant | A strained whisper — creation is possible but the universe is tired |
 
 **The Donation Moment — The Solidification Wave:** When someone donates while players are online, the pool swells, the high-water line rises and the Living Frontier physically expands. A **wave of golden light ripples outward from the Aweborn Portal**. Ghost worlds caught in its path **solidify in real time**: wireframes fill with color, physics switch on, particles burst. Every player sees and feels it. **The only donor perk is recognition, and it's opt-in:** "A wave of light from ★ Alex" or "A wave of light from ★ a generous soul".
+
+#### Shooting Stars: Every Draw Is Visible
+
+*(Decided 2026-10-14 evening.)* The pool is the treasury, so the universe shows money moving both ways. **Money in swells the universe:** a gift sends the golden wave; **buying a card in-game** sends a golden breath and a beam that lights up that card's world. **Money out leaves as shooting stars**, one for every draw, and the categories are real non-profit accounting (IRS Form 990 Part IX, *Statement of Functional Expenses*), so watching the sky teaches how a non-profit spends:
+
+| Color = function | What leaves | How it looks |
+|---|---|---|
+| **Gold: program services** | Creations, research, cards (outreach), gameplay servers | A creation's star rises from its world out past the Frontier "to the forge" and the creation materializes as it returns; a card's star falls toward the real world as it's printed; servers are a faint steady drizzle |
+| **Blue: management & general** | Admin tools, accounting, legal, insurance | Short, quiet streaks from the Portal |
+| **Silver: fundraising** | Campaigns, grant writing, payment processing | Silver streaks from the Portal |
+
+Tap a star to see its Form 990 expense line ("Information technology · program · 42 mana · today"). **Pay** is one combined *Compensation* line (wages, benefits, payroll taxes), allocated across the three functions by time spent and released smoothly over the month; individual pay is never shown. Bills like servers and payroll are spread evenly over their period, so payday is a gentle stream, not a storm. Star size grows with the amount, and in busy times small draws merge into bigger stars (a meteor shower, not a blizzard). Details: [phases/05-mana-economy.md → Shooting Stars](./phases/05-mana-economy.md#shooting-stars-every-draw-is-visible-alex-2026-10-14-evening).
 
 #### The Donation → Mana → Frontier Pipeline
 

@@ -137,7 +137,8 @@ Frontier
     highWater: number;     // Σ inflow + Σ awe reach; never falls; sets the Frontier
     frontierRadius: number;
     totalIn: number;       // lifetime mana in, all sources
-    drawnBy: Record<'creations' | 'infra' | 'cards' | 'people' | 'research' | 'fundraising' | 'other', number>;
+    drawnBy: { program: number; management: number; fundraising: number };   // Form 990 functions
+    drawnByPurpose: Record<'creations' | 'research' | 'cards' | 'servers' | 'compensation' | 'other', number>;
     params: { K: number; alpha: number; tauDays: number };   // 100, 0.5, 30
     lastDonationAt: number;
   }
@@ -221,21 +222,31 @@ Frontier
 ### Shooting Stars: Every Draw Is Visible (Alex, 2026-10-14 evening)
 > "Categorize every output, like shooting stars leaving the universe to compute." Radical transparency made beautiful: **every mana that leaves the pool leaves as a shooting star**, colored by its category. Money coming in swells the universe; money going out streaks away.
 
-| Category | Star | Leaves from | Cadence |
-|---|---|---|---|
-| **Creations** | Gold. Rises from the creator's world out past the Frontier "to the forge", and the creation materializes as it returns | The world being made | Real time, one star per settled manifestation |
-| **Servers & infra** | Pale blue, small; a steady faint drizzle | The Aweborn Portal | Billed cost spread evenly across the day |
-| **Cards** | Rose. Falls from the card's world toward the real world: a card being printed | The card's world | Per order, at fulfillment |
-| **People** | Warm amber | The Portal | Payroll spread evenly across the month (no payday storm) |
-| **Research** | Violet | The Portal | As spent, smoothed |
-| **Fundraising & other** | Silver | The Portal | As spent, smoothed |
+**Categories follow real non-profit accounting** (Alex, 2026-10-14: "something financially relevant, to get people into finance by tracking the stars"). US non-profits report every expense two ways: by **function** (what it was for) and by **nature** (what it was). That's the IRS Form 990 Part IX *Statement of Functional Expenses* ([Form 990 + instructions](https://www.irs.gov/forms-pubs/about-form-990)), and FASB's ASU 2016-14 asks the same of non-profit financial statements. The stars use both:
+
+- **Color = function**, the three Form 990 columns. Watching gold vs blue vs silver *is* watching the classic non-profit health ratio (program share, cf. the BBB 65% standard on the giving page).
+- **Motion = what it did** in the game.
+- **Tap → nature**, the Form 990 line (e.g. *Information technology*, *Salaries and wages*, *Fees for services*).
+
+| Function (color) | Draws | Motion | Leaves from | Cadence |
+|---|---|---|---|---|
+| **Program services** (gold) | **Creations** (the creative share) | Rises out past the Frontier "to the forge"; the creation materializes as it returns | The world being made | Real time, one star per settled manifestation |
+| | **Research** | A slow star toward a research beacon | The Portal | As spent, smoothed |
+| | **Cards** (outreach, per Alex's mission framing; CPA to confirm) | Falls from the card's world toward the real world: a card being printed | The card's world | Per order, at fulfillment |
+| | **Servers for gameplay** | A steady faint drizzle | The Portal | Billed cost spread evenly across the day |
+| **Management & general** (blue) | Admin servers and tools, accounting, legal, insurance | Short, quiet streaks | The Portal | Smoothed |
+| **Fundraising** (silver) | Payment-processing effort, campaigns, grant writing | Silver streaks | The Portal | Smoothed |
+
+**Pay, the standard way:** salaries aren't a color of their own. Compensation is a *nature* (Form 990 lines for officers' compensation, other salaries and wages, payroll taxes and benefits) and is **allocated across the functions by time spent** (e.g. Alex's hours building the game → program; bookkeeping → management & general). Stars show **one combined "Compensation" line** (wages + benefits + payroll taxes, all people), released smoothly over the month. Individual pay is never shown. (Officer compensation does appear on a filed Form 990, so this is no less private than the law already requires.) Servers are allocated between program and management & general by a documented method; the CPA signs off on the allocation keys.
 
 - `[ ]` Star size ∝ log(amount); above a rate cap, small draws merge into fewer, bigger stars (a busy month is a meteor shower, not a blizzard)
 - `[ ]` Tap / hover a star → "Servers · 42 mana · today"; a legend in the HUD; the World Index or a new panel lists today's draws by category
 - `[ ]` Non-player draws come from the ledger (admin entry or statement import), then are **released as stars spread over their period**: the same smoothing that keeps the pool display calm
 - `[ ]` **Inflows swell the universe:** gifts → golden wave (existing); **an in-game card purchase → the universe swells** (golden breath + a beam that lights the card's world; opt-in name like donors: "★ Alex brought a card of Origin into the world")
 - `[ ]` Same categories and colors on the [giving page](../public/giving.html) when live numbers ship
-- `[ ]` Open: the **people** category reveals one person's pay while there's only one paid person (Alex). Show "people & operations" combined until there are ≥ 3 paid people?
+- `[x]` People pay → **combined "Compensation" line, allocated across functions by time** (Alex, 2026-10-14: combine or make it financially relevant)
+- `[ ]` Ledger fields: `function` (program / management & general / fundraising), `nature` (Form 990 Part IX line), `purpose` (creations, research, cards, gameplay servers…), allocation key for shared costs
+- `[ ]` Year-end: the star ledger rolls up straight into Form 990 Part IX (or 990-EZ / 990-N while small)
 
 ## Acceptance Criteria
 
@@ -286,3 +297,4 @@ Frontier
 | 2026-10-14 (08:30) | **The pool is the treasury** (Alex: "alllll money entering the system" counts, so mana is a live picture of the company's money). Option (a) chosen over (b) everything through the split and (c) players draw on everything (rejected: creations could eat salaries). **All inflows** (gifts, cards, grants, founding gift) add `K · net` to pool and high-water; **every outflow is a categorized draw** (creations, infra, cards, people, research, fundraising); **players draw only from the creative share** (`α` of unrestricted inflow; cards after their direct costs). Formula v3, ManaState, ledger and pipeline tasks updated. Giving page, Terms and donation modal reworded ("every gift becomes mana in the pool; half is the creative share"). **ROADMAP mana section not yet updated to v3** (needs Alex's OK). | Alex: OK to update ROADMAP to v3 and deploy the rewording? Display: smoothed pool, show draws by category publicly? Retune Frontier `c` |
 | 2026-10-14 (08:36) | Alex: push; **ROADMAP mana section updated to v3** (treasury pool, creative share, three numbers, warp-last ladder, cards as shortcut + souvenir + mission). PLAN.md, MASTER_PLAN.md, phases/README stale `K · α · net` lines fixed; acceptance criteria updated. Everything pushed for Alex to read on mobile at lunch. | **This evening (Alex):** (1) show spending by category publicly? (in-game, on the giving page, or both; smoothed pool display); (2) retune the Frontier constant `c`, since high-water now grows with all money (≈ 2× per gift vs α-only); (3) warp thresholds: what "mastered your local space" and "explored enough" mean; (4) `base(level)` / `p_solo` after Phase 07 costs; (5) priority formula; (6) budget alarm behavior when non-creative spending nears the creative share |
 | 2026-10-14 (evening) | Alex loves the radical transparency: **categorize every output as shooting stars leaving the universe to compute**, and **every in-game card purchase swells the universe**. Drafted [Shooting Stars](#shooting-stars-every-draw-is-visible-alex-2026-10-14-evening): one color per category (creations gold, infra blue, cards rose, people amber, research violet, other silver), non-player draws smoothed over their period, tap a star to see what it was. Phase 08: card checkout in-game for **any** world, not only your own. Also repaired four business-plan lines that Google Docs had garbled (`$…$` read as math). | Alex: colors/categories OK? People-pay privacy (combine until ≥ 3 paid)? ROADMAP update for shooting stars + in-game card checkout? Remaining evening items: Frontier `c`, warp thresholds, `base(level)`, priority, budget alarm |
+| 2026-10-14 (20:13) | Alex: shooting stars approved ("love it"); **pay combined, and the categories made financially real**: stars now follow **Form 990 Part IX** (color = function: program gold, management & general blue, fundraising silver; motion = in-game purpose; tap = natural expense line). Compensation is one combined line allocated across functions by time; individual pay never shown. **ROADMAP updated** with shooting stars + in-game card checkout for any world (Alex: "please"). | Next session: Frontier `c`, warp thresholds, `base(level)` / `p_solo`, priority formula, budget alarm; CPA: allocation keys, cards as program |
