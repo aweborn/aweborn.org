@@ -233,7 +233,8 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 > Depends on 8C (templates + tooling) and Phase 05 (donation → mana pipeline).
 
 ### Ordering Flow
-- `[ ]` "Order cards of this world" entry point (world settings `H`, own worlds only; curated/org orders via admin)
+- `[ ]` **In-game card checkout for any world** (Alex, 2026-10-14 evening: favorite worlds, far-away worlds, your own): "Get this card" in the World Index and world settings `H`; curated/org bulk orders via admin
+- `[ ]` A completed purchase **swells the universe** (see [Phase 05 Shooting Stars](./05-mana-economy.md#shooting-stars-every-draw-is-visible-alex-2026-10-14-evening)); production + shipping later leave as rose shooting stars
 - `[ ]` Order options: quantity tiers, arrival mode, art choice
 - `[ ]` Stripe Checkout for card orders (extend existing Stripe integration, separate product from donations)
 - `[ ]` Order record (world ID, quantity, arrival mode, art, shipping, status)
