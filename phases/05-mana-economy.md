@@ -40,6 +40,8 @@ Implement the mana economy. **Mana is the universe's creative energy, and it is 
 | Donation pipeline | Existing Stripe → Lambda → mana pool (extend current Lambda) | Reuses proven payment flow |
 | Frontier shape | Sector-based (not perfect sphere) | Allows organic expansion bulges |
 | Mana → radius | `r ∝ ∛(high-water line)` (confirmed 2026-10-13, Alex, Q10 a) | Early gifts have dramatic effect; each mana adds equal volume |
+| Frontier scale | **`c = ∛10 ≈ 2.154`** (Alex, 2026-10-14 evening, option A "tight"): `r = 100 u · ∛($ ever in / $1,000)`. Founding gift → 100 u around Origin (the sighting bubble), $10k → 215 u, $100k → 464 u, **$1M → 1,000 u (one sector)** | Reality is scarce early: most worlds stay Ghost for a long time, so every expansion means something |
+| Wave size | **Same size for every gift** (Alex, 2026-10-14 evening): pure celebration, not to scale. The edge itself moves by the true amount (often a fraction of a unit) | A $10 gift feels as loved as a big one; the honest number lives in the Frontier, not the wave |
 | Solar cycle | **Both** (Alex, 2026-10-14): visual day/night mood **and** a small modifier on personal caps, 1.1× at solar noon to 0.9× at midnight, sinusoidal | Healthy rhythms without a personal flow rate |
 | Draw validation | sync-service validates all mana draws (solidified-world actions + AI generation) | In-memory state makes validation fast |
 | Creation model | **Online = AI prompt (draws mana), Offline = edit/arrange (free)** | AI calls need network; editing is local-only |
@@ -90,7 +92,10 @@ Display
   pool shown smoothed (e.g. 30-day average) so payday reads as a calm breath, not a crash
 
 Frontier
-  frontierRadius = c · ∛(highWater)           retune c: highWater now grows with all money, not α of it
+  frontierRadius = c · ∛(highWater)           c = ∛10 ≈ 2.154  (2026-10-14, tight)
+                 = 100 u · ∛(dollars ever in / 1,000)
+                 $1k → 100 u · $10k → 215 u · $100k → 464 u · $1M → 1,000 u · $10M → 2,154 u
+                 8× the money = 2× the radius; awe reach adds to highWater in mana units
 ```
 
 ![τ = 30 days (chosen): throttling only on demand spikes; the dry spell drains gently](./assets/mana-pool-model.png)
@@ -163,7 +168,7 @@ Frontier
 - `[-]` ~~`donationMultiplier` 24 h afterglow~~ retired: the flow follows the pool automatically
 
 ### Living Frontier & Solidification
-- `[ ]` Server calculates `frontierRadius = c · ∛(highWater)`
+- `[ ]` Server calculates `frontierRadius = c · ∛(highWater)`, `c = ∛10` (replaces the placeholder `frontierRadius = 5000` in `server/sync-service/src/universe.ts`)
 - `[ ]` Sector-level solidification tracking
 - `[ ]` Ghost → Solid transition when the Frontier reaches a world (`solidified: true`, `solidifiedAt`; physics + collision on)
 - `[-]` ~~Targeted patronage (5,000 mana) and Oasis~~ scrapped 2026-10-13 (Alex)
@@ -171,7 +176,7 @@ Frontier
 ### Solidification Wave (The Golden Moment)
 - `[ ]` Create `src/effects/SolidificationWave.tsx`
 - `[ ]` Golden, translucent shockwave shader (refraction effect)
-- `[ ]` Ripples outward from Aweborn Portal at origin
+- `[ ]` Ripples outward from Aweborn Portal at origin; **same size for every gift** (celebration, not to scale; the Frontier edge moves by the true amount separately)
 - `[ ]` As wave hits Ghost worlds: wireframes shatter → reform as solid objects
 - `[ ]` Audio: deep bass sweep → warm orchestral hum
 
@@ -298,3 +303,4 @@ Frontier
 | 2026-10-14 (08:36) | Alex: push; **ROADMAP mana section updated to v3** (treasury pool, creative share, three numbers, warp-last ladder, cards as shortcut + souvenir + mission). PLAN.md, MASTER_PLAN.md, phases/README stale `K · α · net` lines fixed; acceptance criteria updated. Everything pushed for Alex to read on mobile at lunch. | **This evening (Alex):** (1) show spending by category publicly? (in-game, on the giving page, or both; smoothed pool display); (2) retune the Frontier constant `c`, since high-water now grows with all money (≈ 2× per gift vs α-only); (3) warp thresholds: what "mastered your local space" and "explored enough" mean; (4) `base(level)` / `p_solo` after Phase 07 costs; (5) priority formula; (6) budget alarm behavior when non-creative spending nears the creative share |
 | 2026-10-14 (evening) | Alex loves the radical transparency: **categorize every output as shooting stars leaving the universe to compute**, and **every in-game card purchase swells the universe**. Drafted [Shooting Stars](#shooting-stars-every-draw-is-visible-alex-2026-10-14-evening): one color per category (creations gold, infra blue, cards rose, people amber, research violet, other silver), non-player draws smoothed over their period, tap a star to see what it was. Phase 08: card checkout in-game for **any** world, not only your own. Also repaired four business-plan lines that Google Docs had garbled (`$…$` read as math). | Alex: colors/categories OK? People-pay privacy (combine until ≥ 3 paid)? ROADMAP update for shooting stars + in-game card checkout? Remaining evening items: Frontier `c`, warp thresholds, `base(level)`, priority, budget alarm |
 | 2026-10-14 (20:13) | Alex: shooting stars approved ("love it"); **pay combined, and the categories made financially real**: stars now follow **Form 990 Part IX** (color = function: program gold, management & general blue, fundraising silver; motion = in-game purpose; tap = natural expense line). Compensation is one combined line allocated across functions by time; individual pay never shown. **ROADMAP updated** with shooting stars + in-game card checkout for any world (Alex: "please"). | Next session: Frontier `c`, warp thresholds, `base(level)` / `p_solo`, priority formula, budget alarm; CPA: allocation keys, cards as program |
+| 2026-10-14 (21:07) | **Frontier `c` retuned (Alex: option A, tight):** `c = ∛10 ≈ 2.154`, i.e. `r = 100 u · ∛($ ever in / $1,000)`. Founding gift → 100 u (Origin's sighting bubble), $1M → 1,000 u (one sector); most worlds stay Ghost for a long time. Scale refs: sector 1,000 u, radar 80 u, sighting 100 u; the live placeholder `frontierRadius = 5000` goes away at implementation. Flagged: at this scale a $10 gift moves the edge only ≈ 0.3 u (at $1k in), so the edge alone can't carry the moment → **the wave is the same size for every gift** (Alex; celebration, not to scale). ROADMAP not touched (its formula is `r ∝ ∛`, still true). | Next: (c) chapter-6 thresholds ("mastered" + "explored enough"), (d) `base(level)` / `p_solo`, (e) budget alarm; then Universal Mana Pool & Ledger |
