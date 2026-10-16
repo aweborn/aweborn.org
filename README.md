@@ -1,3 +1,9 @@
+# Aweborn
+
+**Open by design.** Aweborn is a 501(c)(3) non-profit, and nothing about how it is built or run is meant to be hidden: the code, the plans in [`phases/`](phases/README.md), the [ROADMAP](ROADMAP.md) and the [business plan](docs/BUSINESS_PLAN.md) are all public. If you see problematic language or a bad idea anywhere in this repository, [open an issue](https://github.com/aweborn/aweborn.org/issues) and we'll answer it in public. The docs in [`docs/`](docs/) are CC BY 4.0: borrow them to build your own thing.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.

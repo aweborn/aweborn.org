@@ -76,7 +76,7 @@ The VPS runs **Ubuntu 22.04 LTS + k3s** on an AWS Lightsail 2 GB instance (`infr
 | Gen AI subdomain | `api.aweborn.org` (separate from sync) | Aug 20, 2026 |
 | Ops access | Tailscale; VPS joined as `aweborn-vps`, agent-runner Tailnet-only | Sep 26, 2026 |
 | SSH exposure | Tailnet-only; public 22 restricted to `lightsail-connect` | Oct 3, 2026 |
-| Plan storage | Master plan lives in the `aweborn.org` repo; non-profit admin records kept in Google Drive, never in this public repo | Oct 3, 2026 |
+| Plan storage | Master plan lives in the `aweborn.org` repo; non-profit admin records (filings, receipts, bank) kept in Google Drive; the business plan is public in [`docs/BUSINESS_PLAN.md`](docs/BUSINESS_PLAN.md) (open by design, CC BY 4.0) | Oct 3, 2026; plan made public Oct 16, 2026 |
 
 ## Open Decisions (Pending Research / User Input)
 
