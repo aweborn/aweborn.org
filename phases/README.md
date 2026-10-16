@@ -31,7 +31,7 @@ Every new agent session should follow this sequence:
 | **04** | Navigation & Controls | ✅ Complete† | [04-navigation-controls.md](./04-navigation-controls.md) | Keyboard flight, gravity wells, warp, world entry/exit, radar, cross-browser presence |
 | **05** | Mana Economy & Donations | 🟡 Design | [05-mana-economy.md](./05-mana-economy.md) | Universal pool (mana = compute, filled by gifts, drained by manifesting), high-water line → Living Frontier, awe → XP/levels, donation→mana pipeline |
 | **06** | Offline & Mesh Networking | 🔴 Not Started | [06-offline-mesh.md](./06-offline-mesh.md) | PWA, WebRTC P2P, QR signaling, sneakernet sync |
-| **07** | World Creation & Gen AI | 🔴 Not Started | [07-genai-creation.md](./07-genai-creation.md) | Interior movement & physics, building tools, gen AI integration, polish |
+| **07** | World Creation & Gen AI | 🔴 Not Started (planner designed 2026-10-16) | [07-genai-creation.md](./07-genai-creation.md) | Interior movement & physics, building tools, gen AI integration, polish |
 | **08** | NFC Trading Cards & the World Index | 🟡 In Progress | [08-nfc-trading-cards.md](./08-nfc-trading-cards.md) | `/w/<uuid>` teleport links, World Index (personal index of discovered worlds + warp), physical NFC cards, print-your-world |
 | **09** | Authoritative Flight, Anti-Cheat & Telemetry | 🔴 Not Started | [09-authoritative-flight.md](./09-authoritative-flight.md) | One deterministic flight sim in `shared/` (client predicts, server is the authority), offline = server replay of recorded inputs, flight traces for telemetry; feeds 05/06/07/08 |
 

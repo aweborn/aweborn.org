@@ -19,21 +19,27 @@ This phase answers the ROADMAP's open question: **"What can players actually do 
 | **Mana = Real Cost** | Each generation draws exactly its real compute cost × `K` from the shared pool. **No margin** (2026-10-13: non-profit costs are covered by the creative share `α` of each gift, not by marking up mana). The formula is abstracted (not tied to a specific model) so we can swap providers. |
 | **Everything is a seam** | Each generation type is a separate endpoint in genai-service with a consistent interface. New modalities plug in without restructuring. |
 | **Results live in the CRDT** | Generated assets are stored as URLs in the World CRDT. The asset files themselves go to object storage (S3 or Lightsail block storage). |
+| **Plan first, then manifest** (2026-10-16) | Every creation starts as a **blueprint** written by the world planner, shaped with the player in a back-and-forth, previewed as a Ghost, and only then manifested. See [World Planner & Blueprints](#world-planner--blueprints) |
+| **Keep everything** (Alex, 2026-10-16) | Every provider call and response, every blueprint version, every turn of the conversation is saved, so we can study how worlds get created and edited and get better at it. See [Creation Archive](#creation-archive) |
 
 ## Architecture: genai-service
 
 ```
 genai-service (Node.js container on k3s VPS)
-├── POST /generate/model      → Meshy AI (3D models, avatars, characters)
-├── POST /generate/image      → [TBD provider] (textures, paintings, decals)
-├── POST /generate/music      → [TBD provider] (ambient loops, soundtracks)
-├── POST /generate/voice      → [TBD provider] (NPC voices, narration)
-├── POST /generate/text       → [TBD provider] (lore, dialogue, signs, names)
-├── POST /generate/terrain    → [TBD provider] (landscape heightmaps, biomes)
+├── POST /plan                 → World planner: prompt or chat turn → blueprint (new version) + reply
+├── POST /plan/:id/manifest    → reserve the estimate, fan out to the generators below, assemble
+├── POST /generate/model      → Meshy AI (3D models, avatars, characters, terrain pieces)
+├── POST /generate/image      → Gemini 3.1 Flash Image (textures, paintings, decals)
+├── POST /generate/music      → Lyria 2 (ambient loops, soundtracks)
+├── POST /generate/voice      → Gemini Flash TTS / ElevenLabs (NPC voices, narration)
+├── POST /generate/text       → Claude Opus 5.5 for lore; Gemini Flash for small calls
+├── POST /generate/terrain    → voxel grid from blueprint parameters (deterministic, free)
 ├── GET  /generate/status/:id → Poll generation status
 ├── GET  /generate/cost       → Current mana cost table
 └── GET  /health              → Health check
 ```
+
+Providers and prices: [MANA_COSTS.md](../MANA_COSTS.md) (2026-10-14/16). Every call above writes to the [Creation Archive](#creation-archive).
 
 **Consistent request/response interface:**
 
@@ -72,6 +78,94 @@ interface GenerateResult {
 }
 ```
 
+## World Planner & Blueprints
+
+> Designed 2026-10-16 with Alex: the player sees and shapes the plan before paying, **as a back-and-forth** ("those are the most engaging"). Reusing other players' creations: **not yet**.
+
+The world planner is the one smart step between what a player asks for and the specialist generators. It never makes art itself: it writes a **blueprint**, a structured plan the cheaper specialist models carry out. One planner means one art direction (five separate Meshy calls would give five styles), a price before anything is spent, and one place for safety checks.
+
+```text
+"a quiet floating tea garden at dusk"
+        │
+        ▼
+  World planner (Claude Opus 5.5) ──► blueprint v1 + a reply ("Here's your garden: a moon bridge,
+        ▲                               five lanterns, koi pond. Red lacquer on the bridge?")
+        │                                    │
+        │  chat turn ("make it night,        ▼
+        │  drop the koi") → blueprint v2   Ghost preview in the world: voxel terrain renders for real
+        │                                  (free), every asset is a labeled ghost box at its spot
+        │  direct edits on the card                  │
+        └── (remove, swap, resize: free) ◄─────────┘
+                                                     │  "Manifest — ≈ 376 mana"
+                                                     ▼
+  reserve the estimate → generators run in parallel → each ghost box materializes as its asset arrives
+  → settle what each item actually cost (a failed item releases its share; the planner can retry it)
+```
+
+**The conversation.** The planner always answers with two things: a short, warm reply (what it made, one or two questions or suggestions as tappable chips) and a new blueprint version. The player can talk ("bigger pond", "more like Ghibli"), tap a chip, or edit the blueprint card directly. Direct edits are local and free; talking costs a planner turn. After manifesting, the same loop works on single items ("make that lantern taller" → a one-item plan → one regeneration).
+
+**The Ghost preview is the hook.** Ghost worlds are already Aweborn's look for "dreamed, not yet real". A blueprint *is* a dream: the voxel terrain is generated from blueprint parameters (deterministic, in-browser, free), so the player stands in the real landscape while the assets wait as wireframes. Manifesting turns them solid one by one.
+
+**Right-sized.** A whole world gets the full planner. "Add a lantern" gets a tiny plan (one small call + one Meshy object). The planner picks quick vs full quality per item and says so in the estimate.
+
+### Blueprint shape (draft)
+
+```typescript
+// shared/blueprint.ts (draft)
+interface Blueprint {
+  id: string;                  // stable across versions
+  version: number;             // every planner turn or direct edit bumps it
+  worldId: string;
+  style: {
+    artDirection: string;      // carried into every asset prompt
+    palette: string[];         // hex colors
+    lighting: string;          // "low golden dusk"
+    timeOfDay?: string;
+  };
+  terrain: {
+    kind: "voxel";
+    size: [number, number, number];           // grid cells
+    seed: number;
+    blocks: { id: string; name: string; color: string }[];
+    features: {                               // a deterministic generator turns these into the grid
+      type: "plateau" | "hill" | "pond" | "path" | "cliff" | "floating-island";
+      at: [number, number, number];
+      radius: number;
+      height?: number;
+      block: string;
+    }[];
+  };
+  assets: {
+    key: string;               // "moon-bridge"
+    kind: "model" | "terrain-piece" | "texture" | "music" | "ambience" | "voice" | "sfx";
+    prompt: string;            // already includes the art direction
+    quality: "quick" | "full";
+    at?: [number, number, number];
+    size?: [number, number, number];
+    rotationY?: number;
+  }[];
+  lore?: { name: string; text: string };
+  physics?: Partial<{ gravity: number; friction: number; waterLevel: number }>;
+  estimate: { items: { key: string; mana: number }[]; planner: number; total: number };
+}
+```
+
+### Open
+
+- Do chat turns count against the player's personal cap like any creation (≈ 2–6 mana each)? Proposal: yes, with the first plan included in the manifest price, so window-shopping a world costs a few mana, not hundreds
+- Turn limit per session before the planner gently suggests manifesting
+- Reuse of existing assets (other players' creations, with credit): **later** (Alex, 2026-10-16); the archive below keeps it possible
+
+## Creation Archive
+
+> Alex, 2026-10-16: *"all these objects get saved in an S3 bucket… whenever we make a call, we save the responses. That way we can study how worlds get created and edited and improve on it."*
+
+- **Two buckets.** `aweborn-assets` (public via CloudFront: the GLBs, images and audio that `assetUrl` points to, content-addressed `assets/<sha256>.<ext>` so identical files are stored once) and `aweborn-creation-archive` (private, never public).
+- **What the archive keeps:** every provider call (provider, model, parameters, prompt, raw response metadata, latency, billed cost, asset hash) at `calls/<yyyy>/<mm>/<dd>/<callId>.json`; every planner turn and blueprint version at `sessions/<sessionId>/<version>.json`; manifest outcomes (what was kept, retried, deleted later). Edits after manifesting come from the World CRDT history the sync-service already persists.
+- **Keyed for research, not for people** ([RESEARCH.md](../RESEARCH.md) principles 1–3): sessions carry a random research id, not the account or email. **The Privacy page must say we keep prompts and creation history before this ships.**
+- Storage is an infrastructure draw (Form 990 program, purpose `servers`), never the creative share. At today's scale it's cents a month (S3 Intelligent-Tiering).
+- Both buckets in CloudFormation, like every other AWS resource.
+
 ## Tasks
 
 ### Interior Movement & Physics
@@ -88,7 +182,8 @@ interface GenerateResult {
 - `[ ]` Event-sourced physics objects (kick/push → velocity written to CRDT) per ROADMAP "Event-Sourced Physics"
 
 ### Research: API Costs & Mana Formula
-- `[ ]` Research current pricing for each modality:
+- `[x]` Researched 2026-10-14/16 → **[MANA_COSTS.md](../MANA_COSTS.md)** (per-item costs, bundles, model tiers, voxel terrain, proposed caps). The checklist below is kept for history
+- `[x]` Research current pricing for each modality:
   - Meshy AI: cost per 3D model generation
   - Image generation: cost per image (DALL-E, Stability, etc.)
   - Music generation: cost per minute of audio
@@ -111,6 +206,23 @@ interface GenerateResult {
   Text/lore (paragraph):                    1-5 mana
   Terrain patch (landscape section):        100-500 mana
   ```
+
+### World Planner & Blueprints
+- `[ ]` `shared/blueprint.ts`: the Blueprint type + validator (the planner's output is parsed and validated, never trusted)
+- `[ ]` Deterministic voxel terrain generator from `terrain` parameters, shared by client (preview) and server (manifest)
+- `[ ]` `POST /plan`: prompt or chat turn + current blueprint → planner (Claude Opus 5.5, structured output) → reply + chips + next version; estimate from the cost table
+- `[ ]` Safety check on every blueprint before it's shown (and again before manifest)
+- `[ ]` Planner turns admitted and drawn like any creation (Phase 05 reserve → settle)
+- `[ ]` `POST /plan/:id/manifest`: reserve the whole estimate, fan out per asset, settle per item, release failed items, offer retry
+- `[ ]` Client: blueprint chat panel (reply, chips, free direct edits on the card, version history)
+- `[ ]` Client: Ghost preview (real voxel terrain + labeled wireframe boxes) and materialize-on-arrival
+- `[ ]` Single-item loop after manifest ("make that lantern taller")
+
+### Creation Archive
+- `[ ]` CloudFormation: `aweborn-assets` (public via CloudFront, content-addressed) + `aweborn-creation-archive` (private, Intelligent-Tiering)
+- `[ ]` genai-service writes every provider call + response, every planner turn and blueprint version, every manifest outcome
+- `[ ]` Random research id per session (not account id)
+- `[ ]` **Privacy page updated before launch** (prompts and creation history are kept for research)
 
 ### genai-service: Core Framework
 - `[ ]` Implement the consistent request/response interface above
@@ -162,12 +274,11 @@ interface GenerateResult {
 - `[ ]` Returns text directly (no storage needed)
 
 ### genai-service: Terrain Generation
-- `[ ]` **[SEAM]** Evaluate approach: AI-based vs procedural
-  - Procedural (from seed + parameters) = free, offline-capable
-  - AI-based (text-to-terrain) = costs mana
-- `[ ]` Implement heightmap generation or terrain mesh generation
-- `[ ]` Parameters: biome, scale, roughness, features
-- `[ ]` Use cases: world landscape base, custom terrain patches
+- `[x]` **Decided (Alex, 2026-10-16):** default terrain is a **voxel grid** ("perfect grids have a nice feel", Minecraft-like), generated deterministically from blueprint parameters: free, offline-capable. AI terrain = **Meshy terrain pieces** (island, mesa, cliff, cave mouth) placed on the grid
+- `[-]` ~~Evaluate approach: AI-based vs procedural~~ decided above
+- `[ ]` Implement the voxel generator (see World Planner tasks) and terrain-piece placement
+- `[ ]` Parameters: blocks, features, scale
+- `[ ]` Use cases: world landscape base, custom terrain pieces
 
 ### Client: Creation UI (Inside World Interior)
 - `[ ]` Create `src/components/creation/CreationPanel.tsx` — in-world creation interface
@@ -221,7 +332,9 @@ interface GenerateResult {
 - [ ] Editing (move, rotate, scale, delete) works offline and is free
 - [ ] Cost table endpoint returns current mana prices
 - [ ] Placeholder seams exist for all generation types (even if not all are implemented)
-- [ ] MANA_COSTS.md documents the cost formula and current rates
+- [x] MANA_COSTS.md documents the cost formula and current rates (2026-10-14/16)
+- [ ] A prompt becomes a blueprint the player can shape in a back-and-forth, preview as a Ghost, and manifest at the estimated price
+- [ ] Every provider call, planner turn and blueprint version lands in the creation archive (Privacy page updated first)
 
 ## Files Changed
 
@@ -236,10 +349,16 @@ interface GenerateResult {
 | `src/components/creation/EditTools.tsx` | NEW | Free editing tools |
 | `src/components/WorldInterior.tsx` | MODIFY | Render AI-generated assets |
 | `shared/crdt-schema.ts` | MODIFY | Add WorldObject.assetUrl and related fields |
-| `MANA_COSTS.md` | NEW | Cost formula documentation |
+| `MANA_COSTS.md` | NEW (done) | Cost formula documentation |
+| `shared/blueprint.ts` | NEW | Blueprint type + validator |
+| `shared/voxel-terrain.ts` | NEW | Deterministic voxel generator (client preview + server) |
+| `server/genai-service/src/planner.ts` | NEW | World planner (`POST /plan`, manifest) |
+| `server/genai-service/src/archive.ts` | NEW | Creation archive writer (S3) |
+| `src/components/creation/BlueprintPanel.tsx` | NEW | Planner chat, chips, direct edits, Ghost preview |
+| `infra/cloudformation-assets.yml` | NEW | `aweborn-assets` + `aweborn-creation-archive` buckets |
 
 ## Session Log
 
 | Date | What was done | Next step |
 |------|--------------|-----------|
-| — | — | — |
+| 2026-10-16 | **World Planner & Blueprints designed** with Alex (during the Phase 05 session): plan first, then manifest; the planner (Claude Opus 5.5) writes a blueprint the player shapes **in a back-and-forth** (reply + chips + free direct edits), previewed as a Ghost (real voxel terrain + wireframe assets), manifested at the estimated price with per-item settle. **Creation Archive** (Alex): save every call and response, every blueprint version, in S3 for research (private archive + public content-addressed assets bucket; research ids, Privacy page first). Terrain decided: voxel grid default + Meshy terrain pieces. Providers filled in from [MANA_COSTS.md](../MANA_COSTS.md). Reusing other players' assets: later. | Open: do chat turns count against the personal cap; turn limit. Implementation waits on Phase 05 Flow & Admission + Interior Movement |
