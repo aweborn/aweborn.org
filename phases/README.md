@@ -19,6 +19,8 @@ Every new agent session should follow this sequence:
 5. Update this file → reflect progress
 ```
 
+**Standing rule (Alex, 2026-10-16): the public pages move with the decisions.** Whenever a decision touches money, data, players' rights or what we promise, update [`public/terms.html`](../public/terms.html), [`public/privacy.html`](../public/privacy.html) and [`public/giving.html`](../public/giving.html) (and the "Last updated" date) in the same change. Never describe data collection before it ships; never ship it before Privacy describes it.
+
 ---
 
 ## Phase Overview

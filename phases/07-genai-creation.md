@@ -41,6 +41,19 @@ genai-service (Node.js container on k3s VPS)
 
 Providers and prices: [MANA_COSTS.md](../MANA_COSTS.md) (2026-10-14/16). Every call above writes to the [Creation Archive](#creation-archive).
 
+**Every request that costs money is counted** (Alex, 2026-10-16): planner chat turns, safety checks, retries, every generator call. Each is admitted, reserved and settled against the pool *and* the player's personal cap. Only free, local work (direct blueprint edits, voxel terrain, editing tools) skips the ledger.
+
+**Orchestration (open, Alex likes Temporal).** A manifest is a workflow: fan out, poll Meshy for minutes, retry, and on failure release that item's reservation (a saga). Options, heaviest first:
+
+| Option | Fit | Cost on our one k3s box |
+|---|---|---|
+| Temporal (TS SDK) | Best model for this: durable workflows, activities, retries, signals for chat turns | Self-hosting needs its server + Postgres/Cassandra (heavy); Temporal Cloud is paid |
+| Restate | Durable execution, TS SDK, single binary | Light; younger project |
+| DBOS / Inngest / Trigger.dev | Durable steps in TS | DBOS needs Postgres (we run SQLite); Inngest/Trigger.dev are hosted services (self-hostable, but more boxes) |
+| SQLite job table in genai-service | Steps keyed by ledger refs (idempotent: the ledger already refuses duplicate `(kind, ref)`) | Free, matches the sync-service |
+
+Proposal: start with the SQLite job table, written in workflow shape (pure step functions, idempotency keys, explicit compensation), so moving to Restate or Temporal later is a port, not a rewrite. **Zod** is the TypeScript Pydantic: it validates the planner's structured output (with the provider's JSON-schema mode).
+
 **Consistent request/response interface:**
 
 ```typescript
@@ -108,6 +121,30 @@ The world planner is the one smart step between what a player asks for and the s
 
 **Right-sized.** A whole world gets the full planner. "Add a lantern" gets a tiny plan (one small call + one Meshy object). The planner picks quick vs full quality per item and says so in the estimate.
 
+### The planner's voice
+
+> Alex, 2026-10-16: *"terse, but give them breathing room to think and create thoughtfully. Maybe even probing their curiosities and leading them gently through their own stream of thought."*
+
+The planner is a quiet companion, not a salesperson. The world is the player's; the planner helps them find it.
+
+- **Short.** One to three sentences per reply. The Ghost preview shows what changed, so the words don't have to.
+- **One question at a time**, and only one worth asking. Prefer the senses and feelings ("What do you hear when you stand on the bridge?") over specs ("How many lanterns?").
+- **Use their words.** If they said "quiet", the planner says "quiet", not "serene ambience".
+- **Follow their thread.** Notice what they keep coming back to and ask about it. Lead gently, never steer them toward what's cheaper or easier to make.
+- **Leave room.** Two or three chips plus an open "something else…". Silence is fine; the planner never nags, never pushes to manifest, never says "Ready to manifest?" unprompted more than once.
+- **Honest about cost** when it matters ("A waterfall adds about 60 mana"), never as pressure.
+
+Example:
+
+```text
+Player:  a quiet floating tea garden at dusk
+Planner: A small island, a moon bridge, a few lanterns just lit. What makes it quiet for you?
+         [no wind] [far from everything] [water sounds] [something else…]
+Player:  far from everything. like nobody knows it's there
+Planner: Then maybe it hides. Clouds below, nothing on the horizon. Should anyone ever find it?
+         [a hidden path] [only by invitation] [no one] [something else…]
+```
+
 ### Blueprint shape (draft)
 
 ```typescript
@@ -150,10 +187,13 @@ interface Blueprint {
 }
 ```
 
+### Decided
+
+- **Every chat turn counts** against the pool and the player's personal cap (≈ 2–6 mana each), like any creation. No turn is "free with the manifest" (Alex, 2026-10-16: every request that costs money is counted)
+- **No turn limit and no nagging.** The personal cap is the only limit; the planner never rushes the player (see [voice](#the-planners-voice))
+
 ### Open
 
-- Do chat turns count against the player's personal cap like any creation (≈ 2–6 mana each)? Proposal: yes, with the first plan included in the manifest price, so window-shopping a world costs a few mana, not hundreds
-- Turn limit per session before the planner gently suggests manifesting
 - Reuse of existing assets (other players' creations, with credit): **later** (Alex, 2026-10-16); the archive below keeps it possible
 
 ## Creation Archive
@@ -162,7 +202,12 @@ interface Blueprint {
 
 - **Two buckets.** `aweborn-assets` (public via CloudFront: the GLBs, images and audio that `assetUrl` points to, content-addressed `assets/<sha256>.<ext>` so identical files are stored once) and `aweborn-creation-archive` (private, never public).
 - **What the archive keeps:** every provider call (provider, model, parameters, prompt, raw response metadata, latency, billed cost, asset hash) at `calls/<yyyy>/<mm>/<dd>/<callId>.json`; every planner turn and blueprint version at `sessions/<sessionId>/<version>.json`; manifest outcomes (what was kept, retried, deleted later). Edits after manifesting come from the World CRDT history the sync-service already persists.
-- **Keyed for research, not for people** ([RESEARCH.md](../RESEARCH.md) principles 1–3): sessions carry a random research id, not the account or email. **The Privacy page must say we keep prompts and creation history before this ships.**
+- **Keyed for research, attached to the player** ([RESEARCH.md](../RESEARCH.md) principles 1–3; Alex, 2026-10-16). Every session belongs to the player who made it, but the link lives in its own place:
+  - Archive objects carry only a `researchId` (random, one per player, not the account id or email).
+  - A separate restricted table `research_identity (research_id, player_id, created_at)` in the sync-service maps it back. Research queries and exports never join it; only the service (and Alex, for support or replay) reads it.
+  - **Replay works:** look up the player's `researchId`, pull their sessions and calls in order, and re-run them (same blueprint versions, same seeds, same voxel generator) to reproduce a creation step by step. The same pattern as Phase 09 flight traces.
+  - **Deleting an account deletes the mapping row.** The traces stay for research but can no longer be tied to anyone. Assets in worlds stay with the world.
+  - **The Privacy page must say we keep prompts and creation history, and how this link works, before this ships.**
 - Storage is an infrastructure draw (Form 990 program, purpose `servers`), never the creative share. At today's scale it's cents a month (S3 Intelligent-Tiering).
 - Both buckets in CloudFormation, like every other AWS resource.
 
@@ -208,7 +253,9 @@ interface Blueprint {
   ```
 
 ### World Planner & Blueprints
-- `[ ]` `shared/blueprint.ts`: the Blueprint type + validator (the planner's output is parsed and validated, never trusted)
+- `[ ]` `shared/blueprint.ts`: the Blueprint type + Zod validator (the planner's output is parsed and validated, never trusted)
+- `[ ]` Decide orchestration (SQLite job table in workflow shape vs Restate vs Temporal); log it
+- `[ ]` Planner system prompt written to [the voice](#the-planners-voice); test it on real first prompts before launch
 - `[ ]` Deterministic voxel terrain generator from `terrain` parameters, shared by client (preview) and server (manifest)
 - `[ ]` `POST /plan`: prompt or chat turn + current blueprint → planner (Claude Opus 5.5, structured output) → reply + chips + next version; estimate from the cost table
 - `[ ]` Safety check on every blueprint before it's shown (and again before manifest)
@@ -221,7 +268,8 @@ interface Blueprint {
 ### Creation Archive
 - `[ ]` CloudFormation: `aweborn-assets` (public via CloudFront, content-addressed) + `aweborn-creation-archive` (private, Intelligent-Tiering)
 - `[ ]` genai-service writes every provider call + response, every planner turn and blueprint version, every manifest outcome
-- `[ ]` Random research id per session (not account id)
+- `[ ]` `researchId` per player in archive objects; `research_identity` mapping table kept separate (never joined into research exports); deleting the account deletes the row
+- `[ ]` Replay tool: rebuild a player's creation session from the archive (blueprint versions + seeds + calls)
 - `[ ]` **Privacy page updated before launch** (prompts and creation history are kept for research)
 
 ### genai-service: Core Framework
@@ -362,3 +410,4 @@ interface Blueprint {
 | Date | What was done | Next step |
 |------|--------------|-----------|
 | 2026-10-16 | **World Planner & Blueprints designed** with Alex (during the Phase 05 session): plan first, then manifest; the planner (Claude Opus 5.5) writes a blueprint the player shapes **in a back-and-forth** (reply + chips + free direct edits), previewed as a Ghost (real voxel terrain + wireframe assets), manifested at the estimated price with per-item settle. **Creation Archive** (Alex): save every call and response, every blueprint version, in S3 for research (private archive + public content-addressed assets bucket; research ids, Privacy page first). Terrain decided: voxel grid default + Meshy terrain pieces. Providers filled in from [MANA_COSTS.md](../MANA_COSTS.md). Reusing other players' assets: later. | Open: do chat turns count against the personal cap; turn limit. Implementation waits on Phase 05 Flow & Admission + Interior Movement |
+| 2026-10-16 (later) | Alex's follow-ups: **every request that costs money counts** (chat turns included; no free first plan; no turn limit, the personal cap is the limit). **Planner voice** written (terse, one question at a time, use their words, follow their thread, never rush; example exchange). **Sessions attach to the player** through a separate `research_identity` table (never joined into research exports); traces replayable; deleting the account deletes the mapping. **Orchestration** options table (Temporal / Restate / DBOS / SQLite job table) + Zod as the TS Pydantic. **Standing rule** added to the README Session Protocol: Terms / Privacy / giving pages change with the decisions. Privacy (Oct 16): donation amounts and dates appear in the public ledger, never names. Giving page links the live pool and ledger. | Alex: pick orchestration (proposal: SQLite job table in workflow shape). Then Phase 05 Flow & Admission |
