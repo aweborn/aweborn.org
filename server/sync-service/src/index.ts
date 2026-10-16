@@ -7,6 +7,8 @@ import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, set
 import { listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
+import { timingSafeEqual } from "node:crypto";
+import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -211,8 +213,105 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   return json(404, { error: "not_found" });
 }
 
+/**
+ * Mana (Phase 05). Public, read-only:
+ *   GET /mana                          ManaState (pool, creative, highWater, frontierRadius, draws by function/purpose…)
+ *   GET /mana/ledger?limit=50&before=  public ledger rows, newest first (no donors, players or refs)
+ * Admin / server-to-server (Authorization: Bearer $MANA_ADMIN_TOKEN; 503 if unset):
+ *   POST /api/mana/inflow  { source, netDollars, creativeBaseDollars?, restricted?, ref?, note?, at? }
+ *   POST /api/mana/draw    { purpose, fn, dollars, ref?, note?, at? }   (not creations: those reserve → settle)
+ *   Both are idempotent on `ref` (200 { duplicate: true } on a retry).
+ */
+const MANA_ADMIN_TOKEN = process.env.MANA_ADMIN_TOKEN ?? "";
+
+function adminAuthorized(req: IncomingMessage): boolean {
+  if (!MANA_ADMIN_TOKEN) return false;
+  const got = Buffer.from((req.headers.authorization ?? "").replace(/^Bearer\s+/i, ""));
+  const want = Buffer.from(MANA_ADMIN_TOKEN);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+async function handleManaAdmin(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+  const json = (status: number, body: unknown) => {
+    res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(body));
+  };
+  if (!MANA_ADMIN_TOKEN) return json(503, { error: "mana_admin_disabled" });
+  if (!adminAuthorized(req)) return json(401, { error: "unauthorized" });
+  if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
+  const b = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
+  if (!b) return json(400, { error: "bad_json" });
+  const str = (v: unknown) => (typeof v === "string" && v.length <= 500 ? v : undefined);
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  try {
+    if (path === "/api/mana/inflow") {
+      const source = b.source as (typeof INFLOW_SOURCES)[number];
+      const netDollars = num(b.netDollars);
+      if (!INFLOW_SOURCES.includes(source) || netDollars === undefined) return json(400, { error: "bad_request" });
+      const e = rooms.mana.recordInflow({
+        source,
+        netDollars,
+        creativeBaseDollars: num(b.creativeBaseDollars),
+        restricted: b.restricted === true,
+        ref: str(b.ref),
+        note: str(b.note),
+        at: num(b.at),
+      });
+      return json(200, e ? { entry: e, state: rooms.mana.state() } : { duplicate: true });
+    }
+    if (path === "/api/mana/draw") {
+      const purpose = b.purpose as (typeof MANA_PURPOSES)[number];
+      const fn = b.fn as (typeof MANA_FUNCTIONS)[number];
+      const dollars = num(b.dollars);
+      if (purpose === "creations" || !MANA_PURPOSES.includes(purpose) || !MANA_FUNCTIONS.includes(fn) || dollars === undefined) {
+        return json(400, { error: "bad_request" });
+      }
+      const r = rooms.mana.recordDraw({ purpose, fn, dollars, ref: str(b.ref), note: str(b.note), at: num(b.at) });
+      return json(200, r ? { ...r, state: rooms.mana.state() } : { duplicate: true });
+    }
+  } catch (err) {
+    return json(400, { error: "bad_request", message: (err as Error).message });
+  }
+  return json(404, { error: "not_found" });
+}
+
+function handleManaPublic(req: IncomingMessage, res: ServerResponse): boolean {
+  const url = new URL(req.url ?? "/", "http://x");
+  if (url.pathname !== "/mana" && url.pathname !== "/mana/ledger") return false;
+  const headers = { "Content-Type": "application/json", "Cache-Control": "public, max-age=10", ...corsHeaders(req) };
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, { ...corsHeaders(req), "Access-Control-Allow-Methods": "GET" });
+    res.end();
+    return true;
+  }
+  if (req.method !== "GET") {
+    res.writeHead(405, headers);
+    res.end(JSON.stringify({ error: "method_not_allowed" }));
+    return true;
+  }
+  res.writeHead(200, headers);
+  if (url.pathname === "/mana") {
+    res.end(JSON.stringify(rooms.mana.state()));
+  } else {
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get("limit") ?? "50", 10) || 50));
+    const before = parseInt(url.searchParams.get("before") ?? "", 10);
+    res.end(JSON.stringify({ entries: rooms.mana.publicEntries(limit, Number.isFinite(before) ? before : undefined) }));
+  }
+  return true;
+}
+
 // HTTP server (health checks + stats + world lookup + auth)
 const server = createServer((req, res) => {
+  if (req.url?.startsWith("/api/mana/")) {
+    const path = req.url.split("?")[0];
+    handleManaAdmin(req, res, path).catch((err: unknown) => {
+      console.error("[mana-api]", err);
+      if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "internal" }));
+    });
+    return;
+  }
+  if (handleManaPublic(req, res)) return;
   if (req.url?.startsWith("/api/player/")) {
     const origin = req.headers.origin;
     if (isTrustedOrigin(origin)) {

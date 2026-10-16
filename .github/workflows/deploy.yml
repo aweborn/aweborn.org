@@ -98,7 +98,7 @@ jobs:
             [[ "$s" == "caddy" ]] && continue # Caddyfile is validated on the VPS
             echo "::group::$s"
             if [[ "$s" == "sync-service" ]]; then node --test shared/crdt-schema.test.ts; fi
-            (cd "server/$s" && npm ci && npx tsc --noEmit)
+            (cd "server/$s" && npm ci && npx tsc --noEmit && if npm run | grep -q '^  test$'; then npm test; fi)
             echo "::endgroup::"
           done
 

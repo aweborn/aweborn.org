@@ -28,7 +28,8 @@ import {
   updatePlayerCount,
   updateResolvedPosition,
 } from "./universe.js";
-import { saveDoc, loadDoc, listDocIds } from "./persistence.js";
+import { saveDoc, loadDoc, listDocIds, getDb } from "./persistence.js";
+import { ManaLedger } from "./mana.js";
 import { createWorldDoc } from "./world-factory.js";
 import { resolveNewWorld } from "./resolver.js";
 
@@ -67,6 +68,9 @@ export class RoomManager {
   /** Account behind a socket, for the World Index. */
   private accountIds = new WeakMap<WebSocket, string>();
 
+  /** The universal mana pool & ledger (server-authoritative). */
+  readonly mana: ManaLedger;
+
   constructor() {
     this.universeDoc = initUniverseDoc();
     this.startFlushTimer();
@@ -75,6 +79,12 @@ export class RoomManager {
     this.universeDoc.on("update", (update: Uint8Array, _origin: unknown) => {
       this.broadcastUniverseUpdate(update);
     });
+
+    // Mana: rebuilt from the ledger, published into the Universe doc, and
+    // republished on every ledger change (clients read it reactively).
+    this.mana = new ManaLedger(getDb());
+    this.mana.publish(this.universeDoc);
+    this.mana.onChange(() => this.mana.publish(this.universeDoc));
 
     console.log("[rooms] room manager initialized");
   }
@@ -293,8 +303,10 @@ export class RoomManager {
 
       switch (message.type) {
         case "universe-update": {
-          // Client sent a CRDT update for the universe
-          Y.applyUpdate(this.universeDoc, message.data, ws);
+          // The Universe doc is server-written only (worlds via create-world,
+          // mana via the ledger). Clients never send this; refuse it so nobody
+          // can forge worlds or the mana pool.
+          console.warn("[rooms] refused client universe-update");
           break;
         }
         case "world-update": {

@@ -90,6 +90,13 @@ spec:
                   name: aweborn-secrets
                   key: AWS_SECRET_ACCESS_KEY
                   optional: true
+            # Mana ledger admin API (POST /api/mana/*). Missing = 503, ledger read-only.
+            - name: MANA_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: MANA_ADMIN_TOKEN
+                  optional: true
           volumeMounts:
             - name: sync-data
               mountPath: /data

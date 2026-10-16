@@ -17,6 +17,6 @@
 
   },
   "include": ["src", "scripts", "../../shared"],
-  "exclude": ["node_modules", "dist", "../../shared/**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "../../shared/**/*.test.ts", "src/**/*.test.ts"]
 }
 

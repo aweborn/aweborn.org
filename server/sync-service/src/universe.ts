@@ -12,7 +12,6 @@ import * as Y from "yjs";
 import type {
   WorldEntry,
   Vec3,
-  ManaState,
 } from "../../../shared/crdt-schema.js";
 import {
   positionToSector,
@@ -34,18 +33,8 @@ export function initUniverseDoc(): Y.Doc {
     Y.applyUpdate(doc, saved);
     console.log("[universe] restored universe doc from database");
   } else {
-    // Initialize default mana state
-    const mana = doc.getMap("mana");
-    doc.transact(() => {
-      mana.set("pool", 1_000_000);
-      mana.set("frontierRadius", 5000);
-      mana.set("totalEverGenerated", 1_000_000);
-      mana.set("totalEverSpent", 0);
-      mana.set("regenRate", 100);
-      mana.set("donationMultiplier", 1.0);
-      mana.set("lastDonationAt", 0);
-    });
-    console.log("[universe] created new universe doc with default mana state");
+    // The `mana` map is written by the ledger (mana.ts) right after boot.
+    console.log("[universe] created new universe doc");
   }
 
   ensureOriginWorld(doc);
@@ -166,21 +155,7 @@ export function updatePlayerCount(doc: Y.Doc, worldId: string, count: number): v
   });
 }
 
-/**
- * Read the mana state from the Universe CRDT.
- */
-export function getManaState(doc: Y.Doc): ManaState {
-  const mana = doc.getMap("mana");
-  return {
-    pool: (mana.get("pool") as number) ?? 0,
-    frontierRadius: (mana.get("frontierRadius") as number) ?? 0,
-    totalEverGenerated: (mana.get("totalEverGenerated") as number) ?? 0,
-    totalEverSpent: (mana.get("totalEverSpent") as number) ?? 0,
-    regenRate: (mana.get("regenRate") as number) ?? 100,
-    donationMultiplier: (mana.get("donationMultiplier") as number) ?? 1.0,
-    lastDonationAt: (mana.get("lastDonationAt") as number) ?? 0,
-  };
-}
+// Mana state: see ManaLedger.state() in mana.ts (server-authoritative).
 
 // ── Internal helpers ─────────────────────────────────────────────────
 

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/server/sync-service/src/index.js"
+    "start": "node dist/server/sync-service/src/index.js",
+    "test": "node --import tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1149.0",

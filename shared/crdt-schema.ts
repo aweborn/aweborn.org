@@ -108,17 +108,53 @@ export interface WorldEntry {
 }
 
 /**
- * Universe-level mana pool state.
- * Stored in Y.Map("mana") on the Universe CRDT.
+ * Universe-level mana state (Phase 05, formula v3: the pool is the treasury).
+ * Stored in Y.Map("mana") on the Universe CRDT. **Server-authoritative:** the
+ * sync-service rebuilds it from the append-only ledger and is the only writer.
+ * All amounts are in mana (1 mana = $0.01, `K = 100` per dollar).
  */
 export interface ManaState {
+  /** The treasury now: all money in − all draws out. */
   pool: number;
+  /** What players can create with now (≤ pool). */
+  creative: number;
+  /** Estimates held for in-flight manifestations. */
+  reserved: number;
+  /** Σ money in + Σ awe reach. Never falls; sets the Frontier. */
+  highWater: number;
+  /** `c · ∛(highWater)`, `c = ∛10`. */
   frontierRadius: number;
-  totalEverGenerated: number;
-  totalEverSpent: number;
-  regenRate: number;
-  donationMultiplier: number;
+  /** Lifetime mana in, all sources. */
+  totalIn: number;
+  /** Lifetime draws by Form 990 function (shooting-star color). */
+  drawnBy: Record<ManaFunction, number>;
+  /** Lifetime draws by in-game purpose (shooting-star motion). */
+  drawnByPurpose: Record<ManaPurpose, number>;
+  /** Lifetime mana the creative share gave up to cover bills (disclosed shrink). */
+  shortfall: number;
+  params: { K: number; alpha: number; tauDays: number; c: number };
+  /** Unix ms of the last gift (0 = none yet). */
   lastDonationAt: number;
+}
+
+export type ManaFunction = "program" | "management" | "fundraising";
+export type ManaPurpose = "creations" | "research" | "cards" | "servers" | "compensation" | "other";
+
+/** Public mana constants (Phase 05, decided 2026-10-14). */
+export const MANA_PARAMS = {
+  /** Mana per dollar: 1 mana = $0.01. */
+  K: 100,
+  /** Creative fraction of each unrestricted inflow. */
+  alpha: 0.5,
+  /** Drain horizon of the creative share, days. */
+  tauDays: 30,
+  /** Frontier scale: r = c · ∛(highWater) = 100 u · ∛($ ever in / 1,000). */
+  c: Math.cbrt(10),
+} as const;
+
+/** Living Frontier radius for a given high-water line (mana). */
+export function frontierRadiusFor(highWater: number): number {
+  return highWater > 0 ? MANA_PARAMS.c * Math.cbrt(highWater) : 0;
 }
 
 // ── World CRDT (Layer 2) ─────────────────────────────────────────────

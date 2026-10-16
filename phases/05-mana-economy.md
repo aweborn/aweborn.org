@@ -130,12 +130,12 @@ Frontier
 
 **Where these citations belong.** Not in Terms or Privacy: those are legal agreements, and Terms only state the fact ("every donation becomes mana in the pool; half is the creative share; the rest funds research and operations"). The public **[Where your gift goes](../public/giving.html)** page (live 2026-10-14) shows the split and these references.
 
-**Open:** `base(level)` / `p_solo` values (after Phase 07 cost research), window size, the priority formula, and whether players see the pool and caps as numbers or only as ambience.
+**Open:** `base(level)` / `p_solo` values (proposal in [MANA_COSTS.md](../MANA_COSTS.md#proposed-personal-caps-baselevel-p_solo): 0 / 150 / 250 / +25 per level up to 1,000 per 24 h, `p_solo = 400`; awaiting Alex), window size, the priority formula, and whether players see the pool and caps as numbers or only as ambience.
 
 ## Tasks
 
 ### Universal Mana Pool & Ledger
-- `[ ]` Extend the existing `ManaState` in `shared/crdt-schema.ts` (don't redefine) to the October model:
+- `[x]` Extend the existing `ManaState` in `shared/crdt-schema.ts` (don't redefine) to the October model (2026-10-16: as below + `shortfall`, `params.c`; `MANA_PARAMS` + `frontierRadiusFor()` exported):
   ```typescript
   interface ManaState {
     pool: number;          // the treasury now (mana; all money in − all draws out)
@@ -150,15 +150,17 @@ Frontier
     lastDonationAt: number;
   }
   ```
-- `[ ]` Append-only ledger on the VPS (SQLite): every inflow (source, restricted?) and every draw (category), reservations, settlements, refunds, awe reach. Non-player draws (salaries, servers, cards) are entered by an admin tool or imported from statements (Stripe, AWS Cost Explorer, provider invoices). The CRDT shows totals; the ledger is the audit trail
-- `[ ]` Server writes mana state to the Universe CRDT (authoritative); clients read it reactively
+- `[x]` Append-only ledger on the VPS (SQLite) (2026-10-16: [`mana.ts`](../server/sync-service/src/mana.ts) table `mana_ledger`, integer milli-mana, UPDATE/DELETE blocked by triggers, idempotent on `(kind, ref)`, totals replayed on boot; 17 tests in `mana.test.ts`): every inflow (source, restricted?) and every draw (category), reservations, settlements, refunds, awe reach. Non-player draws (salaries, servers, cards) are entered by an admin tool or imported from statements (Stripe, AWS Cost Explorer, provider invoices). The CRDT shows totals; the ledger is the audit trail
+- `[x]` Server writes mana state to the Universe CRDT (authoritative); clients read it reactively. **Also closed a hole:** the server used to apply any client `universe-update` (clients never send one), so anyone could have forged the mana map or worlds; now refused
+- `[x]` HTTP: public `GET /mana` + `GET /mana/ledger` (no donors, players or refs: the transparency feed for shooting stars / giving page); admin `POST /api/mana/inflow` + `/draw` behind `MANA_ADMIN_TOKEN` (optional k8s secret, `set-secret.sh generate MANA_ADMIN_TOKEN`; missing = 503)
+- `[ ]` Record the founding gift ($1,000, `source: founding`) once the token is on the VPS
 
 ### Flow & Admission (server)
 - `[ ]` `server/sync-service/src/mana.ts`: `requestDraw(player, estimate)` → admit / reject per [the formula](#the-mana-pool-formula)
 - `[ ]` Global flow per window `G = max(creative / τ, p_solo)` (never more than the creative share); personal cap `p_i = base(level) × solar`
 - `[ ]` Active players `N` = distinct players active in the last 30 minutes; split `G` max-min fairly (water-filling) among those requesting, each capped at `p_i`
 - `[ ]` Ordered request queue with a priority hook (`priority(request)` returns 0 for now; formula deferred)
-- `[ ]` Reserve → settle actual → release on failure, atomically with the ledger
+- `[x]` Reserve → settle actual → release on failure, atomically with the ledger (ledger primitives; admission on top is still open)
 - `[ ]` Gentle denial: *"The world must be replenished…"*
 - `[ ]` Ghost creation requires **no validation** (free, unlimited)
 
@@ -219,7 +221,7 @@ Frontier
 - `[x]` Behavior decided (Alex, 2026-10-14): bills always get paid; when a non-creative draw exceeds `pool − creative`, the **creative share shrinks by the gap**, in the open. No hidden clip, no loan bookkeeping
 - `[x]` Disclosed in advance: giving page ("If money ever runs short") + one Terms sentence (2026-10-14)
 - `[ ]` Ledger entry `kind: shortfall` (amount, category covered) + its own shooting star (tap: "the creative share covered $X of servers / compensation …")
-- `[ ]` Early warning (proposal, not yet confirmed): runway = (pool − creative) ÷ avg monthly overhead; < 90 days → email Alex + giving page "help keep the lights on"; < 30 days → dim Portal aurora + calm in-game notice
+- `[ ]` Early warning, **private only** (2026-10-16): runway = (pool − creative) ÷ avg monthly overhead; < 90 days → email Alex. **No in-game decay** (Alex worried it would happen constantly early on; agreed: players can't fix it and a dim world reads as dying). The disclosed shortfall star stays, kept small and calm
 
 ### Solar Cycle
 - `[ ]` Create `src/systems/SolarCycle.ts`: local solar position from browser timezone (+ sunrise/sunset)
@@ -227,7 +229,7 @@ Frontier
 - `[ ]` Personal-cap modifier 0.9–1.1×, sinusoidal (client reports timezone; server clamps to the range)
 
 ### Mana Costs
-- `[ ]` Cost of each manifestation = real compute cost × `K`, from the Phase 07 cost research (`MANA_COSTS.md`)
+- `[x]` Cost of each manifestation = real compute cost × `K`: **[MANA_COSTS.md](../MANA_COSTS.md)** (2026-10-14, list prices; full object 60, quick object 30, image 7, 30 s music 6, Maker tutorials ≈ 102, a whole new world ≈ 368)
 - `[ ]` Non-compute actions (place/move/arrange): nominal or free; decide with the cost table
 - `[-]` ~~Old ROADMAP fixed costs (gravity 500, avatar trail 50, …)~~ retired
 
@@ -238,6 +240,7 @@ Frontier
   - Low (<30%): dim, sparse, desaturated
   - Critical (<5%): near-dark, aurora near Portal
   - *(open: "%" of what? e.g. pool relative to 30 days of typical draw)*
+  - **Flag (2026-10-16):** same trap as the runway warning: early on the pool is small, so this would make the universe look dim most of the time. Proposal: drive ambience from the **creative flow vs recent demand** ("can everyone create right now?"), never the raw treasury
 - `[ ]` Audio ambience scales with pool level
 - `[ ]` Drawing mana → satisfying sound (universe breathing through you)
 
@@ -324,3 +327,4 @@ Frontier
 | 2026-10-14 (21:29) | **Chapter-6 gates (Alex):** mastery = **3 successful uses** (usage is enough; the "still standing after N hours" rule is dropped from XP too); local space = **inside the Frontier**; **`N = 10` visited, `M = 30` sighted**, fixed (the Frontier is the beginner's acclimation space); distance 5,000 u total + one ≥ 1,000 u flight ("love that"); safety valve `min(N, worlds inside the Frontier)`. New task: **beginner cradle**, a soft leash that turns pre-warp players back toward a beginner baseline (link/card arrivals exempt). **Conflict flagged:** with `c = ∛10` the Frontier is 100 u at $1k, so the cradle forbids the 1,000 u flight. | Alex: resolve the 1,000 u flight vs cradle; then (d) `base(level)` / `p_solo`, (e) budget alarm |
 | 2026-10-14 (21:36) | **Distance vs cradle → option (b), Alex:** the leash is the Frontier in chapters 1–5, **widens in chapter 6** ("off the leash": `max(1,500 u, Frontier + 500 u)` from Origin, proposal to tune in playtests) so the ≥ 1,000 u flight is a first supervised trip into the Ghost dark, and is **removed at warp**. Chapter 6 fully specified. (d) `base(level)` / `p_solo` stays blocked on the Phase 07 cost table (`MANA_COSTS.md` doesn't exist yet), so (e) goes first. | Alex: (e) budget-alarm behavior; (d) after Phase 07 costs |
 | 2026-10-14 (21:57) | **(e) Budget alarm → disclosed shrink (Alex):** when overhead can't be covered by the rest of the pool, the creative share shrinks by the gap, openly. Wrote the disclosure: [giving page](../public/giving.html) new bullet "If money ever runs short" (and the old "creations can never eat into salaries" line now reads "Creations can never eat into salaries or servers"), and one sentence in [Terms](../public/terms.html) → Donations. Formula invariant + new Budget Shortfall task section updated. Early warning at 90 / 30 days of runway kept as a proposal. **Not pushed yet** (public pages deploy on push). | Alex: push the giving/Terms wording? Keep the 90/30-day early warning? Then (d) waits on Phase 07 costs → next is implementation: Universal Mana Pool & Ledger |
+| 2026-10-14 → 16 | Alex: push (giving + Terms shortfall wording deployed `5d764b1`); asked whether in-game runway warnings would make the young universe look like it's decaying → **yes; warnings are private (email Alex only), no in-game decay**; flagged the same trap in pool-driven ambience. **[MANA_COSTS.md](../MANA_COSTS.md)** written (Phase 07 cost table from list prices: Meshy, Gemini Flash Image, Lyria 2, ElevenLabs, Gemini TTS/Flash; bundles; founding-gift capacity ≈ 16 new makers or 4.5 worlds per day; proposed `base(level)` / `p_solo`). **Implementation started: Universal Mana Pool & Ledger** ([`mana.ts`](../server/sync-service/src/mana.ts)): `ManaState` v3, append-only SQLite ledger (milli-mana, triggers, idempotent refs, replay on boot), inflows / non-creative draws with disclosed shortfall / reserve → settle → release / awe reach, published to the Universe CRDT; client `universe-update` writes now refused (forgery hole); public `GET /mana` + `/mana/ledger`; admin `POST /api/mana/*` behind optional `MANA_ADMIN_TOKEN` (set-secret, deployment, CONFIG); CI runs the 17 ledger tests. Local smoke test: founding $1,000 → pool 100,000, creative 50,000, Frontier 100 u; retry = duplicate; bad token = 401. Prod mana map will reset to zeros on deploy (the August placeholder 1,000,000 goes away). | Alex: `set-secret.sh generate MANA_ADMIN_TOKEN`, then record the founding gift; approve `base(level)` / `p_solo`; next: Flow & Admission (`requestDraw`, water-filling, queue) |
