@@ -40,7 +40,8 @@ No plan can guarantee the mission gets funded. This one guarantees that **the ga
 | **Manifest a brand-new world** (4 terrain, 10 objects, 2 characters, 5 sounds, skybox, music) | \~\$8.80 | **\~880** |
 
 
-> \[\!NOTE\] Costs are set by *output* (a mesh, a sound, a world), not by provider. Change providers and only the cost column moves.
+> [!NOTE]
+> Costs are set by *output* (a mesh, a sound, a world), not by provider. Change providers and only the cost column moves.
 
 ### The pool is the treasury (decided 2026-10-14)
 
