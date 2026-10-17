@@ -223,7 +223,7 @@ The system uses two nested CRDT layers. The stateful VPS holds active documents 
   resolvedPosition: { x: 1435, y: -380, z: 9115 },   // Written ONLY by server
   resolvedAt: 1723848500,                            // Server resolution timestamp
   color: "#ff7b54",
-  solidified: true,         // false = Ghost on the universe map (outside the Frontier, meter not yet full); interiors are identical
+  solidified: true,         // false = Ghost on the universe map (outside the Frontier); interiors are identical
   solidifiedAt: 1723848200, // When the Frontier reached this world
   playerCount: 3,           // Ephemeral presence count
   lastActive: 1723848000
@@ -373,8 +373,8 @@ The universe has two spatial zones — the **Living Frontier** (funded, lit, sol
 
 | State | Visual | Interaction |
 |-------|--------|-------------|
-| **Solid world (inside the Frontier, or its meter filled)** | Universe map: full color, vibrant glow, particles | Fully interactive — build, explore, play |
-| **Ghost world (outside the Frontier, meter not yet full)** | Universe map: translucent wireframe with soft ethereal glow and a thin meter ring. Inside: identical to a solid world (perhaps a faint sky shimmer) | Fully playable by everyone. A dream waiting to solidify |
+| **Solid world (inside the Frontier)** | Universe map: full color, vibrant glow, particles | Fully interactive — build, explore, play |
+| **Ghost world (outside the Frontier)** | Universe map: translucent wireframe with soft ethereal glow. Inside: identical to a solid world (perhaps a faint sky shimmer) | Fully playable by everyone. A dream waiting to solidify |
 | **Visited worlds (offline)** | Normal rendering with a subtle frost/ice shader, reduced glow | Can enter and explore the cached snapshot solo |
 | **Unvisited worlds (offline)** | Dim, desaturated silhouettes | Tapping shows "Come back online to explore" |
 | **Your own worlds (offline)** | Fully bright and interactive | Can keep building offline. On reconnect they show a "settling" shimmer, then take their place by the same rule as any world |
@@ -596,7 +596,7 @@ It's a sci-fi token that links the real world to the virtual one. Cards are chea
 **Edge cases:**
 - **Fresh visitor / first-ever load:** the card *is* their onboarding. Their first view of Aweborn is arriving at a specific world instead of the origin (relates to the open "Universe Entry Point" question).
 - **Offline tap:** the PWA (Phase 06) opens from cache. If the world snapshot is cached, teleport to it. If not, add a *pending* World Index entry and show "This world awaits. Come back online to arrive." Resolve on reconnect.
-- **Ghost world:** teleport works the same, and the world plays like any other. *(Decided 2026-10-17)* **Two editions:** a card collected while its world is a Ghost is a **Dreamt** edition forever (wireframe art, a small "Dreamt" mark); after the world solidifies, new collectors get the solid card. Dreamt cards are proof you found a world before it was real, and well-travelled worlds make them a natural limited edition. Cards never move a world's solidification meter.
+- **Ghost world:** teleport works the same, and the world plays like any other. *(Decided 2026-10-17)* **Two editions:** a card collected while its world is a Ghost is a **Dreamt** edition forever (wireframe art, a small "Dreamt" mark); after the world solidifies, new collectors get the solid card. Dreamt cards are proof you found a world before it was real, and Ghost worlds far out in the Deep Dark make them a natural limited edition.
 - **Desktop / no NFC:** the URL works in any browser. It's just a link.
 
 #### The World Index
@@ -708,9 +708,7 @@ The universe also has a physical boundary, the **Living Frontier**: a sphere of 
 
 **Anyone can dream anything, anywhere, at any time, for free, even offline.** Dreaming (placing, arranging, building) never needs mana. **Manifesting** (channeling mana through a Gen AI prompt to make a new mesh, terrain, sound, or a whole world) draws on the creative share, and what it makes is real wherever it is. When the high-water line rises, the Frontier expands, and Ghost worlds caught in the wave of light **solidify**.
 
-**Travellers make dreams real too.** Every world outside the Frontier has a **solidification meter**: `meter = 1 × (distinct saved players who entered) + 0.25 × (distinct saved players who sighted it)`, the creator excluded. It fills toward `target = 10 × (1 + d / 100 u)`, where `d` is the distance past the Frontier's edge (10 at the edge, 20 at 100 u, 60 at 500 u, 110 at 1,000 u), so it is harder the deeper you go. When it fills, the world solidifies for good, with a small golden ripple from that world and a quiet banner for players nearby ("12 travellers made Hollow Reef real"). As the Frontier grows, `d` shrinks, so gifts and travellers fill the meter from both ends. Cards sold and money never move the meter (that would be patronage). Numbers are a starting point to tune in playtests.
-
-**Invite-only worlds** *(decided 2026-10-17)*: a creator can set a world to invite-only, free for everyone and never sold or a donor perk. It stays on the map as a sealed orb (it keeps its place and sits in the Frontier's path); only invited players can enter, and only their entries move its meter.
+**Invite-only worlds** *(decided 2026-10-17)*: a creator can set a world to invite-only, free for everyone and never sold or a donor perk. It stays on the map as a sealed orb (it keeps its place and sits in the Frontier's path); only invited players can enter.
 
 **Donations don't buy anything. Donations expand what everyone can make.** A donor watches a wave of golden light sweep outward from the Aweborn Portal. That is the defining visual moment of Aweborn.
 
@@ -896,14 +894,13 @@ Players can create **freely and without limits** while offline. Every offline cr
 
 **Offline Reconnect Collisions:** Because the server has ultimate authority on spatial positioning (to prevent overlap), when the offline player reconnects, their client syncs the CRDT. If their offline creation collides with an online creation, the server detects the collision. Rather than deleting the offline player's creation, the server's spatial resolver deterministically "nudges" the offline object along an outward vector to the nearest unoccupied space and updates the canonical CRDT. The client sees their object gently slide into an open slot.
 
-The offline experience is still rich and beautiful: Ghost worlds have their own ethereal look on the universe map (translucent wireframes, soft glow, a thin meter ring). Building offline feels like sculpting in the realm of pure imagination. When you reconnect, a dream placed in the Deep Dark waits there for the Living Frontier, or for enough travellers, to make it real.
+The offline experience is still rich and beautiful: Ghost worlds have their own ethereal look on the universe map (translucent wireframes, soft glow). Building offline feels like sculpting in the realm of pure imagination. When you reconnect, a dream placed in the Deep Dark waits there for the Living Frontier to make it real.
 
 #### Emergent Behaviors
 
 - **"The Frontier Is Expanding!"** — A donation lands and a wave of golden light sweeps outward. Ghost worlds solidify in its wake. Every player online witnesses it. The defining moment of Aweborn.
 - **"Deep Dark Explorers"** — Adventurous players fly beyond the Living Frontier into the Deep Dark to build Ghost worlds on the edge, waiting for the Frontier to reach them, and their exploring pushes it outward.
-- **"Ghost Galleries"** — Beautiful Ghost worlds in the Deep Dark become tourist attractions even before solidification. Every traveller who enters fills the meter, and a card collected while it is still a Ghost is a **Dreamt** edition forever.
-- **"Travellers Make It Real"** — A well-visited world far from the Frontier solidifies on its own, with a small golden ripple and a banner for those nearby.
+- **"Ghost Galleries"** — Beautiful Ghost worlds in the Deep Dark become tourist attractions even before solidification. A card collected while it is still a Ghost is a **Dreamt** edition forever.
 - **The Golden Wave** — The most impactful visual in the game. Someone donates, and the universe physically grows. Not a notification — a visceral, visible expansion of reality.
 - **Exploration as the Engine** — Awe levels you up and pushes the Frontier outward for everyone. Curiosity literally expands reality.
 - **Making Things People Love** — Other players' awe at your world is how makers grow. The universe rewards creations that move people, not volume.

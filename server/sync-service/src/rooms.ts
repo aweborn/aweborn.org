@@ -291,8 +291,8 @@ export class RoomManager {
     entry.sector = sectorKey(positionToSector(resolvedPos));
 
     // Inside the Living Frontier, worlds are solid (ROADMAP). Outside they stay
-    // Ghosts on the universe map until the Frontier or their solidification
-    // meter (Phase 05) reaches them. Same rule for offline creations once synced.
+    // Ghosts on the universe map until the Frontier reaches them. Same rule
+    // for offline creations once synced.
     if (insideFrontier(resolvedPos, this.mana.state().frontierRadius)) {
       entry.solidified = true;
       entry.solidifiedAt = now;

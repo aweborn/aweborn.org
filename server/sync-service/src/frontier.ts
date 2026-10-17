@@ -4,8 +4,8 @@
  * The Frontier is a sphere around Origin whose radius follows the high-water
  * line (`frontierRadiusFor` in shared/crdt-schema.ts). Inside it worlds are
  * solid; outside they are Ghosts on the universe map (only a look: Ghost
- * worlds are fully playable). A world can also solidify when its meter fills
- * (Phase 05, not built yet). It never contracts, and a world never goes
+ * worlds are fully playable). The Frontier is the only way a Ghost becomes
+ * solid. It never contracts, and a world never goes
  * back to Ghost (ROADMAP → The Ever-Expanding Universe).
  *
  * The server is the only writer of `solidified` / `solidifiedAt`. Clients
