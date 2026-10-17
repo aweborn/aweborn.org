@@ -9,7 +9,7 @@
  * Type   : Jost throughout (SIL OFL); numbers/data set monospaced (tabular cells)
  */
 import { outline } from "./outline.mjs";
-import { qrPath } from "./qr.mjs";
+import { qrPath, qrStyled } from "./qr.mjs";
 
 export const C = {
   bg: "#18181b",
@@ -48,9 +48,11 @@ export function worldUrl(id) {
  * @param {Partial<typeof C>} [opts.colors]    palette overrides (exploration)
  * @param {number} [opts.smallWght]           weight of the small secondary text ("by", data, hint)
  * @param {boolean} [opts.enforceAAA]        default true; false only to render failing palettes for comparison
+ * @param {object} [opts.qrStyle]            styled QR (see qrStyled) plus `tile` (tile fill); omit for the plain square QR
+ * @param {number} [opts.qrSize]             QR symbol side in mm (default 10; tile adds a quiet zone, right edge stays at x = 62)
  * @returns {{ svg: string, url: string, qr: { modules: number, moduleSize: number, version: number } }}
  */
-export function renderFront(w, { numbers = "jost", colors = {}, smallWght = 450, enforceAAA = true } = {}) {
+export function renderFront(w, { numbers = "jost", colors = {}, smallWght = 450, enforceAAA = true, qrStyle, qrSize = 10 } = {}) {
   const c = { ...C, ...colors };
   if (enforceAAA) assertTextContrast(c);
   const data = numbers === "jetbrains" ? { font: "mono", wght: smallWght } : { font: "jost", wght: smallWght, mono: true };
@@ -86,8 +88,15 @@ export function renderFront(w, { numbers = "jost", colors = {}, smallWght = 450,
     font: "jost", wght: smallWght, size: 2.0, x: 14.6, y: 83.4, fill: c.muted, maxWidth: 34,
   });
 
-  // QR fallback: 10 mm symbol inside a 12 mm light tile (1 mm quiet zone)
-  const qr = qrPath(url, { x: 51, y: 76, size: 10, ecc: "M", fill: c.qrInk });
+  // QR fallback: `qrSize` mm symbol inside a light tile with a quiet zone, right-aligned to the art window
+  const quiet = qrSize > 10 ? 0.7 : 1; // quiet zone each side (mm); ≥ 1.9 modules either way
+  const tileSize = qrSize + 2 * quiet;
+  const tileX = 62 - tileSize, tileY = qrSize > 10 ? 74.7 : 75;
+  const { tile: qrTile, ...qrOpts } = qrStyle ?? {};
+  const qrAt = { x: tileX + quiet, y: tileY + quiet, size: qrSize, ecc: "M" };
+  const qr = qrStyle
+    ? qrStyled(url, { ...qrAt, ink: c.qrInk, ...qrOpts })
+    : qrPath(url, { ...qrAt, fill: c.qrInk });
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="69mm" height="94mm" viewBox="0 0 69 94">
   <!--
@@ -136,7 +145,7 @@ export function renderFront(w, { numbers = "jost", colors = {}, smallWght = 450,
   ${hint.svg}
 
   <!-- QR fallback → ${url} -->
-  <rect x="50" y="75" width="12" height="12" rx="0.8" fill="${c.qrBg}"/>
+  <rect x="${+tileX.toFixed(3)}" y="${tileY}" width="${+tileSize.toFixed(3)}" height="${+tileSize.toFixed(3)}" rx="0.8" fill="${qrTile ?? c.qrBg}"/>
   ${qr.svg}
 </svg>
 `;

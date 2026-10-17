@@ -21,6 +21,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const out = path.join(root, "cards/previews");
 const DPI = 300;
 
+// Styled QR (explore-qr.mjs variant C): round dots, brand-coloured eyes, 12 mm symbol.
+const QR_SIZE = 12;
+const QR_STYLE = { shape: "dot", dot: 0.92, eyeOuter: "#2c5a86", eyeInner: "#5e3f7a" };
+
 // The Origin Set: a single card (no set number: it would add nothing) for Origin, the Aweborn Portal at
 // the universe origin (0, 0, 0), sector 0:0:0. Milestone 8A must register the
 // portal as a real world entry with a permanent UUIDv4 so /w/<uuid> resolves.
@@ -52,7 +56,7 @@ async function main() {
     const mime = artArg.endsWith(".png") ? "image/png" : "image/jpeg";
     artOpt = { artHref: `data:${mime};base64,${buf.toString("base64")}` };
   }
-  const { svg: front, url, qr } = renderFront({ ...sample, ...artOpt });
+  const { svg: front, url, qr } = renderFront({ ...sample, ...artOpt }, { qrStyle: QR_STYLE, qrSize: QR_SIZE });
   const back = await readFile(path.join(root, "cards/templates/back.svg"), "utf8");
   assertSelfContained(back);
 
@@ -97,7 +101,7 @@ async function main() {
     const px = (v) => Math.round((v / 25.4) * dpi);
     const { data, info } = await sharp(pngs.front)
       .resize(px(69), px(94))
-      .extract({ left: px(49), top: px(74), width: px(14), height: px(14) })
+      .extract({ left: px(47), top: px(73), width: px(16), height: px(16) })
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
