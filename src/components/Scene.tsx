@@ -360,6 +360,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
 
   useEffect(() => {
     interiorController.reset()
+    // Flight rolls camera.up with the ship; interiors are always upright
+    camera.up.set(0, 1, 0)
     const s = interiorController.state
     camTarget.current.set(s.x, s.y + EYE_HEIGHT, s.z)
     camPos.current.set(s.x - s.fx * CAM_DISTANCE, s.y + EYE_HEIGHT + 1, s.z - s.fz * CAM_DISTANCE)
@@ -393,6 +395,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     desired.y = Math.max(0.3, desired.y) // never dip under the ground
     camPos.current.lerp(desired, 1 - Math.exp(-12 * delta))
     camera.position.copy(camPos.current)
+    camera.up.set(0, 1, 0)
     camera.lookAt(target)
 
     // Presence: interior coordinates + facing, tagged with the world
