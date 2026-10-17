@@ -10,8 +10,8 @@
  * them: we snapshot the Ghost ids when the wave starts (the server publishes
  * mana before it flips the worlds' flags, see rooms.ts `applyFrontier`).
  *
- * Preview without a gift: add `?wave` to the URL, or call `awebornWave()`
- * in the console. Purely visual; nothing is solidified.
+ * Preview without a gift: call `awebornWave()` in the console. Purely
+ * visual; nothing is solidified.
  */
 
 import { create } from 'zustand'
@@ -140,11 +140,10 @@ export function startWaveWatcher(): void {
     lastRadius = m.frontierRadius
   })
 
-  // Previews: ?wave in the URL, or awebornWave() in the console.
+  // Preview: awebornWave() in the console.
   const preview = () => {
     const r = useUniverseStore.getState().mana?.frontierRadius ?? 100
     useWaveStore.getState().trigger({ fromRadius: r * 0.97, toRadius: r, preview: true })
   }
   ;(window as unknown as { awebornWave: () => void }).awebornWave = preview
-  if (new URLSearchParams(location.search).has('wave')) setTimeout(preview, 4500)
 }
