@@ -106,7 +106,8 @@ export default function App() {
 
       {/* World Index (M) + first-visit card reveal */}
       {isLoaded && webglSupported && <WorldIndex />}
-      {isLoaded && webglSupported && <CreatePanel />}
+      {/* Dev-only until the Privacy page covers prompts + creations (Phase 07) */}
+      {isLoaded && webglSupported && (import.meta.env.DEV || import.meta.env.VITE_CREATE === '1') && <CreatePanel />}
       {isLoaded && webglSupported && <CardReveal />}
 
       {/* Solidification wave: recognition line + golden flash */}

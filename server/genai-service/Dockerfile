@@ -25,6 +25,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 
+RUN mkdir -p /data && chown appuser:appgroup /data
+ENV DATA_DIR=/data
 USER appuser
 EXPOSE 3001
 ENV PORT=3001 HOST=0.0.0.0 NODE_ENV=production

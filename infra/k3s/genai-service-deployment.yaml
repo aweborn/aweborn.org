@@ -15,6 +15,20 @@ spec:
       labels:
         app: genai-service
     spec:
+      volumes:
+        # Job table, generated assets and the creation archive live on the VPS
+        # disk (survive redeploys). Moves to S3 + CloudFront later (Phase 07).
+        - name: genai-data
+          hostPath:
+            path: /var/lib/aweborn/genai-data
+            type: DirectoryOrCreate
+      initContainers:
+        - name: fix-data-perms
+          image: busybox:1.36
+          command: ["sh", "-c", "chown -R 1001:1001 /data"]
+          volumeMounts:
+            - name: genai-data
+              mountPath: /data
       containers:
         - name: genai-service
           image: ghcr.io/aweborn/genai-service:latest
@@ -27,12 +41,25 @@ spec:
               value: "3001"
             - name: HOST
               value: "0.0.0.0"
+            - name: DATA_DIR
+              value: /data
+            # Missing key = stub provider (sample model), so a deploy before
+            # the secret exists still starts. infra/set-secret.sh push MESHY_API_KEY
+            - name: MESHY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: MESHY_API_KEY
+                  optional: true
+          volumeMounts:
+            - name: genai-data
+              mountPath: /data
           resources:
             requests:
               memory: "32Mi"
               cpu: "25m"
             limits:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "100m"
           livenessProbe:
             httpGet:
