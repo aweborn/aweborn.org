@@ -8,7 +8,7 @@
  * Touch zones (only touches that land on the 3D canvas; UI buttons
  * keep working because their touches never reach these handlers):
  *  - Left half:  floating analog stick → yaw / pitch axes
- *  - Right half: hold → thrust
+ *  - Right half: hold → thrust; pull the thumb back (down) → brake
  *
  * On-screen buttons:
  *  - BRAKE (hold, Space) · LOCK (J) · WARP (hold, K) · ENTER (N)
@@ -44,6 +44,12 @@ const STICK_EXPONENT = 1.8
 const STICK_SMOOTHING_TAU = 0.05
 /** Shortest press a tap button holds its action, so a quick tap spans a frame. */
 const MIN_PULSE_MS = 90
+/** Thrust thumb: pull this far down from where it landed to switch to brake. */
+const BRAKE_PULL_PX = 36
+/** …and come back above this to resume thrust (hysteresis, no flicker). */
+const BRAKE_RELEASE_PX = 24
+/** Ring starts reddening after this much pull (px). */
+const BRAKE_TINT_START_PX = 6
 /** How often to check for open modals / world state (ms). */
 const UI_POLL_MS = 200
 
@@ -83,6 +89,9 @@ export class TouchInputAdapter {
   private _active = false
   private _stick: StickState | null = null
   private _thrustId: number | null = null
+  /** Where the thrust thumb landed (y), for pull-back-to-brake. */
+  private _thrustAnchorY = 0
+  private _thrustBraking = false
   private _smoothYaw = 0
   private _smoothPitch = 0
   private _rafId: number | null = null
@@ -183,6 +192,8 @@ export class TouchInputAdapter {
 
     if (!leftHalf && this._thrustId === null) {
       this._thrustId = e.pointerId
+      this._thrustAnchorY = e.clientY
+      this._thrustBraking = false
       inputManager.setAction('thrust', true)
       this._showThrust(e.clientX, e.clientY)
     }
@@ -192,6 +203,7 @@ export class TouchInputAdapter {
     if (this._stick && e.pointerId === this._stick.id) {
       this._moveStick(e.clientX, e.clientY)
     } else if (e.pointerId === this._thrustId) {
+      this._updateThrustPull(e.clientY)
       this._showThrust(e.clientX, e.clientY)
     }
   }
@@ -209,8 +221,34 @@ export class TouchInputAdapter {
     if (e.pointerId === this._thrustId) {
       this._thrustId = null
       inputManager.setAction('thrust', false)
+      this._endThrustBrake()
       this._hideThrust()
     }
+  }
+
+  /** Pull the thrust thumb back (down) to brake; push it back up to thrust. */
+  private _updateThrustPull(y: number): void {
+    const pull = y - this._thrustAnchorY
+    if (!this._thrustBraking && pull >= BRAKE_PULL_PX) {
+      this._thrustBraking = true
+      inputManager.setAction('thrust', false)
+      inputManager.setAction('brake', true)
+      this._thrustRing?.classList.add('touch-thrust-ring--braking')
+    } else if (this._thrustBraking && pull < BRAKE_RELEASE_PX) {
+      this._endThrustBrake()
+      inputManager.setAction('thrust', true)
+    }
+    const t = clamp((pull - BRAKE_TINT_START_PX) / (BRAKE_PULL_PX - BRAKE_TINT_START_PX), 0, 1)
+    this._thrustRing?.style.setProperty('--pull', t.toFixed(3))
+  }
+
+  private _endThrustBrake(): void {
+    if (!this._thrustBraking) return
+    this._thrustBraking = false
+    this._thrustRing?.classList.remove('touch-thrust-ring--braking')
+    // Don't cancel a brake the BRAKE button is still holding
+    const buttonHeld = this._overlay?.querySelector('#touch-btn-brake.touch-btn--pressed') !== null
+    if (!buttonHeld) inputManager.setAction('brake', false)
   }
 
   private _moveStick(x: number, y: number): void {
@@ -289,6 +327,8 @@ export class TouchInputAdapter {
   private _releaseAll = (): void => {
     this._stick = null
     this._thrustId = null
+    this._thrustBraking = false
+    this._thrustRing?.classList.remove('touch-thrust-ring--braking')
     this._smoothYaw = 0
     this._smoothPitch = 0
     this._hideStick()
@@ -324,6 +364,7 @@ export class TouchInputAdapter {
       if (prev !== undefined) clearTimeout(prev)
       this._releaseTimers.set(action, window.setTimeout(() => {
         this._releaseTimers.delete(action)
+        if (action === 'brake' && this._thrustBraking) return // thumb still pulling back
         inputManager.setAction(action, false)
       }, wait))
     }
@@ -385,7 +426,7 @@ export class TouchInputAdapter {
     steerHint.textContent = 'STEER'
     const thrustHint = document.createElement('div')
     thrustHint.className = 'touch-hint touch-hint--thrust'
-    thrustHint.textContent = 'HOLD TO THRUST'
+    thrustHint.innerHTML = 'HOLD TO THRUST<br><span class="touch-hint-sub">PULL BACK TO BRAKE</span>'
 
     // Stick (positioned with transforms; no CSS transition = no lag/jitter)
     const base = document.createElement('div')
@@ -537,7 +578,8 @@ export class TouchInputAdapter {
   }
 
   private _hideThrust(): void {
-    this._thrustRing?.classList.remove('touch-thrust-ring--active')
+    this._thrustRing?.classList.remove('touch-thrust-ring--active', 'touch-thrust-ring--braking')
+    this._thrustRing?.style.setProperty('--pull', '0')
     this._overlay?.classList.remove('touch-overlay--thrusting')
   }
 }

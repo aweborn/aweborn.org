@@ -69,7 +69,7 @@ Every new agent session should follow this sequence:
 >
 > **Deferred verification debt:** Phase 02 (10+ concurrent connections), Phase 03 (1000+ worlds @ 60fps), Phase 04 (on-device touch + physical gamepad).
 >
-> **Side item (not the priority, opened 2026-10-16): mobile play feels clunky.** Alex's on-device test failed: taps rarely work, one finger at a time, no Drive/Neutral toggle, small jittery stick. **M1–M6 built the same evening** (Pointer Events, true multi-touch, analog stick, on-screen buttons, phone basics; tested with Playwright multi-touch emulation). **Open: M7, Alex plays it on a real phone.** Details: [Phase 04 → Mobile Play Optimization](./04-navigation-controls.md#mobile-play-optimization-side-item-opened-2026-10-16-not-the-priority).
+> **Side item (not the priority, opened 2026-10-16): mobile play feels clunky.** Alex's on-device test failed: taps rarely work, one finger at a time, no Drive/Neutral toggle, small jittery stick. **M1–M6 built the same evening** (Pointer Events, true multi-touch, analog stick, on-screen buttons, phone basics; tested with Playwright multi-touch emulation). Alex on his phone: "holy cow! That was so cool!" **Deployed later that night:** fullscreen button + Add to Home Screen, donate modal fits in landscape, **pull back to brake** on the thrust thumb (orange → dark-red ring), portrait layout fixed, gold "Support Our Mission" banner and page titles removed. **Open: M7, Alex signs off on a real phone** (portrait, pull-to-brake feel → tune `BRAKE_PULL_PX`). Details: [Phase 04 → Mobile Play Optimization](./04-navigation-controls.md#mobile-play-optimization-side-item-opened-2026-10-16-not-the-priority).
 
 ---
 

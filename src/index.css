@@ -247,28 +247,6 @@ html, body, #root {
   white-space: nowrap;
 }
 
-.hud-prompt {
-  font-family: var(--font-body);
-  font-size: var(--text-base);
-  color: var(--color-accent-primary);
-  padding: var(--space-sm) var(--space-lg);
-  background: rgba(232, 185, 74, 0.08);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(232, 185, 74, 0.2);
-  border-radius: var(--radius-full);
-  pointer-events: auto;
-  cursor: pointer;
-  animation: pulse-glow 2s ease-in-out infinite;
-  transition: transform var(--duration-fast) var(--ease-spring),
-              background var(--duration-fast);
-}
-
-.hud-prompt:hover {
-  transform: scale(1.05);
-  background: rgba(232, 185, 74, 0.15);
-}
-
 /* --- HUD Flight Telemetry --- */
 
 .hud-bottom-left {
@@ -711,8 +689,34 @@ html.touch-ui [contenteditable='true'] {
    the DRIVE/NEUTRAL label is replaced by the tappable touch toggle. */
 html.touch-ui .hud-keyboard,
 html.touch-ui .hud-gravity-mode,
-html.touch-ui .hud-mod-slots {
+html.touch-ui .hud-mod-slots,
+html.touch-ui .hud-bottom-center {
   display: none;
+}
+
+/* Portrait phone: the top row is too narrow for the target pill and
+   the bottom-left corner is shared by the radar and the stick. */
+@media (orientation: portrait) {
+  html.touch-ui .hud-top-center {
+    top: calc(var(--space-lg) + 84px); /* below World Index / UNIVERSE */
+  }
+
+  html.touch-ui .radar-container {
+    width: 112px;
+    height: 112px;
+    margin-bottom: var(--space-sm);
+  }
+
+  html.touch-ui .touch-hint--steer {
+    left: calc(var(--touch-safe-left) + 10%);
+    bottom: calc(var(--touch-safe-bottom) + 240px); /* above the radar */
+  }
+
+  html.touch-ui .touch-hint--thrust {
+    right: calc(var(--touch-safe-right) + 18px);
+    bottom: calc(var(--touch-safe-bottom) + 270px); /* above the buttons */
+    text-align: right;
+  }
 }
 
 .touch-overlay {
@@ -799,15 +803,27 @@ html.touch-ui .hud-mod-slots {
 }
 
 /* Thrust ring under the right thumb */
+/* --pull (0–1, from JS) = how far the thumb is pulled back toward brake.
+   Blends thrust orange → deep brake red. */
 .touch-thrust-ring {
+  --pull: 0;
+  --ring-thrust: rgb(255, 170, 90);
+  --ring-brake: rgb(150, 18, 24);
+  --ring-color: color-mix(in oklab, var(--ring-brake) calc(var(--pull) * 100%), var(--ring-thrust));
   position: fixed;
   top: -40px;
   left: -40px;
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 170, 90, 0.5);
-  box-shadow: 0 0 22px rgba(255, 150, 70, 0.35), inset 0 0 14px rgba(255, 150, 70, 0.2);
+  border: 2px solid color-mix(in srgb, var(--ring-color) 55%, transparent);
+  background: radial-gradient(circle,
+    color-mix(in srgb, var(--ring-brake) calc(var(--pull) * 45%), transparent) 0%,
+    color-mix(in srgb, var(--ring-brake) calc(var(--pull) * 20%), transparent) 60%,
+    transparent 72%);
+  box-shadow:
+    0 0 22px color-mix(in srgb, var(--ring-color) 40%, transparent),
+    inset 0 0 14px color-mix(in srgb, var(--ring-color) 25%, transparent);
   pointer-events: none;
   opacity: 0;
   will-change: transform;
@@ -818,9 +834,22 @@ html.touch-ui .hud-mod-slots {
   animation: touch-thrust-pulse 0.9s ease-in-out infinite;
 }
 
+/* Braking: steady deep-red glow, no thrust pulse */
+.touch-thrust-ring--braking {
+  animation: none;
+  border-color: rgba(190, 30, 36, 0.9);
+  background: radial-gradient(circle, rgba(120, 10, 18, 0.55) 0%, rgba(70, 4, 10, 0.3) 55%, transparent 72%);
+  box-shadow: 0 0 26px rgba(170, 20, 28, 0.55), inset 0 0 16px rgba(120, 10, 18, 0.5);
+}
+
 @keyframes touch-thrust-pulse {
-  0%, 100% { border-color: rgba(255, 170, 90, 0.45); }
-  50% { border-color: rgba(255, 200, 120, 0.85); }
+  0%, 100% { border-color: color-mix(in srgb, var(--ring-color) 45%, transparent); }
+  50% { border-color: color-mix(in srgb, var(--ring-color) 85%, white 8%); }
+}
+
+.touch-hint-sub {
+  font-size: 0.8em;
+  opacity: 0.7;
 }
 
 /* Action buttons — 2×2 cluster in the right-thumb corner */
@@ -1038,6 +1067,83 @@ html.touch-ui .hud-mod-slots {
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-elevated), var(--shadow-glow);
   animation: modal-enter var(--duration-slow) var(--ease-out-expo);
+  /* Never taller than the screen: scroll inside instead */
+  max-height: calc(100dvh - 2 * var(--space-md));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+/* Short landscape screens (phones on their side): wider, tighter, and
+   the amount step goes two-column so it fits without scrolling. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .modal-backdrop {
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+
+  .modal-content {
+    width: 94%;
+    max-width: 760px;
+    max-height: calc(100dvh - 16px);
+    padding: var(--space-lg) var(--space-xl);
+  }
+
+  .modal-step-amount {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-auto-flow: row dense;
+    column-gap: var(--space-xl);
+    align-items: start;
+    padding-right: 36px; /* right column clears the close button */
+  }
+
+  .modal-step-amount > * {
+    grid-column: 2;
+  }
+
+  .modal-step-amount > .modal-title {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: end;
+    font-size: var(--text-2xl);
+    padding-right: 0;
+  }
+
+  .modal-step-amount > .modal-subtitle {
+    grid-column: 1;
+    grid-row: 2 / span 6;
+    margin-bottom: 0;
+  }
+
+  .modal-step-amount .amount-grid {
+    margin-bottom: var(--space-sm);
+    gap: var(--space-xs);
+  }
+
+  .modal-step-amount .amount-btn {
+    padding: var(--space-sm) var(--space-xs);
+    font-size: var(--text-base);
+  }
+
+  .modal-step-amount .custom-amount-container {
+    margin-bottom: var(--space-sm);
+  }
+
+  .modal-step-amount .custom-amount-input,
+  .modal-step-amount .donate-btn {
+    padding-top: var(--space-sm);
+    padding-bottom: var(--space-sm);
+  }
+
+  .modal-step-amount .custom-amount-prefix {
+    bottom: var(--space-sm);
+  }
+
+  .modal-content .modal-close {
+    top: var(--space-sm);
+    right: var(--space-sm);
+  }
 }
 
 .modal-close {
@@ -1477,15 +1583,6 @@ html.touch-ui .hud-mod-slots {
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 15px rgba(232, 185, 74, 0.15);
-  }
-  50% {
-    box-shadow: 0 0 30px rgba(232, 185, 74, 0.3);
   }
 }
 

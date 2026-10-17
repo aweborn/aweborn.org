@@ -8,11 +8,6 @@ import { RadarMinimap } from './RadarMinimap'
 import { PlayerAccount } from './PlayerAccount'
 import { WorldIndexChip } from './WorldIndex'
 
-interface HUDProps {
-  showPrompt: boolean
-  onPromptClick: () => void
-}
-
 // ── Mod Slot Labels ──────────────────────────────────────────────────
 
 const TRAIL_LABELS: Record<string, string> = {
@@ -120,7 +115,7 @@ function formatDistance(d: number): string {
  * HUD overlay — displays flight telemetry, warp status, mod slots,
  * and a live keyboard layout with active-key highlighting.
  */
-export function HUD({ showPrompt, onPromptClick }: HUDProps) {
+export function HUD() {
   const speed = useUniverseStore((s) => s.playerSpeed)
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const worlds = useUniverseStore((s) => s.worlds)
@@ -274,21 +269,11 @@ export function HUD({ showPrompt, onPromptClick }: HUDProps) {
         </div>
       )}
 
-      {/* Bottom center — Context hint / Donate prompt */}
+      {/* Bottom center — Context hint (hidden on touch) */}
       <div className="hud-bottom-center">
-        {showPrompt ? (
-          <button
-            className="hud-prompt"
-            onClick={onPromptClick}
-            id="hud-donate-prompt"
-          >
-            ✦ Support Our Mission — Donate Now ✦
-          </button>
-        ) : (
-          <div className="hud-hint">
-            Explore the cosmos · Click the glowing portal to donate
-          </div>
-        )}
+        <div className="hud-hint">
+          Explore the cosmos · Click the glowing portal to donate
+        </div>
       </div>
 
       {/* Bottom — Live keyboard layout */}

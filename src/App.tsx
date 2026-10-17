@@ -91,12 +91,7 @@ export default function App() {
       )}
 
       {/* HUD overlay — shows after loading */}
-      {isLoaded && (
-        <HUD
-          showPrompt={true}
-          onPromptClick={handlePortalActivate}
-        />
-      )}
+      {isLoaded && <HUD />}
 
       {/* Teleport link arrival / error notice */}
       {isLoaded && <TeleportToast />}
