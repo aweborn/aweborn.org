@@ -9,6 +9,8 @@ import { teleportSystem } from './systems/TeleportSystem'
 import { WorldIndex } from './components/WorldIndex'
 import { CardReveal } from './components/CardReveal'
 import { startWorldIndex } from './stores/worldIndexStore'
+import { startWaveWatcher } from './stores/waveStore'
+import { WaveBanner } from './components/WaveBanner'
 
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
 import { FallbackScene } from './components/FallbackScene'
@@ -48,6 +50,11 @@ export default function App() {
   // World Index: sightings, visits, offline queue (from boot, so link arrivals count).
   useEffect(() => {
     if (webglSupported) startWorldIndex()
+  }, [webglSupported])
+
+  // Solidification wave: every client online celebrates each new gift.
+  useEffect(() => {
+    if (webglSupported) startWaveWatcher()
   }, [webglSupported])
 
   const handlePortalActivate = useCallback(() => {
@@ -99,6 +106,9 @@ export default function App() {
       {/* World Index (M) + first-visit card reveal */}
       {isLoaded && webglSupported && <WorldIndex />}
       {isLoaded && webglSupported && <CardReveal />}
+
+      {/* Solidification wave: recognition line + golden flash */}
+      {isLoaded && webglSupported && <WaveBanner />}
 
       {/* Donation modal */}
       <DonationModal

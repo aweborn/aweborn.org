@@ -7,7 +7,7 @@
 
 ## Goal
 
-Make Aweborn work **without internet**. Two phones in the same room (or in the woods) can join each other's world with zero connectivity. All offline creations sync as Ghosts when reconnecting. The app is a PWA with Service Worker caching — it loads and runs even without a network.
+Make Aweborn work **without internet**. Two phones in the same room (or in the woods) can join each other's world with zero connectivity. Offline creations sync when reconnecting and are placed by the server like any other world (solid inside the Frontier, a Ghost on the universe map outside it; see [Phase 05](./05-mana-economy.md#architecture-decisions)). The app is a PWA with Service Worker caching — it loads and runs even without a network.
 
 ## Architecture Decisions
 
@@ -71,7 +71,7 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - `[ ]` On reconnect: re-run `universe-sync` / `world-sync` state-vector exchange over the room protocol to push local state to the VPS
 - `[ ]` On reconnect: upload the offline input log for server replay ([Phase 09](./09-authoritative-flight.md) 9C); the IndexedDB store here hosts it
 - `[ ]` Server validates structural changes, resolves collisions
-- `[ ]` Offline creations sync as Ghost worlds
+- `[ ]` Offline creations sync and are placed by the same rule as any world (born solid inside the Frontier, else a Ghost on the map until its meter fills; Phase 05); show the "settling" shimmer meanwhile
 - `[ ]` If offline creation collides with online creation → server nudges it to nearest open space
 - `[ ]` Client sees object smoothly slide into resolved position
 
@@ -87,7 +87,7 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - [ ] App loads and runs fully offline (Service Worker cached)
 - [ ] Two phones on the same hotspot can connect via QR code with zero internet
 - [ ] CRDT changes sync over WebRTC DataChannel
-- [ ] Offline creations persist in IndexedDB and sync as Ghosts on reconnect
+- [ ] Offline creations persist in IndexedDB and sync on reconnect, placed by the server (solid inside the Frontier, else Ghost)
 - [ ] NFC URL deep-links work (online: join room, offline: SDP in hash)
 - [ ] Connectivity status displayed in HUD
 - [ ] No data loss on reconnect — CRDT merge handles all cases

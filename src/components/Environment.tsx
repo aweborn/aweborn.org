@@ -2,6 +2,7 @@ import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Stars, Cloud } from '@react-three/drei'
 import * as THREE from 'three'
+import { useQualityTier } from '../stores/qualityStore'
 
 /**
  * Cosmic nebula environment — ambient backdrop for the universe view.
@@ -112,13 +113,14 @@ function NebulaRing({ radius = 10, color = '#6b3fa0' }: { radius?: number; color
 
 /* ---- Main Environment ---- */
 export function Environment() {
+  const { stars } = useQualityTier()
   return (
     <group>
       {/* Starfield */}
       <Stars
         radius={80}
         depth={60}
-        count={3000}
+        count={stars}
         factor={4}
         saturation={0.2}
         fade

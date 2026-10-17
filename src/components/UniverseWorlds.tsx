@@ -4,6 +4,8 @@ import { Float, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useUniverseStore } from '../stores/universeStore'
 import { SIGHT_DISTANCE } from '../stores/worldIndexStore'
+import { heldAsGhost } from '../stores/waveStore'
+import { useQualityStore, QUALITY_TIERS, activeTierIndex } from '../stores/qualityStore'
 import type { WorldEntry } from '@aweborn/shared/crdt-schema'
 import {
   createWorldGlowMaterial,
@@ -26,8 +28,11 @@ import {
  */
 
 // ── Scale constants ──────────────────────────────────────────────────────────
+// Close stays tied to the sighting rule at every quality; Medium (billboards)
+// comes from the display-quality tier (qualityStore).
 const CLOSE_DIST = SIGHT_DISTANCE // Full mesh LOD (= where a world counts as sighted)
-const MEDIUM_DIST = 200        // Billboard LOD
+/** Far-LOD dot size in CSS pixels (not distance-attenuated, so far worlds stay visible). */
+const FAR_POINT_PX = 2.5
 
 /** Deterministic hash from string → [0, 1) */
 function hashString(s: string): number {
@@ -242,6 +247,7 @@ function WorldBillboard({ world }: { world: WorldEntry }) {
 
 function WorldPoints({ worlds }: { worlds: WorldEntry[] }) {
   const ref = useRef<THREE.Points>(null!)
+  const dpr = useThree((s) => s.viewport.dpr)
 
   const { positions, colors } = useMemo(() => {
     const pos = new Float32Array(worlds.length * 3)
@@ -254,6 +260,8 @@ function WorldPoints({ worlds }: { worlds: WorldEntry[] }) {
       pos[i * 3 + 2] = w.resolvedPosition.z
 
       tmpColor.set(w.color)
+      // Ghosts read as fainter dots from afar.
+      if (!w.solidified) tmpColor.multiplyScalar(0.45)
       col[i * 3] = tmpColor.r
       col[i * 3 + 1] = tmpColor.g
       col[i * 3 + 2] = tmpColor.b
@@ -279,8 +287,8 @@ function WorldPoints({ worlds }: { worlds: WorldEntry[] }) {
         <bufferAttribute attach="attributes-color" args={[colors, 3]} />
       </bufferGeometry>
       <pointsMaterial
-        size={0.08}
-        sizeAttenuation
+        size={FAR_POINT_PX * dpr}
+        sizeAttenuation={false}
         vertexColors
         transparent
         opacity={0.7}
@@ -402,14 +410,19 @@ export function UniverseWorlds() {
     const c: WorldEntry[] = []
     const m: WorldEntry[] = []
     const f: WorldEntry[] = []
+    const mediumDist = QUALITY_TIERS[activeTierIndex(useQualityStore.getState())].mediumDist
 
-    for (const world of worlds.values()) {
-      const sp = new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
+    for (const entry of worlds.values()) {
+      const sp = new THREE.Vector3(entry.resolvedPosition.x, entry.resolvedPosition.y, entry.resolvedPosition.z)
       const dist = sp.distanceTo(camera.position)
+      // Solidification wave: still a Ghost until the golden front reaches it.
+      const world = entry.solidified && heldAsGhost(entry.id, sp.length())
+        ? { ...entry, solidified: false }
+        : entry
 
       if (dist < CLOSE_DIST) {
         c.push(world)
-      } else if (dist < MEDIUM_DIST) {
+      } else if (dist < mediumDist) {
         m.push(world)
       } else {
         f.push(world)

@@ -119,7 +119,7 @@ The world planner is the one smart step between what a player asks for and the s
 
 **The conversation.** The planner always answers with two things: a short, warm reply (what it made, one or two questions or suggestions as tappable chips) and a new blueprint version. The player can talk ("bigger pond", "more like Ghibli"), tap a chip, or edit the blueprint card directly. Direct edits are local and free; talking costs a planner turn. After manifesting, the same loop works on single items ("make that lantern taller" → a one-item plan → one regeneration).
 
-**The Ghost preview is the hook.** Ghost worlds are already Aweborn's look for "dreamed, not yet real". A blueprint *is* a dream: the voxel terrain is generated from blueprint parameters (deterministic, in-browser, free), so the player stands in the real landscape while the assets wait as wireframes. Manifesting turns them solid one by one.
+**The Ghost preview is the hook.** The wireframe look is already Aweborn's language for "dreamed, not yet real" (a *blueprint preview*, not the Ghost *worlds* on the map, which are fully playable). A blueprint *is* a dream: the voxel terrain is generated from blueprint parameters (deterministic, in-browser, free), so the player stands in the real landscape while the assets wait as wireframes. Manifesting turns them solid one by one.
 
 **Right-sized.** A whole world gets the full planner. "Add a lantern" gets a tiny plan (one small call + one Meshy object). The planner picks quick vs full quality per item and says so in the estimate.
 
@@ -222,7 +222,7 @@ interface Blueprint {
 - `[ ]` Create `src/systems/InteriorController.ts`: first/third-person movement using the Phase 04 interior action map (V=jump/jetpack, W/E=look, Q/R=move, A/F=strafe, S=back, Space=crouch, K=sprint)
 - `[ ]` Read per-world physics from World CRDT `Y.Map("physics")` (gravity vector, friction, air resistance, bounce, water level) and apply to player movement
 - `[ ]` Choose physics engine (e.g., Rapier via `@react-three/rapier`) vs. custom kinematic controller — decide and log. **Constraint ([Phase 09](./09-authoritative-flight.md), 2026-10-12):** movement must be a deterministic step in `shared/sim` that also runs on the server (prediction + authority + offline replay). Rapier only with its cross-platform determinism build
-- `[ ]` Collision with ground grid + placed objects (Solid worlds only; Ghost worlds = no collision, per ROADMAP)
+- `[ ]` Collision with ground grid + placed objects (every world: Ghost vs solid is only the universe-map look, interiors are identical, per Alex 2026-10-17)
 - `[ ]` Camera for interiors (reuse `CameraController` presets where possible)
 - `[ ]` Broadcast interior position via presence (`inWorld: worldId`) so players see each other inside worlds
 - `[ ]` Touch + gamepad mappings for interior mode

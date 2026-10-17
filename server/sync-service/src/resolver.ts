@@ -32,12 +32,9 @@ export function resolvePositions(
   const updates: Array<{ id: string; resolvedPosition: Vec3 }> = [];
 
   for (const world of sorted) {
-    // Start from the intended position (or current resolved if already resolved)
-    let pos: Vec3 = {
-      x: world.resolvedPosition.x || world.intendedPosition.x,
-      y: world.resolvedPosition.y || world.intendedPosition.y,
-      z: world.resolvedPosition.z || world.intendedPosition.z,
-    };
+    // Start from the current resolved position (initialised from intendedPosition
+    // at creation). Don't use `||`: 0 is a real coordinate, not "unset".
+    let pos: Vec3 = { ...world.resolvedPosition };
 
     // Check against all previously placed worlds
     let nudged = false;
@@ -108,9 +105,7 @@ export function resolveNewWorld(
     let conflict = false;
 
     for (const other of existingWorlds) {
-      const otherPos = other.resolvedPosition.x !== 0 || other.resolvedPosition.y !== 0 || other.resolvedPosition.z !== 0
-        ? other.resolvedPosition
-        : other.intendedPosition;
+      const otherPos = other.resolvedPosition;
 
       const dist = distance(pos, otherPos);
 

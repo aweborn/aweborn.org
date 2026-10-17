@@ -31,6 +31,7 @@ import {
 import { saveDoc, loadDoc, listDocIds, getDb } from "./persistence.js";
 import { ManaLedger } from "./mana.js";
 import { ManaAdmission } from "./admission.js";
+import { insideFrontier, solidifyWithinFrontier } from "./frontier.js";
 import { createWorldDoc } from "./world-factory.js";
 import { resolveNewWorld } from "./resolver.js";
 
@@ -87,7 +88,13 @@ export class RoomManager {
     // republished on every ledger change (clients read it reactively).
     this.mana = new ManaLedger(getDb());
     this.mana.publish(this.universeDoc);
-    this.mana.onChange(() => this.mana.publish(this.universeDoc));
+    this.applyFrontier();
+    // Mana first, then the worlds it solidifies: clients see the new
+    // lastDonationAt before the flags flip, so the wave can hold them.
+    this.mana.onChange(() => {
+      this.mana.publish(this.universeDoc);
+      this.applyFrontier();
+    });
     this.admission = new ManaAdmission(this.mana);
 
     console.log("[rooms] room manager initialized");
@@ -269,7 +276,7 @@ export class RoomManager {
       resolvedAt: 0,
       color,
       sector,
-      solidified: false,
+      solidified: false, // set below, once the resolver has placed it
       solidifiedAt: 0,
       playerCount: 0,
       lastActive: now,
@@ -282,6 +289,14 @@ export class RoomManager {
     entry.resolvedPosition = resolvedPos;
     entry.resolvedAt = now;
     entry.sector = sectorKey(positionToSector(resolvedPos));
+
+    // Inside the Living Frontier, worlds are solid (ROADMAP). Outside they stay
+    // Ghosts on the universe map until the Frontier or their solidification
+    // meter (Phase 05) reaches them. Same rule for offline creations once synced.
+    if (insideFrontier(resolvedPos, this.mana.state().frontierRadius)) {
+      entry.solidified = true;
+      entry.solidifiedAt = now;
+    }
 
     // Add to Universe CRDT
     addWorldToUniverse(this.universeDoc, entry);
@@ -499,6 +514,29 @@ export class RoomManager {
     const entry = this.getWorldEntry(worldId);
     saveDoc(worldId, state, "world", entry?.sector);
     room.lastFlush = Date.now();
+  }
+
+  /**
+   * Solidify every Ghost world the Frontier now reaches (Phase 05) and mirror
+   * the flag into each world's own doc, live if loaded, else on disk.
+   */
+  private applyFrontier(): void {
+    const ids = solidifyWithinFrontier(this.universeDoc, this.mana.state().frontierRadius);
+    for (const id of ids) {
+      const room = this.worldRooms.get(id);
+      if (room) {
+        room.doc.getMap("meta").set("solidified", true);
+        continue;
+      }
+      const saved = loadDoc(id);
+      if (!saved) continue;
+      const doc = new Y.Doc();
+      Y.applyUpdate(doc, saved);
+      doc.getMap("meta").set("solidified", true);
+      saveDoc(id, Y.encodeStateAsUpdate(doc), "world", this.getWorldEntry(id)?.sector);
+      doc.destroy();
+    }
+    if (ids.length) console.log(`[frontier] solidified ${ids.length} world(s) inside r = ${this.mana.state().frontierRadius.toFixed(1)} u`);
   }
 
   /**

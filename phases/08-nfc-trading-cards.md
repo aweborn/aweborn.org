@@ -191,6 +191,7 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 - `[-]` ~~Card-found badge~~ dropped: card taps aren't told apart from links
 - `[x]` Key binding: **`M`** + HUD chip (touch). Gamepad: TBD
 - `[x]` Live mini-render of the world in the art window (2026-10-13): `src/lib/cardArt.ts`, one shared offscreen WebGL renderer with the scene's orb shaders (glow/halo/ghost wireframe/ring), copied into each card's 2D canvas. Grid = still (on screen, 6/frame); hovered, detail and reveal = 30 fps. Ghost vs solid comes from `WorldIndexWorld.solidified` (new, optional). Origin keeps its portal art; no WebGL → CSS orb
+- `[ ]` **Dreamt edition** (Alex, 2026-10-17; see [Phase 05 decisions](./05-mana-economy.md#architecture-decisions)): a card collected while its world is a Ghost is a **Dreamt** card forever (wireframe art + a small "Dreamt" mark); after the world solidifies, new collectors get the solid card. Store the edition on the World Index row at first discovery (`edition: 'dreamt' | 'solid'`), render from it instead of the world's live `solidified`. Printed cards ordered while the world is a Ghost print the Dreamt art. Card art itself is unchanged otherwise
 - `[x]` Replace the temporary `CRDTDevOverlay` world list in production with the World Index (2026-10-13): the panel stays mounted (it owns the sync connection) but starts hidden in prod and has no world list there; backtick still opens it (only world-creation tool until Phase 07)
 
 ### World Index Warp

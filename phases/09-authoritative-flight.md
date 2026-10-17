@@ -54,7 +54,7 @@ Quake, Source (CS, Valorant), Overwatch, Rocket League, Fortnite: **server-autho
 
 ### 9A: Shared deterministic simulation (no networking change)
 - `[ ]` Extract flight + gravity into `shared/sim/` as pure functions: `FlightState` (position, velocity, quaternion, angular velocity, mode, slingshot dampen, …), `InputFrame`, `step()`. No `inputManager` singleton, no React, no rendering
-- `[ ]` Gravity sources come from a `SimWorld` view of the universe (solidified worlds only; Ghosts have no physics), passed in, not read from stores
+- `[ ]` Gravity sources come from a `SimWorld` view of the universe (every world, solid or Ghost: the difference is only the map look as of 2026-10-17), passed in, not read from stores
 - `[ ]` Replace `Date.now()` (gravity age bonus) with sim time / world `createdAt` in sim time
 - `[ ]` `dmath.ts`: deterministic `sin`, `cos`, `pow`/`exp` used by the sim; three.js math only via wrappers that use them
 - `[ ]` Client: fixed-step accumulator (60 Hz) + render interpolation; `FlightController` becomes a thin adapter (input → `InputFrame` → `step`)
@@ -74,7 +74,7 @@ Quake, Source (CS, Valorant), Overwatch, Rocket League, Fortnite: **server-autho
 - `[ ]` Input log persisted in IndexedDB while unacked (survives reload/close)
 - `[ ]` On reconnect: upload the log in chunks; server replays in a worker thread from its last confirmed state
 - `[ ]` Enforce the bound: ticks ≤ elapsed real time + slack; warps only to worlds in the index *at that tick* (or sighted earlier in the same log); link teleports allowed (anyone can open any link)
-- `[ ]` Universe drift: replay against the server's current solidified worlds (worlds rarely move once solidified); small divergence → server state wins with one smoothed correction
+- `[ ]` Universe drift: replay against the server's current worlds (worlds rarely move once placed); small divergence → server state wins with one smoothed correction
 - `[ ]` Server derives sightings + visits along the replayed path → World Index (with the right times)
 - `[ ]` Caps: max log length per upload, chunked processing, back-pressure
 

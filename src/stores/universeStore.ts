@@ -13,6 +13,7 @@ import type {
   WorldEntry,
   Vec3,
   SectorCoord,
+  ManaState,
 } from "@aweborn/shared/crdt-schema";
 import {
   positionToSector,
@@ -24,6 +25,9 @@ import { useWorldStore } from "./worldStore";
 interface UniverseState {
   /** All known worlds (from Universe CRDT) */
   worlds: Map<string, WorldEntry>;
+
+  /** Universe mana totals (server-written `mana` map; null until synced) */
+  mana: ManaState | null;
 
   /** Current camera/player position */
   cameraPosition: Vec3;
@@ -138,8 +142,16 @@ function refreshWorlds(doc: Y.Doc): Map<string, WorldEntry> {
   return worlds;
 }
 
+/** Read the server-written mana map (null if it hasn't synced yet). */
+function readMana(doc: Y.Doc): ManaState | null {
+  const m = doc.getMap("mana");
+  if (!m.has("frontierRadius")) return null;
+  return m.toJSON() as ManaState;
+}
+
 export const useUniverseStore = create<UniverseState>((set, get) => ({
   worlds: new Map(),
+  mana: null,
   cameraPosition: { x: 0, y: 0, z: 0 },
   currentSector: { sx: 0, sy: 0, sz: 0 },
   subscribedSectors: adjacentSectorKeys({ sx: 0, sy: 0, sz: 0 }),
@@ -165,6 +177,11 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
           set({ worlds: refreshWorlds(currentDoc) });
         }
       });
+      // Mana: the server is the only writer (Phase 05)
+      doc.getMap("mana").observe(() => {
+        const currentDoc = get().universeDoc;
+        if (currentDoc) set({ mana: readMana(currentDoc) });
+      });
     }
 
     Y.applyUpdate(doc, update);
@@ -172,6 +189,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
     set({
       universeDoc: doc,
       worlds: refreshWorlds(doc),
+      mana: readMana(doc),
     });
   },
 

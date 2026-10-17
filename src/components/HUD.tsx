@@ -7,6 +7,7 @@ import { starModSlots } from '../systems/StarModSlots'
 import { RadarMinimap } from './RadarMinimap'
 import { PlayerAccount } from './PlayerAccount'
 import { WorldIndexChip } from './WorldIndex'
+import { DisplaySettings } from './DisplaySettings'
 
 // ── Mod Slot Labels ──────────────────────────────────────────────────
 
@@ -215,6 +216,7 @@ export function HUD() {
           )}
         </div>
         <div className="hud-fps">{fps} FPS</div>
+        <DisplaySettings />
       </div>
 
       {/* Top center — Lock-on target info */}

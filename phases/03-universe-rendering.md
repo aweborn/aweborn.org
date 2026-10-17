@@ -18,7 +18,7 @@ Transform the decorative cosmic scene into a **data-driven universe** where ever
 | Far worlds (1000+) | `THREE.Points` / `InstancedMesh` | Thousands in one draw call |
 | Very far worlds | Merged into static starfield | No individual tracking |
 | Player rendering | Glowing orbs with comet trails | Matches ROADMAP visual spec |
-| Ghost worlds | Wireframe shader + ethereal glow | Visually distinct from solid worlds |
+| Ghost worlds | Wireframe shader + ethereal glow | Visually distinct from solid worlds on the universe map (look only; playable, 2026-10-17) |
 
 > **Current LOD thresholds (as coded in `UniverseWorlds.tsx`, Oct 2026):** Close `< 100` units · Medium `100–200` · Far `200+`. The table above is the ROADMAP target; the session-1 build used `5 / 12` (see tasks below); on Aug 23, 2026 Alex asked for Close to be raised to "practically within the same sector — almost always seeing entire worlds when in view," producing the current values. Tune here, not in ROADMAP.
 

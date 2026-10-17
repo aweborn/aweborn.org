@@ -91,7 +91,7 @@ export interface WorldEntry {
   /** Sector key (derived from resolvedPosition). */
   sector: string;
 
-  /** false = Ghost (outside Living Frontier or awaiting solidification). */
+  /** false = Ghost on the universe map (outside the Frontier, meter not yet full). Only a look: interiors are identical. */
   solidified: boolean;
 
   /** Unix timestamp (ms) of when the world was solidified. 0 if ghost. */
@@ -333,7 +333,7 @@ export interface WorldIndexWorld {
   creator: string;
   position: Vec3;
   sector: string;
-  /** Ghost or solid (card art). Absent on entries cached before 2026-10-13. */
+  /** Ghost or solid (card art). Absent on entries cached before 2026-10-13. Planned: `edition` ('dreamt' | 'solid'), fixed at first discovery (Phase 08). */
   solidified?: boolean;
 }
 

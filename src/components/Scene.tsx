@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Preload } from '@react-three/drei'
+import { PerformanceMonitor, Preload } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { Environment } from './Environment'
@@ -26,6 +26,8 @@ import { starModSlots } from '../systems/StarModSlots'
 import { touchInputAdapter } from '../systems/TouchInputAdapter'
 import { gamepadInputAdapter } from '../systems/GamepadInputAdapter'
 import { TouchInputAdapter } from '../systems/TouchInputAdapter'
+import { SolidificationWave } from '../effects/SolidificationWave'
+import { useQualityStore, useQualityTier } from '../stores/qualityStore'
 
 // ── Module-level slingshot visual state ──
 // Shared between FlightSystem (writer) and SlingshotArc/UniverseView (reader)
@@ -329,6 +331,9 @@ function UniverseView({ onPortalActivate, playerColor }: { onPortalActivate: () 
 
       {/* Portal Beacon — faint golden light beam for wayfinding */}
       <PortalBeacon />
+
+      {/* Living Frontier edge + the golden wave on new gifts (Phase 05) */}
+      <SolidificationWave />
     </>
   )
 }
@@ -358,15 +363,43 @@ function InteriorCamera() {
   return null
 }
 
+/**
+ * Applies the display-quality tier to things the Canvas only reads at
+ * creation (camera far plane), and runs the Auto frame-rate monitor.
+ */
+function QualityController() {
+  const { camera } = useThree()
+  const tier = useQualityTier()
+  const isAuto = useQualityStore((s) => s.setting === 'auto')
+
+  useEffect(() => {
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.far = tier.cameraFar
+      camera.updateProjectionMatrix()
+    }
+  }, [camera, tier.cameraFar])
+
+  if (!isAuto) return null
+  return (
+    <PerformanceMonitor
+      onIncline={() => useQualityStore.getState().autoIncline()}
+      onDecline={() => useQualityStore.getState().autoDecline()}
+    />
+  )
+}
+
 function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const isInWorld = activeWorldId !== null
+  const tier = useQualityTier()
 
   // Get player color from presence (stored in sessionStorage)
   const { playerColor } = usePresence()
 
   return (
     <>
+      <QualityController />
+
       {/* Flight system — drives player movement + camera */}
       <FlightSystem />
 
@@ -377,10 +410,11 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
       {isInWorld && <InteriorCamera />}
 
       {/* Fog — different for universe vs world interior */}
+      {/* Universe fog follows the quality tier (view distance) */}
       <fog attach="fog" args={[
         isInWorld ? '#050510' : '#050510',
-        isInWorld ? 15 : 30,
-        isInWorld ? 50 : 250,
+        isInWorld ? 15 : tier.fogNear,
+        isInWorld ? 50 : tier.fogFar,
       ]} />
 
       {/* Universe view — star map (hidden when inside a world) */}
@@ -389,16 +423,18 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
       {/* World interior — inside a world (shown when entered) */}
       {isInWorld && <WorldInterior />}
 
-      {/* Post-processing */}
-      <EffectComposer multisampling={0}>
-        <Bloom
-          luminanceThreshold={0.35}
-          luminanceSmoothing={0.9}
-          intensity={isInWorld ? 0.8 : 1.2}
-          mipmapBlur
-        />
-        <Vignette eskil={false} offset={0.15} darkness={isInWorld ? 0.6 : 0.8} />
-      </EffectComposer>
+      {/* Post-processing (off on Low) */}
+      {tier.bloom && (
+        <EffectComposer multisampling={0}>
+          <Bloom
+            luminanceThreshold={0.35}
+            luminanceSmoothing={0.9}
+            intensity={isInWorld ? 0.8 : 1.2}
+            mipmapBlur
+          />
+          <Vignette eskil={false} offset={0.15} darkness={isInWorld ? 0.6 : 0.8} />
+        </EffectComposer>
+      )}
 
       <Preload all />
     </>
@@ -407,6 +443,8 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
 
 export function Scene({ onPortalActivate, onProgress }: SceneProps) {
   const [, setReady] = useState(false)
+  const tier = useQualityTier()
+  const dpr = Math.min(tier.dpr, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1)
 
   const handleCreated = useCallback(() => {
     // Simulate loading progress (assets are lightweight for this scene)
@@ -426,7 +464,7 @@ export function Scene({ onPortalActivate, onProgress }: SceneProps) {
     <div className="canvas-container">
       <Canvas
         camera={{ position: [0, 2, 60], fov: 60, near: 0.1, far: 500 }}
-        dpr={[1, 2]}
+        dpr={dpr}
         gl={{
           antialias: true,
           toneMapping: 3, // ACESFilmicToneMapping
