@@ -225,7 +225,7 @@ interface Blueprint {
 - `[x]` *(placed objects = scaled AABBs, rotation ignored for now)* Collision with ground grid + placed objects (every world: Ghost vs solid is only the universe-map look, interiors are identical, per Alex 2026-10-17)
 - `[x]` *(third-person follow, new; not CameraController)* Camera for interiors (reuse `CameraController` presets where possible)
 - `[x]` *(2026-10-17; + facing; in-world players hidden on the universe map; Alex verified with two tabs)* Broadcast interior position via presence (`inWorld: worldId`) so players see each other inside worlds
-- `[ ]` Touch + gamepad mappings for interior mode
+- `[x]` *(2026-10-17: touch = stick turns/looks, thumb walks, pull back = backward, JUMP/SPRINT; gamepad = left stick walk/strafe, right stick turn/look, A jump, X/L3 sprint. Alex testing touch on prod; gamepad untested)* Touch + gamepad mappings for interior mode
 - `[ ]` Event-sourced physics objects (kick/push → velocity written to CRDT) per ROADMAP "Event-Sourced Physics"
 
 ### Research: API Costs & Mana Formula
