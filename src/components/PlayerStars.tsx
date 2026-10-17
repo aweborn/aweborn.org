@@ -30,6 +30,8 @@ interface PlayerStarData {
   targetPosition: THREE.Vector3
   trail: THREE.Vector3[]
   trailAlphas: number[]
+  /** Inside a world: hidden here (position is interior coordinates then). */
+  hidden: boolean
 }
 
 function PlayerStar({ data }: { data: PlayerStarData }) {
@@ -79,6 +81,9 @@ function PlayerStar({ data }: { data: PlayerStarData }) {
 
   useFrame(() => {
     if (!groupRef.current) return
+    groupRef.current.visible = !data.hidden
+    if (trailRef.current) trailRef.current.visible = !data.hidden
+    if (data.hidden) return
 
     // Lerp position toward target
     data.position.lerp(data.targetPosition, 0.12)
@@ -168,6 +173,7 @@ export function PlayerStars() {
           targetPosition: pos.clone(),
           trail: Array.from({ length: TRAIL_LENGTH }, () => pos.clone()),
           trailAlphas: new Array(TRAIL_LENGTH).fill(0),
+          hidden: presence.inWorld != null,
         }
         data.set(id, star)
       }
@@ -190,11 +196,22 @@ export function PlayerStars() {
     for (const [id, star] of data) {
       const presence = livePresence.get(id)
       if (presence) {
+        const hidden = presence.inWorld != null
+        if (hidden) {
+          star.hidden = true
+          continue
+        }
         star.targetPosition.set(
           presence.position.x,
           presence.position.y,
           presence.position.z,
         )
+        if (star.hidden) {
+          // Back from a world: snap, no streak across the map
+          star.position.copy(star.targetPosition)
+          for (const p of star.trail) p.copy(star.targetPosition)
+          star.hidden = false
+        }
         star.color = presence.color
       }
     }

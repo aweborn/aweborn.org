@@ -18,7 +18,7 @@ import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { collidersFor } from '@aweborn/shared/sim/interior'
-import { usePresence } from '../hooks/usePresence'
+import { usePresence, getPresenceState } from '../hooks/usePresence'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
 import { cameraController } from '../systems/CameraController'
@@ -350,6 +350,8 @@ const EYE_HEIGHT = 1.5
 
 function InteriorSystem({ playerColor }: { playerColor: string }) {
   const { camera } = useThree()
+  const { updatePosition } = usePresence()
+  const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const avatar = useRef<THREE.Group>(null!)
   const objects = useWorldStore((s) => s.objects)
   const boxes = useMemo(() => collidersFor(objects.values()), [objects])
@@ -392,20 +394,76 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     camPos.current.lerp(desired, 1 - Math.exp(-12 * delta))
     camera.position.copy(camPos.current)
     camera.lookAt(target)
+
+    // Presence: interior coordinates + facing, tagged with the world
+    updatePosition({ x, y, z }, { x: s.vx, y: s.vy, z: s.vz }, activeWorldId, { x: s.fx, z: s.fz })
   })
 
   return (
-    <group ref={avatar}>
-      {/* Simple avatar: a glowing capsule with a nose that shows facing */}
+    <>
+      <group ref={avatar}>
+        <CapsuleAvatar color={playerColor} />
+      </group>
+      {activeWorldId && <InteriorPlayers worldId={activeWorldId} />}
+    </>
+  )
+}
+
+/** Simple avatar: a glowing capsule with a nose that shows facing (-Z). */
+function CapsuleAvatar({ color }: { color: string }) {
+  return (
+    <>
       <mesh position={[0, 0.85, 0]}>
         <capsuleGeometry args={[0.3, 1.1, 6, 16]} />
-        <meshStandardMaterial color={playerColor} emissive={playerColor} emissiveIntensity={0.6} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.6} />
       </mesh>
       <mesh position={[0, 1.35, -0.3]}>
         <sphereGeometry args={[0.08, 12, 12]} />
         <meshBasicMaterial color="#ffffff" />
       </mesh>
-    </group>
+    </>
+  )
+}
+
+/** Other players inside the same world, smoothed toward their latest presence. */
+function InteriorPlayers({ worldId }: { worldId: string }) {
+  const { players } = usePresence()
+  const refs = useRef(new Map<string, THREE.Group>())
+
+  useFrame((_state, delta) => {
+    const live = getPresenceState()
+    const k = 1 - Math.exp(-15 * delta)
+    for (const [id, g] of refs.current) {
+      const p = live.get(id)
+      const here = !!p && p.inWorld === worldId
+      if (!here) {
+        g.visible = false
+        continue
+      }
+      if (!g.visible) g.position.set(p.position.x, p.position.y, p.position.z) // just arrived: snap
+      g.visible = true
+      g.position.x += (p.position.x - g.position.x) * k
+      g.position.y += (p.position.y - g.position.y) * k
+      g.position.z += (p.position.z - g.position.z) * k
+      if (p.facing) g.rotation.y = Math.atan2(-p.facing.x, -p.facing.z)
+    }
+  })
+
+  return (
+    <>
+      {Array.from(players.values()).map((p) => (
+        <group
+          key={p.id}
+          visible={false}
+          ref={(g) => {
+            if (g) refs.current.set(p.id, g)
+            else refs.current.delete(p.id)
+          }}
+        >
+          <CapsuleAvatar color={p.color} />
+        </group>
+      ))}
+    </>
   )
 }
 

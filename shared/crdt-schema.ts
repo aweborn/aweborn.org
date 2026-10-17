@@ -288,6 +288,11 @@ export interface PlayerPresence {
   /** null = flying in universe, string = inside a world */
   inWorld: string | null;
   color: string;
+  /**
+   * Inside a world: facing unit vector in XZ (Phase 07). While `inWorld` is
+   * set, `position` is in that world's interior coordinates, not universe ones.
+   */
+  facing?: { x: number; z: number };
 }
 
 // ── World Index (per account; Phase 08B) ─────────────────────────────

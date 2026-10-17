@@ -51,7 +51,7 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **Update (2026-10-17, 18:40): Interior Movement shipped** (Phase 07, first task group): walk, jump, jetpack and collide inside worlds, standard WASD. **NEXT UP:** presence inside worlds (players see each other, `inWorld`), then touch/gamepad interior buttons. ROADMAP's universe→interior key table is stale (needs Alex's OK). DTB: waiting on Mandy.
+> **Update (2026-10-17, 18:40): Interior Movement shipped** (Phase 07, first task group): walk, jump, jetpack and collide inside worlds, standard WASD. Presence inside worlds also shipped (players see each other). **NEXT UP:** touch/gamepad interior controls (jump button, sprint). ROADMAP's universe→interior key table is stale (needs Alex's OK). DTB: waiting on Mandy.
 >
 > **Update (2026-10-17, evening): solidification meter DROPPED (Alex).** Too many rules, and it couldn't work offline. **The Frontier is the only path from Ghost to solid.** The meter code was reverted before any commit; Phase 05 decisions/tasks updated. Ignore the "build the solidification meter" priority below. **Next (pick one):** Dreamt card edition ([Phase 08](./08-nfc-trading-cards.md)) or Phase 07 Interior Movement; small: dev panel places new worlds in front of the player. DTB reply sent; waiting on Mandy (early next week). ROADMAP stripped of the meter too.
 >

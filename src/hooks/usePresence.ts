@@ -186,7 +186,7 @@ export interface UsePresenceReturn {
    */
   players: Map<string, PlayerPresence>;
   /** Update this player's position */
-  updatePosition: (position: Vec3, velocity: Vec3, inWorld: string | null) => void;
+  updatePosition: (position: Vec3, velocity: Vec3, inWorld: string | null, facing?: { x: number; z: number }) => void;
 }
 
 /**
@@ -218,10 +218,11 @@ export function usePresence(): UsePresenceReturn {
   }, []);
 
   const updatePosition = useCallback(
-    (position: Vec3, velocity: Vec3, inWorld: string | null) => {
+    (position: Vec3, velocity: Vec3, inWorld: string | null, facing?: { x: number; z: number }) => {
       _localState.position = position;
       _localState.velocity = velocity;
       _localState.inWorld = inWorld;
+      _localState.facing = facing;
     },
     []
   );
