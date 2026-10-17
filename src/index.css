@@ -214,14 +214,6 @@ html, body, #root {
   right: var(--space-lg);
 }
 
-.hud-bottom-center {
-  position: absolute;
-  bottom: var(--space-xl);
-  left: 50%;
-  transform: translateX(-50%);
-  text-align: center;
-}
-
 .hud-brand {
   font-family: var(--font-display);
   font-size: var(--text-xl);
@@ -230,21 +222,6 @@ html, body, #root {
   color: var(--color-text-primary);
   opacity: 0.7;
   transition: opacity var(--duration-normal);
-}
-
-.hud-hint {
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  padding: var(--space-sm) var(--space-lg);
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-full);
-  animation: fade-in-up 0.8s var(--ease-out-expo) forwards;
-  opacity: 0;
-  white-space: nowrap;
 }
 
 /* --- HUD Flight Telemetry --- */
@@ -689,8 +666,7 @@ html.touch-ui [contenteditable='true'] {
    the DRIVE/NEUTRAL label is replaced by the tappable touch toggle. */
 html.touch-ui .hud-keyboard,
 html.touch-ui .hud-gravity-mode,
-html.touch-ui .hud-mod-slots,
-html.touch-ui .hud-bottom-center {
+html.touch-ui .hud-mod-slots {
   display: none;
 }
 
@@ -1738,13 +1714,6 @@ html.touch-ui .hud-bottom-center {
 
   .loading-logo {
     font-size: var(--text-4xl);
-  }
-
-  .hud-hint {
-    font-size: var(--text-xs);
-    max-width: 280px;
-    white-space: normal;
-    text-align: center;
   }
 }
 

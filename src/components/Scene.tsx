@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { PerformanceMonitor, Preload } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
@@ -15,6 +15,9 @@ import { PortalBeacon } from './PortalBeacon'
 import { WorldTransition } from './WorldTransition'
 import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
+import { useWorldStore } from '../stores/worldStore'
+import { interiorController } from '../systems/InteriorController'
+import { collidersFor } from '@aweborn/shared/sim/interior'
 import { usePresence } from '../hooks/usePresence'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
@@ -339,28 +342,71 @@ function UniverseView({ onPortalActivate, playerColor }: { onPortalActivate: () 
 }
 
 /**
- * Interior camera — simple orbit-like camera for world interior.
- * Uses a fixed position looking at the center of the world.
+ * Interior system (Phase 07): steps the shared interior movement sim,
+ * draws the local player, and runs a third-person follow camera.
  */
-function InteriorCamera() {
+const CAM_DISTANCE = 4.5
+const EYE_HEIGHT = 1.5
+
+function InteriorSystem({ playerColor }: { playerColor: string }) {
   const { camera } = useThree()
+  const avatar = useRef<THREE.Group>(null!)
+  const objects = useWorldStore((s) => s.objects)
+  const boxes = useMemo(() => collidersFor(objects.values()), [objects])
+  const camTarget = useRef(new THREE.Vector3())
+  const camPos = useRef(new THREE.Vector3())
 
   useEffect(() => {
-    camera.position.set(0, 5, 8)
-    camera.lookAt(0, 1, 0)
+    interiorController.reset()
+    const s = interiorController.state
+    camTarget.current.set(s.x, s.y + EYE_HEIGHT, s.z)
+    camPos.current.set(s.x - s.fx * CAM_DISTANCE, s.y + EYE_HEIGHT + 1, s.z - s.fz * CAM_DISTANCE)
+    camera.position.copy(camPos.current)
+    camera.lookAt(camTarget.current)
   }, [camera])
 
-  // Gentle slow rotation for interior ambiance
-  useFrame((state) => {
-    const t = state.clock.elapsedTime
-    const radius = 8
-    camera.position.x = Math.sin(t * 0.05) * radius
-    camera.position.z = Math.cos(t * 0.05) * radius
-    camera.position.y = 4 + Math.sin(t * 0.08) * 0.5
-    camera.lookAt(0, 1, 0)
+  useFrame((_state, delta) => {
+    const physics = useWorldStore.getState().physics
+    const t = interiorController.update(delta, physics, boxes)
+    const p = interiorController.prev
+    const s = interiorController.state
+    const x = p.x + (s.x - p.x) * t
+    const y = p.y + (s.y - p.y) * t
+    const z = p.z + (s.z - p.z) * t
+
+    if (avatar.current) {
+      avatar.current.position.set(x, y, z)
+      avatar.current.rotation.y = Math.atan2(-s.fx, -s.fz)
+    }
+
+    // Camera behind the player, raised by the look pitch
+    const cp = Math.cos(s.pitch)
+    const sp = Math.sin(s.pitch)
+    const target = camTarget.current.set(x, y + EYE_HEIGHT, z)
+    const desired = new THREE.Vector3(
+      x - s.fx * cp * CAM_DISTANCE,
+      y + EYE_HEIGHT - sp * CAM_DISTANCE + 0.6,
+      z - s.fz * cp * CAM_DISTANCE,
+    )
+    desired.y = Math.max(0.3, desired.y) // never dip under the ground
+    camPos.current.lerp(desired, 1 - Math.exp(-12 * delta))
+    camera.position.copy(camPos.current)
+    camera.lookAt(target)
   })
 
-  return null
+  return (
+    <group ref={avatar}>
+      {/* Simple avatar: a glowing capsule with a nose that shows facing */}
+      <mesh position={[0, 0.85, 0]}>
+        <capsuleGeometry args={[0.3, 1.1, 6, 16]} />
+        <meshStandardMaterial color={playerColor} emissive={playerColor} emissiveIntensity={0.6} />
+      </mesh>
+      <mesh position={[0, 1.35, -0.3]}>
+        <sphereGeometry args={[0.08, 12, 12]} />
+        <meshBasicMaterial color="#ffffff" />
+      </mesh>
+    </group>
+  )
 }
 
 /**
@@ -406,8 +452,8 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
       {/* World escape handler */}
       <WorldEscapeHandler />
 
-      {/* Interior camera (only when in a world) */}
-      {isInWorld && <InteriorCamera />}
+      {/* Interior movement + camera (only when in a world) */}
+      {isInWorld && <InteriorSystem playerColor={playerColor} />}
 
       {/* Fog — different for universe vs world interior */}
       {/* Universe fog follows the quality tier (view distance) */}

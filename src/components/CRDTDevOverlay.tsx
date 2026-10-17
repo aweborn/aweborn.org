@@ -120,11 +120,18 @@ export function CRDTDevOverlay() {
 
   const handleCreateWorld = () => {
     if (!worldName.trim()) return;
-    // Random position near origin for dev testing
+    // Place the new world in front of the player so you see what you made.
+    // THREE.js forward is -Z; rotate it by the player's flight quaternion.
+    const { playerPosition: p, playerRotation: q } = useUniverseStore.getState();
+    const AHEAD = 10;
+    // v' = q * (0,0,-1) * q⁻¹, expanded for v = (0,0,-1)
+    const fx = -2 * (q.x * q.z + q.w * q.y);
+    const fy = -2 * (q.y * q.z - q.w * q.x);
+    const fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
     const position = {
-      x: (Math.random() - 0.5) * 500,
-      y: (Math.random() - 0.5) * 200,
-      z: (Math.random() - 0.5) * 500,
+      x: p.x + fx * AHEAD,
+      y: p.y + fy * AHEAD,
+      z: p.z + fz * AHEAD,
     };
     createWorld(worldName.trim(), playerId, position, worldColor);
     markMeaningfulMoment("world-created");

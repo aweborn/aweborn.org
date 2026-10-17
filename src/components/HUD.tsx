@@ -271,13 +271,6 @@ export function HUD() {
         </div>
       )}
 
-      {/* Bottom center — Context hint (hidden on touch) */}
-      <div className="hud-bottom-center">
-        <div className="hud-hint">
-          Explore the cosmos · Click the glowing portal to donate
-        </div>
-      </div>
-
       {/* Bottom — Live keyboard layout */}
       {!isInWorld && (
         <div className="hud-keyboard">
