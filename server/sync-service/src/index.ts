@@ -9,6 +9,7 @@ import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
+import { startCreation, creationStatus, handleAssets } from "./creations.js";
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -210,6 +211,14 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (!worldId) return json(404, { error: "not_found" });
     return json(200, { worldId, ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "link") });
   }
+  // Creations (Phase 07): reserve → generate → settle
+  if (path === "/api/player/create" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { prompt?: unknown } | null;
+    return startCreation(rooms, session.playerId, body?.prompt, json);
+  }
+  if (path?.startsWith("/api/player/create/") && req.method === "GET") {
+    return creationStatus(rooms, session.playerId, path.slice("/api/player/create/".length), json);
+  }
   return json(404, { error: "not_found" });
 }
 
@@ -331,6 +340,7 @@ const server = createServer((req, res) => {
     return;
   }
   if (handleManaPublic(req, res)) return;
+  if (handleAssets(req, res)) return;
   if (req.url?.startsWith("/api/player/")) {
     const origin = req.headers.origin;
     if (isTrustedOrigin(origin)) {

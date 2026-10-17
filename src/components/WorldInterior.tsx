@@ -5,6 +5,27 @@ import { useWorldStore } from '../stores/worldStore'
 import { useUniverseStore } from '../stores/universeStore'
 import type { PlacedObject } from '@aweborn/shared/crdt-schema'
 import { kickedPosition } from '@aweborn/shared/sim/interior'
+import { Suspense } from 'react'
+import { useGLTF } from '@react-three/drei'
+import { AUTH_URL } from '../lib/player'
+
+/** Generated GLB, fitted into a unit box centred on the object (matches its collider). */
+function GeneratedModel({ asset }: { asset: string }) {
+  const { scene } = useGLTF(`${AUTH_URL}/assets/${asset}`)
+  const fitted = useMemo(() => {
+    const root = scene.clone(true)
+    const box = new THREE.Box3().setFromObject(root)
+    const size = box.getSize(new THREE.Vector3())
+    const centre = box.getCenter(new THREE.Vector3())
+    const s = 1 / Math.max(size.x, size.y, size.z, 1e-6)
+    root.position.sub(centre).multiplyScalar(s)
+    root.scale.setScalar(s)
+    const g = new THREE.Group()
+    g.add(root)
+    return g
+  }, [scene])
+  return <primitive object={fitted} />
+}
 
 /**
  * World Interior View — renders the inside of a world when the player
@@ -33,6 +54,7 @@ function getGeometry(type: string): THREE.BufferGeometry {
 
 function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: string }) {
   const ref = useRef<THREE.Mesh>(null!)
+  const groupRef = useRef<THREE.Group>(null!)
   const geo = useMemo(() => getGeometry(obj.type), [obj.type])
 
   // Material color — derive from world color + object type
@@ -53,17 +75,28 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
 
   // Subtle float animation; a kicked object follows the shared flight sim
   useFrame((state) => {
-    if (ref.current) {
+    const target = (ref.current ?? groupRef.current) as THREE.Object3D | null
+    if (target) {
       if (obj.kick) {
         const p = kickedPosition(obj, useWorldStore.getState().physics, (Date.now() - obj.kick.t) / 1000)
-        ref.current.position.set(p.x, p.y, p.z)
-        ref.current.rotation.x += 0.08
+        target.position.set(p.x, p.y, p.z)
+        target.rotation.x += 0.08
         return
       }
-      ref.current.position.set(obj.x, obj.y + Math.sin(state.clock.elapsedTime * 0.5 + obj.x * 0.1) * 0.05, obj.z)
-      ref.current.rotation.y += 0.003
+      target.position.set(obj.x, obj.y + Math.sin(state.clock.elapsedTime * 0.5 + obj.x * 0.1) * 0.05, obj.z)
+      target.rotation.y += 0.003
     }
   })
+
+  if (obj.type === 'model' && obj.asset) {
+    return (
+      <group ref={groupRef as never} position={[obj.x, obj.y, obj.z]} scale={[obj.scaleX, obj.scaleY, obj.scaleZ]}>
+        <Suspense fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color={color} wireframe /></mesh>}>
+          <GeneratedModel asset={obj.asset} />
+        </Suspense>
+      </group>
+    )
+  }
 
   return (
     <mesh

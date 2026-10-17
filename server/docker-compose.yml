@@ -13,6 +13,8 @@ services:
       - PORT=1234
       - HOST=0.0.0.0
       - DB_PATH=/data/universe.db
+      - GENAI_URL=http://genai-service:3001
+      - MANA_ADMIN_TOKEN=${MANA_ADMIN_TOKEN:-dev-admin}  # local only; seed the dev pool via POST /api/mana/inflow
     volumes:
       - ./sync-service/src:/app/server/sync-service/src
       - ./data:/data
@@ -32,8 +34,13 @@ services:
     environment:
       - PORT=3001
       - HOST=0.0.0.0
+      - DATA_DIR=/data
+      # Empty = stub provider (sample GLB). Put the real key in server/.env (gitignored).
+      - MESHY_API_KEY=${MESHY_API_KEY:-}
     volumes:
       - ./genai-service/src:/app/src
+      - ./genai-data:/data
+    user: root
     command: ["npx", "tsx", "watch", "src/index.ts"]
     restart: unless-stopped
 

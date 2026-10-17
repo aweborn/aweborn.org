@@ -1,3 +1,4 @@
+import { CreatePanel } from './components/CreatePanel'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
@@ -105,6 +106,7 @@ export default function App() {
 
       {/* World Index (M) + first-visit card reveal */}
       {isLoaded && webglSupported && <WorldIndex />}
+      {isLoaded && webglSupported && <CreatePanel />}
       {isLoaded && webglSupported && <CardReveal />}
 
       {/* Solidification wave: recognition line + golden flash */}

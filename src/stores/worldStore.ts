@@ -112,6 +112,8 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
       placedBy: (m.get("placedBy") as string) ?? "",
       placedAt: (m.get("placedAt") as number) ?? 0,
       kick: (m.get("kick") as PlacedObject["kick"]) ?? undefined,
+      asset: (m.get("asset") as string) ?? undefined,
+      prompt: (m.get("prompt") as string) ?? undefined,
     });
   });
   return objects;
@@ -231,4 +233,36 @@ export function settleObject(doc: Y.Doc, objectId: string, pos: { x: number; y: 
     m.set("z", pos.z);
     m.delete("kick");
   });
+}
+
+/** Place a generated model (Phase 07) in the world CRDT. */
+export function placeModel(
+  doc: Y.Doc,
+  asset: string,
+  prompt: string,
+  position: { x: number; y: number; z: number },
+  placedBy: string,
+): string {
+  const id = `obj-${Math.random().toString(36).slice(2, 8)}`;
+  doc.transact(() => {
+    const m = new Y.Map();
+    m.set("id", id);
+    m.set("type", "model");
+    m.set("x", position.x);
+    m.set("y", position.y);
+    m.set("z", position.z);
+    m.set("rotX", 0);
+    m.set("rotY", 0);
+    m.set("rotZ", 0);
+    m.set("scaleX", 1);
+    m.set("scaleY", 1);
+    m.set("scaleZ", 1);
+    m.set("material", "default");
+    m.set("placedBy", placedBy);
+    m.set("placedAt", Date.now());
+    m.set("asset", asset);
+    m.set("prompt", prompt.slice(0, 600));
+    doc.getMap("objects").set(id, m);
+  });
+  return id;
 }

@@ -255,6 +255,10 @@ export interface PlacedObject {
   material: string;
   placedBy: string;
   placedAt: number;
+  /** Generated asset (Phase 07): content-addressed GLB name, served at `/assets/<name>`. */
+  asset?: string;
+  /** The prompt that made it (shown on hover later; kept with the creation archive). */
+  prompt?: string;
   /**
    * Event-sourced physics (Phase 07): a kick from (x, y, z) at time `t` (ms).
    * Every client simulates the same flight; once settled, x/y/z is updated
