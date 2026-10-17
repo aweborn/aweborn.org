@@ -105,6 +105,19 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 
 The 3D scene renders behind the modal throughout — no page redirects.
 
+**Then the gift becomes mana (Phase 05, 2026-10-16).** Stripe sends `payment_intent.succeeded` to `POST <payment api>/stripe-webhook` → Lambda `aweborn-stripe-webhook` checks the Stripe signature, skips anything not tagged `metadata.kind = donation` (and test-mode events), reads the net amount after fees from the charge's balance transaction, and posts `{ source: "gift", netDollars, ref: <payment intent id>, at }` to `https://sync.aweborn.org/api/mana/inflow` with `MANA_INFLOW_TOKEN`. The ledger is idempotent on the payment intent id, so Stripe's retries (any non-2xx, for up to 3 days) are safe. Only the amount and date leave Stripe. That token can only record gifts: no draws, grants or notes.
+
+One-time setup (keys from `~/keys`, see CONFIG.md):
+```bash
+infra/set-secret.sh generate MANA_INFLOW_TOKEN       # 1. VPS + ~/keys
+infra/cfn-preview.sh aweborn-website                 # 2. read the change, then deploy (Infrastructure stacks)
+aws cloudformation deploy --stack-name aweborn-website --template-file infra/cloudformation.yml --capabilities CAPABILITY_NAMED_IAM
+infra/stripe-webhook.sh create                       # 3. Stripe endpoint + signing secret → ~/keys
+infra/set-stack-key.sh stripe-webhook                # 4. secret → Lambda
+infra/set-stack-key.sh mana-inflow                   # 5. token → Lambda
+```
+Check: `aws logs tail /aws/lambda/aweborn-stripe-webhook --since 1h`, `https://sync.aweborn.org/mana/ledger`, and Stripe dashboard → Webhooks (delivery attempts; "Resend" is safe).
+
 ## Deployment instructions
 
 1. **Set your Stripe publishable key** — edit `.env.production` and ensure the live key is present (starts with `pk_live_`).

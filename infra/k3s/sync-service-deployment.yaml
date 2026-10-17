@@ -97,6 +97,13 @@ spec:
                   name: aweborn-secrets
                   key: MANA_ADMIN_TOKEN
                   optional: true
+            # Narrow key for the Stripe webhook Lambda: records gifts only.
+            - name: MANA_INFLOW_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: MANA_INFLOW_TOKEN
+                  optional: true
           volumeMounts:
             - name: sync-data
               mountPath: /data

@@ -14,6 +14,7 @@
 #   infra/set-secret.sh set KEY                # paste a new value (hidden) -> folder -> VPS
 #   infra/set-secret.sh generate BETTER_AUTH_SECRET   # only if it exists nowhere
 #   infra/set-secret.sh generate MANA_ADMIN_TOKEN     # mana ledger admin API (only if it exists nowhere)
+#   infra/set-secret.sh generate MANA_INFLOW_TOKEN    # Stripe webhook Lambda → gifts only; then infra/set-stack-key.sh mana-inflow
 #   infra/set-secret.sh google ~/Downloads/client_secret_….json
 #   infra/set-secret.sh ses                    # new SES sender key; old ones deleted
 #
@@ -26,13 +27,13 @@ SSH_KEY="${SSH_KEY:-${AWEBORN_KEYS_DIR:-$HOME/keys}/AWEBORN_VPS_ADMIN_SSH_KEY.pe
 NS=aweborn
 SECRET=aweborn-secrets
 SES_USER=aweborn-mail-sender
-KEYS=(BETTER_AUTH_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY MANA_ADMIN_TOKEN LLM_API_KEY)
+KEYS=(BETTER_AUTH_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY MANA_ADMIN_TOKEN MANA_INFLOW_TOKEN LLM_API_KEY)
 
 # Which deployment reads each key. Unknown keys are refused, so a typo can't
 # create a stray secret.
 deployment_for() {
   case "$1" in
-    BETTER_AUTH_SECRET|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|MANA_ADMIN_TOKEN) echo sync-service ;;
+    BETTER_AUTH_SECRET|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|MANA_ADMIN_TOKEN|MANA_INFLOW_TOKEN) echo sync-service ;;
     LLM_API_KEY) echo agent-runner ;;
     *) echo "unknown key: $1 (known: ${KEYS[*]})" >&2; return 1 ;;
   esac
@@ -130,7 +131,7 @@ case "$cmd" in
 
   generate)
     key="${1:-}"
-    [[ "$key" == BETTER_AUTH_SECRET || "$key" == MANA_ADMIN_TOKEN ]] || { echo "usage: generate BETTER_AUTH_SECRET|MANA_ADMIN_TOKEN" >&2; exit 1; }
+    [[ "$key" == BETTER_AUTH_SECRET || "$key" == MANA_ADMIN_TOKEN || "$key" == MANA_INFLOW_TOKEN ]] || { echo "usage: generate BETTER_AUTH_SECRET|MANA_ADMIN_TOKEN|MANA_INFLOW_TOKEN" >&2; exit 1; }
     [[ ! -e "$(file_for "$key")" ]] || { echo "folder already has $key; use 'push'" >&2; exit 1; }
     { read -r rh; read -r _; } < <(remote_hash "$key")
     [[ "$rh" == "$EMPTY_HASH" ]] || { echo "VPS already has $key; use 'pull' to back it up" >&2; exit 1; }

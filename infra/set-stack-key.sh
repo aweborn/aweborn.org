@@ -14,6 +14,10 @@
 #         new one (scope auth_keys, tag tag:server), save it to ~/keys, run this.
 # stripe: updates the checkout Lambda's env. Rotate in the Stripe dashboard,
 #         save to ~/keys, run this.
+#   infra/set-stack-key.sh stripe-webhook -> aweborn-website StripeWebhookSecret <- AWEBORN_STRIPE_WEBHOOK_SECRET.txt
+#   infra/set-stack-key.sh mana-inflow    -> aweborn-website ManaInflowToken     <- AWEBORN_MANA_INFLOW_TOKEN.txt
+# stripe-webhook / mana-inflow: the donation webhook Lambda's env (gifts -> mana
+#         ledger). mana-inflow must match the VPS copy (set-secret.sh generate MANA_INFLOW_TOKEN).
 set -euo pipefail
 # Discard keys typed while we waited (a stray Enter used to answer the next
 # prompt with "" and silently decline; DR drill 2026-10-11).
@@ -23,7 +27,9 @@ cd "$(dirname "$0")/.."
 case "${1:-}" in
   tailscale) STACK=aweborn-vps;     TPL=infra/cloudformation-vps.yml; PARAM=TailscaleOAuthSecret; FILE=AWEBORN_TAILSCALE_OAUTH_SECRET.txt; PREFIX='tskey-client-*' ;;
   stripe)    STACK=aweborn-website; TPL=infra/cloudformation.yml;     PARAM=StripeSecretKey;      FILE=AWEBORN_STRIPE_SECRET_KEY.txt;      PREFIX='[sr]k_*' ;;
-  *) echo "usage: $0 tailscale|stripe" >&2; exit 1 ;;
+  stripe-webhook) STACK=aweborn-website; TPL=infra/cloudformation.yml; PARAM=StripeWebhookSecret; FILE=AWEBORN_STRIPE_WEBHOOK_SECRET.txt; PREFIX='whsec_*' ;;
+  mana-inflow)    STACK=aweborn-website; TPL=infra/cloudformation.yml; PARAM=ManaInflowToken;     FILE=AWEBORN_MANA_INFLOW_TOKEN.txt;     PREFIX='????????????????????*' ;;
+  *) echo "usage: $0 tailscale|stripe|stripe-webhook|mana-inflow" >&2; exit 1 ;;
 esac
 
 KEY_FILE="${AWEBORN_KEYS_DIR:-$HOME/keys}/$FILE"

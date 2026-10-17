@@ -15,6 +15,18 @@ Parameters:
     Default: sk_test_placeholder
     Description: Stripe Secret Key (use test key initially)
 
+  StripeWebhookSecret:
+    Type: String
+    NoEcho: true
+    Default: whsec_placeholder
+    Description: Signing secret of the Stripe webhook endpoint (infra/stripe-webhook.sh create; then infra/set-stack-key.sh stripe-webhook)
+
+  ManaInflowToken:
+    Type: String
+    NoEcho: true
+    Default: placeholder
+    Description: Bearer token for sync.aweborn.org POST /api/mana/inflow (gifts only). Same value as MANA_INFLOW_TOKEN on the VPS (infra/set-stack-key.sh mana-inflow)
+
 Resources:
   # ============================================
   # S3 — Static Site Content Bucket
@@ -265,7 +277,8 @@ Resources:
                   'currency': currency,
                   'automatic_payment_methods[enabled]': 'true',
                   'description': 'Donation to Aweborn',
-                  'metadata[source]': 'aweborn.org'
+                  'metadata[source]': 'aweborn.org',
+                  'metadata[kind]': 'donation'
                 }, process.env.STRIPE_SECRET_KEY);
 
                 if (paymentIntent.error) {
@@ -295,7 +308,9 @@ Resources:
                 'line_items[0][quantity]': '1',
                 'success_url': `${siteUrl}?donation=success`,
                 'cancel_url': `${siteUrl}?donation=cancelled`,
-                'submit_type': 'donate'
+                'submit_type': 'donate',
+                'payment_intent_data[metadata][source]': 'aweborn.org',
+                'payment_intent_data[metadata][kind]': 'donation'
               }, process.env.STRIPE_SECRET_KEY);
 
               if (session.error) {
@@ -327,6 +342,107 @@ Resources:
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !Ref StripeCheckoutFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${PaymentApi}/*'
+
+  # ============================================
+  # Lambda — Stripe webhook → mana ledger (Phase 05)
+  # Each live donation (payment_intent.succeeded, metadata kind=donation)
+  # becomes a gift in the universe's pool: net of Stripe fees, idempotent on
+  # the payment intent id. Only the amount and date leave Stripe, never the
+  # donor's name or email. Non-2xx → Stripe retries for up to 3 days.
+  # ============================================
+  StripeWebhookRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aweborn-stripe-webhook-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  StripeWebhookFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aweborn-stripe-webhook
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt StripeWebhookRole.Arn
+      Timeout: 15
+      MemorySize: 128
+      Environment:
+        Variables:
+          STRIPE_SECRET_KEY: !Ref StripeSecretKey
+          STRIPE_WEBHOOK_SECRET: !Ref StripeWebhookSecret
+          MANA_INFLOW_TOKEN: !Ref ManaInflowToken
+          SYNC_URL: https://sync.aweborn.org
+      Code:
+        ZipFile: |
+          const crypto = require('crypto');
+          const STRIPE_API = process.env.STRIPE_API_BASE || 'https://api.stripe.com';
+          const TOLERANCE_S = 300;
+          const reply = (statusCode, msg) => {
+            console.log(statusCode, msg);
+            return { statusCode, headers: { 'Content-Type': 'text/plain' }, body: msg };
+          };
+
+          // Stripe-Signature: t=<unix>,v1=<hex hmac of "t.body">[,v1=...]
+          function verify(raw, header, secret) {
+            if (!header || !secret || !secret.startsWith('whsec_') || secret === 'whsec_placeholder') return false;
+            let t = null; const sigs = [];
+            for (const part of header.split(',')) {
+              const i = part.indexOf('=');
+              const k = part.slice(0, i).trim(), v = part.slice(i + 1).trim();
+              if (k === 't') t = v; else if (k === 'v1') sigs.push(v);
+            }
+            if (!t || !sigs.length || Math.abs(Date.now() / 1000 - Number(t)) > TOLERANCE_S) return false;
+            const want = crypto.createHmac('sha256', secret).update(t + '.' + raw).digest();
+            return sigs.some((s) => {
+              const got = Buffer.from(s, 'hex');
+              return got.length === want.length && crypto.timingSafeEqual(got, want);
+            });
+          }
+
+          exports.handler = async (event) => {
+            const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : (event.body || '');
+            const headers = event.headers || {};
+            if (!verify(raw, headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET)) return reply(400, 'bad signature');
+
+            const evt = JSON.parse(raw);
+            if (evt.type !== 'payment_intent.succeeded') return reply(200, 'ignored ' + evt.type);
+            const pi = evt.data.object;
+            if (!pi.metadata || pi.metadata.source !== 'aweborn.org' || pi.metadata.kind !== 'donation') return reply(200, 'not a donation ' + pi.id);
+            if (!evt.livemode && process.env.ALLOW_TEST_EVENTS !== 'true') return reply(200, 'test mode, not recorded ' + pi.id);
+
+            // Net after Stripe's fee lives on the charge's balance transaction.
+            const r = await fetch(STRIPE_API + '/v1/payment_intents/' + encodeURIComponent(pi.id) + '?expand[]=latest_charge.balance_transaction', {
+              headers: { Authorization: 'Bearer ' + process.env.STRIPE_SECRET_KEY }
+            });
+            const full = await r.json().catch(() => ({}));
+            const bt = full.latest_charge && full.latest_charge.balance_transaction;
+            if (!r.ok || !bt || typeof bt.net !== 'number') return reply(503, 'balance transaction not ready ' + pi.id);
+            if (bt.currency !== 'usd') return reply(500, 'unexpected settlement currency ' + bt.currency);
+
+            const res = await fetch(process.env.SYNC_URL + '/api/mana/inflow', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.MANA_INFLOW_TOKEN },
+              body: JSON.stringify({ source: 'gift', netDollars: bt.net / 100, ref: pi.id, at: pi.created * 1000 })
+            });
+            const text = await res.text();
+            if (!res.ok) return reply(502, 'ledger refused ' + res.status + ' ' + text.slice(0, 200));
+            return reply(200, (text.includes('"duplicate"') ? 'already recorded ' : 'recorded ') + pi.id + ' net $' + (bt.net / 100).toFixed(2));
+          };
+
+  StripeWebhookFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref StripeWebhookFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${PaymentApi}/*'
 
@@ -370,6 +486,21 @@ Resources:
       ApiId: !Ref PaymentApi
       RouteKey: POST /create-payment-intent
       Target: !Sub 'integrations/${PaymentApiIntegration}'
+
+  StripeWebhookIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PaymentApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt StripeWebhookFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  StripeWebhookRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PaymentApi
+      RouteKey: POST /stripe-webhook
+      Target: !Sub 'integrations/${StripeWebhookIntegration}'
 
   PaymentApiStage:
     Type: AWS::ApiGatewayV2::Stage

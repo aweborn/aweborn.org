@@ -221,14 +221,24 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
  *   POST /api/mana/inflow  { source, netDollars, creativeBaseDollars?, restricted?, ref?, note?, at? }
  *   POST /api/mana/draw    { purpose, fn, dollars, ref?, note?, at? }   (not creations: those reserve → settle)
  *   Both are idempotent on `ref` (200 { duplicate: true } on a retry).
+ * Donation webhook (Authorization: Bearer $MANA_INFLOW_TOKEN): the Stripe Lambda's
+ * narrow key. Only POST /api/mana/inflow with `source: "gift"`, a `ref`, no
+ * creative override and no note: a leaked copy can't draw money or fake a grant.
  */
 const MANA_ADMIN_TOKEN = process.env.MANA_ADMIN_TOKEN ?? "";
+const MANA_INFLOW_TOKEN = process.env.MANA_INFLOW_TOKEN ?? "";
 
-function adminAuthorized(req: IncomingMessage): boolean {
-  if (!MANA_ADMIN_TOKEN) return false;
+function bearerMatches(req: IncomingMessage, token: string): boolean {
+  if (!token) return false;
   const got = Buffer.from((req.headers.authorization ?? "").replace(/^Bearer\s+/i, ""));
-  const want = Buffer.from(MANA_ADMIN_TOKEN);
+  const want = Buffer.from(token);
   return got.length === want.length && timingSafeEqual(got, want);
+}
+
+function manaRole(req: IncomingMessage): "admin" | "inflow" | null {
+  if (bearerMatches(req, MANA_ADMIN_TOKEN)) return "admin";
+  if (bearerMatches(req, MANA_INFLOW_TOKEN)) return "inflow";
+  return null;
 }
 
 async function handleManaAdmin(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
@@ -236,11 +246,20 @@ async function handleManaAdmin(req: IncomingMessage, res: ServerResponse, path: 
     res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     res.end(JSON.stringify(body));
   };
-  if (!MANA_ADMIN_TOKEN) return json(503, { error: "mana_admin_disabled" });
-  if (!adminAuthorized(req)) return json(401, { error: "unauthorized" });
+  if (!MANA_ADMIN_TOKEN && !MANA_INFLOW_TOKEN) return json(503, { error: "mana_admin_disabled" });
+  const role = manaRole(req);
+  if (!role) return json(401, { error: "unauthorized" });
   if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
   const b = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
   if (!b) return json(400, { error: "bad_json" });
+  if (role === "inflow") {
+    const narrow =
+      path === "/api/mana/inflow" &&
+      b.source === "gift" &&
+      typeof b.ref === "string" && b.ref.length > 0 &&
+      b.creativeBaseDollars === undefined && b.restricted === undefined && b.note === undefined;
+    if (!narrow) return json(403, { error: "forbidden" });
+  }
   const str = (v: unknown) => (typeof v === "string" && v.length <= 500 ? v : undefined);
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
   try {
