@@ -335,9 +335,11 @@ export class TouchInputAdapter {
       if (inWorld) {
         label('touch-btn-brake', 'JUMP', 'Jump (hold in the air for jetpack)')
         label('touch-btn-warp', 'SPRINT', 'Sprint (hold)')
+        label('touch-btn-enter', 'KICK', 'Kick the object in front of you')
       } else {
         label('touch-btn-brake', 'BRAKE', 'Brake (hold)')
         label('touch-btn-warp', 'WARP', 'Warp (hold to charge, release to leap)')
+        label('touch-btn-enter', 'ENTER', 'Enter the nearby world')
       }
     }
     this._overlay.classList.toggle('touch-overlay--in-world', inWorld)

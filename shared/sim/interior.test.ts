@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_PHYSICS } from "../crdt-schema.js";
 import {
-  stepInterior, spawnInterior, collidersFor, NO_INPUT, INTERIOR_HALF_EXTENT,
+  stepInterior, spawnInterior, collidersFor, NO_INPUT, INTERIOR_HALF_EXTENT, kickVelocity, kickedPosition, kickTarget,
   type InteriorInput, type InteriorState, type Box,
 } from "./interior.js";
 
@@ -99,4 +99,19 @@ test("deterministic: the same inputs give bit-identical states", () => {
   });
   const go = () => { let s = spawnInterior(); for (let i = 0; i < 2000; i++) s = stepInterior(s, script(i), DEFAULT_PHYSICS, []); return s; };
   assert.deepEqual(go(), go());
+});
+
+test("a kicked object flies forward and settles on the ground, deterministically", () => {
+  const o = { id: "k", type: "cube", x: 0, y: 0.5, z: 0, rotX: 0, rotY: 0, rotZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1, material: "", placedBy: "", placedAt: 0, kick: { ...kickVelocity(0, -1), t: 0 } };
+  const end = kickedPosition(o, DEFAULT_PHYSICS, 10);
+  assert.ok(end.z < -2, `z=${end.z}`);
+  assert.equal(end.y, 0.5);
+  assert.deepEqual(end, kickedPosition(o, DEFAULT_PHYSICS, 4));
+});
+
+test("kickTarget picks the object in front, not behind", () => {
+  const mk = (id: string, z: number) => ({ id, type: "cube", x: 0, y: 0.5, z, rotX: 0, rotY: 0, rotZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1, material: "", placedBy: "", placedAt: 0 });
+  const s = spawnInterior(); // z = 8, facing -Z
+  assert.equal(kickTarget(s, [mk("front", 7), mk("behind", 9)])?.id, "front");
+  assert.equal(kickTarget(s, [mk("far", 2)]), null);
 });

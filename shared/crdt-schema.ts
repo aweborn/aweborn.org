@@ -255,6 +255,12 @@ export interface PlacedObject {
   material: string;
   placedBy: string;
   placedAt: number;
+  /**
+   * Event-sourced physics (Phase 07): a kick from (x, y, z) at time `t` (ms).
+   * Every client simulates the same flight; once settled, x/y/z is updated
+   * and the kick removed.
+   */
+  kick?: { vx: number; vy: number; vz: number; t: number };
 }
 
 /**

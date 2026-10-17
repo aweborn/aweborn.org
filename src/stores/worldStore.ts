@@ -111,6 +111,7 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
       material: (m.get("material") as string) ?? "default",
       placedBy: (m.get("placedBy") as string) ?? "",
       placedAt: (m.get("placedAt") as number) ?? 0,
+      kick: (m.get("kick") as PlacedObject["kick"]) ?? undefined,
     });
   });
   return objects;
@@ -210,3 +211,24 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
     });
   },
 }));
+
+// ── Event-sourced physics (Phase 07): 2 CRDT writes per kick ─────────
+
+/** Start a kick: every client simulates the flight from the object's x/y/z. */
+export function kickObject(doc: Y.Doc, objectId: string, v: { vx: number; vy: number; vz: number }): void {
+  const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
+  if (!m || m.get("kick")) return; // already flying
+  m.set("kick", { ...v, t: Date.now() });
+}
+
+/** Settle a kick: write the landing spot and clear it. Idempotent (same result on every client). */
+export function settleObject(doc: Y.Doc, objectId: string, pos: { x: number; y: number; z: number }): void {
+  const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
+  if (!m || !m.get("kick")) return;
+  doc.transact(() => {
+    m.set("x", pos.x);
+    m.set("y", pos.y);
+    m.set("z", pos.z);
+    m.delete("kick");
+  });
+}

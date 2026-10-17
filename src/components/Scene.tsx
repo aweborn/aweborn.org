@@ -15,9 +15,9 @@ import { PortalBeacon } from './PortalBeacon'
 import { WorldTransition } from './WorldTransition'
 import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
-import { useWorldStore } from '../stores/worldStore'
+import { useWorldStore, kickObject, settleObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
-import { collidersFor } from '@aweborn/shared/sim/interior'
+import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC } from '@aweborn/shared/sim/interior'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
@@ -354,7 +354,10 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const avatar = useRef<THREE.Group>(null!)
   const objects = useWorldStore((s) => s.objects)
-  const boxes = useMemo(() => collidersFor(objects.values()), [objects])
+  const boxes = useMemo(
+    () => collidersFor(Array.from(objects.values()).filter((o) => !o.kick)),
+    [objects],
+  )
   const camTarget = useRef(new THREE.Vector3())
   const camPos = useRef(new THREE.Vector3())
 
@@ -400,6 +403,21 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
 
     // Presence: interior coordinates + facing, tagged with the world
     updatePosition({ x, y, z }, { x: s.vx, y: s.vy, z: s.vz }, activeWorldId, { x: s.fx, z: s.fz })
+
+    // Kick (N): the object in front of you; 2 CRDT writes per kick
+    const doc = useUniverseStore.getState().activeWorldDoc
+    if (doc) {
+      if (inputManager.getEvents().justPressed.has('interact')) {
+        const target = kickTarget(s, Array.from(objects.values()).filter((o) => !o.kick))
+        if (target) kickObject(doc, target.id, kickVelocity(s.fx, s.fz))
+      }
+      const now = Date.now()
+      for (const o of objects.values()) {
+        if (o.kick && now - o.kick.t > KICK_SETTLE_SEC * 1000) {
+          settleObject(doc, o.id, kickedPosition(o, useWorldStore.getState().physics, KICK_SETTLE_SEC))
+        }
+      }
+    }
   })
 
   return (

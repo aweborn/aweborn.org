@@ -229,3 +229,61 @@ export function stepInterior(
 
   return { x, y, z, vx, vy, vz, fx, fz, pitch, grounded, fuel };
 }
+
+// ── Kicked objects (event-sourced physics) ──────────────────────────
+
+/** How long a kicked object flies before it is settled (and written back). */
+export const KICK_SETTLE_SEC = 4;
+const KICK_SPEED = 7;
+const KICK_LIFT = 3;
+const KICK_REACH = 1.6; // from the player's centre to the object's surface
+
+/** Kick velocity for a player facing (fx, fz). */
+export function kickVelocity(fx: number, fz: number): { vx: number; vy: number; vz: number } {
+  return { vx: fx * KICK_SPEED, vy: KICK_LIFT, vz: fz * KICK_SPEED };
+}
+
+/** The closest object in front of the player within reach, or null. */
+export function kickTarget(s: InteriorState, objects: Iterable<PlacedObject>): PlacedObject | null {
+  let best: PlacedObject | null = null;
+  let bestD = Infinity;
+  for (const o of objects) {
+    const dx = o.x - s.x;
+    const dz = o.z - s.z;
+    const r = 0.5 * Math.max(Math.abs(o.scaleX || 1), Math.abs(o.scaleZ || 1));
+    const d = Math.sqrt(dx * dx + dz * dz) - r;
+    if (d > KICK_REACH || dx * s.fx + dz * s.fz < 0) continue; // out of reach or behind
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  return best;
+}
+
+/**
+ * Where a kicked object is `elapsed` seconds after the kick. Deterministic
+ * fixed-step sim (gravity, drag, ground bounce + friction, interior bounds),
+ * so every client lands it in the same spot.
+ */
+export function kickedPosition(o: PlacedObject, physics: PhysicsParams, elapsed: number): { x: number; y: number; z: number } {
+  const k = o.kick;
+  if (!k) return { x: o.x, y: o.y, z: o.z };
+  const half = 0.5 * Math.abs(o.scaleY || 1);
+  let x = o.x, y = o.y, z = o.z, vx = k.vx, vy = k.vy, vz = k.vz;
+  const steps = Math.floor(Math.min(Math.max(elapsed, 0), KICK_SETTLE_SEC) / INTERIOR_DT);
+  const dt = INTERIOR_DT;
+  const drag = clamp(physics.airResistance, 0, 1);
+  for (let i = 0; i < steps; i++) {
+    vx += physics.gravityX * dt; vy += physics.gravityY * dt; vz += physics.gravityZ * dt;
+    vx *= 1 - drag; vy *= 1 - drag; vz *= 1 - drag;
+    x += vx * dt; y += vy * dt; z += vz * dt;
+    if (y < half) {
+      y = half;
+      vy = -vy * physics.bounceCoefficient;
+      if (vy < 0.5) vy = 0;
+      const f = clamp(1 - physics.friction * 0.2, 0, 1); // ground friction per step
+      vx *= f; vz *= f;
+    }
+    if (x < -INTERIOR_HALF_EXTENT || x > INTERIOR_HALF_EXTENT) { x = clamp(x, -INTERIOR_HALF_EXTENT, INTERIOR_HALF_EXTENT); vx = -vx * physics.bounceCoefficient; }
+    if (z < -INTERIOR_HALF_EXTENT || z > INTERIOR_HALF_EXTENT) { z = clamp(z, -INTERIOR_HALF_EXTENT, INTERIOR_HALF_EXTENT); vz = -vz * physics.bounceCoefficient; }
+  }
+  return { x, y, z };
+}
