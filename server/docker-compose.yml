@@ -37,6 +37,7 @@ services:
       - DATA_DIR=/data
       # Empty = stub provider (sample GLB). Put the real key in server/.env (gitignored).
       - MESHY_API_KEY=${MESHY_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     volumes:
       - ./genai-service/src:/app/src
       - ./genai-data:/data

@@ -51,6 +51,12 @@ spec:
                   name: aweborn-secrets
                   key: MESHY_API_KEY
                   optional: true
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: OPENROUTER_API_KEY
+                  optional: true
           volumeMounts:
             - name: genai-data
               mountPath: /data

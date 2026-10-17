@@ -27,7 +27,7 @@ SSH_KEY="${SSH_KEY:-${AWEBORN_KEYS_DIR:-$HOME/keys}/AWEBORN_VPS_ADMIN_SSH_KEY.pe
 NS=aweborn
 SECRET=aweborn-secrets
 SES_USER=aweborn-mail-sender
-KEYS=(BETTER_AUTH_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY MANA_ADMIN_TOKEN MANA_INFLOW_TOKEN LLM_API_KEY MESHY_API_KEY)
+KEYS=(BETTER_AUTH_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY MANA_ADMIN_TOKEN MANA_INFLOW_TOKEN LLM_API_KEY MESHY_API_KEY OPENROUTER_API_KEY)
 
 # Which deployment reads each key. Unknown keys are refused, so a typo can't
 # create a stray secret.
@@ -35,7 +35,7 @@ deployment_for() {
   case "$1" in
     BETTER_AUTH_SECRET|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|MANA_ADMIN_TOKEN|MANA_INFLOW_TOKEN) echo sync-service ;;
     LLM_API_KEY) echo agent-runner ;;
-    MESHY_API_KEY) echo genai-service ;;
+    MESHY_API_KEY|OPENROUTER_API_KEY) echo genai-service ;;
     *) echo "unknown key: $1 (known: ${KEYS[*]})" >&2; return 1 ;;
   esac
 }
