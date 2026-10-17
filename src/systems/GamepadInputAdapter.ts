@@ -145,6 +145,22 @@ class GamepadInputAdapter {
       return
     }
 
+    // ── Inside a world: standard console layout ──
+    // Left stick walk/strafe, right stick turn/look, A jump (hold = jetpack),
+    // X or L3 sprint, Back exits. Flight-only actions stay released.
+    if (inputManager.getContext() === 'world') {
+      inputManager.setAxis('moveX', shapeAxis(gp.axes[0] ?? 0, STICK_DEADZONE, 1), 'gamepad')
+      inputManager.setAxis('moveY', -shapeAxis(gp.axes[1] ?? 0, STICK_DEADZONE, 1), 'gamepad')
+      inputManager.setAxis('yaw', shapeAxis(gp.axes[2] ?? 0, STICK_DEADZONE), 'gamepad')
+      inputManager.setAxis('pitch', -shapeAxis(gp.axes[3] ?? 0, STICK_DEADZONE), 'gamepad')
+      inputManager.setAction('brake', gp.buttons[BUTTON.A]?.pressed ?? false)
+      inputManager.setAction('warp', (gp.buttons[BUTTON.X]?.pressed || gp.buttons[10]?.pressed) ?? false)
+      inputManager.setAction('escape', gp.buttons[BUTTON.BACK]?.pressed ?? false)
+      return
+    }
+    inputManager.setAxis('moveX', 0, 'gamepad')
+    inputManager.setAxis('moveY', 0, 'gamepad')
+
     // ── Sticks ──
     // Left stick → analog yaw / pitch (stick up = nose up)
     inputManager.setAxis('yaw', shapeAxis(gp.axes[0] ?? 0, STICK_DEADZONE), 'gamepad')

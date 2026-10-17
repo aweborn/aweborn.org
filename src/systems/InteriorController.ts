@@ -43,8 +43,8 @@ class InteriorController {
     // Action names come from the flight map: A=rollRight, D=pitchDown,
     // Q=yawLeft, E=pitchUp, R=yawRight, F=rollLeft
     return {
-      move: b(a.thrust) - b(a.reverse),
-      strafe: b(a.pitchDown) - b(a.rollRight),
+      move: Math.max(-1, Math.min(1, b(a.thrust) - b(a.reverse) + inputManager.getAxis('moveY'))),
+      strafe: Math.max(-1, Math.min(1, b(a.pitchDown) - b(a.rollRight) + inputManager.getAxis('moveX'))),
       turn: Math.max(-1, Math.min(1, b(a.pitchUp) - b(a.yawLeft) + inputManager.getAxis('yaw'))),
       look: Math.max(-1, Math.min(1, b(a.yawRight) - b(a.rollLeft) + inputManager.getAxis('pitch'))),
       jump: a.brake,

@@ -78,7 +78,7 @@ export interface ActionEvents {
  * Analog steering axes, each in -1..1. Fed by sticks (touch, gamepad);
  * the keyboard stays digital. yaw: + = turn right. pitch: + = nose up.
  */
-export type AxisName = 'yaw' | 'pitch'
+export type AxisName = 'yaw' | 'pitch' | 'moveX' | 'moveY'
 /** Each analog source writes its own slot, so an idle gamepad can't zero a touch stick. */
 export type AxisSource = 'touch' | 'gamepad'
 
@@ -199,8 +199,8 @@ class InputManager {
   private _justPressed = new Set<keyof ActionState>()
   private _justReleased = new Set<keyof ActionState>()
   private _axes: Record<AxisSource, Record<AxisName, number>> = {
-    touch: { yaw: 0, pitch: 0 },
-    gamepad: { yaw: 0, pitch: 0 },
+    touch: { yaw: 0, pitch: 0, moveX: 0, moveY: 0 },
+    gamepad: { yaw: 0, pitch: 0, moveX: 0, moveY: 0 },
   }
 
   /** Combined analog value for an axis across all sources, clamped to -1..1. */
@@ -219,6 +219,8 @@ class InputManager {
     for (const src of Object.values(this._axes)) {
       src.yaw = 0
       src.pitch = 0
+      src.moveX = 0
+      src.moveY = 0
     }
   }
 
