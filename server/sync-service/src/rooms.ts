@@ -30,6 +30,7 @@ import {
 } from "./universe.js";
 import { saveDoc, loadDoc, listDocIds, getDb } from "./persistence.js";
 import { ManaLedger } from "./mana.js";
+import { ManaAdmission } from "./admission.js";
 import { createWorldDoc } from "./world-factory.js";
 import { resolveNewWorld } from "./resolver.js";
 
@@ -70,6 +71,8 @@ export class RoomManager {
 
   /** The universal mana pool & ledger (server-authoritative). */
   readonly mana: ManaLedger;
+  /** Flow & admission: who may draw how much right now (Phase 05). */
+  readonly admission: ManaAdmission;
 
   constructor() {
     this.universeDoc = initUniverseDoc();
@@ -85,6 +88,7 @@ export class RoomManager {
     this.mana = new ManaLedger(getDb());
     this.mana.publish(this.universeDoc);
     this.mana.onChange(() => this.mana.publish(this.universeDoc));
+    this.admission = new ManaAdmission(this.mana);
 
     console.log("[rooms] room manager initialized");
   }
@@ -94,6 +98,7 @@ export class RoomManager {
   /** Record the authenticated player behind a socket. */
   setPlayer(ws: WebSocket, playerId: string, accountId?: string): void {
     this.playerIds.set(ws, playerId);
+    this.admission.markActive(playerId);
     if (accountId) this.accountIds.set(ws, accountId);
   }
 
@@ -297,6 +302,8 @@ export class RoomManager {
    * Handle an incoming message from a client.
    */
   handleMessage(ws: WebSocket, data: Buffer | ArrayBuffer | Buffer[]): void {
+    const activeId = this.playerIds.get(ws);
+    if (activeId) this.admission.markActive(activeId);
     try {
       const message = this.decodeMessage(data);
       if (!message) return;

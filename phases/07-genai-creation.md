@@ -54,6 +54,8 @@ Providers and prices: [MANA_COSTS.md](../MANA_COSTS.md) (2026-10-14/16). Every c
 
 Proposal: start with the SQLite job table, written in workflow shape (pure step functions, idempotency keys, explicit compensation), so moving to Restate or Temporal later is a port, not a rewrite. **Zod** is the TypeScript Pydantic: it validates the planner's structured output (with the provider's JSON-schema mode).
 
+**Decided (Alex, 2026-10-16): the SQLite job table** ("a really natural progression to a hosted database eventually"). Keep the workflow shape so the table can move to a hosted database (or Temporal/Restate) without rewriting the steps.
+
 **Consistent request/response interface:**
 
 ```typescript
@@ -163,7 +165,7 @@ interface Blueprint {
     kind: "voxel";
     size: [number, number, number];           // grid cells
     seed: number;
-    blocks: { id: string; name: string; color: string }[];
+    blocks: { id: string; name: string; color: string; surface?: "blocks" | "smooth" }[];  // see Smooth voxels
     features: {                               // a deterministic generator turns these into the grid
       type: "plateau" | "hill" | "pond" | "path" | "cliff" | "floating-island";
       at: [number, number, number];
@@ -254,7 +256,7 @@ interface Blueprint {
 
 ### World Planner & Blueprints
 - `[ ]` `shared/blueprint.ts`: the Blueprint type + Zod validator (the planner's output is parsed and validated, never trusted)
-- `[ ]` Decide orchestration (SQLite job table in workflow shape vs Restate vs Temporal); log it
+- `[x]` Decide orchestration → **SQLite job table in workflow shape** (Alex, 2026-10-16)
 - `[ ]` Planner system prompt written to [the voice](#the-planners-voice); test it on real first prompts before launch
 - `[ ]` Deterministic voxel terrain generator from `terrain` parameters, shared by client (preview) and server (manifest)
 - `[ ]` `POST /plan`: prompt or chat turn + current blueprint → planner (Claude Opus 5.5, structured output) → reply + chips + next version; estimate from the cost table
@@ -325,6 +327,24 @@ interface Blueprint {
 - `[x]` **Decided (Alex, 2026-10-16):** default terrain is a **voxel grid** ("perfect grids have a nice feel", Minecraft-like), generated deterministically from blueprint parameters: free, offline-capable. AI terrain = **Meshy terrain pieces** (island, mesa, cliff, cave mouth) placed on the grid
 - `[-]` ~~Evaluate approach: AI-based vs procedural~~ decided above
 - `[ ]` Implement the voxel generator (see World Planner tasks) and terrain-piece placement
+
+**Smooth voxels (proposal, Alex asked 2026-10-16: "have these voxel grids, but then smooth them?").** Yes, and it's a well-known technique. One grid, two looks:
+
+- **Store density, not just solid/empty.** Each grid corner holds a number (negative inside, positive outside, like a signed distance). Blocky rendering only asks "is it inside?"; smooth rendering finds where the number crosses 0 between corners and puts the surface there.
+- **Meshers** (all turn the grid into triangles; run per 32³ chunk in a Web Worker, then hand a `BufferGeometry` to three.js):
+  - *Greedy meshing*: the crisp Minecraft look, merging flat faces into big quads.
+  - *Surface Nets*: one vertex per cell, placed at the average of the zero-crossings. Simple (~150 lines), smooth, few triangles. **Recommended for smooth.**
+  - *Marching Cubes*: the classic, a lookup table of 256 cases. three.js ships `MarchingCubes` in its addons, but it's built for metaballs in one fixed box, not chunked terrain.
+  - *Dual Contouring*: smooth hills **and** sharp cliff edges, but needs surface normals per crossing; harder. Later, if Surface Nets looks too melted.
+- **Per block type.** `surface: "blocks" | "smooth"` in the blueprint: hills and sand smooth, built stone crisp. The planner picks; players can flip it for free.
+- **Looks:** normals from the density gradient (soft lighting); **triplanar texturing** (project the texture from x, y and z and blend), since smooth meshes have no natural UVs.
+- **Physics stays on the grid, not the mesh.** The deterministic sim in `shared/sim` ([Phase 09](./09-authoritative-flight.md)) samples the density field (trilinear interpolation), which lands within a fraction of a cell of the smooth surface. The mesh stays purely visual, so client and server never disagree.
+- **Libraries:** writing Surface Nets ourselves is small and keeps it deterministic; `isosurface` (npm, Mikola Lysenko) has reference versions; `three-mesh-bvh` for fast raycasts against the meshes (placing objects, picking).
+- **To study:** Mikola Lysenko, *Smooth Voxel Terrain* (0fps.net, parts 1–2); Paul Bourke, *Polygonising a scalar field*; Boris the Brave, *Dual Contouring tutorial*; Eric Lengyel, *Transvoxel* (seams between levels of detail, much later).
+
+- `[ ]` Density-field grid (signed values per corner) instead of booleans
+- `[ ]` Greedy mesher (blocks) + Surface Nets mesher (smooth), per chunk, in a Web Worker
+- `[ ]` Triplanar material for smooth surfaces
 - `[ ]` Parameters: blocks, features, scale
 - `[ ]` Use cases: world landscape base, custom terrain pieces
 
@@ -411,3 +431,4 @@ interface Blueprint {
 |------|--------------|-----------|
 | 2026-10-16 | **World Planner & Blueprints designed** with Alex (during the Phase 05 session): plan first, then manifest; the planner (Claude Opus 5.5) writes a blueprint the player shapes **in a back-and-forth** (reply + chips + free direct edits), previewed as a Ghost (real voxel terrain + wireframe assets), manifested at the estimated price with per-item settle. **Creation Archive** (Alex): save every call and response, every blueprint version, in S3 for research (private archive + public content-addressed assets bucket; research ids, Privacy page first). Terrain decided: voxel grid default + Meshy terrain pieces. Providers filled in from [MANA_COSTS.md](../MANA_COSTS.md). Reusing other players' assets: later. | Open: do chat turns count against the personal cap; turn limit. Implementation waits on Phase 05 Flow & Admission + Interior Movement |
 | 2026-10-16 (later) | Alex's follow-ups: **every request that costs money counts** (chat turns included; no free first plan; no turn limit, the personal cap is the limit). **Planner voice** written (terse, one question at a time, use their words, follow their thread, never rush; example exchange). **Sessions attach to the player** through a separate `research_identity` table (never joined into research exports); traces replayable; deleting the account deletes the mapping. **Orchestration** options table (Temporal / Restate / DBOS / SQLite job table) + Zod as the TS Pydantic. **Standing rule** added to the README Session Protocol: Terms / Privacy / giving pages change with the decisions. Privacy (Oct 16): donation amounts and dates appear in the public ledger, never names. Giving page links the live pool and ledger. | Alex: pick orchestration (proposal: SQLite job table in workflow shape). Then Phase 05 Flow & Admission |
+| 2026-10-16 (evening) | Alex: **orchestration = SQLite job table** in workflow shape (natural path to a hosted DB later). **Smooth voxels** proposal written (density grid; greedy meshing for blocks, Surface Nets for smooth, per block type `surface`; triplanar texturing; physics samples the density field, not the mesh, so Phase 09 determinism holds; study list). Phase 05 admission (`requestDraw`) now exists for every paid call. | Interior Movement first; then `shared/blueprint.ts` (Zod) + voxel generator |

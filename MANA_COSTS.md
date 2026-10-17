@@ -66,4 +66,4 @@ Caps are per rolling 24 h (the per-minute window in the formula is just how the 
 | After warp, per level | **+25 per level, up to 1,000** | Levels come from channeled mana + breadth |
 | `p_solo` | **400** | A lone player can always make one whole new world per day |
 
-Solar ±10% applies on top. *Proposal, pending Alex (2026-10-14).*
+Solar ±10% applies on top. **Approved by Alex 2026-10-16** ("perfect"); implemented as `MANA_CAPS` / `baseCap()` in `shared/crdt-schema.ts`.

@@ -305,14 +305,42 @@ export class ManaLedger {
   // ── Creations: reserve → settle / release ────────────────────────
 
   /** Hold an estimate against the creative share before generating. */
-  reserve(ref: string, estimateMana: number, playerId: string | null): ReserveResult {
+  reserve(ref: string, estimateMana: number, playerId: string | null, at?: number): ReserveResult {
     if (!(estimateMana > 0) || !Number.isFinite(estimateMana)) return { ok: false, reason: "bad_amount" };
     if (this.open.has(ref)) return { ok: false, reason: "duplicate" };
     const mm = toMm(estimateMana);
     if (mm > this.t.creative - this.t.reserved) return { ok: false, reason: "insufficient_creative" };
-    const e = this.append({ kind: "reserve", amountMm: mm, creativeMm: 0, playerId, ref });
+    const e = this.append({ kind: "reserve", amountMm: mm, creativeMm: 0, playerId, ref, at });
     if (!e) return { ok: false, reason: "duplicate" };
     return { ok: true, ref, estimate: toMana(mm) };
+  }
+
+  /**
+   * Creation spend of everything reserved since `since`: what it actually
+   * cost if settled, the estimate if still in flight, nothing if released.
+   * Feeds the rolling-24 h personal caps and global flow.
+   */
+  creationSpendSince(since: number): { total: number; byPlayer: Map<string, number> } {
+    const rows = this.db
+      .prepare(
+        `SELECT r.player_id AS player_id,
+                SUM(CASE WHEN s.id IS NOT NULL THEN s.amount_mm
+                         WHEN x.id IS NOT NULL THEN 0
+                         ELSE r.amount_mm END) AS mm
+           FROM mana_ledger r
+           LEFT JOIN mana_ledger s ON s.kind = 'settle'  AND s.ref = r.ref
+           LEFT JOIN mana_ledger x ON x.kind = 'release' AND x.ref = r.ref
+          WHERE r.kind = 'reserve' AND r.at >= ?
+          GROUP BY r.player_id`,
+      )
+      .all(since) as { player_id: string | null; mm: number }[];
+    let total = 0;
+    const byPlayer = new Map<string, number>();
+    for (const r of rows) {
+      total += r.mm;
+      if (r.player_id) byPlayer.set(r.player_id, toMana(r.mm));
+    }
+    return { total: toMana(total), byPlayer };
   }
 
   /**

@@ -157,6 +157,47 @@ export function frontierRadiusFor(highWater: number): number {
   return highWater > 0 ? MANA_PARAMS.c * Math.cbrt(highWater) : 0;
 }
 
+/**
+ * Personal caps, mana per rolling 24 h (approved by Alex 2026-10-16; see
+ * MANA_COSTS.md). Solar ±10% applies on top.
+ */
+export const MANA_CAPS = {
+  /** Rolling window for personal caps and the global flow, ms. */
+  windowMs: 24 * 60 * 60 * 1000,
+  /** Players active within this long share the global flow. */
+  activeMs: 30 * 60 * 1000,
+  /** Chapters 1–4 (move … build): nothing generative yet. */
+  beforeMaker: 0,
+  /** Chapter 5 (Maker tutorials). */
+  maker: 150,
+  /** Chapters 6–7 and the start of post-warp play. */
+  explorer: 250,
+  /** Added per level after warp… */
+  perLevel: 25,
+  /** …up to this. */
+  max: 1000,
+  /** The global flow never drops below this: a lone player can always make a whole world. */
+  pSolo: 400,
+} as const;
+
+/** Where a player is on the ladder (chapters 1–7; warp unlocks at the end of 7). */
+export interface PlayerProgress {
+  chapter: number;
+  warpUnlocked: boolean;
+  /** Levels earned since warp unlocked. */
+  levelsSinceWarp: number;
+}
+
+/** `base(level)`: a player's personal cap per 24 h, before solar. */
+export function baseCap(p: PlayerProgress): number {
+  if (p.warpUnlocked) {
+    return Math.min(MANA_CAPS.max, MANA_CAPS.explorer + MANA_CAPS.perLevel * Math.max(0, Math.floor(p.levelsSinceWarp)));
+  }
+  if (p.chapter >= 6) return MANA_CAPS.explorer;
+  if (p.chapter === 5) return MANA_CAPS.maker;
+  return MANA_CAPS.beforeMaker;
+}
+
 // ── World CRDT (Layer 2) ─────────────────────────────────────────────
 
 /**
