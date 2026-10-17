@@ -938,11 +938,12 @@ html.touch-ui .hud-mod-slots {
   display: block;
 }
 
-.touch-overlay--in-world .touch-actions,
+/* Inside a world: walking controls stay (stick turns/looks, right thumb walks,
+   JUMP + SPRINT); flight-only controls go. */
+.touch-overlay--in-world .touch-btn--lock,
+.touch-overlay--in-world .touch-btn--enter,
 .touch-overlay--in-world .touch-mode-toggle,
-.touch-overlay--in-world .touch-hint,
-.touch-overlay--in-world .touch-joystick-base,
-.touch-overlay--in-world .touch-thrust-ring {
+.touch-overlay--in-world .touch-hint {
   display: none;
 }
 

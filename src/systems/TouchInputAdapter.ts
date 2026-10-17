@@ -97,6 +97,7 @@ export class TouchInputAdapter {
   private _rafId: number | null = null
   private _lastTick = 0
   private _lastUiPoll = 0
+  private _inWorld = false
   private _releaseTimers = new Map<keyof ActionState, number>()
 
   private _overlay: HTMLDivElement | null = null
@@ -226,13 +227,17 @@ export class TouchInputAdapter {
     }
   }
 
-  /** Pull the thrust thumb back (down) to brake; push it back up to thrust. */
+  /**
+   * Pull the thrust thumb back (down) to brake; push it back up to thrust.
+   * Inside a world the pull walks backward instead (brake = jump there).
+   */
   private _updateThrustPull(y: number): void {
     const pull = y - this._thrustAnchorY
+    const pullAction = this._inWorld ? 'reverse' : 'brake'
     if (!this._thrustBraking && pull >= BRAKE_PULL_PX) {
       this._thrustBraking = true
       inputManager.setAction('thrust', false)
-      inputManager.setAction('brake', true)
+      inputManager.setAction(pullAction, true)
       this._thrustRing?.classList.add('touch-thrust-ring--braking')
     } else if (this._thrustBraking && pull < BRAKE_RELEASE_PX) {
       this._endThrustBrake()
@@ -246,6 +251,7 @@ export class TouchInputAdapter {
     if (!this._thrustBraking) return
     this._thrustBraking = false
     this._thrustRing?.classList.remove('touch-thrust-ring--braking')
+    inputManager.setAction('reverse', false)
     // Don't cancel a brake the BRAKE button is still holding
     const buttonHeld = this._overlay?.querySelector('#touch-btn-brake.touch-btn--pressed') !== null
     if (!buttonHeld) inputManager.setAction('brake', false)
@@ -315,11 +321,25 @@ export class TouchInputAdapter {
     this._rafId = requestAnimationFrame(this._tick)
   }
 
-  /** Hide flight controls inside worlds and behind modals. */
+  /** Inside worlds: relabel for walking (BRAKE→JUMP, WARP→SPRINT); hide behind modals. */
   private _syncVisibility(): void {
     if (!this._overlay) return
     const inWorld = useUniverseStore.getState().activeWorldId !== null
     const modalOpen = document.querySelector('dialog[open], .modal-backdrop') !== null
+    if (inWorld !== this._inWorld) {
+      this._inWorld = inWorld
+      const label = (id: string, text: string, aria: string) => {
+        const el = this._overlay?.querySelector<HTMLButtonElement>(`#${id}`)
+        if (el) { el.textContent = text; el.setAttribute('aria-label', aria) }
+      }
+      if (inWorld) {
+        label('touch-btn-brake', 'JUMP', 'Jump (hold in the air for jetpack)')
+        label('touch-btn-warp', 'SPRINT', 'Sprint (hold)')
+      } else {
+        label('touch-btn-brake', 'BRAKE', 'Brake (hold)')
+        label('touch-btn-warp', 'WARP', 'Warp (hold to charge, release to leap)')
+      }
+    }
     this._overlay.classList.toggle('touch-overlay--in-world', inWorld)
     this._overlay.classList.toggle('touch-overlay--hidden', modalOpen)
   }
