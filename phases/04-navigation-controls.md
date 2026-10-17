@@ -81,12 +81,12 @@ Implement the keyboard-first cockpit control scheme where **left hand navigates,
 
 ### Touch Input (Mobile)
 - `[x]` Create `src/systems/TouchInputAdapter.ts`
-- `[x]` Left thumb virtual joystick → Q/R/W/E (steering)
+- `[x]` Left thumb virtual joystick → yaw/pitch (analog since 2026-10-16)
 - `[x]` Right thumb zone hold → V (thrust)
-- `[x]` Two-finger tap → Space (brake)
-- `[x]` Tap on world → N (interact)
-- `[x]` Long-press on locked target → K (warp)
-- `[x]` Swipe gestures right side → U/I/O/P (mod slots)
+- `[~]` ~~Two-finger tap → Space (brake)~~ → replaced by a BRAKE button (2026-10-16; it blocked steer + thrust)
+- `[~]` Tap on world → N (interact): *never built*; ENTER button instead (2026-10-16)
+- `[~]` Long-press on locked target → K (warp): *never built*; LOCK + hold-WARP buttons instead (2026-10-16)
+- `[ ]` Swipe gestures right side → U/I/O/P (mod slots): *never built*
 
 ### Gamepad Support
 - `[x]` Create `src/systems/GamepadInputAdapter.ts`
@@ -111,6 +111,30 @@ Implement the keyboard-first cockpit control scheme where **left hand navigates,
 - `[x]` Cross-browser player presence via sync-service WebSocket relay (msg `0x09`)
 - `[x]` CRDT dev panel shown in production as a temporary world list (until the World Index, Phase 08)
 - `[x]` Stripe donation flow switched back from sandbox to live
+
+### Mobile Play Optimization (side item, opened 2026-10-16; not the priority)
+
+First real on-device playtest (Alex, 2026-10-16). It felt "reeeeally clunky". What he reported, and what the code shows:
+
+| # | Symptom (Alex) | Root cause in `src/systems/TouchInputAdapter.ts` |
+|---|----------------|--------------------------------------------------|
+| 1 | Tapping almost never works | A window-level `touchstart` listener (`passive: false`) calls `preventDefault()` on every touch in the left 40% and right 40% of the screen. That cancels the browser's synthesized `click`, so buttons in those zones (incl. the DRIVE/NEUTRAL toggle at top-left, HUD chips) never fire. It doesn't check whether the touch started on UI. |
+| 2 | Only one finger at a time, so you can't steer and thrust together | When a 2nd finger lands, `e.touches.length >= 2` sets **brake** and `continue`s, so the thrust finger is never registered. "Two-finger tap = brake" collides with "left steers + right thrusts". |
+| 3 | No way to toggle Drive/Neutral (no G key, tap broken) | Follows from #1: the toggle button sits inside the left zone. |
+| 4 | Left stick too small and jittery; small moves don't turn the camera slowly | 60 px max travel and 80 px base, and the stick is **digital**: it sets `yawLeft/Right`, `pitchUp/Down` booleans past a 15% deadzone, so any deflection = full turn rate. `FlightController` only reads booleans (`actions.yawLeft` → `+= turnRate`). There's no analog axis in `InputManager` (the gamepad adapter's "analog" sticks have the same limit). |
+
+Also: the Touch Input checklist above marks tap-on-world → N, long-press → K and swipe → U/I/O/P as done, but none of them exist in the adapter. Treat them as **not built**.
+
+**Plan** (each step testable on a phone over the LAN dev server):
+- `[x]` **M1. Stop eating taps.** Pointer Events; only touches whose target is inside `.canvas-container` drive flight, and the adapter never calls `preventDefault` on them (`touch-action: none` on the canvas already blocks scroll/zoom). Buttons and HUD chips get their own touches.
+- `[x]` **M2. True multi-touch.** Each finger tracked by `pointerId`: stick, thrust and any button at once. "Two-finger = brake" dropped; BRAKE is a hold button.
+- `[x]` **M3. Analog steering.** `InputManager.setAxis/getAxis` (`yaw`, `pitch`, per source `touch`/`gamepad`, cleared with the action state) + exported `shapeAxis(value, deadzone, exponent)`. `FlightController` turn rate = (keys ±1 + axis), clamped. Gamepad left stick now feeds it too. Thrust stays digital (hold).
+- `[x]` **M4. Bigger, steadier stick.** Radius = 16% of the short screen side (56–80 px, so 112–160 px across), deadzone 10%, curve exponent 1.8, floating origin that follows the thumb past the rim, exponential smoothing (τ 50 ms) in a rAF loop, no CSS transition. Released = instant stop, like a key.
+- `[x]` **M5. On-screen action buttons.** Right-thumb cluster: DRIVE/NEUTRAL pill on top, then ENTER (N), LOCK (J), WARP (hold K), BRAKE (hold Space). EXIT (Escape) appears inside worlds; the flight controls hide there and behind modals. Taps hold the action ≥ 90 ms so edge-triggered actions never miss a frame. World Index uses its existing HUD chip (now tappable).
+- `[x]` **M6. Phone basics.** `html.touch-ui`: no overscroll, text selection (except inputs), long-press callout, tap flash or double-tap zoom; iOS `gesturestart` blocked; safe-area insets on the overlay. Keyboard map, HUD G-label and key-letter mod slots hidden on touch. Activation is now `(pointer: coarse)`, so touchscreen laptops keep the desktop UI.
+- `[ ]` **M7. On-device sign-off** (iOS Safari + Android Chrome). Clears the deferred "touch controls work on mobile" criterion below.
+
+**How it was tested (2026-10-16):** headless Chrome in phone emulation (844×390, `hasTouch`, `isMobile`) driven by Playwright, with simultaneous touch points sent over CDP `Input.dispatchTouchEvent` and the live `inputManager` / `flightController` singletons read via `import('/src/systems/…')` from the Vite dev server. Results: a small stick move gives yaw 0.036 (slow turn), a large one 0.83 / pitch 0.55; steer + thrust together gives 12 u/s; pressing DRIVE with both thumbs down flips to NEUTRAL without dropping either; BRAKE + thrust together both register; lifting all fingers zeroes everything; tapping the World Index chip in the left zone opens it (it was swallowed before). No page errors. Gotchas: the dev-only Multiplayer Dev panel covers the right half in dev builds (toggle with `` ` ``); CDP `touchEnd` lifts every finger. Script: `brain/11ca687c-…/scratch/touchtest/touch-test.mjs` (not in the repo).
 
 ## Acceptance Criteria
 
@@ -153,3 +177,6 @@ Implement the keyboard-first cockpit control scheme where **left hand navigates,
 | 2026-08-24 | Polish: CRDT dev panel in prod (temporary world list); Stripe back to live; radar rebuilt for 3D + real-time (camera-sync attempt reverted for perf); cross-browser presence via WebSocket relay; remote positions under gravity fixed; CI unused-var fixes. Deployed. | Phase 05 |
 | 2026-10-03 | Plan reconciliation: acceptance criteria checked per verified sessions; interior movement gap moved to Phase 07. | Touch/gamepad device verification still deferred |
 | 2026-10-10 | Landed Alex's unfinished slingshot work (approach drag, slingshot exit impulse + `SlingshotArc` visual, orb pulse, touch DRIVE/NEUTRAL toggle, fixed 60Hz physics substeps). Fixed the "can't escape the well" bug: the slingshot boost was multiplying the *inward* pull up to ~21×, and with `G=10` near-body gravity (~62 u/s² at the Portal) beat max thrust (10 u/s²). Gravity is now capped at `MAX_GRAVITY_ACCEL = 8` (below thrust), per body and in total. Added `scripts/sim/gravity-escape.ts` (headless escape + flyby checks; all pass). | Playtest slingshot feel in NEUTRAL; tune `SLINGSHOT_IMPULSE_MULTIPLIER` / `G`; wire `slingshotEvent` to mana (Phase 05) |
+| 2026-10-16 | Alex's first on-device touch playtest: taps rarely work, one finger only (can't steer + thrust), no way to toggle Drive/Neutral, left stick small and jittery. Diagnosed in `TouchInputAdapter.ts` (window-level `preventDefault` eats clicks; 2nd finger becomes brake; digital stick with no analog path). Found tap/long-press/swipe gestures marked done but never built. Wrote the **Mobile Play Optimization** plan (M1–M7). No code yet. | Side item, not the priority: start at M1 when Alex picks it up |
+| 2026-10-16 | **Built M1–M6** (same evening, Alex: "please implement"). `TouchInputAdapter.ts` rewritten on Pointer Events (canvas-only claiming, per-finger tracking, floating analog stick with smoothing, thrust ring, button cluster, world EXIT, hide behind modals). `InputManager` analog axes + `shapeAxis`; `FlightController` scales turn rate; gamepad stick analog too. `index.css` touch overlay + phone basics. Verified with Playwright multi-touch emulation (numbers in the plan above). `tsc -b` + oxlint clean. | **M7:** Alex plays on his phone (LAN dev server `http://<mac-ip>:5174` or after deploy). Tune stick radius / curve / smoothing by feel. Portrait layout not yet checked. |
+| 2026-10-16 | Alex tried it on his phone over LAN: "holy cow! That was so cool!" Asked for full screen. Added a **fullscreen button** (top-right, under FPS): Fullscreen API + landscape lock where supported (Android Chrome, iPad). **iPhone Safari has no page fullscreen**, so there the button explains *Share → Add to Home Screen*; launching from the home screen opens with no browser UI (`apple-mobile-web-app-capable`, status bar `black-translucent`, manifest `display: fullscreen` + `display_override`). Button hidden when already installed. `viewport-fit=cover` so the game fills notched screens; `.hud-overlay` now insets by `env(safe-area-inset-*)`. Tested: tap enters fullscreen, label flips to "Exit full screen"; earlier multi-touch checks unchanged. | Alex: try the fullscreen button / Add to Home Screen on his phone; check notch + portrait |

@@ -5,8 +5,8 @@
  * Auto-detects gamepad connection and polls at 60Hz.
  *
  * Mapping per ROADMAP:
- *  - Left Stick X → Q/R (yaw)
- *  - Left Stick Y → W/E (pitch)
+ *  - Left Stick X → yaw (analog, response curve)
+ *  - Left Stick Y → pitch (analog, response curve)
  *  - RT → V (thrust, analog pressure)
  *  - LT → Space (brake, analog)
  *  - LB/RB → A/F (roll)
@@ -16,7 +16,7 @@
  *  - D-pad → U/I/O/P (mod slots)
  */
 
-import { inputManager } from './InputManager'
+import { inputManager, shapeAxis } from './InputManager'
 
 // ── Standard Gamepad Button Indices ──────────────────────────────────
 
@@ -146,16 +146,9 @@ class GamepadInputAdapter {
     }
 
     // ── Sticks ──
-    const lx = this._applyDeadzone(gp.axes[0] ?? 0, STICK_DEADZONE)
-    const ly = this._applyDeadzone(gp.axes[1] ?? 0, STICK_DEADZONE)
-
-    // Left stick X → yaw (Q/R)
-    inputManager.setAction('yawLeft', lx < -STICK_DEADZONE)
-    inputManager.setAction('yawRight', lx > STICK_DEADZONE)
-
-    // Left stick Y → pitch (W/E)
-    inputManager.setAction('pitchUp', ly < -STICK_DEADZONE)
-    inputManager.setAction('pitchDown', ly > STICK_DEADZONE)
+    // Left stick → analog yaw / pitch (stick up = nose up)
+    inputManager.setAxis('yaw', shapeAxis(gp.axes[0] ?? 0, STICK_DEADZONE), 'gamepad')
+    inputManager.setAxis('pitch', -shapeAxis(gp.axes[1] ?? 0, STICK_DEADZONE), 'gamepad')
 
     // ── Triggers ──
     const rt = gp.buttons[BUTTON.RT]?.value ?? 0
@@ -185,12 +178,6 @@ class GamepadInputAdapter {
 
     // ── System ──
     inputManager.setAction('escape', gp.buttons[BUTTON.BACK]?.pressed ?? false)
-  }
-
-  private _applyDeadzone(value: number, deadzone: number): number {
-    if (Math.abs(value) < deadzone) return 0
-    const sign = value > 0 ? 1 : -1
-    return sign * (Math.abs(value) - deadzone) / (1 - deadzone)
   }
 }
 

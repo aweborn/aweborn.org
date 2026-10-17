@@ -74,6 +74,26 @@ export interface ActionEvents {
   justReleased: Set<keyof ActionState>
 }
 
+/**
+ * Analog steering axes, each in -1..1. Fed by sticks (touch, gamepad);
+ * the keyboard stays digital. yaw: + = turn right. pitch: + = nose up.
+ */
+export type AxisName = 'yaw' | 'pitch'
+/** Each analog source writes its own slot, so an idle gamepad can't zero a touch stick. */
+export type AxisSource = 'touch' | 'gamepad'
+
+/**
+ * Deadzone + response curve for a raw stick value in -1..1.
+ * Rescales past the deadzone, then raises to `exponent` so small
+ * deflections turn slowly and full deflection still reaches full rate.
+ */
+export function shapeAxis(value: number, deadzone: number, exponent = 2): number {
+  const mag = Math.abs(value)
+  if (mag <= deadzone) return 0
+  const t = Math.min(1, (mag - deadzone) / (1 - deadzone))
+  return Math.sign(value) * Math.pow(t, exponent)
+}
+
 // ── Key → Action Mapping ─────────────────────────────────────────────
 
 /**
@@ -178,6 +198,29 @@ class InputManager {
   private _initialized = false
   private _justPressed = new Set<keyof ActionState>()
   private _justReleased = new Set<keyof ActionState>()
+  private _axes: Record<AxisSource, Record<AxisName, number>> = {
+    touch: { yaw: 0, pitch: 0 },
+    gamepad: { yaw: 0, pitch: 0 },
+  }
+
+  /** Combined analog value for an axis across all sources, clamped to -1..1. */
+  getAxis(axis: AxisName): number {
+    const v = this._axes.touch[axis] + this._axes.gamepad[axis]
+    return Math.max(-1, Math.min(1, v))
+  }
+
+  /** Set an analog axis from an adapter. Ignored while input is disabled. */
+  setAxis(axis: AxisName, value: number, source: AxisSource): void {
+    if (!this._enabled) return
+    this._axes[source][axis] = Math.max(-1, Math.min(1, value))
+  }
+
+  private _clearAxes(): void {
+    for (const src of Object.values(this._axes)) {
+      src.yaw = 0
+      src.pitch = 0
+    }
+  }
 
   /** Bind keyboard listeners. Call once on app mount. */
   init(): void {
@@ -234,6 +277,7 @@ class InputManager {
     this._context = ctx
     // Reset all held keys on context switch to prevent sticky inputs
     this._state = createEmptyState()
+    this._clearAxes()
   }
 
   getContext(): InputContext {
@@ -245,6 +289,7 @@ class InputManager {
     this._enabled = enabled
     if (!enabled) {
       this._state = createEmptyState()
+      this._clearAxes()
     }
   }
 
@@ -264,6 +309,7 @@ class InputManager {
   /** Clear all action states — used by adapters on disconnect/cleanup. */
   clearAllActions(): void {
     this._state = createEmptyState()
+    this._clearAxes()
   }
 
   // ── Private handlers ──
@@ -294,6 +340,7 @@ class InputManager {
   private _onBlur = (): void => {
     // Release all keys when window loses focus
     this._state = createEmptyState()
+    this._clearAxes()
   }
 
   /** Check if the event target is an input field. */

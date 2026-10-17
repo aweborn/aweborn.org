@@ -146,13 +146,14 @@ class FlightController {
 
     const actions = inputManager.getActions()
 
-    // Detect if the player is actively pressing any control key
+    // Detect if the player is actively pressing any control key (or holding a stick)
     this._isActivelyControlling =
       actions.thrust || actions.brake || actions.reverse || actions.strafe ||
       actions.moveUp || actions.moveDown ||
       actions.pitchUp || actions.pitchDown ||
       actions.yawLeft || actions.yawRight ||
-      actions.rollLeft || actions.rollRight
+      actions.rollLeft || actions.rollRight ||
+      inputManager.getAxis('yaw') !== 0 || inputManager.getAxis('pitch') !== 0
 
     // ── Compute local axes from quaternion ──
     this._forward.set(0, 0, -1).applyQuaternion(this.quaternion)
@@ -244,15 +245,21 @@ class FlightController {
     const turnRate = TURN_RATE * dampenMultiplier
     const rollRate = ROLL_RATE * dampenMultiplier
 
-    // Build target angular velocity from input
-    let targetPitch = 0
-    let targetYaw = 0
+    // Build target angular velocity from input.
+    // Keys count as full deflection (±1); analog sticks add a partial
+    // deflection so small moves turn slowly. Sum is clamped to ±1.
+    const clamp1 = (v: number) => Math.max(-1, Math.min(1, v))
+    const pitchIn = clamp1(
+      (actions.pitchUp ? 1 : 0) - (actions.pitchDown ? 1 : 0) + inputManager.getAxis('pitch'),
+    )
+    const yawIn = clamp1(
+      (actions.yawRight ? 1 : 0) - (actions.yawLeft ? 1 : 0) + inputManager.getAxis('yaw'),
+    )
+
+    const targetPitch = pitchIn * turnRate
+    const targetYaw = -yawIn * turnRate
     let targetRoll = 0
 
-    if (actions.pitchUp) targetPitch += turnRate
-    if (actions.pitchDown) targetPitch -= turnRate
-    if (actions.yawLeft) targetYaw += turnRate
-    if (actions.yawRight) targetYaw -= turnRate
     if (actions.rollLeft) targetRoll += rollRate
     if (actions.rollRight) targetRoll -= rollRate
 

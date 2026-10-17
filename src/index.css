@@ -194,7 +194,9 @@ html, body, #root {
 /* --- HUD Overlay --- */
 .hud-overlay {
   position: fixed;
-  inset: 0;
+  /* Stay clear of notches / home indicator (viewport-fit=cover); 0 elsewhere */
+  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   z-index: 10;
   pointer-events: none;
   padding: var(--space-lg);
@@ -684,74 +686,330 @@ html, body, #root {
   50% { opacity: 1; }
 }
 
-/* ── Touch Joystick Overlay ── */
+/* ── Touch controls (phones) — see TouchInputAdapter.ts ── */
+
+/* Phone basics: no rubber-band scroll, text selection, long-press
+   callouts, tap flashes or double-tap zoom on the game surface. */
+html.touch-ui,
+html.touch-ui body {
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+html.touch-ui input,
+html.touch-ui textarea,
+html.touch-ui [contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The keyboard map (and key-letter HUD hints) mean nothing on a phone;
+   the DRIVE/NEUTRAL label is replaced by the tappable touch toggle. */
+html.touch-ui .hud-keyboard,
+html.touch-ui .hud-gravity-mode,
+html.touch-ui .hud-mod-slots {
+  display: none;
+}
 
 .touch-overlay {
+  --touch-safe-top: env(safe-area-inset-top, 0px);
+  --touch-safe-right: env(safe-area-inset-right, 0px);
+  --touch-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --touch-safe-left: env(safe-area-inset-left, 0px);
+  --touch-accent: rgba(140, 200, 255, 0.9);
+  --touch-gold: rgba(232, 185, 74, 0.95);
   position: fixed;
   inset: 0;
   z-index: 20;
   pointer-events: none;
+  font-family: var(--font-mono);
+  transition: opacity 0.2s ease;
 }
 
+.touch-overlay--hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Idle hints */
+.touch-hint {
+  position: fixed;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.touch-hint--steer {
+  left: calc(var(--touch-safe-left) + 12%);
+  bottom: calc(var(--touch-safe-bottom) + 24%);
+  padding: 34px 26px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+}
+
+.touch-hint--thrust {
+  right: calc(var(--touch-safe-right) + 190px);
+  bottom: calc(var(--touch-safe-bottom) + 34%);
+}
+
+.touch-overlay--steering .touch-hint--steer,
+.touch-overlay--thrusting .touch-hint--thrust {
+  opacity: 0;
+}
+
+/* Floating analog stick — positioned by transform from JS, no CSS
+   transition (a transition lags behind the thumb and reads as jitter). */
 .touch-joystick-base {
   position: fixed;
-  width: 80px;
-  height: 80px;
+  top: 0;
+  left: 0;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: radial-gradient(circle, rgba(140, 200, 255, 0.07), rgba(140, 200, 255, 0.02) 70%);
+  border: 1.5px solid rgba(140, 200, 255, 0.22);
+  box-shadow: 0 0 24px rgba(140, 200, 255, 0.08), inset 0 0 18px rgba(140, 200, 255, 0.06);
   pointer-events: none;
-  z-index: 21;
+  opacity: 0;
+  will-change: transform;
+}
+
+.touch-joystick-base--active {
+  opacity: 1;
 }
 
 .touch-joystick-knob {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  margin-top: -15px;
-  margin-left: -15px;
-  width: 30px;
-  height: 30px;
+  top: calc(50% - 26px);
+  left: calc(50% - 26px);
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
-  transition: transform 0.05s linear;
+  background: radial-gradient(circle at 35% 35%, rgba(200, 230, 255, 0.45), rgba(140, 200, 255, 0.18));
+  border: 1px solid rgba(200, 230, 255, 0.45);
+  box-shadow: 0 0 16px rgba(140, 200, 255, 0.35);
+  will-change: transform;
 }
 
-/* Mode toggle button (touch overlay) */
-.touch-mode-toggle {
+/* Thrust ring under the right thumb */
+.touch-thrust-ring {
   position: fixed;
-  top: 16px;
-  left: 16px;
-  z-index: 25;
+  top: -40px;
+  left: -40px;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 170, 90, 0.5);
+  box-shadow: 0 0 22px rgba(255, 150, 70, 0.35), inset 0 0 14px rgba(255, 150, 70, 0.2);
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform;
+}
+
+.touch-thrust-ring--active {
+  opacity: 1;
+  animation: touch-thrust-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes touch-thrust-pulse {
+  0%, 100% { border-color: rgba(255, 170, 90, 0.45); }
+  50% { border-color: rgba(255, 200, 120, 0.85); }
+}
+
+/* Action buttons — 2×2 cluster in the right-thumb corner */
+.touch-actions {
+  position: fixed;
+  right: calc(var(--touch-safe-right) + 14px);
+  bottom: calc(var(--touch-safe-bottom) + 18px);
+  display: grid;
+  grid-template-columns: repeat(2, 64px);
+  grid-template-areas:
+    'mode  mode'
+    'enter lock'
+    'warp  brake';
+  gap: 12px;
+  pointer-events: none;
+}
+
+.touch-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  background: rgba(18, 20, 42, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--touch-accent);
+  font-family: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   pointer-events: auto;
-  padding: 8px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  touch-action: none;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.touch-btn--pressed {
+  transform: scale(0.92);
+  background: rgba(60, 70, 130, 0.7);
+  border-color: rgba(200, 230, 255, 0.6);
+  box-shadow: 0 0 18px rgba(140, 200, 255, 0.45);
+}
+
+.touch-btn--enter { grid-area: enter; }
+.touch-btn--lock { grid-area: lock; }
+.touch-btn--warp { grid-area: warp; color: rgba(190, 160, 255, 0.95); }
+.touch-btn--brake { grid-area: brake; color: rgba(255, 140, 140, 0.95); }
+
+.touch-btn--warp.touch-btn--pressed {
+  box-shadow: 0 0 22px rgba(170, 130, 255, 0.6);
+  border-color: rgba(190, 160, 255, 0.8);
+}
+
+.touch-btn--brake.touch-btn--pressed {
+  box-shadow: 0 0 22px rgba(255, 110, 110, 0.5);
+  border-color: rgba(255, 150, 150, 0.8);
+}
+
+/* DRIVE / NEUTRAL — top of the right-thumb cluster */
+.touch-mode-toggle {
+  grid-area: mode;
+  min-height: 44px;
+  pointer-events: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
   background: rgba(20, 20, 40, 0.6);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  color: rgba(140, 200, 255, 0.9);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
+  color: var(--touch-accent);
+  font-family: inherit;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.2s ease;
-  touch-action: manipulation;
+  touch-action: none;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.touch-mode-toggle:active {
+.touch-mode-toggle.touch-btn--pressed {
+  background: rgba(40, 40, 80, 0.75);
   transform: scale(0.95);
-  background: rgba(40, 40, 80, 0.7);
 }
 
 .touch-mode-toggle--neutral {
-  color: rgba(232, 185, 74, 0.9);
-  border-color: rgba(232, 185, 74, 0.2);
-  box-shadow: 0 0 8px rgba(232, 185, 74, 0.1);
+  color: var(--touch-gold);
+  border-color: rgba(232, 185, 74, 0.3);
+  box-shadow: 0 0 10px rgba(232, 185, 74, 0.15);
+}
+
+/* Exit — only inside a world */
+.touch-btn--exit {
+  position: fixed;
+  top: calc(var(--touch-safe-top) + 64px);
+  left: 50%;
+  width: auto;
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  display: none;
+}
+
+.touch-btn--exit.touch-btn--pressed {
+  transform: translateX(-50%) scale(0.94);
+}
+
+.touch-overlay--in-world .touch-btn--exit {
+  display: block;
+}
+
+.touch-overlay--in-world .touch-actions,
+.touch-overlay--in-world .touch-mode-toggle,
+.touch-overlay--in-world .touch-hint,
+.touch-overlay--in-world .touch-joystick-base,
+.touch-overlay--in-world .touch-thrust-ring {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .touch-thrust-ring--active {
+    animation: none;
+  }
+}
+
+/* Fullscreen toggle — top-right, under the FPS readout */
+.touch-fullscreen {
+  position: fixed;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  top: calc(var(--touch-safe-top) + 84px);
+  right: calc(var(--touch-safe-right) + 22px);
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(20, 20, 40, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--touch-accent);
+  font-size: 1.15rem;
+  line-height: 1;
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+
+.touch-fullscreen:active {
+  transform: scale(0.92);
+  background: rgba(40, 40, 80, 0.7);
+}
+
+.touch-fullscreen--on {
+  opacity: 0.55;
+}
+
+.touch-overlay--in-world .touch-fullscreen {
+  top: calc(var(--touch-safe-top) + 64px);
+}
+
+.touch-toast {
+  position: fixed;
+  top: calc(var(--touch-safe-top) + 84px);
+  left: 50%;
+  max-width: min(420px, 80vw);
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 200, 255, 0.25);
+  background: rgba(14, 16, 36, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: rgba(225, 235, 255, 0.95);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  text-align: center;
+  letter-spacing: normal;
+  transform: translate(-50%, -8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.touch-toast--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 /* --- Donation Modal --- */
