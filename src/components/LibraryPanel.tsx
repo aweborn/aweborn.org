@@ -16,6 +16,8 @@ interface Asset {
   kind: string
   prompt: string
   bytes: number
+  thumb?: number
+  creator?: string | null
   created_at: number
 }
 
@@ -122,9 +124,14 @@ export function LibraryPanel() {
       <ul className="library-list">
         {assets.map((a) => (
           <li key={a.sha} className="library-item">
+            {a.thumb ? (
+              <img className="library-thumb" src={`${AUTH_URL}/assets/${a.sha}.png`} alt="" loading="lazy" width={64} height={64} />
+            ) : (
+              <span className="library-thumb library-thumb--none" aria-hidden="true">▦</span>
+            )}
             <p className="library-prompt">{a.prompt}</p>
             <span className="library-meta">
-              {(a.bytes / 1_048_576).toFixed(1)} MB · {new Date(a.created_at).toLocaleDateString()}
+              {a.creator ? `by maker ${a.creator} · ` : ''}{(a.bytes / 1_048_576).toFixed(1)} MB · {new Date(a.created_at).toLocaleDateString()}
             </span>
             <button type="button" className="planner-chip library-place" onClick={() => place(a)}>
               {placed === a.sha ? 'Placed ✓' : 'Place'}

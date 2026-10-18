@@ -88,7 +88,7 @@ export async function startJob(ref: string, playerId: string, prompt: string): P
   const res = await fetch(`${GENAI_URL}/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ref, kind: "model", prompt: prompt.slice(0, 600) }),
+    body: JSON.stringify({ ref, kind: "model", prompt: prompt.slice(0, 600), creator: playerId }),
   });
   const body = (await res.json()) as { jobId?: string };
   if (!res.ok || !body.jobId) throw new Error(`genai ${res.status}`);
@@ -120,7 +120,7 @@ export async function creationStatus(rooms: RoomManager, playerId: string, jobId
 
 /** Public, immutable asset proxy (content-addressed names only). */
 export function handleAssets(req: IncomingMessage, res: ServerResponse): boolean {
-  const m = /^\/assets\/([a-f0-9]{64}\.glb)$/.exec(req.url?.split("?")[0] ?? "");
+  const m = /^\/assets\/([a-f0-9]{64}\.(?:glb|png))$/.exec(req.url?.split("?")[0] ?? "");
   if (!m) return false;
   res.setHeader("Access-Control-Allow-Origin", "*");
   void fetch(`${GENAI_URL}/assets/${m[1]}`, { redirect: "manual" })
@@ -136,7 +136,7 @@ export function handleAssets(req: IncomingMessage, res: ServerResponse): boolean
         res.end();
         return;
       }
-      res.writeHead(200, { "Content-Type": "model/gltf-binary", "Cache-Control": "public, max-age=31536000, immutable" });
+      res.writeHead(200, { "Content-Type": m[1].endsWith(".png") ? "image/png" : "model/gltf-binary", "Cache-Control": "public, max-age=31536000, immutable" });
       Readable.fromWeb(up.body as import("node:stream/web").ReadableStream).pipe(res);
     })
     .catch(() => {

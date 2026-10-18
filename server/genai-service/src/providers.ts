@@ -56,6 +56,19 @@ async function storeGlb(url: string, assetDir: string): Promise<string> {
   return name;
 }
 
+/** Best-effort preview image, stored beside the model as <sha>.png (library thumbnail). */
+async function storeThumb(url: string | undefined, glbName: string, assetDir: string): Promise<void> {
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const path = join(assetDir, glbName.replace(/\.glb$/, ".png"));
+    if (!existsSync(path)) writeFileSync(path, Buffer.from(await res.arrayBuffer()));
+  } catch {
+    /* thumbnails are optional */
+  }
+}
+
 const meshy: Provider = {
   name: "meshy",
   async generate(job) {
@@ -83,7 +96,7 @@ const meshy: Provider = {
       const res = await fetch(`${MESHY_BASE}/${task}`, { headers });
       if (!res.ok) continue; // transient; keep polling until timeout
       const t = (await res.json()) as {
-        status: string; progress?: number; model_urls?: { glb?: string };
+        status: string; progress?: number; model_urls?: { glb?: string }; thumbnail_url?: string;
         task_error?: { message?: string };
       };
       // Preview is the first half of the bar, texturing the second
@@ -105,7 +118,9 @@ const meshy: Provider = {
       if (t.status === "SUCCEEDED") {
         job.archive({ call: "meshy.result", task, response: t });
         if (!t.model_urls?.glb) throw new Error("meshy returned no glb");
-        return { asset: await storeGlb(t.model_urls.glb, job.assetDir), costUsd: MESHY_PREVIEW_USD + MESHY_REFINE_USD };
+        const asset = await storeGlb(t.model_urls.glb, job.assetDir);
+        await storeThumb(t.thumbnail_url, asset, job.assetDir);
+        return { asset, costUsd: MESHY_PREVIEW_USD + MESHY_REFINE_USD };
       }
       if (t.status === "FAILED" || t.status === "CANCELED") {
         job.archive({ call: "meshy.result", task, response: t });

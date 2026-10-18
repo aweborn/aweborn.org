@@ -13,7 +13,7 @@
 import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 const BUCKET = process.env.ASSETS_BUCKET ?? "";
@@ -28,7 +28,7 @@ export const s3Enabled = () => !!s3;
 
 export interface LibraryAsset {
   sha: string; file: string; kind: string; prompt: string; provider: string;
-  bytes: number; s3: number; created_at: number;
+  bytes: number; s3: number; thumb: number; creator: string | null; created_at: number;
 }
 
 export function initLibrary(db: DatabaseSync): void {
@@ -42,6 +42,10 @@ export function initLibrary(db: DatabaseSync): void {
     bytes INTEGER NOT NULL,
     s3 INTEGER NOT NULL DEFAULT 0, -- uploaded to the bucket
     created_at INTEGER NOT NULL)`);
+  // Added after launch: preview image uploaded; pseudonymous creator (hash of the player id)
+  for (const col of ["thumb INTEGER NOT NULL DEFAULT 0", "creator TEXT"]) {
+    try { db.exec(`ALTER TABLE library ADD COLUMN ${col}`); } catch { /* already there */ }
+  }
 }
 
 async function exists(key: string): Promise<boolean> {
@@ -65,17 +69,33 @@ export async function uploadModel(path: string, file: string): Promise<boolean> 
   return true;
 }
 
+/** Upload <sha>.png beside the model if we have one. */
+export async function uploadThumb(db: DatabaseSync, assetDir: string, file: string): Promise<void> {
+  const png = file.replace(/\.glb$/, ".png");
+  const path = join(assetDir, png);
+  if (!s3 || !existsSync(path)) return;
+  if (!(await exists(`models/${png}`))) {
+    await s3.send(new PutObjectCommand({
+      Bucket: BUCKET, Key: `models/${png}`, Body: readFileSync(path),
+      ContentType: "image/png", CacheControl: "public, max-age=31536000, immutable",
+    }));
+  }
+  db.prepare("UPDATE library SET thumb = 1 WHERE file = ?").run(file);
+}
+
 /** Record a finished asset in the library and push it to S3. */
 export async function addToLibrary(
   db: DatabaseSync, assetDir: string,
-  a: { file: string; kind: string; prompt: string; provider: string; jobId: string; ref: string },
+  a: { file: string; kind: string; prompt: string; provider: string; jobId: string; ref: string; creator?: string | null },
 ): Promise<void> {
   const path = join(assetDir, a.file);
   const bytes = existsSync(path) ? readFileSync(path).length : 0;
-  db.prepare(`INSERT OR IGNORE INTO library (sha, file, kind, prompt, provider, job_id, ref, bytes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(a.file.replace(/\.\w+$/, ""), a.file, a.kind, a.prompt, a.provider, a.jobId, a.ref, bytes, Date.now());
+  const creator = a.creator ? createHash("sha256").update(a.creator).digest("hex").slice(0, 6) : null;
+  db.prepare(`INSERT OR IGNORE INTO library (sha, file, kind, prompt, provider, job_id, ref, bytes, creator, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(a.file.replace(/\.\w+$/, ""), a.file, a.kind, a.prompt, a.provider, a.jobId, a.ref, bytes, creator, Date.now());
   try {
     if (await uploadModel(path, a.file)) db.prepare("UPDATE library SET s3 = 1 WHERE file = ?").run(a.file);
+    await uploadThumb(db, assetDir, a.file);
   } catch (err) {
     console.error(`[library] upload ${a.file} failed (will retry on restart):`, (err as Error).message);
   }
@@ -104,6 +124,10 @@ export async function backfill(db: DatabaseSync, assetDir: string, dataDir: stri
       existsSync(join(assetDir, j.asset)) ? readFileSync(join(assetDir, j.asset)).length : 0, Date.now());
   }
   if (!s3) return;
+  const pendingThumbs = db.prepare("SELECT file FROM library WHERE thumb = 0").all() as { file: string }[];
+  for (const { file } of pendingThumbs) {
+    try { await uploadThumb(db, assetDir, file); } catch (err) { console.error(`[library] thumb ${file} failed:`, (err as Error).message); }
+  }
   const pending = db.prepare("SELECT file FROM library WHERE s3 = 0").all() as { file: string }[];
   for (const { file } of pending) {
     const path = join(assetDir, file);
@@ -126,7 +150,7 @@ export async function backfill(db: DatabaseSync, assetDir: string, dataDir: stri
 
 export function listLibrary(db: DatabaseSync, q: string, limit: number): LibraryAsset[] {
   const like = `%${q.replace(/[%_]/g, "")}%`;
-  return db.prepare(`SELECT sha, file, kind, prompt, provider, bytes, s3, created_at FROM library
+  return db.prepare(`SELECT sha, file, kind, prompt, provider, bytes, s3, thumb, creator, created_at FROM library
     WHERE prompt LIKE ? ORDER BY created_at DESC LIMIT ?`).all(like, limit) as unknown as LibraryAsset[];
 }
 

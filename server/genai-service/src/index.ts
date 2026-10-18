@@ -47,11 +47,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS jobs (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 )`);
+try { db.exec("ALTER TABLE jobs ADD COLUMN creator TEXT"); } catch { /* already there */ }
 
 interface JobRow {
   id: string; ref: string; kind: string; prompt: string; provider: string;
   provider_task: string | null; status: string; progress: number;
-  asset: string | null; cost_usd: number | null; error: string | null;
+  asset: string | null; cost_usd: number | null; error: string | null; creator: string | null;
 }
 
 function update(id: string, fields: Partial<JobRow>): void {
@@ -91,7 +92,7 @@ async function run(id: string): Promise<void> {
     update(id, { status: "processing" });
     const out = await provider.generate(job);
     update(id, { status: "complete", progress: 100, asset: out.asset, cost_usd: out.costUsd });
-    await addToLibrary(db, ASSET_DIR, { file: out.asset, kind: row.kind, prompt: row.prompt, provider: provider.name, jobId: id, ref: row.ref });
+    await addToLibrary(db, ASSET_DIR, { file: out.asset, kind: row.kind, prompt: row.prompt, provider: provider.name, jobId: id, ref: row.ref, creator: row.creator });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
     console.error(`[genai] job ${id} failed:`, msg);
@@ -137,7 +138,7 @@ app.post("/llm", async (req, res) => {
 });
 
 app.post("/jobs", (req, res) => {
-  const { ref, kind, prompt } = req.body ?? {};
+  const { ref, kind, prompt, creator } = req.body ?? {};
   if (typeof ref !== "string" || !ref || kind !== "model" || typeof prompt !== "string") {
     return res.status(400).json({ error: "bad_request" });
   }
@@ -148,8 +149,8 @@ app.post("/jobs", (req, res) => {
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    "INSERT INTO jobs (id, ref, kind, prompt, provider, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)",
-  ).run(id, ref, kind, clean, providerFor(kind).name, now, now);
+    "INSERT INTO jobs (id, ref, kind, prompt, provider, creator, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+  ).run(id, ref, kind, clean, providerFor(kind).name, typeof creator === "string" ? creator.slice(0, 80) : null, now, now);
   void run(id);
   res.json({ jobId: id });
 });
@@ -171,16 +172,19 @@ app.get("/library", (req, res) => {
 
 app.get("/assets/:file", (req, res) => {
   const file = req.params.file;
-  if (!/^[a-f0-9]{64}\.glb$/.test(file)) return res.status(404).end();
+  if (!/^[a-f0-9]{64}\.(glb|png)$/.test(file)) return res.status(404).end();
   // In the library bucket: send the client to the CDN (cached at the edge, survives the box)
-  const inS3 = CDN_URL && (db.prepare("SELECT s3 FROM library WHERE file = ?").get(file) as { s3: number } | undefined)?.s3;
+  const isPng = file.endsWith(".png");
+  const glb = file.replace(/\.png$/, ".glb");
+  const row2 = db.prepare("SELECT s3, thumb FROM library WHERE file = ?").get(glb) as { s3: number; thumb: number } | undefined;
+  const inS3 = CDN_URL && (isPng ? row2?.thumb : row2?.s3);
   if (inS3) {
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     return res.redirect(301, `${CDN_URL}/models/${file}`);
   }
   const path = join(ASSET_DIR, file);
   if (!existsSync(path)) return res.status(404).end();
-  res.setHeader("Content-Type", "model/gltf-binary");
+  res.setHeader("Content-Type", isPng ? "image/png" : "model/gltf-binary");
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   createReadStream(path).pipe(res);
 });
