@@ -28,7 +28,6 @@ const SAVE_MS = 1000
 const SERVER_MS = 2000
 const SERVER_WAIT_MS = 3000
 const WORLD_WAIT_MS = 15_000
-const MAX_AGE_MS = 30 * 24 * 3600 * 1000
 
 let owner: string | null = null
 let player: Player | null = null
@@ -78,7 +77,7 @@ async function read(): Promise<SavedLocation | null> {
 
 function validate(v: SavedLocation | null): SavedLocation | null {
   try {
-    if (!v || v.v !== 1 || Date.now() - v.at > MAX_AGE_MS) return null
+    if (!v || v.v !== 1) return null
     const finite = (xs: number[]) => xs.every((n) => Number.isFinite(n))
     if (!finite(v.flight.p) || !finite(v.flight.q)) return null
     if (v.world && !finite([v.world.x, v.world.y, v.world.z, v.world.fx, v.world.fz, v.world.pitch])) delete v.world
