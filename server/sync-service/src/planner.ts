@@ -28,7 +28,6 @@ export const PLAN_ESTIMATE_MANA = 10;
 export const PLANNER_MODELS = [
   "anthropic/claude-opus-5.5",
   "anthropic/claude-sonnet-5.5",
-  "deepseek/deepseek-v4-pro",
   "google/gemini-4-argon",
   "moonshotai/kimi-k3",
   "openai/gpt-5.6-terra",

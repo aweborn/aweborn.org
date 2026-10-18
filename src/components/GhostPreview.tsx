@@ -105,6 +105,16 @@ function GhostAsset({ asset, grid, color }: { asset: BlueprintAsset; grid: Voxel
   )
 }
 
+/** Daylight for voxel terrain (the world's own light is dim and tinted, blocks read black). */
+function TerrainLight() {
+  return (
+    <>
+      <hemisphereLight args={['#fff4e0', '#3a3550', 0.9]} />
+      <directionalLight position={[12, 20, 8]} intensity={0.8} color="#fff1d6" />
+    </>
+  )
+}
+
 /** Manifested terrain from the World CRDT: solid for everyone in the world. */
 export function WorldTerrain() {
   const terrain = useWorldStore((s) => s.voxelTerrain)
@@ -112,6 +122,7 @@ export function WorldTerrain() {
   if (!v) return null
   return (
     <group>
+      <TerrainLight />
       <VoxelLayer grid={v.grid} liquid={false} />
       <VoxelLayer grid={v.grid} liquid />
     </group>
@@ -129,6 +140,7 @@ export function GhostPreview() {
   const terrainIsReal = sameTerrain(worldTerrain, blueprint.terrain)
   return (
     <group>
+      {!terrainIsReal && <TerrainLight />}
       {!terrainIsReal && (
         <Rise version={blueprint.version}>
           <VoxelLayer grid={grid} liquid={false} />
