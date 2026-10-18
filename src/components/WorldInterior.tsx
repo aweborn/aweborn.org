@@ -1,5 +1,5 @@
 import { GhostPreview, WorldTerrain } from './GhostPreview'
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, Component, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useWorldStore } from '../stores/worldStore'
@@ -10,6 +10,20 @@ import { Suspense } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { AUTH_URL } from '../lib/player'
 import { registerModelShape } from '../stores/modelShapes'
+
+/** A model that fails to load must not take the whole scene down: show a wireframe stand-in instead. */
+class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  componentDidCatch(err: unknown) {
+    console.warn('[model] failed to load, showing a placeholder:', err)
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children
+  }
+}
 
 /** Generated GLB, fitted into a unit box centred on the object (matches its collider). */
 function GeneratedModel({ asset }: { asset: string }) {
@@ -100,9 +114,11 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
   if (obj.type === 'model' && obj.asset) {
     return (
       <group ref={groupRef as never} position={[obj.x, obj.y, obj.z]} scale={[obj.scaleX, obj.scaleY, obj.scaleZ]}>
-        <Suspense fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color={color} wireframe /></mesh>}>
-          <GeneratedModel asset={obj.asset} />
-        </Suspense>
+        <ModelBoundary fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color="#ff6a5a" wireframe /></mesh>}>
+          <Suspense fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color={color} wireframe /></mesh>}>
+            <GeneratedModel asset={obj.asset} />
+          </Suspense>
+        </ModelBoundary>
       </group>
     )
   }
