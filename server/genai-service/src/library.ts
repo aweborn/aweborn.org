@@ -11,7 +11,7 @@
  * Without ASSETS_BUCKET (local dev) everything stays on disk and still works.
  */
 import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { createReadStream, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -63,7 +63,7 @@ export async function uploadModel(path: string, file: string): Promise<boolean> 
   const key = `models/${file}`;
   if (await exists(key)) return true;
   await s3.send(new PutObjectCommand({
-    Bucket: BUCKET, Key: key, Body: readFileSync(path),
+    Bucket: BUCKET, Key: key, Body: createReadStream(path), ContentLength: statSync(path).size,
     ContentType: "model/gltf-binary", CacheControl: "public, max-age=31536000, immutable",
   }));
   return true;
@@ -76,7 +76,7 @@ export async function uploadThumb(db: DatabaseSync, assetDir: string, file: stri
   if (!s3 || !existsSync(path)) return;
   if (!(await exists(`models/${png}`))) {
     await s3.send(new PutObjectCommand({
-      Bucket: BUCKET, Key: `models/${png}`, Body: readFileSync(path),
+      Bucket: BUCKET, Key: `models/${png}`, Body: createReadStream(path), ContentLength: statSync(path).size,
       ContentType: "image/png", CacheControl: "public, max-age=31536000, immutable",
     }));
   }
@@ -89,7 +89,7 @@ export async function addToLibrary(
   a: { file: string; kind: string; prompt: string; provider: string; jobId: string; ref: string; creator?: string | null },
 ): Promise<void> {
   const path = join(assetDir, a.file);
-  const bytes = existsSync(path) ? readFileSync(path).length : 0;
+  const bytes = existsSync(path) ? statSync(path).size : 0;
   const creator = a.creator ? createHash("sha256").update(a.creator).digest("hex").slice(0, 6) : null;
   db.prepare(`INSERT OR IGNORE INTO library (sha, file, kind, prompt, provider, job_id, ref, bytes, creator, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(a.file.replace(/\.\w+$/, ""), a.file, a.kind, a.prompt, a.provider, a.jobId, a.ref, bytes, creator, Date.now());
@@ -121,7 +121,7 @@ export async function backfill(db: DatabaseSync, assetDir: string, dataDir: stri
   for (const j of jobs) {
     db.prepare(`INSERT OR IGNORE INTO library (sha, file, kind, prompt, provider, job_id, ref, bytes, created_at)
       VALUES (?, ?, 'model', ?, ?, ?, ?, ?, ?)`).run(j.asset.replace(/\.\w+$/, ""), j.asset, j.prompt, j.provider, j.id, j.ref,
-      existsSync(join(assetDir, j.asset)) ? readFileSync(join(assetDir, j.asset)).length : 0, Date.now());
+      existsSync(join(assetDir, j.asset)) ? statSync(join(assetDir, j.asset)).size : 0, Date.now());
   }
   if (!s3) return;
   const pendingThumbs = db.prepare("SELECT file FROM library WHERE thumb = 0").all() as { file: string }[];
@@ -141,9 +141,9 @@ export async function backfill(db: DatabaseSync, assetDir: string, dataDir: stri
   // Ship the local archive once (idempotent by name)
   const local = join(dataDir, "archive.jsonl");
   if (existsSync(local)) {
-    const body = readFileSync(local);
-    const key = `archive/legacy/archive-${body.length}.jsonl`;
-    if (!(await exists(key))) await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: "application/x-ndjson" }));
+    const size = statSync(local).size;
+    const key = `archive/legacy/archive-${size}.jsonl`;
+    if (!(await exists(key))) await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: createReadStream(local), ContentLength: size, ContentType: "application/x-ndjson" }));
   }
   if (pending.length) console.log(`[library] backfilled ${pending.length} files to s3`);
 }

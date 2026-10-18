@@ -175,7 +175,7 @@ function SkyDome({ worldColor }: { worldColor: string }) {
 
   return (
     <mesh ref={ref} scale={[-1, 1, 1]}>
-      <sphereGeometry args={[50, 32, 16]} />
+      <sphereGeometry args={[300, 32, 16]} />
       <shaderMaterial
         vertexShader={/* glsl */ `
           varying vec3 vWorldPosition;
@@ -215,6 +215,8 @@ export function WorldInterior() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
 
   const worldColor = meta?.color ?? '#6b3fa0'
+  // Fog matches the sky's horizon so distance fades into the sky, not to black (the camera can sit 20 m back and high up)
+  const fogColor = useMemo(() => new THREE.Color(worldColor).multiplyScalar(0.15), [worldColor])
   const objectList = useMemo(() => Array.from(objects.values()), [objects])
 
   if (!activeWorldId || !loaded) return null
@@ -253,7 +255,7 @@ export function WorldInterior() {
       />
 
       {/* Fog for depth */}
-      <fog attach="fog" args={['#050510', 15, 45]} />
+      <fog attach="fog" args={[fogColor, 90, 250]} />
     </group>
   )
 }
