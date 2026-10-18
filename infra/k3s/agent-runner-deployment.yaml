@@ -34,16 +34,16 @@ spec:
               value: "0.0.0.0"
             - name: DATA_DIR
               value: "/app/data"
-            - name: LLM_API_KEY
+            - name: OPENROUTER_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: aweborn-secrets
-                  key: LLM_API_KEY
+                  key: OPENROUTER_API_KEY
                   optional: true
             - name: LLM_MODEL
-              value: "gpt-4o-mini"
+              value: "anthropic/claude-haiku-5.5"
             - name: LLM_API_URL
-              value: "https://api.openai.com/v1/chat/completions"
+              value: "https://openrouter.ai/api/v1/chat/completions"
           volumeMounts:
             - name: agent-data
               mountPath: /app/data

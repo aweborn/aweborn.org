@@ -349,7 +349,7 @@ A server built from `infra/cloudformation-vps.yml` joins the Tailnet **by itself
 
 **Why persistent, not ephemeral:** an ephemeral node is deleted once it's been offline a while. After a long outage the server couldn't rejoin, because the secret is scrubbed from the box, and CI deploys + backups would be locked out. Persistent nodes also keep their name and Tailnet IP. Test nodes (`infra/test-tailscale-join.sh`) *are* ephemeral, so they clean themselves up.
 
-**Nothing on the disk is relied on** (by design, no disk snapshots). The world DB is copied off-box **hourly** (`backup.yml`, :37), so losing the box costs at most ~1h of world edits. Every key comes from `~/keys` (see CONFIG.md); `LLM_API_KEY` is not issued yet.
+**Nothing on the disk is relied on** (by design, no disk snapshots). The world DB is copied off-box **hourly** (`backup.yml`, :37), so losing the box costs at most ~1h of world edits. Every key comes from `~/keys` (see CONFIG.md); LLM calls go through `OPENROUTER_API_KEY`.
 
 ### If the VPS is unhealthy
 1. Lightsail console → `aweborn-vps` → **Reboot**; if that doesn't help, **Stop** then **Start** (moves it to new hardware; disk and static IP stay). Tailscale, k3s and the pods all come back by themselves.

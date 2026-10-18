@@ -26,12 +26,12 @@ interface ChatCompletionResponse {
 // ── Default configuration ────────────────────────────────────────────
 
 const DEFAULT_CONFIG: Required<EngineConfig> = {
-  model: process.env.LLM_MODEL ?? "gpt-4o-mini",
+  model: process.env.LLM_MODEL ?? "anthropic/claude-haiku-5.5",
   temperature: 0.7,
   max_tokens: 1024,
   api_url:
-    process.env.LLM_API_URL ?? "https://api.openai.com/v1/chat/completions",
-  api_key: process.env.LLM_API_KEY ?? "",
+    process.env.LLM_API_URL ?? "https://openrouter.ai/api/v1/chat/completions",
+  api_key: process.env.OPENROUTER_API_KEY ?? "",
 };
 
 // ── Engine ───────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export async function executeAgent(
 
     if (!config.api_key) {
       throw new Error(
-        "No LLM API key configured. Set LLM_API_KEY env var or agent config.api_key"
+        "No LLM API key configured. Set OPENROUTER_API_KEY env var or agent config.api_key"
       );
     }
 

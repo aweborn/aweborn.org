@@ -7,6 +7,8 @@
  *   POST /jobs            { ref, kind: "model", prompt }  → { jobId }
  *   GET  /jobs/:id        → { status, progress, asset, costUsd, error }
  *   GET  /assets/:file    → the generated file (GLB), content-addressed name
+ *   POST /llm             { ref, model, messages, json? } → { content, model, costUsd }
+ *                         (OpenRouter; synchronous; caller validates the output)
  *
  * Jobs live in a SQLite table in workflow shape (Alex, 2026-10-16), so a
  * restart can pick up where it left off. Every provider call and response is
@@ -18,6 +20,7 @@ import { mkdirSync, createReadStream, existsSync, appendFileSync } from "node:fs
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { providerFor, type ProviderJob } from "./providers.js";
+import { chat, llmConfigured, type ChatMessage } from "./llm.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -95,10 +98,34 @@ for (const r of db.prepare("SELECT id FROM jobs WHERE status IN ('queued','proce
 
 // ── HTTP ─────────────────────────────────────────────────────────────
 const app = express();
-app.use(express.json({ limit: "64kb" }));
+app.use(express.json({ limit: "256kb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "genai-service", providers: { model: providerFor("model").name } });
+  res.json({ status: "ok", service: "genai-service", providers: { model: providerFor("model").name, llm: llmConfigured() ? "openrouter" : "none" } });
+});
+
+app.post("/llm", async (req, res) => {
+  const { ref, model, messages, json, maxTokens } = req.body ?? {};
+  const okMsgs = Array.isArray(messages) && messages.length > 0 && messages.length <= 80 &&
+    messages.every((m: ChatMessage) => ["system", "user", "assistant"].includes(m?.role) && typeof m.content === "string");
+  if (typeof ref !== "string" || typeof model !== "string" || !/^[\w.-]+\/[\w.:-]+$/.test(model) || !okMsgs) {
+    return res.status(400).json({ error: "bad_request" });
+  }
+  if (!llmConfigured()) return res.status(503).json({ error: "llm_not_configured" });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 90_000);
+  try {
+    const out = await chat({ model, messages, json: !!json, maxTokens: typeof maxTokens === "number" ? Math.min(maxTokens, 8000) : undefined }, ac.signal);
+    archive({ kind: "llm", ref, provider: "openrouter", model: out.model, requested: model, messages, response: out.content, usage: out.usage, costUsd: out.costUsd, latencyMs: out.latencyMs });
+    res.json({ content: out.content, model: out.model, costUsd: out.costUsd });
+  } catch (err) {
+    const msg = (err as Error).message ?? String(err);
+    archive({ kind: "llm", ref, provider: "openrouter", requested: model, messages, error: msg });
+    console.error(`[genai] llm ${ref} failed:`, msg);
+    res.status(502).json({ error: "llm_failed", message: msg.slice(0, 300) });
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 app.post("/jobs", (req, res) => {

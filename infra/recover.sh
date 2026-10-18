@@ -178,7 +178,7 @@ if stack_exists aweborn-vps && (( ! CHECK )); then
   fi
 fi
 status="$(infra/set-secret.sh status 2>&1 || true)"; echo "$status" | sed 's/^/  /'
-if grep -qE "differs|missing|placeholder \(REPLACE_ME\) on VPS" <<<"$(grep -v LLM_API_KEY <<<"$status")"; then
+if grep -qE "differs|missing|placeholder \(REPLACE_ME\) on VPS" <<<"$status"; then
   ask "Push every key from ~/keys to the VPS?" && infra/set-secret.sh push all || warn "VPS keys not in sync"
 fi
 

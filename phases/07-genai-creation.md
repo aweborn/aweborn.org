@@ -255,15 +255,15 @@ interface Blueprint {
   ```
 
 ### World Planner & Blueprints
-- `[ ]` `shared/blueprint.ts`: the Blueprint type + Zod validator (the planner's output is parsed and validated, never trusted)
+- `[x]` `shared/blueprint.ts`: the Blueprint type + Zod validator (the planner's output is parsed and validated, never trusted) (2026-10-17: hand-written validator instead of Zod so the client imports it with no deps)
 - `[x]` Decide orchestration → **SQLite job table in workflow shape** (Alex, 2026-10-16)
-- `[ ]` Planner system prompt written to [the voice](#the-planners-voice); test it on real first prompts before launch
+- `[~]` Planner system prompt written to [the voice](#the-planners-voice); test it on real first prompts before launch (2026-10-17: v1 in `server/sync-service/src/planner.ts`; reads well on Opus 5.5 and DeepSeek v4 Pro)
 - `[ ]` Deterministic voxel terrain generator from `terrain` parameters, shared by client (preview) and server (manifest)
-- `[ ]` `POST /plan`: prompt or chat turn + current blueprint → planner (Claude Opus 5.5, structured output) → reply + chips + next version; estimate from the cost table
+- `[x]` `POST /plan`: prompt or chat turn + current blueprint → planner (Claude Opus 5.5, structured output) → reply + chips + next version; estimate from the cost table (2026-10-17: `/api/player/plan` in sync-service → genai `/llm` on OpenRouter; model picker; one repair retry; sessions in memory, TODO persist)
 - `[ ]` Safety check on every blueprint before it's shown (and again before manifest)
-- `[ ]` Planner turns admitted and drawn like any creation (Phase 05 reserve → settle)
+- `[x]` Planner turns admitted and drawn like any creation (Phase 05 reserve → settle) (reserve 10, settle billed cost: Opus ≈ 5 mana/turn, DeepSeek ≈ 0.7)
 - `[ ]` `POST /plan/:id/manifest`: reserve the whole estimate, fan out per asset, settle per item, release failed items, offer retry
-- `[ ]` Client: blueprint chat panel (reply, chips, free direct edits on the card, version history)
+- `[~]` Client: blueprint chat panel (reply, chips, free direct edits on the card, version history) (2026-10-17: `PlannerPanel.tsx`, P key: reply, chips, model picker, read-only card; no direct edits or history yet)
 - `[ ]` Client: Ghost preview (real voxel terrain + labeled wireframe boxes) and materialize-on-arrival
 - `[ ]` Single-item loop after manifest ("make that lantern taller")
 
@@ -435,3 +435,4 @@ interface Blueprint {
 | 2026-10-17 | **Interior Movement built** (Alex tested: "that worked"). Deterministic kinematic step in `shared/sim/interior.ts` (walk/sprint, jump, jetpack with fuel, swim, per-world gravity/friction/drag, AABB collision, 40×40 bounds; no trig so the server can replay it, Phase 09) + `InteriorController` + follow camera and capsule avatar in `Scene.tsx` (replaces the orbiting camera). Keys switched to standard WASD inside worlds. Also: dev panel places new worlds 10 u ahead; the bottom hint banner was removed. Local sync container was stale (no `better-auth`), rebuilt. | Next: presence inside worlds (see each other), touch/gamepad jump button; ROADMAP key table is stale (Alex to OK an edit) |
 | 2026-10-17 (later) | **Presence inside worlds**: interior position + facing broadcast (`PlayerPresence.facing`, optional); other players in the same world drawn as capsules; players inside a world hidden on the universe map. Alex: two tabs, "saw two pills!!!" | Next: touch/gamepad interior controls |
 | 2026-10-17 (evening) | Touch + gamepad interior controls; interior camera forced upright (entering at a roll tilted it); **kick** (event-sourced physics, minimal). Interior Movement task group done. | Next per Alex; Phase 07 build continues (Research: API costs, then planner) |
+| 2026-10-17 | **World Planner v1.** `OPENROUTER_API_KEY` replaces the `LLM_API_KEY` placeholder (agent-runner too). `shared/blueprint.ts` (types, cost-table estimate, clamping validator); genai `POST /llm` (OpenRouter, archives every call with model + billed cost); sync `POST /api/player/plan` (server-held history, reserve → settle, repair retry); `PlannerPanel` (P, DEV-gated). Real turns: Opus 5.5 ≈ $0.05, DeepSeek v4 Pro ≈ $0.007. Next: Ghost preview (voxel terrain from the blueprint), then Manifest. |

@@ -55,8 +55,8 @@ services:
       - PORT=3002
       - HOST=0.0.0.0
       - DATA_DIR=/app/data
-      - LLM_API_KEY=${LLM_API_KEY:-}
-      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-anthropic/claude-haiku-5.5}
     volumes:
       - ./agent-runner/src:/app/src
       - ./data/agent-runner:/app/data

@@ -1,4 +1,5 @@
 import { CreatePanel } from './components/CreatePanel'
+import { PlannerPanel } from './components/PlannerPanel'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
@@ -107,7 +108,12 @@ export default function App() {
       {/* World Index (M) + first-visit card reveal */}
       {isLoaded && webglSupported && <WorldIndex />}
       {/* Dev-only until the Privacy page covers prompts + creations (Phase 07) */}
-      {isLoaded && webglSupported && (import.meta.env.DEV || import.meta.env.VITE_CREATE === '1') && <CreatePanel />}
+      {isLoaded && webglSupported && (import.meta.env.DEV || import.meta.env.VITE_CREATE === '1') && (
+        <>
+          <CreatePanel />
+          <PlannerPanel />
+        </>
+      )}
       {isLoaded && webglSupported && <CardReveal />}
 
       {/* Solidification wave: recognition line + golden flash */}
