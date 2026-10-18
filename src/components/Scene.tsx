@@ -468,7 +468,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
 
   useFrame((_state, delta) => {
     const physics = useWorldStore.getState().physics
-    const t = interiorController.update(delta, physics, boxes)
+    // Hold still until the world has loaded: its terrain isn't there to stand on yet
+    const t = useWorldStore.getState().loaded ? interiorController.update(delta, physics, boxes) : 1
     const p = interiorController.prev
     const s = interiorController.state
     const x = p.x + (s.x - p.x) * t

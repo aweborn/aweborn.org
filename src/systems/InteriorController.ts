@@ -30,9 +30,17 @@ class InteriorController {
   prev: InteriorState = this.state
   private _acc = 0
 
+  private _restore: Partial<InteriorState> | null = null
+
+  /** The next reset() puts the player here instead of at the spawn point (returning to a saved spot). */
+  restoreOnNextReset(at: Partial<InteriorState>): void {
+    this._restore = at
+  }
+
   /** Put the player at the spawn point (call on world entry). */
   reset(): void {
-    this.state = spawnInterior()
+    this.state = { ...spawnInterior(), ...(this._restore ?? {}) }
+    this._restore = null
     this.prev = this.state
     this._acc = 0
   }

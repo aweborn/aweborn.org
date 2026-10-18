@@ -12,6 +12,7 @@ import { teleportSystem } from './systems/TeleportSystem'
 import { WorldIndex } from './components/WorldIndex'
 import { CardReveal } from './components/CardReveal'
 import { startWorldIndex } from './stores/worldIndexStore'
+import { startLocationPersistence } from './stores/locationStore'
 import { startWaveWatcher } from './stores/waveStore'
 import { WaveBanner } from './components/WaveBanner'
 
@@ -53,6 +54,11 @@ export default function App() {
   // World Index: sightings, visits, offline queue (from boot, so link arrivals count).
   useEffect(() => {
     if (webglSupported) startWorldIndex()
+  }, [webglSupported])
+
+  // Remember where the player is, and put them back there on reload.
+  useEffect(() => {
+    if (webglSupported) startLocationPersistence()
   }, [webglSupported])
 
   // Solidification wave: every client online celebrates each new gift.

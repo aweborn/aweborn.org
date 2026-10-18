@@ -197,6 +197,11 @@ class TeleportSystem {
    * True once after a teleport: FlightSystem snaps the camera to the new
    * position instead of smoothly chasing it across the universe.
    */
+  /** Ask FlightSystem to snap the camera on the next frame (e.g. after restoring a saved spot). */
+  requestSnap(): void {
+    this._snapRequested = true
+  }
+
   consumeSnapRequest(): boolean {
     const requested = this._snapRequested
     this._snapRequested = false
