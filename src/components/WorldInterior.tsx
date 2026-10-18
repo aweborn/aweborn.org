@@ -231,7 +231,7 @@ export function WorldInterior() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
 
   const worldColor = meta?.color ?? '#6b3fa0'
-  // Fog matches the sky's horizon so distance fades into the sky, not to black (the camera can sit 20 m back and high up)
+  // Worlds are small and the camera can fly far above them, so fog only touches the extreme distance (any nearer turned the terrain dark from altitude)
   const fogColor = useMemo(() => new THREE.Color(worldColor).multiplyScalar(0.15), [worldColor])
   const objectList = useMemo(() => Array.from(objects.values()), [objects])
 
@@ -271,7 +271,7 @@ export function WorldInterior() {
       />
 
       {/* Fog for depth */}
-      <fog attach="fog" args={[fogColor, 90, 250]} />
+      <fog attach="fog" args={[fogColor, 400, 1200]} />
     </group>
   )
 }

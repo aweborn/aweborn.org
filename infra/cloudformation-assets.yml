@@ -111,10 +111,28 @@ Resources:
           TargetOriginId: AssetS3
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6          # CachingOptimized
-          ResponseHeadersPolicyId: 60669652-455b-4ae9-85a4-c4c02393f86c # SimpleCORS (the game loads GLBs cross-origin)
+          ResponseHeadersPolicyId: !Ref AssetCorsPolicy # always sends CORS (the managed SimpleCORS drops it when a request says no-cache)
           Compress: true
           AllowedMethods: [GET, HEAD, OPTIONS]
           CachedMethods: [GET, HEAD]
+
+  # Unconditional CORS: the managed SimpleCORS policy only adds the header on a plain
+  # request, so a hard reload / no-cache request got a 200 the browser then blocked.
+  AssetCorsPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${AWS::StackName}-always-cors"
+        Comment: Always allow cross-origin reads of generated assets (public, immutable files)
+        CorsConfig:
+          AccessControlAllowOrigins:
+            Items: ["*"]
+          AccessControlAllowMethods:
+            Items: [GET, HEAD, OPTIONS]
+          AccessControlAllowHeaders:
+            Items: ["*"]
+          AccessControlAllowCredentials: false
+          OriginOverride: true
 
   AssetDns:
     Type: AWS::Route53::RecordSetGroup
