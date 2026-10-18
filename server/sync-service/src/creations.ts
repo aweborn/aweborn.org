@@ -145,3 +145,20 @@ export function handleAssets(req: IncomingMessage, res: ServerResponse): boolean
     });
   return true;
 }
+
+/** Public library listing: GET /library?q=&limit= (proxied from genai-service). */
+export function handleLibrary(req: IncomingMessage, res: ServerResponse): boolean {
+  const url = req.url ?? "";
+  if (!/^\/library(\?|$)/.test(url)) return false;
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  void fetch(`${GENAI_URL}${url}`)
+    .then(async (up) => {
+      res.writeHead(up.status, { "Content-Type": "application/json", "Cache-Control": "public, max-age=15" });
+      res.end(await up.text());
+    })
+    .catch(() => {
+      res.writeHead(502);
+      res.end();
+    });
+  return true;
+}

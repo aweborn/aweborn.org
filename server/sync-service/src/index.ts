@@ -9,7 +9,7 @@ import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
-import { startCreation, creationStatus, handleAssets } from "./creations.js";
+import { startCreation, creationStatus, handleAssets, handleLibrary } from "./creations.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
@@ -355,6 +355,7 @@ const server = createServer((req, res) => {
   }
   if (handleManaPublic(req, res)) return;
   if (handleAssets(req, res)) return;
+  if (handleLibrary(req, res)) return;
   if (req.url?.startsWith("/api/player/")) {
     const origin = req.headers.origin;
     if (isTrustedOrigin(origin)) {
