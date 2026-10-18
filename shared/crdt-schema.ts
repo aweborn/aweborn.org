@@ -159,7 +159,8 @@ export function frontierRadiusFor(highWater: number): number {
 
 /**
  * Personal caps, mana per rolling 24 h (approved by Alex 2026-10-16; see
- * MANA_COSTS.md). Solar ±10% applies on top.
+ * MANA_COSTS.md). Solar ±10% applies on top. Raised 2026-10-17 (Alex): a
+ * whole textured world (~9 models × 60 + planner turns) must fit in a day.
  */
 export const MANA_CAPS = {
   /** Rolling window for personal caps and the global flow, ms. */
@@ -169,15 +170,15 @@ export const MANA_CAPS = {
   /** Chapters 1–4 (move … build): nothing generative yet. */
   beforeMaker: 0,
   /** Chapter 5 (Maker tutorials). */
-  maker: 150,
+  maker: 600,
   /** Chapters 6–7 and the start of post-warp play. */
-  explorer: 250,
+  explorer: 1000,
   /** Added per level after warp… */
-  perLevel: 25,
+  perLevel: 50,
   /** …up to this. */
-  max: 1000,
+  max: 2500,
   /** The global flow never drops below this: a lone player can always make a whole world. */
-  pSolo: 400,
+  pSolo: 1200,
 } as const;
 
 /** Where a player is on the ladder (chapters 1–7; warp unlocks at the end of 7). */

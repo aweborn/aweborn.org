@@ -84,6 +84,12 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
         target.rotation.x += 0.08
         return
       }
+      if (obj.type === 'model') {
+        // Generated models stand still where they were placed
+        target.position.set(obj.x, obj.y, obj.z)
+        target.rotation.set(0, obj.rotY, 0)
+        return
+      }
       target.position.set(obj.x, obj.y + Math.sin(state.clock.elapsedTime * 0.5 + obj.x * 0.1) * 0.05, obj.z)
       target.rotation.y += 0.003
     }

@@ -37,7 +37,7 @@ export function VoxelLayer({ grid, liquid }: { grid: VoxelGrid; liquid: boolean 
       tmp.updateMatrix()
       m.setMatrixAt(n, tmp.matrix)
       // Slight per-cell shade so flat areas still read as blocks
-      const shade = 0.9 + 0.1 * (((c.i * 7 + c.k * 13 + c.j * 5) % 5) / 4)
+      const shade = 0.78 + 0.22 * (((c.i * 7 + c.k * 13 + c.j * 5) % 5) / 4) * (0.85 + 0.15 * ((c.i + c.k) % 2))
       col.set(grid.blocks[c.v - 1].color).multiplyScalar(shade)
       m.setColorAt(n, col)
     })
@@ -109,8 +109,8 @@ function GhostAsset({ asset, grid, color }: { asset: BlueprintAsset; grid: Voxel
 function TerrainLight() {
   return (
     <>
-      <hemisphereLight args={['#fff4e0', '#3a3550', 0.9]} />
-      <directionalLight position={[12, 20, 8]} intensity={0.8} color="#fff1d6" />
+      <hemisphereLight args={['#fff4e0', '#2a2540', 0.45]} />
+      <directionalLight position={[14, 22, 6]} intensity={1.3} color="#fff1d6" />
     </>
   )
 }

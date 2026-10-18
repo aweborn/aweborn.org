@@ -55,7 +55,7 @@ THE BLUEPRINT
 - style.artDirection is one sentence carried into every asset prompt, so all assets match. palette: 3-6 hex colors.
 - terrain: voxel grid, size [x, y, z] each 4-${LIMITS.grid} (y is up). blocks: 2-6 materials with ids like "grass", "stone". The ground is a few cells thick everywhere. features place shapes on it: type one of plateau | hill | pond | path | cliff | floating-island; at = [x, y, z] where x, z are grid cells and y is the lift above the ground (usually 0; for floating-island y is the altitude, e.g. 8-14); radius in cells; height in cells (for pond: depth, 1-3); block = a block id. Name a liquid block "water" so it reads as water. Asset at = [x, 0, z]: they sit on the surface there.
 - assets: key (kebab-case, stable), kind one of model | terrain-piece | texture | music | ambience | voice | sfx, prompt (a self-contained generator prompt that already includes the art direction; for models describe ONE object), quality "quick" (default) or "full" (only for hero pieces), at = [x, y, z] in grid cells, optional size [x, y, z] in meters, rotationY in radians.
-- Approximate mana: model quick 40 / full 60, terrain-piece 40/60, music 30, ambience 20, sfx 5.
+- Approximate mana: model 60, terrain-piece 60, music 30, ambience 20, sfx 5.
 - Safety: nothing sexual, hateful, or gory; no real people, brands, or copyrighted characters. If asked, gently offer an original alternative.
 
 ANSWER FORMAT

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { ManaLedger } from "./mana.js";
 import { ManaAdmission, waterFill, REPLENISH_MESSAGE } from "./admission.js";
-import { baseCap } from "../../../shared/crdt-schema.js";
+import { baseCap, MANA_CAPS } from "../../../shared/crdt-schema.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const maker = { chapter: 5, warpUnlocked: false, levelsSinceWarp: 0 };
@@ -20,12 +20,12 @@ function setup(dollars = 1000) {
   return { mana, adm, tick: (ms: number) => (clock += ms) };
 }
 
-test("base(level): 0 / 150 / 250 / +25 per level after warp, max 1,000", () => {
+test("base(level): 0 / maker / explorer / +perLevel after warp, up to max", () => {
   assert.equal(baseCap({ chapter: 3, warpUnlocked: false, levelsSinceWarp: 0 }), 0);
-  assert.equal(baseCap(maker), 150);
-  assert.equal(baseCap(explorer), 250);
-  assert.equal(baseCap({ chapter: 7, warpUnlocked: true, levelsSinceWarp: 4 }), 350);
-  assert.equal(baseCap({ chapter: 7, warpUnlocked: true, levelsSinceWarp: 100 }), 1000);
+  assert.equal(baseCap(maker), MANA_CAPS.maker);
+  assert.equal(baseCap(explorer), MANA_CAPS.explorer);
+  assert.equal(baseCap({ chapter: 7, warpUnlocked: true, levelsSinceWarp: 4 }), MANA_CAPS.explorer + 4 * MANA_CAPS.perLevel);
+  assert.equal(baseCap({ chapter: 7, warpUnlocked: true, levelsSinceWarp: 100 }), MANA_CAPS.max);
 });
 
 test("water-filling is max-min fair and redistributes what light users don't need", () => {
@@ -37,7 +37,7 @@ test("water-filling is max-min fair and redistributes what light users don't nee
 test("global flow: creative / τ, never below p_solo, never above creative", () => {
   assert.ok(Math.abs(setup(1000).adm.globalFlow() - 50_000 / 30) < 1e-9);
   assert.equal(setup(5).adm.globalFlow(), 250); // creative 250 < p_solo
-  assert.equal(setup(10).adm.globalFlow(), 400); // creative 500 → p_solo floor
+  assert.equal(setup(30).adm.globalFlow(), MANA_CAPS.pSolo); // creative 1,500 → p_solo floor
 });
 
 test("chapters 1–4 can't draw yet", () => {
@@ -49,7 +49,7 @@ test("chapters 1–4 can't draw yet", () => {
 
 test("a lone maker gets their whole personal cap, then a gentle no", () => {
   const { adm } = setup();
-  const a = adm.requestDraw({ playerId: "p1", ref: "r1", estimate: 104, progress: maker });
+  const a = adm.requestDraw({ playerId: "p1", ref: "r1", estimate: MANA_CAPS.maker - 46, progress: maker });
   assert.equal(a.ok, true);
   const b = adm.requestDraw({ playerId: "p1", ref: "r2", estimate: 60, progress: maker });
   assert.equal(b.ok, false);
@@ -60,17 +60,17 @@ test("a lone maker gets their whole personal cap, then a gentle no", () => {
 
 test("released holds don't count; settled ones count at their actual cost", () => {
   const { mana, adm } = setup();
-  adm.requestDraw({ playerId: "p1", ref: "r1", estimate: 150, progress: maker });
+  adm.requestDraw({ playerId: "p1", ref: "r1", estimate: MANA_CAPS.maker, progress: maker });
   mana.release("r1");
-  assert.equal(adm.requestDraw({ playerId: "p1", ref: "r2", estimate: 150, progress: maker }).ok, true);
-  mana.settle("r2", 90);
+  assert.equal(adm.requestDraw({ playerId: "p1", ref: "r2", estimate: MANA_CAPS.maker, progress: maker }).ok, true);
+  mana.settle("r2", MANA_CAPS.maker - 60);
   const d = adm.requestDraw({ playerId: "p1", ref: "r3", estimate: 60, progress: maker });
   assert.equal(d.ok, true);
 });
 
 test("the cap is a rolling 24 h window", () => {
   const { adm, tick } = setup();
-  adm.requestDraw({ playerId: "p1", ref: "r1", estimate: 150, progress: maker });
+  adm.requestDraw({ playerId: "p1", ref: "r1", estimate: MANA_CAPS.maker, progress: maker });
   assert.equal(adm.requestDraw({ playerId: "p1", ref: "r2", estimate: 10, progress: maker }).ok, false);
   tick(DAY + 1);
   assert.equal(adm.requestDraw({ playerId: "p1", ref: "r3", estimate: 10, progress: maker }).ok, true);
@@ -78,9 +78,9 @@ test("the cap is a rolling 24 h window", () => {
 
 test("solar ±10% scales the cap and is clamped", () => {
   const { adm } = setup();
-  assert.equal(adm.requestDraw({ playerId: "p1", ref: "r1", estimate: 165, progress: maker, solar: 5 }).ok, true);
+  assert.equal(adm.requestDraw({ playerId: "p1", ref: "r1", estimate: MANA_CAPS.maker * 1.1, progress: maker, solar: 5 }).ok, true);
   const { adm: night } = setup();
-  assert.equal(night.requestDraw({ playerId: "p2", ref: "r1", estimate: 140, progress: maker, solar: 0.9 }).ok, false);
+  assert.equal(night.requestDraw({ playerId: "p2", ref: "r1", estimate: MANA_CAPS.maker * 0.95, progress: maker, solar: 0.9 }).ok, false);
 });
 
 test("many players: the universe's flow binds and is shared evenly", () => {

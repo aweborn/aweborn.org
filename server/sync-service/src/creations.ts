@@ -18,8 +18,8 @@ import type { PlayerProgress } from "../../../shared/crdt-schema.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 
-/** Meshy preview ≈ $0.40 (20 credits × $0.02) × K = 100 → 40 mana. */
-export const MODEL_ESTIMATE_MANA = 40;
+/** Meshy preview + texture refine ≈ $0.60 (30 credits × $0.02) × K = 100 → 60 mana. */
+export const MODEL_ESTIMATE_MANA = 60;
 
 /**
  * Progression (chapters/levels) isn't tracked yet, so every player is treated

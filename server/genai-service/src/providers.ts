@@ -34,6 +34,8 @@ export interface Provider {
 
 /** Meshy preview ≈ 20 credits × $0.02 (MANA_COSTS.md prices credits at $0.02). */
 export const MESHY_PREVIEW_USD = 0.4;
+/** Texture refine: 10 credits × $0.02. */
+const MESHY_REFINE_USD = 0.2;
 
 const MESHY_KEY = process.env.MESHY_API_KEY ?? "";
 const MESHY_BASE = "https://api.meshy.ai/openapi/v2/text-to-3d";
@@ -59,6 +61,11 @@ const meshy: Provider = {
   async generate(job) {
     const headers = { Authorization: `Bearer ${MESHY_KEY}`, "Content-Type": "application/json" };
     let task = job.providerTask;
+    let refining = false;
+    if (task?.startsWith("refine:")) {
+      refining = true;
+      task = task.slice(7);
+    }
     if (!task) {
       const body = { mode: "preview", prompt: job.prompt };
       job.archive({ call: "meshy.create", request: body });
@@ -79,11 +86,26 @@ const meshy: Provider = {
         status: string; progress?: number; model_urls?: { glb?: string };
         task_error?: { message?: string };
       };
-      job.onProgress(t.progress ?? 0);
+      // Preview is the first half of the bar, texturing the second
+      job.onProgress(refining ? 50 + (t.progress ?? 0) / 2 : (t.progress ?? 0) / 2);
+      if (t.status === "SUCCEEDED" && !refining) {
+        // Shape done; now texture it (colour + PBR materials)
+        job.archive({ call: "meshy.result", task, response: t });
+        const body = { mode: "refine", preview_task_id: task, enable_pbr: true };
+        job.archive({ call: "meshy.refine", request: body });
+        const r = await fetch(MESHY_BASE, { method: "POST", headers, body: JSON.stringify(body) });
+        const rj = (await r.json().catch(() => ({}))) as { result?: string; message?: string };
+        job.archive({ call: "meshy.refine", status: r.status, response: rj });
+        if (!r.ok || !rj.result) throw new Error(`meshy refine failed: ${r.status} ${rj.message ?? ""}`.trim());
+        task = rj.result;
+        refining = true;
+        job.onTask(`refine:${task}`);
+        continue;
+      }
       if (t.status === "SUCCEEDED") {
         job.archive({ call: "meshy.result", task, response: t });
         if (!t.model_urls?.glb) throw new Error("meshy returned no glb");
-        return { asset: await storeGlb(t.model_urls.glb, job.assetDir), costUsd: MESHY_PREVIEW_USD };
+        return { asset: await storeGlb(t.model_urls.glb, job.assetDir), costUsd: MESHY_PREVIEW_USD + MESHY_REFINE_USD };
       }
       if (t.status === "FAILED" || t.status === "CANCELED") {
         job.archive({ call: "meshy.result", task, response: t });

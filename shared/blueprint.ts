@@ -50,10 +50,10 @@ export interface Blueprint extends BlueprintDraft {
 export interface PlannerTurn { reply: string; chips: string[]; blueprint: BlueprintDraft }
 
 // ── Cost table (mana; K = 100 mana per USD, Phase 05) ─────────────────
-/** Placeholder prices until each provider is wired; model = Meshy preview / preview+refine. */
+/** Placeholder prices until each provider is wired; model = Meshy preview + texture refine ($0.60). */
 export const ASSET_MANA: Record<AssetKind, { quick: number; full: number }> = {
-  model: { quick: 40, full: 60 },
-  "terrain-piece": { quick: 40, full: 60 },
+  model: { quick: 60, full: 60 },
+  "terrain-piece": { quick: 60, full: 60 },
   texture: { quick: 10, full: 20 },
   music: { quick: 30, full: 30 },
   ambience: { quick: 20, full: 20 },
