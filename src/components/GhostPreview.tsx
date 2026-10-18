@@ -42,6 +42,7 @@ function VoxelLayer({ grid, liquid }: { grid: VoxelGrid; liquid: boolean }) {
     m.count = cells.length
     m.instanceMatrix.needsUpdate = true
     if (m.instanceColor) m.instanceColor.needsUpdate = true
+    ;(m.material as THREE.Material).needsUpdate = true // shader must pick up instanceColor
     m.computeBoundingSphere()
   }, [cells, grid, liquid, sx, sz])
 
@@ -79,11 +80,12 @@ function GhostAsset({ asset, grid, color }: { asset: BlueprintAsset; grid: Voxel
   const [w, h, d] = asset.size ?? [1.5, 1.5, 1.5]
   const seed = useMemo(() => [...asset.key].reduce((a, c) => a + c.charCodeAt(0), 0), [asset.key])
   useFrame(({ clock }) => {
+    const g = ref.current
+    if (!g) return
     const t = clock.elapsedTime + seed
-    ref.current.position.y = pos.y + h / 2 + Math.sin(t * 1.2) * 0.06
-    ref.current.rotation.y = (asset.rotationY ?? 0) + Math.sin(t * 0.4) * 0.05
+    g.position.y = pos.y + h / 2 + Math.sin(t * 1.2) * 0.06
+    g.rotation.y = (asset.rotationY ?? 0) + Math.sin(t * 0.4) * 0.05
   })
-  if (asset.kind !== 'model' && asset.kind !== 'terrain-piece') return null
   return (
     <group ref={ref} position={[pos.x, pos.y + h / 2, pos.z]}>
       <mesh scale={[w, h, d]}>
@@ -112,9 +114,11 @@ export function GhostPreview() {
         <VoxelLayer grid={grid} liquid={false} />
         <VoxelLayer grid={grid} liquid />
       </Rise>
-      {blueprint.assets.map((a) => (
-        <GhostAsset key={a.key} asset={a} grid={grid} color={accent} />
-      ))}
+      {blueprint.assets
+        .filter((a) => a.kind === 'model' || a.kind === 'terrain-piece')
+        .map((a) => (
+          <GhostAsset key={a.key} asset={a} grid={grid} color={accent} />
+        ))}
     </group>
   )
 }
