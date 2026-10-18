@@ -403,8 +403,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       if (typing(e)) return
       if (e.code === 'KeyZ') turnKeys.current.z = true
       if (e.code === 'KeyX') turnKeys.current.x = true
-      if (e.code === 'KeyR') turnKeys.current.r = true
-      if (e.code === 'KeyF') turnKeys.current.f = true
+      if (e.code === 'Equal') turnKeys.current.r = true
+      if (e.code === 'Minus') turnKeys.current.f = true
       if (e.code !== 'KeyG' || e.repeat) return
       const doc = useUniverseStore.getState().activeWorldDoc
       const s = interiorController.state
@@ -423,14 +423,14 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       const target = kickTarget(s, all)
       if (!target) return
       const half = 0.5 * Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleZ || 1))
-      held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: target.y - s.y, lastWrite: 0, k: 1, base: { x: target.scaleX || 1, y: target.scaleY || 1, z: target.scaleZ || 1 } }
+      held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: target.y - s.y, lastWrite: 0, k: Math.min(1, 30 / Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleY || 1), Math.abs(target.scaleZ || 1))), base: { x: target.scaleX || 1, y: target.scaleY || 1, z: target.scaleZ || 1 } }
       setHeldId(target.id)
     }
     const up = (e: KeyboardEvent) => {
       if (e.code === 'KeyZ') turnKeys.current.z = false
       if (e.code === 'KeyX') turnKeys.current.x = false
-      if (e.code === 'KeyR') turnKeys.current.r = false
-      if (e.code === 'KeyF') turnKeys.current.f = false
+      if (e.code === 'Equal') turnKeys.current.r = false
+      if (e.code === 'Minus') turnKeys.current.f = false
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -511,7 +511,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         setHeldId(null)
       } else {
         h.rotY += ((turnKeys.current.x ? 1 : 0) - (turnKeys.current.z ? 1 : 0)) * 1.8 * delta
-        h.k = Math.min(8, Math.max(0.1, h.k * Math.exp(((turnKeys.current.r ? 1 : 0) - (turnKeys.current.f ? 1 : 0)) * 1.0 * delta)))
+        const big = Math.max(h.base.x, h.base.y, h.base.z)
+        h.k = Math.min(30 / big, Math.max(0.3 / big, h.k * Math.exp(((turnKeys.current.r ? 1 : 0) - (turnKeys.current.f ? 1 : 0)) * 1.0 * delta)))
         h.dist = 0.5 * Math.max(h.base.x, h.base.z) * h.k + 1.2
         const now = performance.now()
         if (now - h.lastWrite > 100) {
