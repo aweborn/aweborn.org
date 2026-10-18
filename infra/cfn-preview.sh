@@ -28,12 +28,13 @@ template_for() {
     aweborn-website) echo infra/cloudformation.yml ;;
     aweborn-vps)     echo infra/cloudformation-vps.yml ;;
     aweborn-backups) echo infra/cloudformation-backups.yml ;;
+    aweborn-assets)  echo infra/cloudformation-assets.yml ;;
     aweborn-ci)      echo infra/cloudformation-ci.yml ;;
     aweborn-mail)    echo infra/cloudformation-mail.yml ;;
     *) return 1 ;;
   esac
 }
-ORDER=(aweborn-website aweborn-vps aweborn-backups aweborn-ci aweborn-mail)
+ORDER=(aweborn-website aweborn-vps aweborn-backups aweborn-ci aweborn-mail aweborn-assets)
 
 DRIFT=0; STACKS=()
 for a in "$@"; do

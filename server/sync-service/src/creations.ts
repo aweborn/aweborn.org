@@ -123,8 +123,14 @@ export function handleAssets(req: IncomingMessage, res: ServerResponse): boolean
   const m = /^\/assets\/([a-f0-9]{64}\.glb)$/.exec(req.url?.split("?")[0] ?? "");
   if (!m) return false;
   res.setHeader("Access-Control-Allow-Origin", "*");
-  void fetch(`${GENAI_URL}/assets/${m[1]}`)
+  void fetch(`${GENAI_URL}/assets/${m[1]}`, { redirect: "manual" })
     .then((up) => {
+      const loc = up.headers.get("location");
+      if (up.status >= 300 && up.status < 400 && loc) {
+        res.writeHead(301, { Location: loc, "Cache-Control": "public, max-age=31536000, immutable" });
+        res.end();
+        return;
+      }
       if (!up.ok || !up.body) {
         res.writeHead(404);
         res.end();

@@ -6,7 +6,8 @@
  *
  *   POST /jobs            { ref, kind: "model", prompt }  → { jobId }
  *   GET  /jobs/:id        → { status, progress, asset, costUsd, error }
- *   GET  /assets/:file    → the generated file (GLB), content-addressed name
+ *   GET  /assets/:file    → the generated file (GLB); 302 to the CDN once it is in S3
+ *   GET  /library?q=      → the asset library (every file ever made), newest first
  *   POST /llm             { ref, model, messages, json? } → { content, model, costUsd }
  *                         (OpenRouter; synchronous; caller validates the output)
  *
@@ -21,6 +22,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { providerFor, type ProviderJob } from "./providers.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
+import { initLibrary, addToLibrary, archiveToS3, backfill, listLibrary, CDN_URL, s3Enabled } from "./library.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -63,8 +65,13 @@ function update(id: string, fields: Partial<JobRow>): void {
 
 /** Creation archive: every provider call + response (research; Privacy page must say so before prod). */
 export function archive(entry: Record<string, unknown>): void {
-  appendFileSync(join(DATA_DIR, "archive.jsonl"), JSON.stringify({ at: Date.now(), ...entry }) + "\n");
+  const e = { at: Date.now(), ...entry };
+  appendFileSync(join(DATA_DIR, "archive.jsonl"), JSON.stringify(e) + "\n");
+  archiveToS3(e);
 }
+
+initLibrary(db);
+void backfill(db, ASSET_DIR, DATA_DIR).catch((err) => console.error("[library] backfill failed:", (err as Error).message));
 
 // ── Runner ───────────────────────────────────────────────────────────
 async function run(id: string): Promise<void> {
@@ -84,6 +91,7 @@ async function run(id: string): Promise<void> {
     update(id, { status: "processing" });
     const out = await provider.generate(job);
     update(id, { status: "complete", progress: 100, asset: out.asset, cost_usd: out.costUsd });
+    await addToLibrary(db, ASSET_DIR, { file: out.asset, kind: row.kind, prompt: row.prompt, provider: provider.name, jobId: id, ref: row.ref });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
     console.error(`[genai] job ${id} failed:`, msg);
@@ -101,7 +109,7 @@ const app = express();
 app.use(express.json({ limit: "256kb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "genai-service", providers: { model: providerFor("model").name, llm: llmConfigured() ? "openrouter" : "none" } });
+  res.json({ status: "ok", service: "genai-service", providers: { model: providerFor("model").name, llm: llmConfigured() ? "openrouter" : "none" }, library: s3Enabled() ? "s3" : "local" });
 });
 
 app.post("/llm", async (req, res) => {
@@ -155,9 +163,21 @@ app.get("/jobs/:id", (req, res) => {
   });
 });
 
+app.get("/library", (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.slice(0, 80) : "";
+  const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+  res.json({ assets: listLibrary(db, q, limit), cdn: CDN_URL || null });
+});
+
 app.get("/assets/:file", (req, res) => {
   const file = req.params.file;
   if (!/^[a-f0-9]{64}\.glb$/.test(file)) return res.status(404).end();
+  // In the library bucket: send the client to the CDN (cached at the edge, survives the box)
+  const inS3 = CDN_URL && (db.prepare("SELECT s3 FROM library WHERE file = ?").get(file) as { s3: number } | undefined)?.s3;
+  if (inS3) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return res.redirect(301, `${CDN_URL}/models/${file}`);
+  }
   const path = join(ASSET_DIR, file);
   if (!existsSync(path)) return res.status(404).end();
   res.setHeader("Content-Type", "model/gltf-binary");

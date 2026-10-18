@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: "2010-09-09"
+# Aweborn asset library (Phase 07). Every generated file (GLB models today;
+# textures, music, sounds later) is stored content-addressed in S3 and served
+# publicly through CloudFront at assets.aweborn.org, so any world can reuse
+# any creation. The creation archive (every provider call + response) lives
+# in the same bucket under archive/, which is never public.
+#
+#   models/<sha256>.glb          public via CloudFront, immutable
+#   archive/calls/YYYY/MM/DD/…   private: research replay
+#
+# Deploy (separate stack; does not touch aweborn-website or aweborn-vps):
+#   CERT=$(aws acm list-certificates --region us-east-1 \
+#     --query "CertificateSummaryList[?DomainName=='aweborn.org'].CertificateArn | [0]" --output text)
+#   aws cloudformation deploy --stack-name aweborn-assets --region us-east-1 \
+#     --template-file infra/cloudformation-assets.yml --capabilities CAPABILITY_NAMED_IAM \
+#     --parameter-overrides CertificateArn="$CERT"
+# Then create the writer's key straight into ~/keys (never a stack output):
+#   aws iam create-access-key --user-name aweborn-genai-writer --query AccessKey --output json \
+#     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const k=JSON.parse(s);
+#         const fs=require("fs"),h=process.env.HOME+"/keys/AWEBORN_";
+#         fs.writeFileSync(h+"ASSETS_AWS_ACCESS_KEY_ID.txt",k.AccessKeyId+"\n",{mode:0o600});
+#         fs.writeFileSync(h+"ASSETS_AWS_SECRET_ACCESS_KEY.txt",k.SecretAccessKey+"\n",{mode:0o600})})'
+#   infra/set-secret.sh push ASSETS_AWS_ACCESS_KEY_ID ASSETS_AWS_SECRET_ACCESS_KEY
+
+Description: Aweborn asset library. Content-addressed generated files in S3, public via CloudFront (assets.aweborn.org); private creation archive.
+
+Parameters:
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Default: Z077908710IGH7R1XO587
+  AssetsDomain:
+    Type: String
+    Default: assets.aweborn.org
+  CertificateArn:
+    Type: String
+    Description: The existing *.aweborn.org certificate (us-east-1) from the aweborn-website stack.
+
+Resources:
+  AssetBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "aweborn-assets-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Content-addressed and kept forever (the library); versioning guards
+      # against an accidental overwrite or delete of the archive.
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  AssetOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: aweborn-assets-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # CloudFront may read models/ only; archive/ stays private.
+  AssetBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AssetBucket
+      PolicyDocument:
+        Statement:
+          - Sid: CloudFrontReadsPublicPrefixes
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${AssetBucket.Arn}/models/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${AssetDistribution}"
+
+  AssetDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: aweborn asset library
+        PriceClass: PriceClass_100
+        HttpVersion: http2and3
+        Aliases: [!Ref AssetsDomain]
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: AssetS3
+            DomainName: !GetAtt AssetBucket.RegionalDomainName
+            OriginAccessControlId: !Ref AssetOAC
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: AssetS3
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6          # CachingOptimized
+          ResponseHeadersPolicyId: 60669652-455b-4ae9-85a4-c4c02393f86c # SimpleCORS (the game loads GLBs cross-origin)
+          Compress: true
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+
+  AssetDns:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      RecordSets:
+        - Name: !Ref AssetsDomain
+          Type: A
+          AliasTarget:
+            DNSName: !GetAtt AssetDistribution.DomainName
+            HostedZoneId: Z2FDTNDATAQYW2   # CloudFront's fixed zone
+        - Name: !Ref AssetsDomain
+          Type: AAAA
+          AliasTarget:
+            DNSName: !GetAtt AssetDistribution.DomainName
+            HostedZoneId: Z2FDTNDATAQYW2
+
+  # genai-service on the VPS: write new files and archive entries, read them
+  # back (library + replay). No delete: the library only grows.
+  GenaiWriter:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: aweborn-genai-writer
+      Policies:
+        - PolicyName: asset-library-write
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub "${AssetBucket.Arn}/*"
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt AssetBucket.Arn
+
+Outputs:
+  BucketName:
+    Value: !Ref AssetBucket
+  AssetsUrl:
+    Value: !Sub "https://${AssetsDomain}"
+  DistributionId:
+    Value: !Ref AssetDistribution

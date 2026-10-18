@@ -57,6 +57,25 @@ spec:
                   name: aweborn-secrets
                   key: OPENROUTER_API_KEY
                   optional: true
+            # Asset library (infra/cloudformation-assets.yml). Missing key = files stay on the box only.
+            - name: ASSETS_BUCKET
+              value: aweborn-assets-111551045759
+            - name: ASSETS_CDN_URL
+              value: https://assets.aweborn.org
+            - name: AWS_REGION
+              value: us-east-1
+            - name: ASSETS_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: ASSETS_AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: ASSETS_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aweborn-secrets
+                  key: ASSETS_AWS_SECRET_ACCESS_KEY
+                  optional: true
           volumeMounts:
             - name: genai-data
               mountPath: /data
