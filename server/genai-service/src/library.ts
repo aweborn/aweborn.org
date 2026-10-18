@@ -10,8 +10,8 @@
  *
  * Without ASSETS_BUCKET (local dev) everything stays on disk and still works.
  */
-import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { createReadStream, readdirSync, existsSync, statSync } from "node:fs";
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { createReadStream, readdirSync, existsSync, statSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { ensureOptimizedIsolated, optPath } from "./optimize.js";
@@ -44,9 +44,51 @@ export function initLibrary(db: DatabaseSync): void {
     s3 INTEGER NOT NULL DEFAULT 0, -- uploaded to the bucket
     created_at INTEGER NOT NULL)`);
   // Added after launch: preview image uploaded; pseudonymous creator (hash of the player id)
-  for (const col of ["thumb INTEGER NOT NULL DEFAULT 0", "creator TEXT", "opt INTEGER NOT NULL DEFAULT 0"]) {
+  // removed_*: the trash. A removed asset is hidden from the library but never deleted until purged.
+  for (const col of ["thumb INTEGER NOT NULL DEFAULT 0", "creator TEXT", "opt INTEGER NOT NULL DEFAULT 0",
+    "removed_at INTEGER", "removed_by TEXT"]) {
     try { db.exec(`ALTER TABLE library ADD COLUMN ${col}`); } catch { /* already there */ }
   }
+}
+
+export interface TrashAsset extends LibraryAsset { removed_at: number; removed_by: string | null; }
+
+/**
+ * Move an asset to the trash. `onlyCreator` (the pseudonymous creator hash) restricts it to
+ * that maker's own work; omit it for admins. Returns false if there's nothing to remove.
+ */
+export function removeAsset(db: DatabaseSync, sha: string, by: string, onlyCreator?: string): boolean {
+  const r = db.prepare(`UPDATE library SET removed_at = ?, removed_by = ?
+    WHERE sha = ? AND removed_at IS NULL ${onlyCreator ? "AND creator = ?" : ""}`)
+    .run(Date.now(), by.slice(0, 40), sha, ...(onlyCreator ? [onlyCreator] : []));
+  return Number(r.changes) > 0;
+}
+
+export function restoreAsset(db: DatabaseSync, sha: string): boolean {
+  const r = db.prepare("UPDATE library SET removed_at = NULL, removed_by = NULL WHERE sha = ? AND removed_at IS NOT NULL").run(sha);
+  return Number(r.changes) > 0;
+}
+
+export function listTrash(db: DatabaseSync): TrashAsset[] {
+  return db.prepare(`SELECT sha, file, kind, prompt, provider, bytes, s3, thumb, creator, created_at, removed_at, removed_by
+    FROM library WHERE removed_at IS NOT NULL ORDER BY removed_at DESC LIMIT 500`).all() as unknown as TrashAsset[];
+}
+
+/** Delete forever: only for items already in the trash. Removes the row, local copies and the bucket objects. */
+export async function purgeAsset(db: DatabaseSync, assetDir: string, sha: string): Promise<boolean> {
+  const row = db.prepare("SELECT file FROM library WHERE sha = ? AND removed_at IS NOT NULL").get(sha) as { file: string } | undefined;
+  if (!row) return false;
+  const png = row.file.replace(/\.glb$/, ".png");
+  if (s3) {
+    for (const key of [`models/${row.file}`, `models/opt/${row.file}`, `models/${png}`]) {
+      await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+    }
+  }
+  for (const p of [join(assetDir, row.file), join(assetDir, png), optPath(assetDir, row.file)]) rmSync(p, { force: true });
+  // The startup backfill re-catalogues completed jobs; detach this one so it stays gone
+  db.prepare("UPDATE jobs SET asset = NULL WHERE asset = ?").run(row.file);
+  db.prepare("DELETE FROM library WHERE sha = ?").run(sha);
+  return true;
 }
 
 async function exists(key: string): Promise<boolean> {
@@ -182,7 +224,7 @@ export async function backfill(db: DatabaseSync, assetDir: string, dataDir: stri
 export function listLibrary(db: DatabaseSync, q: string, limit: number): LibraryAsset[] {
   const like = `%${q.replace(/[%_]/g, "")}%`;
   return db.prepare(`SELECT sha, file, kind, prompt, provider, bytes, s3, thumb, creator, created_at FROM library
-    WHERE prompt LIKE ? ORDER BY created_at DESC LIMIT ?`).all(like, limit) as unknown as LibraryAsset[];
+    WHERE prompt LIKE ? AND removed_at IS NULL ORDER BY created_at DESC LIMIT ?`).all(like, limit) as unknown as LibraryAsset[];
 }
 
 export function assetFiles(assetDir: string): string[] {

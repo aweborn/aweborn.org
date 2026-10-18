@@ -33,6 +33,31 @@ export function LibraryPanel() {
   const [error, setError] = useState<string | null>(null)
   const [placed, setPlaced] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // The pseudonym the server stores as an asset's maker (first 6 hex of sha256(playerId))
+  const [myMaker, setMyMaker] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!playerId) return
+    let live = true
+    crypto.subtle.digest('SHA-256', new TextEncoder().encode(playerId)).then((buf) => {
+      if (live) setMyMaker([...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 6))
+    })
+    return () => {
+      live = false
+    }
+  }, [playerId])
+
+  const remove = useCallback(async (a: Asset) => {
+    setConfirming(null)
+    try {
+      const res = await fetch(`${AUTH_URL}/api/player/library/${a.sha}/remove`, { method: 'POST', credentials: 'include' })
+      if (!res.ok) throw new Error('bad')
+      setAssets((all) => all.filter((x) => x.sha !== a.sha))
+    } catch {
+      setError("Couldn't remove that. Try again soon.")
+    }
+  }, [])
 
   useEffect(() => {
     if (!activeWorldId) return
@@ -136,6 +161,16 @@ export function LibraryPanel() {
             <button type="button" className="planner-chip library-place" onClick={() => place(a)}>
               {placed === a.sha ? 'Placed ✓' : 'Place'}
             </button>
+            {myMaker && a.creator === myMaker &&
+              (confirming === a.sha ? (
+                <button type="button" className="planner-chip library-remove" onClick={() => remove(a)} onBlur={() => setConfirming(null)} autoFocus>
+                  Remove for everyone?
+                </button>
+              ) : (
+                <button type="button" className="planner-chip library-remove" aria-label={`Remove ${a.prompt}`} title="Remove" onClick={() => setConfirming(a.sha)}>
+                  ✕
+                </button>
+              ))}
           </li>
         ))}
         {!loading && !assets.length && !error && <li className="planner-empty">Nothing here yet. Make something, and it lands here for everyone.</li>}

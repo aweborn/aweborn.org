@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { providerFor, type ProviderJob } from "./providers.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
-import { initLibrary, addToLibrary, archiveToS3, backfill, listLibrary, CDN_URL, s3Enabled } from "./library.js";
+import { initLibrary, addToLibrary, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -169,6 +169,37 @@ app.get("/library", (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.slice(0, 80) : "";
   const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
   res.json({ assets: listLibrary(db, q, limit), cdn: CDN_URL || null });
+});
+
+// Trash (internal: sync-service checks who may call these). Removal never deletes; only purge does.
+// api.aweborn.org proxies this service publicly, and Caddy always sets X-Forwarded-For:
+// anything carrying it came from the internet and is refused. (Caddy 404s these paths too.)
+app.use(["/trash", "/library/:sha/remove"], (req, res, next) => {
+  if (req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"]) return res.status(404).end();
+  next();
+});
+const SHA = /^[a-f0-9]{64}$/;
+app.post("/library/:sha/remove", (req, res) => {
+  const { by, onlyCreator } = req.body ?? {};
+  if (!SHA.test(req.params.sha) || typeof by !== "string" || (onlyCreator !== undefined && typeof onlyCreator !== "string")) {
+    return res.status(400).json({ error: "bad_request" });
+  }
+  const ok = removeAsset(db, req.params.sha, by, onlyCreator);
+  res.status(ok ? 200 : 404).json({ ok });
+});
+app.get("/trash", (_req, res) => res.json({ assets: listTrash(db), cdn: CDN_URL || null }));
+app.post("/trash/:sha/restore", (req, res) => {
+  const ok = SHA.test(req.params.sha) && restoreAsset(db, req.params.sha);
+  res.status(ok ? 200 : 404).json({ ok });
+});
+app.delete("/trash/:sha", async (req, res) => {
+  try {
+    const ok = SHA.test(req.params.sha) && (await purgeAsset(db, ASSET_DIR, req.params.sha));
+    res.status(ok ? 200 : 404).json({ ok });
+  } catch (err) {
+    console.error("[library] purge failed:", (err as Error).message);
+    res.status(500).json({ error: "purge_failed", message: (err as Error).message.slice(0, 200) });
+  }
 });
 
 app.get("/assets/:file", (req, res) => {

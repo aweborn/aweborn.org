@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Trash (admin) | Aweborn</title>
+    <meta name="description" content="Admin only: assets removed from the Aweborn library." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root { color-scheme: dark; --bg: #050510; --glass: rgba(10, 10, 46, 0.6); --border: rgba(238, 240, 246, 0.12); --text: #eef0f6; --dim: rgba(238, 240, 246, 0.55); --accent: #e8b94a; --danger: #ff9a86; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: radial-gradient(1200px 600px at 20% -10%, #12124a 0%, var(--bg) 60%); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+      main { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+      h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+      .sub { color: var(--dim); margin: 0 0 24px; }
+      .bar { display: flex; gap: 8px; margin-bottom: 20px; }
+      input { flex: 1; font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; outline: none; }
+      input:focus { border-color: var(--accent); }
+      button { font: inherit; font-size: 13px; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; cursor: pointer; transition: background 0.15s, transform 0.15s; }
+      button:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+      button.primary { color: #1a1206; border: none; font-weight: 600; background: linear-gradient(135deg, #ffd27a, #ff9f5a); }
+      button.danger { color: var(--danger); border-color: rgba(255, 154, 134, 0.4); }
+      ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+      li { display: grid; grid-template-columns: 72px 1fr auto; gap: 14px; align-items: center; padding: 12px 14px; background: var(--glass); border: 1px solid var(--border); border-radius: 14px; backdrop-filter: blur(8px); }
+      .thumb { width: 72px; height: 72px; border-radius: 12px; object-fit: cover; background: rgba(255, 255, 255, 0.06); display: grid; place-items: center; color: var(--dim); font-size: 26px; }
+      .prompt { margin: 0 0 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      .meta { font-size: 12px; color: var(--dim); }
+      .actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+      .msg { min-height: 1.4em; color: var(--dim); margin: 0 0 12px; }
+      .msg.err { color: var(--danger); }
+      .empty { color: var(--dim); text-align: center; padding: 40px 0; }
+      @media (max-width: 560px) { li { grid-template-columns: 56px 1fr; } .actions { grid-column: 1 / -1; flex-direction: row; } .thumb { width: 56px; height: 56px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Trash</h1>
+      <p class="sub">Removed library assets. Hidden from everyone; nothing is deleted until you delete it forever. Placed copies in worlds keep working.</p>
+      <form class="bar" id="trash-login" autocomplete="off">
+        <input id="trash-token" type="password" placeholder="Admin token" aria-label="Admin token" autocomplete="off" />
+        <button class="primary" type="submit" id="trash-load">Load</button>
+      </form>
+      <p class="msg" id="trash-msg" role="status"></p>
+      <ul id="trash-list"></ul>
+    </main>
+    <script>
+      const API = location.hostname === 'localhost' ? 'http://localhost:1234' : 'https://sync.aweborn.org'
+      const $ = (id) => document.getElementById(id)
+      const tokenEl = $('trash-token'), msg = $('trash-msg'), list = $('trash-list')
+      tokenEl.value = sessionStorage.getItem('aweborn-admin') || ''
+
+      function say(text, err) { msg.textContent = text; msg.className = 'msg' + (err ? ' err' : '') }
+
+      async function call(path, method) {
+        const res = await fetch(API + path, { method, headers: { Authorization: 'Bearer ' + tokenEl.value.trim() } })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(res.status === 401 ? 'Wrong token.' : j.message || j.error || 'Failed (' + res.status + ')')
+        return j
+      }
+
+      function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+
+      function row(a) {
+        const li = el('li')
+        if (a.thumb) { const img = el('img', 'thumb'); img.src = API + '/assets/' + a.sha + '.png'; img.alt = ''; img.width = 72; img.height = 72; li.append(img) }
+        else li.append(el('span', 'thumb', '\u25A6'))
+        const body = el('div')
+        body.append(el('p', 'prompt', a.prompt))
+        body.append(el('span', 'meta',
+          (a.creator ? 'maker ' + a.creator + ' \u00B7 ' : 'no maker \u00B7 ') + (a.bytes / 1048576).toFixed(1) + ' MB \u00B7 made ' + new Date(a.created_at).toLocaleDateString() +
+          ' \u00B7 removed ' + new Date(a.removed_at).toLocaleString() + ' by ' + (a.removed_by || '?')))
+        const actions = el('div', 'actions')
+        const restore = el('button', 'primary', 'Restore')
+        restore.onclick = async () => { restore.disabled = true; try { await call('/api/admin/trash/' + a.sha + '/restore', 'POST'); li.remove(); say('Restored. It is back in the library.') } catch (e) { restore.disabled = false; say(e.message, true) } }
+        const purge = el('button', 'danger', 'Delete forever')
+        purge.onclick = async () => {
+          if (!confirm('Delete forever?\n\n"' + a.prompt.slice(0, 80) + '"\n\nThe file is removed from storage. Copies placed in worlds will stop loading. This cannot be undone.')) return
+          purge.disabled = true
+          try { await call('/api/admin/trash/' + a.sha, 'DELETE'); li.remove(); say('Deleted forever.') } catch (e) { purge.disabled = false; say(e.message, true) }
+        }
+        actions.append(restore, purge)
+        li.append(body, actions)
+        return li
+      }
+
+      async function load() {
+        say('Loading\u2026'); list.replaceChildren()
+        try {
+          const j = await call('/api/admin/trash', 'GET')
+          sessionStorage.setItem('aweborn-admin', tokenEl.value.trim())
+          if (!j.assets.length) { list.append(el('li', 'empty', 'The trash is empty.')); list.lastChild.style.display = 'block'; say(''); return }
+          j.assets.forEach((a) => list.append(row(a)))
+          say(j.assets.length + ' in the trash.')
+        } catch (e) { say(e.message, true) }
+      }
+
+      $('trash-login').addEventListener('submit', (e) => { e.preventDefault(); load() })
+      if (tokenEl.value) load()
+    </script>
+  </body>
+</html>

@@ -11,6 +11,7 @@ import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary } from "./creations.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
+import { removeOwnAsset, handleTrashAdmin } from "./trash.js";
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -242,6 +243,9 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   if (path?.startsWith("/api/player/create/") && req.method === "GET") {
     return creationStatus(rooms, session.playerId, path.slice("/api/player/create/".length), json);
   }
+  // Library: a maker removes their own asset → the admin trash (never deleted)
+  const rm = /^\/api\/player\/library\/([a-f0-9]{64})\/remove$/.exec(path ?? "");
+  if (rm && req.method === "POST") return removeOwnAsset(session.playerId, rm[1], json);
   return json(404, { error: "not_found" });
 }
 
@@ -365,6 +369,7 @@ const server = createServer((req, res) => {
   if (handleManaPublic(req, res)) return;
   if (handleAssets(req, res)) return;
   if (handleLibrary(req, res)) return;
+  if (req.url?.startsWith("/api/admin/") && handleTrashAdmin(req, res, req.url.split("?")[0], MANA_ADMIN_TOKEN, corsHeaders(req))) return;
   if (req.url?.startsWith("/api/player/")) {
     const origin = req.headers.origin;
     if (isTrustedOrigin(origin)) {
