@@ -110,6 +110,15 @@ for (const r of db.prepare("SELECT id FROM jobs WHERE status IN ('queued','proce
 const app = express();
 app.use(express.json({ limit: "256kb" }));
 
+// genai-service is cluster-internal: sync-service is the only caller and does the authorization.
+// api.aweborn.org still proxies it (health checks), and Caddy always sets X-Forwarded-For, so
+// anything carrying that header came from the internet and may only read /health. (Caddy also
+// 404s everything else at the edge; this is the second lock.)
+app.use((req, res, next) => {
+  if (req.path !== "/health" && (req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"])) return res.status(404).end();
+  next();
+});
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "genai-service", providers: { model: providerFor("model").name, llm: llmConfigured() ? "openrouter" : "none" }, library: s3Enabled() ? "s3" : "local" });
 });
@@ -171,13 +180,7 @@ app.get("/library", (req, res) => {
   res.json({ assets: listLibrary(db, q, limit), cdn: CDN_URL || null });
 });
 
-// Trash (internal: sync-service checks who may call these). Removal never deletes; only purge does.
-// api.aweborn.org proxies this service publicly, and Caddy always sets X-Forwarded-For:
-// anything carrying it came from the internet and is refused. (Caddy 404s these paths too.)
-app.use(["/trash", "/library/:sha/remove"], (req, res, next) => {
-  if (req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"]) return res.status(404).end();
-  next();
-});
+// Trash (sync-service checks who may call these). Removal never deletes; only purge does.
 const SHA = /^[a-f0-9]{64}$/;
 app.post("/library/:sha/remove", (req, res) => {
   const { by, onlyCreator } = req.body ?? {};

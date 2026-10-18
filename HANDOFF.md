@@ -33,7 +33,7 @@ An immersive, multiplayer 3D cosmic universe for Aweborn, a non-profit. Players 
 ```text
 User → CloudFront (CDN) → S3 (static Vite/React app)
      → sync.aweborn.org → Lightsail VPS (k3s) → Caddy → sync-service (WSS CRDT sync)
-     → api.aweborn.org  → Lightsail VPS (k3s) → Caddy → genai-service (HTTPS REST)
+     → api.aweborn.org  → Caddy, /health only (genai-service is cluster-internal; sync-service is its only caller)
                         ↘ API Gateway → Lambda → Stripe API (webhooks only)
      → Tailnet          → Lightsail VPS (k3s) → agent-runner (cron LLM agents, HTTP API)
 ```

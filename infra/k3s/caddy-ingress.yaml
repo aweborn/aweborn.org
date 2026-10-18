@@ -25,11 +25,11 @@ data:
       }
     }
 
-    # api.aweborn.org — HTTP reverse proxy to genai-service
+    # api.aweborn.org: genai-service is cluster-internal (sync-service is the only caller and
+    # does the authorization). The public hostname serves /health only.
     api.aweborn.org {
-      # Trash routes are cluster-internal (sync-service authorizes them)
-      @internal path /trash /trash/* /library/*/remove
-      respond @internal 404
+      @notHealth not path /health
+      respond @notHealth 404
 
       reverse_proxy genai-service:3001
     }
