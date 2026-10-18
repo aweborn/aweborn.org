@@ -182,7 +182,7 @@ app.get("/assets/:file", (req, res) => {
   if (inS3) {
     // Short-lived redirect: which copy to serve (web-optimized vs original) can change
     res.setHeader("Cache-Control", "public, max-age=300");
-    return res.redirect(302, `${CDN_URL}/models/${!isPng && row2?.opt ? "opt/" : ""}${file}`);
+    return res.redirect(302, `${CDN_URL}/models/${!isPng && row2?.opt ? "opt/" : ""}${file}?c=2`);
   }
   const optFile = join(ASSET_DIR, "opt", file);
   const path = !isPng && existsSync(optFile) ? optFile : join(ASSET_DIR, file);
