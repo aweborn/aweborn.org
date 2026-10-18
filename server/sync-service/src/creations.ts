@@ -127,7 +127,7 @@ export function handleAssets(req: IncomingMessage, res: ServerResponse): boolean
     .then((up) => {
       const loc = up.headers.get("location");
       if (up.status >= 300 && up.status < 400 && loc) {
-        res.writeHead(301, { Location: loc, "Cache-Control": "public, max-age=31536000, immutable" });
+        res.writeHead(302, { Location: loc, "Cache-Control": "public, max-age=300" });
         res.end();
         return;
       }

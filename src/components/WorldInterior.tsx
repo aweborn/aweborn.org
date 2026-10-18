@@ -13,7 +13,7 @@ import { registerModelShape } from '../stores/modelShapes'
 
 /** Generated GLB, fitted into a unit box centred on the object (matches its collider). */
 function GeneratedModel({ asset }: { asset: string }) {
-  const { scene } = useGLTF(`${AUTH_URL}/assets/${asset}`)
+  const { scene } = useGLTF(`${AUTH_URL}/assets/${asset}?v=2`)
   const fitted = useMemo(() => {
     const root = scene.clone(true)
     const box = new THREE.Box3().setFromObject(root)

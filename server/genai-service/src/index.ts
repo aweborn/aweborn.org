@@ -91,8 +91,9 @@ async function run(id: string): Promise<void> {
   try {
     update(id, { status: "processing" });
     const out = await provider.generate(job);
-    update(id, { status: "complete", progress: 100, asset: out.asset, cost_usd: out.costUsd });
+    // Shrink + upload first: the game loads the web copy the moment the job completes
     await addToLibrary(db, ASSET_DIR, { file: out.asset, kind: row.kind, prompt: row.prompt, provider: provider.name, jobId: id, ref: row.ref, creator: row.creator });
+    update(id, { status: "complete", progress: 100, asset: out.asset, cost_usd: out.costUsd });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
     console.error(`[genai] job ${id} failed:`, msg);
@@ -176,13 +177,15 @@ app.get("/assets/:file", (req, res) => {
   // In the library bucket: send the client to the CDN (cached at the edge, survives the box)
   const isPng = file.endsWith(".png");
   const glb = file.replace(/\.png$/, ".glb");
-  const row2 = db.prepare("SELECT s3, thumb FROM library WHERE file = ?").get(glb) as { s3: number; thumb: number } | undefined;
+  const row2 = db.prepare("SELECT s3, thumb, opt FROM library WHERE file = ?").get(glb) as { s3: number; thumb: number; opt: number } | undefined;
   const inS3 = CDN_URL && (isPng ? row2?.thumb : row2?.s3);
   if (inS3) {
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    return res.redirect(301, `${CDN_URL}/models/${file}`);
+    // Short-lived redirect: which copy to serve (web-optimized vs original) can change
+    res.setHeader("Cache-Control", "public, max-age=300");
+    return res.redirect(302, `${CDN_URL}/models/${!isPng && row2?.opt ? "opt/" : ""}${file}`);
   }
-  const path = join(ASSET_DIR, file);
+  const optFile = join(ASSET_DIR, "opt", file);
+  const path = !isPng && existsSync(optFile) ? optFile : join(ASSET_DIR, file);
   if (!existsSync(path)) return res.status(404).end();
   res.setHeader("Content-Type", isPng ? "image/png" : "model/gltf-binary");
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");

@@ -14,6 +14,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s
 import { createReadStream, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
+import { ensureOptimized, optPath } from "./optimize.js";
 import type { DatabaseSync } from "node:sqlite";
 
 const BUCKET = process.env.ASSETS_BUCKET ?? "";
@@ -43,7 +44,7 @@ export function initLibrary(db: DatabaseSync): void {
     s3 INTEGER NOT NULL DEFAULT 0, -- uploaded to the bucket
     created_at INTEGER NOT NULL)`);
   // Added after launch: preview image uploaded; pseudonymous creator (hash of the player id)
-  for (const col of ["thumb INTEGER NOT NULL DEFAULT 0", "creator TEXT"]) {
+  for (const col of ["thumb INTEGER NOT NULL DEFAULT 0", "creator TEXT", "opt INTEGER NOT NULL DEFAULT 0"]) {
     try { db.exec(`ALTER TABLE library ADD COLUMN ${col}`); } catch { /* already there */ }
   }
 }
@@ -68,6 +69,32 @@ export async function uploadModel(path: string, file: string): Promise<boolean> 
   }));
   return true;
 }
+
+/** Optimizing decodes a model many times over in memory; skip files the box can't safely handle. */
+const OPT_MAX_BYTES = 30 * 1024 * 1024;
+
+/**
+ * Make sure a web-ready copy (models/opt/<file>) exists and is flagged. A copy
+ * already in the bucket (e.g. made on a bigger machine for the giants) is just
+ * adopted. The original stays untouched forever.
+ */
+export async function syncOptimized(db: DatabaseSync, assetDir: string, file: string): Promise<void> {
+  const flag = () => db.prepare("UPDATE library SET opt = 1 WHERE file = ?").run(file);
+  if (s3 && (await exists(`models/opt/${file}`))) return void flag();
+  const src = join(assetDir, file);
+  if (!existsSync(src) || statSync(src).size > OPT_MAX_BYTES) return;
+  const out = await ensureOptimized(assetDir, file);
+  if (!out) return;
+  if (s3) {
+    await s3.send(new PutObjectCommand({
+      Bucket: BUCKET, Key: `models/opt/${file}`, Body: createReadStream(out), ContentLength: statSync(out).size,
+      ContentType: "model/gltf-binary", CacheControl: "public, max-age=31536000, immutable",
+    }));
+  }
+  flag();
+}
+
+export { optPath };
 
 /** Upload <sha>.png beside the model if we have one. */
 export async function uploadThumb(db: DatabaseSync, assetDir: string, file: string): Promise<void> {
@@ -96,6 +123,7 @@ export async function addToLibrary(
   try {
     if (await uploadModel(path, a.file)) db.prepare("UPDATE library SET s3 = 1 WHERE file = ?").run(a.file);
     await uploadThumb(db, assetDir, a.file);
+    await syncOptimized(db, assetDir, a.file);
   } catch (err) {
     console.error(`[library] upload ${a.file} failed (will retry on restart):`, (err as Error).message);
   }
@@ -122,6 +150,9 @@ export async function backfill(db: DatabaseSync, assetDir: string, dataDir: stri
     db.prepare(`INSERT OR IGNORE INTO library (sha, file, kind, prompt, provider, job_id, ref, bytes, created_at)
       VALUES (?, ?, 'model', ?, ?, ?, ?, ?, ?)`).run(j.asset.replace(/\.\w+$/, ""), j.asset, j.prompt, j.provider, j.id, j.ref,
       existsSync(join(assetDir, j.asset)) ? statSync(join(assetDir, j.asset)).size : 0, Date.now());
+  }
+  for (const { file } of db.prepare("SELECT file FROM library WHERE opt = 0").all() as { file: string }[]) {
+    try { await syncOptimized(db, assetDir, file); } catch (err) { console.error(`[library] optimize ${file} failed:`, (err as Error).message); }
   }
   if (!s3) return;
   const pendingThumbs = db.prepare("SELECT file FROM library WHERE thumb = 0").all() as { file: string }[];
