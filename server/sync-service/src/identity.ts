@@ -34,6 +34,13 @@ export function initIdentity(database: Database.Database): void {
       characterId TEXT NOT NULL
     );
 
+    -- Where a character stands: kept forever, so returning players resume on any device
+    CREATE TABLE IF NOT EXISTS character_location (
+      characterId TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      updatedAt INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS world_index (
       accountId TEXT NOT NULL,
       worldId TEXT NOT NULL,
@@ -263,4 +270,49 @@ export function worldIndex(accountId: string): WorldIndexEntry[] {
          FROM world_index WHERE accountId = ? ORDER BY discoveredAt`,
     )
     .all(accountId) as WorldIndexEntry[];
+}
+
+
+// ── Where a character stands ─────────────────────────────────────────
+
+export interface CharacterLocation {
+  v: 1;
+  at: number;
+  flight: { p: [number, number, number]; q: [number, number, number, number] };
+  world?: { id: string; x: number; y: number; z: number; fx: number; fz: number; pitch: number };
+}
+
+const finite = (xs: unknown[]): boolean => xs.every((n) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) < 1e9);
+
+/** Validate a client-reported location; returns a clean copy or null. */
+export function cleanLocation(raw: unknown): CharacterLocation | null {
+  const r = raw as Partial<CharacterLocation> | null;
+  const f = r?.flight;
+  if (!r || r.v !== 1 || !f || !Array.isArray(f.p) || f.p.length !== 3 || !Array.isArray(f.q) || f.q.length !== 4) return null;
+  if (!finite([...f.p, ...f.q])) return null;
+  const out: CharacterLocation = { v: 1, at: Date.now(), flight: { p: [f.p[0], f.p[1], f.p[2]], q: [f.q[0], f.q[1], f.q[2], f.q[3]] } };
+  const w = r.world;
+  if (w && typeof w.id === "string" && w.id.length <= 64 && finite([w.x, w.y, w.z, w.fx, w.fz, w.pitch])) {
+    out.world = { id: w.id.toLowerCase(), x: w.x, y: w.y, z: w.z, fx: w.fx, fz: w.fz, pitch: w.pitch };
+  }
+  return out;
+}
+
+const lastWrite = new Map<string, number>();
+
+/** Save a character's location. False if they're writing too fast (the next write wins anyway). */
+export function saveLocation(characterId: string, loc: CharacterLocation): boolean {
+  const now = Date.now();
+  if (now - (lastWrite.get(characterId) ?? 0) < 400) return false;
+  lastWrite.set(characterId, now);
+  db.prepare(
+    `INSERT INTO character_location (characterId, data, updatedAt) VALUES (?, ?, ?)
+       ON CONFLICT(characterId) DO UPDATE SET data = excluded.data, updatedAt = excluded.updatedAt`,
+  ).run(characterId, JSON.stringify(loc), now);
+  return true;
+}
+
+export function loadLocation(characterId: string): CharacterLocation | null {
+  const row = db.prepare(`SELECT data FROM character_location WHERE characterId = ?`).get(characterId) as { data: string } | undefined;
+  return row ? (JSON.parse(row.data) as CharacterLocation) : null;
 }

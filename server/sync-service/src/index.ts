@@ -4,7 +4,7 @@ import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
 import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword } from "./auth.js";
-import { listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex } from "./identity.js";
+import { listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex, cleanLocation, saveLocation, loadLocation } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 import { timingSafeEqual } from "node:crypto";
@@ -211,6 +211,15 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     const worldId = knownWorld(body?.worldId);
     if (!worldId) return json(404, { error: "not_found" });
     return json(200, { worldId, ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "link") });
+  }
+  // Where this character stands (saved as they move; restored on any device)
+  if (path === "/api/player/location" && req.method === "GET") {
+    return json(200, { location: loadLocation(session.playerId) });
+  }
+  if (path === "/api/player/location" && req.method === "POST") {
+    const loc = cleanLocation(await readJson(req).catch(() => null)); // sent as text/plain on tab close: no preflight
+    if (!loc) return json(400, { error: "bad_request" });
+    return json(saveLocation(session.playerId, loc) ? 200 : 429, { ok: true });
   }
   // Creations (Phase 07): reserve → generate → settle
   if (path === "/api/player/create" && req.method === "POST") {
