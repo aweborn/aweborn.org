@@ -3,6 +3,10 @@ import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
 import type { Blueprint } from '@aweborn/shared/blueprint'
 import { usePlannerStore } from '../stores/plannerStore'
+import { setVoxelTerrain, placeModel } from '../stores/worldStore'
+import { usePresence } from '../hooks/usePresence'
+import { cellToWorld, generateVoxels } from '@aweborn/shared/voxel'
+import type { BlueprintAsset } from '@aweborn/shared/blueprint'
 
 /**
  * World Planner panel (Phase 07): talk a world into a blueprint before
@@ -16,6 +20,18 @@ interface Turn {
   chips?: string[]
   meta?: string
 }
+
+interface Making {
+  key: string
+  jobId?: string
+  status: 'queued' | 'processing' | 'complete' | 'failed' | 'later'
+  progress: number
+  message?: string
+  asset: BlueprintAsset
+  blueprintId: string
+  terrain: Blueprint['terrain']
+}
+const POLL_MS = 2500
 
 const MODEL_LABEL = (id: string) => id.split('/')[1] ?? id
 
@@ -34,6 +50,40 @@ export function PlannerPanel() {
   const logRef = useRef<HTMLDivElement>(null)
 
   const ghostVisible = usePlannerStore((s) => s.visible)
+  const { playerId } = usePresence()
+  const [makings, setMakings] = useState<Making[]>([])
+  const [manifesting, setManifesting] = useState(false)
+
+  // Poll manifest jobs; place each model where the blueprint put it (works with the panel closed)
+  useEffect(() => {
+    const pending = makings.filter((m) => m.jobId && (m.status === 'queued' || m.status === 'processing'))
+    if (!pending.length) return
+    const t = setTimeout(async () => {
+      for (const m of pending) {
+        try {
+          const res = await fetch(`${AUTH_URL}/api/player/create/${m.jobId}`, { credentials: 'include' })
+          if (!res.ok) continue
+          const j = (await res.json()) as { status: Making['status']; progress: number; asset?: string; error?: string }
+          if (j.status === 'complete' && j.asset) {
+            const doc = useUniverseStore.getState().activeWorldDoc
+            const grid = generateVoxels(m.terrain)
+            const at = m.asset.at ?? [grid.size[0] / 2, 0, grid.size[2] / 2]
+            const p = cellToWorld(grid, at)
+            const scale = Math.max(...(m.asset.size ?? [1.5, 1.5, 1.5]))
+            if (doc) {
+              placeModel(doc, j.asset, m.asset.prompt, { x: p.x, y: p.y + scale / 2, z: p.z }, playerId, {
+                scale, rotY: m.asset.rotationY, planKey: `${m.blueprintId}:${m.key}`,
+              })
+            }
+          }
+          setMakings((all) => all.map((x) => (x.jobId === m.jobId ? { ...x, status: j.status, progress: j.progress, message: j.error } : x)))
+        } catch {
+          /* keep polling */
+        }
+      }
+    }, POLL_MS)
+    return () => clearTimeout(t)
+  }, [makings, playerId])
 
   // Entering a world resumes your last plan there (everything is saved server-side)
   useEffect(() => {
@@ -93,6 +143,48 @@ export function PlannerPanel() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
   }, [turns, busy])
 
+  const manifest = useCallback(async () => {
+    if (!blueprint || !sessionId || manifesting || !activeWorldId) return
+    setManifesting(true)
+    setError(null)
+    try {
+      const res = await fetch(`${AUTH_URL}/api/player/plan/manifest`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      })
+      const j = (await res.json().catch(() => ({}))) as {
+        terrain?: Blueprint['terrain']; items?: { key: string; jobId?: string; error?: string; message?: string }[]; message?: string
+      }
+      if (!res.ok || !j.terrain || !j.items) {
+        setError(j.message ?? 'The manifest didn\'t start. Nothing was drawn.')
+        return
+      }
+      // Terrain is free and instant: write it to the world so everyone sees it
+      const doc = useUniverseStore.getState().activeWorldDoc
+      if (doc) setVoxelTerrain(doc, j.terrain)
+      const byKey = new Map(blueprint.assets.map((a) => [a.key, a]))
+      setMakings((prev) => [
+        ...prev.filter((m) => m.status === 'queued' || m.status === 'processing'),
+        ...j.items!.filter((it) => byKey.has(it.key)).map((it): Making => ({
+          key: it.key,
+          jobId: it.jobId,
+          status: it.jobId ? 'queued' : it.error === 'later' ? 'later' : 'failed',
+          progress: 0,
+          message: it.message,
+          asset: byKey.get(it.key)!,
+          blueprintId: blueprint.id,
+          terrain: j.terrain!,
+        })),
+      ])
+    } catch {
+      setError('Creation is resting right now. Try again soon.')
+    } finally {
+      setManifesting(false)
+    }
+  }, [blueprint, sessionId, manifesting, activeWorldId])
+
   const send = useCallback(
     async (text: string) => {
       const message = text.trim()
@@ -134,10 +226,13 @@ export function PlannerPanel() {
 
   if (!activeWorldId) return null
 
+  const active = makings.filter((m) => m.status === 'queued' || m.status === 'processing')
+
   if (!open) {
     return (
       <button id="planner-open" className="planner-open" type="button" onClick={() => setOpen(true)}>
         ✧ Plan <kbd>P</kbd>
+        {active.length > 0 && <span className="planner-open-badge">{active.length} manifesting</span>}
       </button>
     )
   }
@@ -205,6 +300,28 @@ export function PlannerPanel() {
             ))}
           </ul>
         </details>
+      )}
+
+      {makings.length > 0 && (
+        <ul className="planner-makings" aria-live="polite">
+          {makings.map((m) => (
+            <li key={`${m.key}-${m.jobId ?? m.status}`} className={`planner-making planner-making--${m.status}`}>
+              <span>{m.key.replace(/-/g, ' ')}</span>
+              <span className="planner-making-state">
+                {m.status === 'complete' ? 'made ✦' : m.status === 'later' ? 'later' : m.status === 'failed' ? (m.message ?? 'failed') : `${m.progress}%`}
+              </span>
+              {(m.status === 'queued' || m.status === 'processing') && (
+                <span className="planner-making-bar" style={{ width: `${Math.max(4, m.progress)}%` }} />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {blueprint && (
+        <button id="planner-manifest" className="planner-manifest" type="button" onClick={manifest} disabled={manifesting || busy}>
+          {manifesting ? 'Manifesting…' : `Manifest ✦ ≈${blueprint.estimate.items.reduce((s, i) => s + i.mana, 0)} mana`}
+        </button>
       )}
 
       <form className="planner-form" onSubmit={(e) => { e.preventDefault(); void send(input) }}>

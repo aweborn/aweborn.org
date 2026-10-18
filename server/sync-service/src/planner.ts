@@ -15,8 +15,9 @@
 import { randomUUID } from "node:crypto";
 import type { RoomManager } from "./rooms.js";
 import { getDb } from "./persistence.js";
+import { startJob } from "./creations.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
-import { estimate, parsePlannerTurn, LIMITS, type Blueprint, type BlueprintDraft } from "../../../shared/blueprint.js";
+import { estimate, parsePlannerTurn, LIMITS, ASSET_MANA, type Blueprint, type BlueprintDraft } from "../../../shared/blueprint.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 
@@ -264,6 +265,46 @@ export function planResume(playerId: string, worldId: string, json: Json): void 
     else turns.push({ who: "planner", text: p.reply, chips: p.chips, meta: `${(e.model ?? "").split("/")[1] ?? ""} · ${(e.cost_mana ?? 0).toFixed(1)} mana` });
   }
   json(200, { session: { sessionId: s.id, version: s.version, blueprint: s.blueprint, turns } });
+}
+
+/**
+ * Manifest: make the current blueprint real. Each model asset gets its own
+ * hold + Meshy job (a failed item releases only its share). The client
+ * writes the terrain to the World CRDT and places each model as it lands.
+ * Other asset kinds (music, ambience, …) wait for their providers.
+ *
+ *   POST /api/player/plan/manifest { sessionId, keys? } → { version, terrain, items: [{ key, jobId } | { key, error }] }
+ */
+export async function planManifest(rooms: RoomManager, playerId: string, body: unknown, json: Json): Promise<void> {
+  const b = (body ?? {}) as { sessionId?: unknown; keys?: unknown };
+  const s = typeof b.sessionId === "string" ? getSession(b.sessionId) : undefined;
+  if (!s || s.playerId !== playerId || !s.blueprint) return json(404, { error: "not_found" });
+  const only = Array.isArray(b.keys) ? new Set(b.keys.filter((k): k is string => typeof k === "string")) : null;
+  const bp = s.blueprint;
+  const items: { key: string; jobId?: string; error?: string; message?: string }[] = [];
+  for (const a of bp.assets) {
+    if (only && !only.has(a.key)) continue;
+    if (a.kind !== "model" && a.kind !== "terrain-piece") {
+      items.push({ key: a.key, error: "later", message: `${a.kind} comes later` });
+      continue;
+    }
+    const ref = `manifest:${s.id}:v${bp.version}:${a.key}:${randomUUID().slice(0, 6)}`;
+    const est = ASSET_MANA[a.kind].quick; // preview quality only until refine is wired
+    const decision = rooms.admission.requestDraw({ playerId, ref, estimate: est, progress: PROVISIONAL_PROGRESS });
+    if (!decision.ok) {
+      items.push({ key: a.key, error: decision.reason, message: decision.message });
+      continue;
+    }
+    try {
+      const prompt = `${a.prompt}. Style: ${bp.style.artDirection}`;
+      items.push({ key: a.key, jobId: await startJob(ref, playerId, prompt) });
+    } catch (err) {
+      rooms.mana.release(ref);
+      items.push({ key: a.key, error: "genai_unavailable", message: (err as Error).message });
+    }
+  }
+  logEvent(s.id, "manifest", { version: bp.version, items }, { version: bp.version });
+  json(200, { version: bp.version, terrain: bp.terrain, items });
 }
 
 function stripMeta(bp: Blueprint): BlueprintDraft {

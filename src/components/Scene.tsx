@@ -19,6 +19,7 @@ import { useWorldStore, kickObject, settleObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
 import { usePlannerStore } from '../stores/plannerStore'
+import { worldVoxels, sameTerrain } from '../stores/worldVoxels'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
@@ -357,10 +358,13 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const avatar = useRef<THREE.Group>(null!)
   const objects = useWorldStore((s) => s.objects)
   const ghostBoxes = usePlannerStore((s) => (s.visible && s.worldId === activeWorldId ? s.colliders : NO_BOXES))
-  const boxes = useMemo(
-    () => [...collidersFor(Array.from(objects.values()).filter((o) => !o.kick)), ...ghostBoxes],
-    [objects, ghostBoxes],
-  )
+  const ghostTerrain = usePlannerStore((s) => s.blueprint?.terrain)
+  const voxelTerrain = useWorldStore((s) => s.voxelTerrain)
+  const boxes = useMemo(() => {
+    const real = worldVoxels(voxelTerrain)?.colliders ?? NO_BOXES
+    const ghost = sameTerrain(voxelTerrain, ghostTerrain) ? NO_BOXES : ghostBoxes
+    return [...collidersFor(Array.from(objects.values()).filter((o) => !o.kick)), ...real, ...ghost]
+  }, [objects, ghostBoxes, ghostTerrain, voxelTerrain])
   const camTarget = useRef(new THREE.Vector3())
   const camPos = useRef(new THREE.Vector3())
 

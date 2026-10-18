@@ -46,20 +46,29 @@ export async function startCreation(rooms: RoomManager, playerId: string, prompt
   if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
 
   try {
-    const res = await fetch(`${GENAI_URL}/jobs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref, kind: "model", prompt: text }),
-    });
-    const body = (await res.json()) as { jobId?: string };
-    if (!res.ok || !body.jobId) throw new Error(`genai ${res.status}`);
-    creations.set(body.jobId, { ref, playerId, settled: false });
-    return json(200, { jobId: body.jobId, estimate: MODEL_ESTIMATE_MANA, remainingToday: decision.remainingToday });
+    const jobId = await startJob(ref, playerId, text);
+    return json(200, { jobId, estimate: MODEL_ESTIMATE_MANA, remainingToday: decision.remainingToday });
   } catch (err) {
     rooms.mana.release(ref);
     console.error("[create] genai unavailable:", (err as Error).message);
     return json(503, { error: "genai_unavailable", message: "Creation is resting right now. Try again soon." });
   }
+}
+
+/**
+ * Start a model job for a hold that's already reserved (`ref`). The status
+ * route settles or releases it. Throws if genai is unreachable (caller releases).
+ */
+export async function startJob(ref: string, playerId: string, prompt: string): Promise<string> {
+  const res = await fetch(`${GENAI_URL}/jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref, kind: "model", prompt: prompt.slice(0, 600) }),
+  });
+  const body = (await res.json()) as { jobId?: string };
+  if (!res.ok || !body.jobId) throw new Error(`genai ${res.status}`);
+  creations.set(body.jobId, { ref, playerId, settled: false });
+  return body.jobId;
 }
 
 export async function creationStatus(rooms: RoomManager, playerId: string, jobId: string, json: Json): Promise<void> {

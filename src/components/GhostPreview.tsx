@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { usePlannerStore } from '../stores/plannerStore'
+import { useWorldStore } from '../stores/worldStore'
+import { worldVoxels, sameTerrain } from '../stores/worldVoxels'
 import { useUniverseStore } from '../stores/universeStore'
 import { visibleCells, cellToWorld, type VoxelGrid } from '@aweborn/shared/voxel'
 import type { BlueprintAsset } from '@aweborn/shared/blueprint'
@@ -17,7 +19,7 @@ const cube = new THREE.BoxGeometry(1, 1, 1)
 const tmp = new THREE.Object3D()
 const col = new THREE.Color()
 
-function VoxelLayer({ grid, liquid }: { grid: VoxelGrid; liquid: boolean }) {
+export function VoxelLayer({ grid, liquid }: { grid: VoxelGrid; liquid: boolean }) {
   const ref = useRef<THREE.InstancedMesh>(null!)
   const cells = useMemo(
     () => visibleCells(grid).filter((c) => grid.liquid[c.v - 1] === liquid),
@@ -103,19 +105,38 @@ function GhostAsset({ asset, grid, color }: { asset: BlueprintAsset; grid: Voxel
   )
 }
 
+/** Manifested terrain from the World CRDT: solid for everyone in the world. */
+export function WorldTerrain() {
+  const terrain = useWorldStore((s) => s.voxelTerrain)
+  const v = worldVoxels(terrain)
+  if (!v) return null
+  return (
+    <group>
+      <VoxelLayer grid={v.grid} liquid={false} />
+      <VoxelLayer grid={v.grid} liquid />
+    </group>
+  )
+}
+
 export function GhostPreview() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const { worldId, blueprint, grid, visible } = usePlannerStore()
+  const worldTerrain = useWorldStore((s) => s.voxelTerrain)
+  const objects = useWorldStore((s) => s.objects)
+  const placed = useMemo(() => new Set([...objects.values()].map((o) => o.planKey).filter(Boolean)), [objects])
   if (!blueprint || !grid || !visible || worldId !== activeWorldId) return null
   const accent = blueprint.style.palette[1] ?? blueprint.style.palette[0] ?? '#b8a8ff'
+  const terrainIsReal = sameTerrain(worldTerrain, blueprint.terrain)
   return (
     <group>
-      <Rise version={blueprint.version}>
-        <VoxelLayer grid={grid} liquid={false} />
-        <VoxelLayer grid={grid} liquid />
-      </Rise>
+      {!terrainIsReal && (
+        <Rise version={blueprint.version}>
+          <VoxelLayer grid={grid} liquid={false} />
+          <VoxelLayer grid={grid} liquid />
+        </Rise>
+      )}
       {blueprint.assets
-        .filter((a) => a.kind === 'model' || a.kind === 'terrain-piece')
+        .filter((a) => (a.kind === 'model' || a.kind === 'terrain-piece') && !placed.has(`${blueprint.id}:${a.key}`))
         .map((a) => (
           <GhostAsset key={a.key} asset={a} grid={grid} color={accent} />
         ))}

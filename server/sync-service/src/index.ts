@@ -10,7 +10,7 @@ import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets } from "./creations.js";
-import { planTurn, plannerModels, planResume } from "./planner.js";
+import { planTurn, plannerModels, planResume, planManifest } from "./planner.js";
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -221,6 +221,9 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     return planTurn(rooms, session.playerId, await readJson(req).catch(() => null), json);
   }
   if (path === "/api/player/plan/models" && req.method === "GET") return plannerModels(json);
+  if (path === "/api/player/plan/manifest" && req.method === "POST") {
+    return planManifest(rooms, session.playerId, await readJson(req).catch(() => null), json);
+  }
   if (path === "/api/player/plan" && req.method === "GET") {
     return planResume(session.playerId, new URL(req.url ?? "/", "http://x").searchParams.get("worldId") ?? "", json);
   }

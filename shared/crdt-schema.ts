@@ -241,6 +241,8 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
  * keyed by object id.
  */
 export interface PlacedObject {
+  /** Manifested from a blueprint: `${blueprintId}:${assetKey}` (hides that item's ghost) */
+  planKey?: string;
   id: string;
   type: string;
   x: number;

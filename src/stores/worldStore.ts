@@ -8,6 +8,7 @@
  * This store is only active when the player has entered a world.
  */
 
+import type { BlueprintDraft } from '@aweborn/shared/blueprint';
 import { create } from "zustand";
 import * as Y from "yjs";
 import type {
@@ -33,6 +34,9 @@ interface WorldState {
 
   /** Terrain seed */
   terrainSeed: number;
+
+  /** Manifested voxel terrain params (Phase 07); everyone regenerates the same grid from them */
+  voxelTerrain: VoxelTerrain | null;
 
   /** Whether the world doc is loaded and synced */
   loaded: boolean;
@@ -114,9 +118,28 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
       kick: (m.get("kick") as PlacedObject["kick"]) ?? undefined,
       asset: (m.get("asset") as string) ?? undefined,
       prompt: (m.get("prompt") as string) ?? undefined,
+      planKey: (m.get("planKey") as string) ?? undefined,
     });
   });
   return objects;
+}
+
+type VoxelTerrain = BlueprintDraft["terrain"];
+
+/** Stored as a JSON string so concurrent writes replace it whole (last writer wins). */
+function readVoxelTerrain(doc: Y.Doc): VoxelTerrain | null {
+  const raw = doc.getMap("terrain").get("voxel");
+  if (typeof raw !== "string") return null;
+  try {
+    return JSON.parse(raw) as VoxelTerrain;
+  } catch {
+    return null;
+  }
+}
+
+/** Manifest the terrain: every client regenerates the same grid (shared/voxel.ts). */
+export function setVoxelTerrain(doc: Y.Doc, terrain: VoxelTerrain): void {
+  doc.getMap("terrain").set("voxel", JSON.stringify(terrain));
 }
 
 function readChat(doc: Y.Doc): ChatMessage[] {
@@ -139,6 +162,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
   objects: new Map(),
   chat: [],
   terrainSeed: 0,
+  voxelTerrain: null,
   loaded: false,
 
   loadFromDoc: (doc) => {
@@ -149,6 +173,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
       objects: readObjects(doc),
       chat: readChat(doc),
       terrainSeed: (doc.getMap("terrain").get("seed") as number) ?? 0,
+      voxelTerrain: readVoxelTerrain(doc),
       loaded: true,
     });
 
@@ -157,6 +182,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
     doc.getMap("physics").observeDeep(() => set({ physics: readPhysics(doc) }));
     doc.getMap("objects").observeDeep(() => set({ objects: readObjects(doc) }));
     doc.getArray("chat").observe(() => set({ chat: readChat(doc) }));
+    doc.getMap("terrain").observe(() => set({ voxelTerrain: readVoxelTerrain(doc) }));
   },
 
   placeObject: (doc, type, position, rotation, scale, material) => {
@@ -203,7 +229,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
   },
 
   reset: () => {
-    set({
+    set({ voxelTerrain: null,
       meta: null,
       physics: { ...DEFAULT_PHYSICS },
       objects: new Map(),
@@ -242,6 +268,7 @@ export function placeModel(
   prompt: string,
   position: { x: number; y: number; z: number },
   placedBy: string,
+  opts: { scale?: number; rotY?: number; planKey?: string } = {},
 ): string {
   const id = `obj-${Math.random().toString(36).slice(2, 8)}`;
   doc.transact(() => {
@@ -252,13 +279,14 @@ export function placeModel(
     m.set("y", position.y);
     m.set("z", position.z);
     m.set("rotX", 0);
-    m.set("rotY", 0);
+    m.set("rotY", opts.rotY ?? 0);
     m.set("rotZ", 0);
-    m.set("scaleX", 1);
-    m.set("scaleY", 1);
-    m.set("scaleZ", 1);
+    m.set("scaleX", opts.scale ?? 1);
+    m.set("scaleY", opts.scale ?? 1);
+    m.set("scaleZ", opts.scale ?? 1);
     m.set("material", "default");
     m.set("placedBy", placedBy);
+    if (opts.planKey) m.set("planKey", opts.planKey);
     m.set("placedAt", Date.now());
     m.set("asset", asset);
     m.set("prompt", prompt.slice(0, 600));
