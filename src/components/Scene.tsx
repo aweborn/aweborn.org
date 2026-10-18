@@ -17,6 +17,7 @@ import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore, kickObject, settleObject, moveObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
+import { useModelShapes, modelColliders } from '../stores/modelShapes'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
 import { usePlannerStore } from '../stores/plannerStore'
 import { worldVoxels, sameTerrain } from '../stores/worldVoxels'
@@ -357,6 +358,10 @@ function carryPosition(
   return { x: s.x + s.fx * h.dist, y: Math.max(s.y + h.lift, Math.abs(o.scaleY || 1) / 2), z: s.z + s.fz * h.dist }
 }
 
+function scaleOf(h: { k: number; base: { x: number; y: number; z: number } }) {
+  return { x: h.base.x * h.k, y: h.base.y * h.k, z: h.base.z * h.k }
+}
+
 const CAM_DISTANCES = { 1: 3, 2: 4.5, 3: 9, 4: 20 } as const
 const CAM_KEYS: Record<string, keyof typeof CAM_DISTANCES> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4 }
 const NO_BOXES: Box[] = []
@@ -371,15 +376,23 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const ghostBoxes = usePlannerStore((s) => (s.visible && s.worldId === activeWorldId ? s.colliders : NO_BOXES))
   const ghostTerrain = usePlannerStore((s) => s.blueprint?.terrain)
   const voxelTerrain = useWorldStore((s) => s.voxelTerrain)
+  const shapes = useModelShapes((s) => s.shapes)
   // Grab (G): carry the object in front of you; Z / X turn it; G again sets it down
   const [heldId, setHeldId] = useState<string | null>(null)
-  const held = useRef<{ id: string; rotY: number; dist: number; lift: number; lastWrite: number } | null>(null)
-  const turnKeys = useRef({ z: false, x: false })
+  const held = useRef<{ id: string; rotY: number; dist: number; lift: number; lastWrite: number; k: number; base: { x: number; y: number; z: number } } | null>(null)
+  const turnKeys = useRef({ z: false, x: false, r: false, f: false })
   const boxes = useMemo(() => {
     const real = worldVoxels(voxelTerrain)?.colliders ?? NO_BOXES
     const ghost = sameTerrain(voxelTerrain, ghostTerrain) ? NO_BOXES : ghostBoxes
-    return [...collidersFor(Array.from(objects.values()).filter((o) => !o.kick && o.id !== heldId)), ...real, ...ghost]
-  }, [objects, ghostBoxes, ghostTerrain, voxelTerrain, heldId])
+    const solid = Array.from(objects.values()).filter((o) => !o.kick && o.id !== heldId)
+    const out: Box[] = []
+    for (const o of solid) {
+      // Generated models collide with their actual shape; until it loads, they don't block
+      if (o.type === 'model') out.push(...(modelColliders(o, shapes) ?? []))
+      else out.push(...collidersFor([o]))
+    }
+    return [...out, ...real, ...ghost]
+  }, [objects, ghostBoxes, ghostTerrain, voxelTerrain, heldId, shapes])
 
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -390,6 +403,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       if (typing(e)) return
       if (e.code === 'KeyZ') turnKeys.current.z = true
       if (e.code === 'KeyX') turnKeys.current.x = true
+      if (e.code === 'KeyR') turnKeys.current.r = true
+      if (e.code === 'KeyF') turnKeys.current.f = true
       if (e.code !== 'KeyG' || e.repeat) return
       const doc = useUniverseStore.getState().activeWorldDoc
       const s = interiorController.state
@@ -397,8 +412,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         // Set it down where it is now
         const o = useWorldStore.getState().objects.get(held.current.id)
         if (doc && o) {
-          const p = carryPosition(s, held.current, o)
-          moveObject(doc, o.id, p, held.current.rotY)
+          const p = carryPosition(s, held.current, { scaleY: scaleOf(held.current).y })
+          moveObject(doc, o.id, p, held.current.rotY, scaleOf(held.current))
         }
         held.current = null
         setHeldId(null)
@@ -408,12 +423,14 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       const target = kickTarget(s, all)
       if (!target) return
       const half = 0.5 * Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleZ || 1))
-      held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: target.y - s.y, lastWrite: 0 }
+      held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: target.y - s.y, lastWrite: 0, k: 1, base: { x: target.scaleX || 1, y: target.scaleY || 1, z: target.scaleZ || 1 } }
       setHeldId(target.id)
     }
     const up = (e: KeyboardEvent) => {
       if (e.code === 'KeyZ') turnKeys.current.z = false
       if (e.code === 'KeyX') turnKeys.current.x = false
+      if (e.code === 'KeyR') turnKeys.current.r = false
+      if (e.code === 'KeyF') turnKeys.current.f = false
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -494,10 +511,13 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         setHeldId(null)
       } else {
         h.rotY += ((turnKeys.current.x ? 1 : 0) - (turnKeys.current.z ? 1 : 0)) * 1.8 * delta
+        h.k = Math.min(8, Math.max(0.1, h.k * Math.exp(((turnKeys.current.r ? 1 : 0) - (turnKeys.current.f ? 1 : 0)) * 1.0 * delta)))
+        h.dist = 0.5 * Math.max(h.base.x, h.base.z) * h.k + 1.2
         const now = performance.now()
         if (now - h.lastWrite > 100) {
           h.lastWrite = now
-          moveObject(doc, h.id, carryPosition(s, h, o), h.rotY)
+          const sc = scaleOf(h)
+          moveObject(doc, h.id, carryPosition(s, h, { scaleY: sc.y }), h.rotY, sc)
         }
       }
     }

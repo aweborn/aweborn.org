@@ -296,7 +296,7 @@ export function placeModel(
 }
 
 /** Move/rotate a placed object (grab, Phase 07). Clears any kick in flight. */
-export function moveObject(doc: Y.Doc, objectId: string, pos: { x: number; y: number; z: number }, rotY: number): void {
+export function moveObject(doc: Y.Doc, objectId: string, pos: { x: number; y: number; z: number }, rotY: number, scale?: { x: number; y: number; z: number }): void {
   const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
   if (!m) return;
   doc.transact(() => {
@@ -304,6 +304,11 @@ export function moveObject(doc: Y.Doc, objectId: string, pos: { x: number; y: nu
     m.set("y", pos.y);
     m.set("z", pos.z);
     m.set("rotY", rotY);
+    if (scale) {
+      m.set("scaleX", scale.x);
+      m.set("scaleY", scale.y);
+      m.set("scaleZ", scale.z);
+    }
     if (m.has("kick")) m.delete("kick");
   });
 }

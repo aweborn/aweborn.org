@@ -9,6 +9,7 @@ import { kickedPosition } from '@aweborn/shared/sim/interior'
 import { Suspense } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { AUTH_URL } from '../lib/player'
+import { registerModelShape } from '../stores/modelShapes'
 
 /** Generated GLB, fitted into a unit box centred on the object (matches its collider). */
 function GeneratedModel({ asset }: { asset: string }) {
@@ -23,8 +24,9 @@ function GeneratedModel({ asset }: { asset: string }) {
     root.scale.setScalar(s)
     const g = new THREE.Group()
     g.add(root)
+    registerModelShape(asset, g)
     return g
-  }, [scene])
+  }, [scene, asset])
   return <primitive object={fitted} />
 }
 
