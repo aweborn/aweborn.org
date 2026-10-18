@@ -67,7 +67,7 @@ export function estimate(d: BlueprintDraft, plannerMana: number): Estimate {
 }
 
 // ── Validation ─────────────────────────────────────────────────────────
-export const LIMITS = { assets: 24, features: 32, blocks: 12, palette: 8, chips: 3, grid: 64, prompt: 400 } as const;
+export const LIMITS = { assets: 24, features: 32, blocks: 12, palette: 8, chips: 3, grid: 40, prompt: 400 } as const;
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);

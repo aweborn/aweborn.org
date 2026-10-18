@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
-import type { Blueprint } from '../../shared/blueprint'
+import type { Blueprint } from '@aweborn/shared/blueprint'
+import { usePlannerStore } from '../stores/plannerStore'
 
 /**
  * World Planner panel (Phase 07): talk a world into a blueprint before
@@ -32,12 +33,32 @@ export function PlannerPanel() {
   const inputRef = useRef<HTMLInputElement>(null)
   const logRef = useRef<HTMLDivElement>(null)
 
-  // New world = new conversation
+  const ghostVisible = usePlannerStore((s) => s.visible)
+
+  // Entering a world resumes your last plan there (everything is saved server-side)
   useEffect(() => {
     setSessionId(null)
     setTurns([])
     setBlueprint(null)
-    if (!activeWorldId) setOpen(false)
+    usePlannerStore.getState().clear()
+    if (!activeWorldId) {
+      setOpen(false)
+      return
+    }
+    let cancelled = false
+    fetch(`${AUTH_URL}/api/player/plan?worldId=${encodeURIComponent(activeWorldId)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { session: { sessionId: string; blueprint: Blueprint | null; turns: Turn[] } | null } | null) => {
+        if (cancelled || !j?.session) return
+        setSessionId(j.session.sessionId)
+        setTurns(j.session.turns)
+        setBlueprint(j.session.blueprint)
+        if (j.session.blueprint) usePlannerStore.getState().setBlueprint(activeWorldId, j.session.blueprint)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [activeWorldId])
 
   useEffect(() => {
@@ -96,6 +117,7 @@ export function PlannerPanel() {
         }
         setSessionId(j.sessionId ?? null)
         setBlueprint(j.blueprint ?? null)
+        if (j.blueprint) usePlannerStore.getState().setBlueprint(activeWorldId, j.blueprint)
         setTurns((t) => [
           ...t,
           { who: 'planner', text: j.reply!, chips: j.chips, meta: `${MODEL_LABEL(j.model ?? model)} · ${(j.mana ?? 0).toFixed(1)} mana` },
@@ -131,6 +153,17 @@ export function PlannerPanel() {
             <option key={m} value={m}>{MODEL_LABEL(m)}</option>
           ))}
         </select>
+        {blueprint && (
+          <button
+            id="planner-ghost"
+            className={`planner-ghost${ghostVisible ? ' is-on' : ''}`}
+            type="button"
+            onClick={() => usePlannerStore.getState().setVisible(!ghostVisible)}
+            title={ghostVisible ? 'Hide the preview' : 'Show the preview'}
+          >
+            ◇
+          </button>
+        )}
         <button id="planner-close" className="planner-close" type="button" onClick={() => setOpen(false)} aria-label="Close planner">×</button>
       </header>
 

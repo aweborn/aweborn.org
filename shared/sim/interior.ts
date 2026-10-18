@@ -80,7 +80,12 @@ export interface Box {
   maxX: number;
   maxY: number;
   maxZ: number;
+  /** Terrain (voxels): walk up it when grounded and it's at most STEP_UP above the feet. */
+  step?: boolean;
 }
+
+/** One voxel, so voxel hills can be walked instead of jumped. */
+export const STEP_UP = 1.01;
 
 /** Spawn point: a few steps in from the edge, facing the middle. */
 export function spawnInterior(): InteriorState {
@@ -189,9 +194,16 @@ export function stepInterior(
   vz *= 1 - drag;
 
   // ── Integrate, resolving collisions one axis at a time ──
+  // Terrain boxes low enough to step onto lift the feet instead of blocking.
+  let feet = s.y;
+  const canStep = (b: Box) => s.grounded && b.step === true && b.maxY - feet <= STEP_UP;
   let x = s.x + vx * dt;
   for (const b of boxes) {
-    if (overlaps(x, s.y, s.z, b)) {
+    if (overlaps(x, feet, s.z, b)) {
+      if (canStep(b)) {
+        feet = b.maxY;
+        continue;
+      }
       x = vx > 0 ? b.minX - PLAYER_RADIUS : b.maxX + PLAYER_RADIUS;
       vx = 0;
     }
@@ -200,14 +212,18 @@ export function stepInterior(
 
   let z = s.z + vz * dt;
   for (const b of boxes) {
-    if (overlaps(x, s.y, z, b)) {
+    if (overlaps(x, feet, z, b)) {
+      if (canStep(b)) {
+        feet = b.maxY;
+        continue;
+      }
       z = vz > 0 ? b.minZ - PLAYER_RADIUS : b.maxZ + PLAYER_RADIUS;
       vz = 0;
     }
   }
   z = clamp(z, -INTERIOR_HALF_EXTENT, INTERIOR_HALF_EXTENT);
 
-  let y = s.y + vy * dt;
+  let y = feet + vy * dt;
   let grounded = false;
   for (const b of boxes) {
     if (overlaps(x, y, z, b)) {

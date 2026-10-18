@@ -17,7 +17,8 @@ import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore, kickObject, settleObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
-import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC } from '@aweborn/shared/sim/interior'
+import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
+import { usePlannerStore } from '../stores/plannerStore'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
@@ -346,6 +347,7 @@ function UniverseView({ onPortalActivate, playerColor }: { onPortalActivate: () 
  * draws the local player, and runs a third-person follow camera.
  */
 const CAM_DISTANCE = 4.5
+const NO_BOXES: Box[] = []
 const EYE_HEIGHT = 1.5
 
 function InteriorSystem({ playerColor }: { playerColor: string }) {
@@ -354,9 +356,10 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const avatar = useRef<THREE.Group>(null!)
   const objects = useWorldStore((s) => s.objects)
+  const ghostBoxes = usePlannerStore((s) => (s.visible && s.worldId === activeWorldId ? s.colliders : NO_BOXES))
   const boxes = useMemo(
-    () => collidersFor(Array.from(objects.values()).filter((o) => !o.kick)),
-    [objects],
+    () => [...collidersFor(Array.from(objects.values()).filter((o) => !o.kick)), ...ghostBoxes],
+    [objects, ghostBoxes],
   )
   const camTarget = useRef(new THREE.Vector3())
   const camPos = useRef(new THREE.Vector3())

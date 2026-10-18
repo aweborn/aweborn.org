@@ -1,3 +1,4 @@
+import { GhostPreview } from './GhostPreview'
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -217,6 +218,9 @@ export function WorldInterior() {
 
       {/* Ground grid */}
       <GroundGrid worldColor={worldColor} />
+
+      {/* Planner blueprint: walkable voxel terrain + wireframe assets */}
+      <GhostPreview />
 
       {/* Placed objects from CRDT */}
       {objectList.map((obj) => (
