@@ -347,7 +347,9 @@ function UniverseView({ onPortalActivate, playerColor }: { onPortalActivate: () 
  * Interior system (Phase 07): steps the shared interior movement sim,
  * draws the local player, and runs a third-person follow camera.
  */
-const CAM_DISTANCE = 4.5
+/** 1 close · 2 medium · 3 far · 4 cinematic (same keys as flight) */
+const CAM_DISTANCES = { 1: 3, 2: 4.5, 3: 9, 4: 20 } as const
+const CAM_KEYS: Record<string, keyof typeof CAM_DISTANCES> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4 }
 const NO_BOXES: Box[] = []
 const EYE_HEIGHT = 1.5
 
@@ -367,6 +369,19 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   }, [objects, ghostBoxes, ghostTerrain, voxelTerrain])
   const camTarget = useRef(new THREE.Vector3())
   const camPos = useRef(new THREE.Vector3())
+  const camDist = useRef<number>(CAM_DISTANCES[2])
+  const camDistGoal = useRef<number>(CAM_DISTANCES[2])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return
+      const k = CAM_KEYS[e.code]
+      if (k) camDistGoal.current = CAM_DISTANCES[k]
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     interiorController.reset()
@@ -374,7 +389,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     camera.up.set(0, 1, 0)
     const s = interiorController.state
     camTarget.current.set(s.x, s.y + EYE_HEIGHT, s.z)
-    camPos.current.set(s.x - s.fx * CAM_DISTANCE, s.y + EYE_HEIGHT + 1, s.z - s.fz * CAM_DISTANCE)
+    camPos.current.set(s.x - s.fx * camDist.current, s.y + EYE_HEIGHT + 1, s.z - s.fz * camDist.current)
     camera.position.copy(camPos.current)
     camera.lookAt(camTarget.current)
   }, [camera])
@@ -394,13 +409,15 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     }
 
     // Camera behind the player, raised by the look pitch
+    camDist.current += (camDistGoal.current - camDist.current) * (1 - Math.exp(-4 * delta)) // smooth zoom
+    const D = camDist.current
     const cp = Math.cos(s.pitch)
     const sp = Math.sin(s.pitch)
     const target = camTarget.current.set(x, y + EYE_HEIGHT, z)
     const desired = new THREE.Vector3(
-      x - s.fx * cp * CAM_DISTANCE,
-      y + EYE_HEIGHT - sp * CAM_DISTANCE + 0.6,
-      z - s.fz * cp * CAM_DISTANCE,
+      x - s.fx * cp * D,
+      y + EYE_HEIGHT - sp * D + 0.6 + D * 0.12,
+      z - s.fz * cp * D,
     )
     desired.y = Math.max(0.3, desired.y) // never dip under the ground
     camPos.current.lerp(desired, 1 - Math.exp(-12 * delta))

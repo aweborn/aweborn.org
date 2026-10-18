@@ -3,7 +3,7 @@ import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
 import type { Blueprint } from '@aweborn/shared/blueprint'
 import { usePlannerStore } from '../stores/plannerStore'
-import { setVoxelTerrain, placeModel } from '../stores/worldStore'
+import { setVoxelTerrain, placeModel, useWorldStore } from '../stores/worldStore'
 import { usePresence } from '../hooks/usePresence'
 import { cellToWorld, generateVoxels } from '@aweborn/shared/voxel'
 import type { BlueprintAsset } from '@aweborn/shared/blueprint'
@@ -90,6 +90,7 @@ export function PlannerPanel() {
     setSessionId(null)
     setTurns([])
     setBlueprint(null)
+    setMakings([])
     usePlannerStore.getState().clear()
     if (!activeWorldId) {
       setOpen(false)
@@ -98,12 +99,24 @@ export function PlannerPanel() {
     let cancelled = false
     fetch(`${AUTH_URL}/api/player/plan?worldId=${encodeURIComponent(activeWorldId)}`, { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { session: { sessionId: string; blueprint: Blueprint | null; turns: Turn[] } | null } | null) => {
+      .then((j: { session: { sessionId: string; blueprint: Blueprint | null; turns: Turn[]; jobs?: { key: string; jobId: string }[] } | null } | null) => {
         if (cancelled || !j?.session) return
         setSessionId(j.session.sessionId)
         setTurns(j.session.turns)
         setBlueprint(j.session.blueprint)
-        if (j.session.blueprint) usePlannerStore.getState().setBlueprint(activeWorldId, j.session.blueprint)
+        const bp = j.session.blueprint
+        if (bp) usePlannerStore.getState().setBlueprint(activeWorldId, bp)
+        // Resume manifest jobs whose model isn't placed yet (the poller skips finished/failed ones)
+        if (bp && j.session.jobs?.length) {
+          const placed = new Set([...useWorldStore.getState().objects.values()].map((o) => o.planKey))
+          const byKey = new Map(bp.assets.map((a) => [a.key, a]))
+          const latest = new Map(j.session.jobs.map((x) => [x.key, x.jobId]))
+          setMakings(
+            [...latest].filter(([key]) => byKey.has(key) && !placed.has(`${bp.id}:${key}`)).map(([key, jobId]): Making => ({
+              key, jobId, status: 'queued', progress: 0, asset: byKey.get(key)!, blueprintId: bp.id, terrain: bp.terrain,
+            })),
+          )
+        }
       })
       .catch(() => {})
     return () => {

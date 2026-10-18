@@ -13,6 +13,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import type { RoomManager } from "./rooms.js";
+import { getDb } from "./persistence.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
@@ -32,8 +33,32 @@ interface Creation {
   settled: boolean;
 }
 
-/** jobId → creation. In memory: a restart loses open holds (TODO: persist with the ledger). */
-const creations = new Map<string, Creation>();
+/** jobId → creation, persisted so a restart can still settle or release its hold. */
+let ready = false;
+function table() {
+  const d = getDb();
+  if (!ready) {
+    d.exec(`CREATE TABLE IF NOT EXISTS creations (
+      job_id TEXT PRIMARY KEY, ref TEXT NOT NULL, player_id TEXT NOT NULL,
+      settled INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`);
+    ready = true;
+  }
+  return d;
+}
+const creations = {
+  get(jobId: string): Creation | undefined {
+    const r = table().prepare("SELECT ref, player_id, settled FROM creations WHERE job_id = ?").get(jobId) as
+      | { ref: string; player_id: string; settled: number } | undefined;
+    return r ? { ref: r.ref, playerId: r.player_id, settled: !!r.settled } : undefined;
+  },
+  set(jobId: string, c: Creation): void {
+    table().prepare("INSERT OR REPLACE INTO creations (job_id, ref, player_id, settled, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(jobId, c.ref, c.playerId, c.settled ? 1 : 0, Date.now());
+  },
+  markSettled(jobId: string): void {
+    table().prepare("UPDATE creations SET settled = 1 WHERE job_id = ?").run(jobId);
+  },
+};
 
 type Json = (status: number, body: unknown) => void;
 
@@ -80,10 +105,10 @@ export async function creationStatus(rooms: RoomManager, playerId: string, jobId
 
   if (!c.settled && j.status === "complete") {
     rooms.mana.settle(c.ref, Math.max(0, (j.costUsd ?? 0) * 100), "model");
-    c.settled = true;
+    creations.markSettled(jobId);
   } else if (!c.settled && j.status === "failed") {
     rooms.mana.release(c.ref); // failed generations draw nothing
-    c.settled = true;
+    creations.markSettled(jobId);
   }
   return json(200, {
     status: j.status,

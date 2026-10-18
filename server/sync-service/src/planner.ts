@@ -264,7 +264,13 @@ export function planResume(playerId: string, worldId: string, json: Json): void 
     if (e.kind === "user") turns.push({ who: "you", text: p.message });
     else turns.push({ who: "planner", text: p.reply, chips: p.chips, meta: `${(e.model ?? "").split("/")[1] ?? ""} · ${(e.cost_mana ?? 0).toFixed(1)} mana` });
   }
-  json(200, { session: { sessionId: s.id, version: s.version, blueprint: s.blueprint, turns } });
+  // Manifest jobs from this session, so a reload keeps placing what's still being made
+  const jobs: { key: string; jobId: string; version: number }[] = [];
+  for (const e of db().prepare("SELECT payload FROM plan_events WHERE session_id = ? AND kind = 'manifest' ORDER BY seq").all(s.id) as { payload: string }[]) {
+    const p = JSON.parse(e.payload) as { version: number; items: { key: string; jobId?: string }[] };
+    for (const it of p.items) if (it.jobId) jobs.push({ key: it.key, jobId: it.jobId, version: p.version });
+  }
+  json(200, { session: { sessionId: s.id, version: s.version, blueprint: s.blueprint, turns, jobs } });
 }
 
 /**

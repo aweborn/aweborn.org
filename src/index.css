@@ -3768,3 +3768,8 @@ html.touch-ui .planner { top: 60px; bottom: calc(150px + env(safe-area-inset-bot
 }
 .planner-manifest:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(255, 170, 80, 0.5); }
 .planner-manifest:disabled { opacity: 0.5; cursor: default; }
+.planner-makings { flex: none; }
+.planner-making { flex: none; align-items: flex-start; }
+.planner-making > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planner-making-state { max-width: 60%; text-align: right; white-space: normal; }
+.planner-card, .planner-chips, .planner-manifest, .planner-form { flex: none; }

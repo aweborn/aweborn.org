@@ -47,7 +47,7 @@ async function storeGlb(url: string, assetDir: string): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`download failed: ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > 50 * 1024 * 1024) throw new Error("asset too large");
+  if (buf.length > 200 * 1024 * 1024) throw new Error("asset too large"); // Meshy GLBs can exceed 50 MB
   const name = createHash("sha256").update(buf).digest("hex") + ".glb";
   const path = join(assetDir, name);
   if (!existsSync(path)) writeFileSync(path, buf);
