@@ -294,3 +294,26 @@ export function placeModel(
   });
   return id;
 }
+
+/** Move/rotate a placed object (grab, Phase 07). Clears any kick in flight. */
+export function moveObject(doc: Y.Doc, objectId: string, pos: { x: number; y: number; z: number }, rotY: number): void {
+  const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
+  if (!m) return;
+  doc.transact(() => {
+    m.set("x", pos.x);
+    m.set("y", pos.y);
+    m.set("z", pos.z);
+    m.set("rotY", rotY);
+    if (m.has("kick")) m.delete("kick");
+  });
+}
+
+/** Replace a placed model's file in place (redo an item): keeps where it stands and how it's turned. */
+export function replaceModelAsset(doc: Y.Doc, objectId: string, asset: string, prompt: string): void {
+  const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
+  if (!m) return;
+  doc.transact(() => {
+    m.set("asset", asset);
+    m.set("prompt", prompt.slice(0, 600));
+  });
+}

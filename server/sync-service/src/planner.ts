@@ -312,6 +312,42 @@ export async function planManifest(rooms: RoomManager, playerId: string, body: u
   json(200, { version: bp.version, terrain: bp.terrain, items });
 }
 
+/**
+ * Redo one item: optionally reword it ("smaller, darker wood"), then one new
+ * job. The client swaps the file in place, keeping where it stands. A
+ * reworded prompt is a direct edit: new blueprint version, no planner call.
+ *
+ *   POST /api/player/plan/redo { sessionId, key, note? } → { version, key, jobId, prompt, blueprint }
+ */
+export async function planRedo(rooms: RoomManager, playerId: string, body: unknown, json: Json): Promise<void> {
+  const b = (body ?? {}) as { sessionId?: unknown; key?: unknown; note?: unknown };
+  const s = typeof b.sessionId === "string" ? getSession(b.sessionId) : undefined;
+  if (!s || s.playerId !== playerId || !s.blueprint) return json(404, { error: "not_found" });
+  const asset = s.blueprint.assets.find((a) => a.key === b.key);
+  if (!asset || (asset.kind !== "model" && asset.kind !== "terrain-piece")) return json(400, { error: "bad_item" });
+  const note = typeof b.note === "string" ? b.note.trim().slice(0, 200) : "";
+
+  if (note) {
+    asset.prompt = `${asset.prompt.replace(/\.?\s*$/, "")}. ${note}`.slice(0, LIMITS.prompt);
+    s.version += 1;
+    s.blueprint = { ...s.blueprint, version: s.version };
+    logEvent(s.id, "edit", { key: asset.key, note, prompt: asset.prompt, blueprint: s.blueprint }, { version: s.version });
+    saveSession(s);
+  }
+
+  const ref = `redo:${s.id}:v${s.version}:${asset.key}:${randomUUID().slice(0, 6)}`;
+  const decision = rooms.admission.requestDraw({ playerId, ref, estimate: ASSET_MANA[asset.kind].quick, progress: PROVISIONAL_PROGRESS });
+  if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
+  try {
+    const jobId = await startJob(ref, playerId, `${asset.prompt}. Style: ${s.blueprint.style.artDirection}`);
+    logEvent(s.id, "redo", { key: asset.key, note, jobId }, { version: s.version });
+    json(200, { version: s.version, key: asset.key, jobId, prompt: asset.prompt, blueprint: s.blueprint });
+  } catch (err) {
+    rooms.mana.release(ref);
+    json(503, { error: "genai_unavailable", message: (err as Error).message });
+  }
+}
+
 function stripMeta(bp: Blueprint): BlueprintDraft {
   const { id: _i, version: _v, worldId: _w, estimate: _e, ...draft } = bp;
   return draft;

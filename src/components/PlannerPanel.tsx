@@ -3,7 +3,7 @@ import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
 import type { Blueprint } from '@aweborn/shared/blueprint'
 import { usePlannerStore } from '../stores/plannerStore'
-import { setVoxelTerrain, placeModel, useWorldStore } from '../stores/worldStore'
+import { setVoxelTerrain, placeModel, replaceModelAsset, useWorldStore } from '../stores/worldStore'
 import { usePresence } from '../hooks/usePresence'
 import { cellToWorld, generateVoxels } from '@aweborn/shared/voxel'
 import type { BlueprintAsset } from '@aweborn/shared/blueprint'
@@ -53,6 +53,38 @@ export function PlannerPanel() {
   const { playerId } = usePresence()
   const [makings, setMakings] = useState<Making[]>([])
   const [manifesting, setManifesting] = useState(false)
+  const [redoKey, setRedoKey] = useState<string | null>(null)
+  const [redoNote, setRedoNote] = useState('')
+
+  const redo = useCallback(async (key: string, note: string) => {
+    if (!sessionId || !activeWorldId) return
+    setError(null)
+    try {
+      const res = await fetch(`${AUTH_URL}/api/player/plan/redo`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, key, note: note.trim() || undefined }),
+      })
+      const j = (await res.json().catch(() => ({}))) as { jobId?: string; blueprint?: Blueprint; message?: string }
+      if (!res.ok || !j.jobId || !j.blueprint) {
+        setError(j.message ?? "The remake didn't start. Nothing was drawn.")
+        return
+      }
+      const bp = j.blueprint
+      setBlueprint(bp)
+      usePlannerStore.getState().setBlueprint(activeWorldId, bp)
+      const asset = bp.assets.find((a) => a.key === key)!
+      setMakings((prev) => [
+        ...prev.filter((m) => m.key !== key),
+        { key, jobId: j.jobId, status: 'queued', progress: 0, asset, blueprintId: bp.id, terrain: bp.terrain },
+      ])
+      setRedoKey(null)
+      setRedoNote('')
+    } catch {
+      setError('Creation is resting right now. Try again soon.')
+    }
+  }, [sessionId, activeWorldId])
 
   // Poll manifest jobs; place each model where the blueprint put it (works with the panel closed)
   useEffect(() => {
@@ -70,9 +102,14 @@ export function PlannerPanel() {
             const at = m.asset.at ?? [grid.size[0] / 2, 0, grid.size[2] / 2]
             const p = cellToWorld(grid, at)
             const scale = Math.max(...(m.asset.size ?? [1.5, 1.5, 1.5]))
-            if (doc) {
+            const planKey = `${m.blueprintId}:${m.key}`
+            const existing = [...useWorldStore.getState().objects.values()].find((o) => o.planKey === planKey)
+            if (doc && existing) {
+              // Redo: swap the file, keep where it stands and how it's turned
+              replaceModelAsset(doc, existing.id, j.asset, m.asset.prompt)
+            } else if (doc) {
               placeModel(doc, j.asset, m.asset.prompt, { x: p.x, y: p.y + scale / 2, z: p.z }, playerId, {
-                scale, rotY: m.asset.rotationY, planKey: `${m.blueprintId}:${m.key}`,
+                scale, rotY: m.asset.rotationY, planKey,
               })
             }
           }
@@ -307,8 +344,34 @@ export function PlannerPanel() {
           <ul className="planner-assets">
             {blueprint.assets.map((a) => (
               <li key={a.key}>
-                <strong>{a.key}</strong> <em>{a.kind}{a.quality === 'full' ? ' · full' : ''}</em>
+                <div className="planner-asset-head">
+                  <strong>{a.key}</strong> <em>{a.kind}{a.quality === 'full' ? ' · full' : ''}</em>
+                  {(a.kind === 'model' || a.kind === 'terrain-piece') && (
+                    <button
+                      type="button"
+                      className="planner-redo"
+                      title="Make this one again"
+                      onClick={() => { setRedoKey(redoKey === a.key ? null : a.key); setRedoNote('') }}
+                    >
+                      ↻
+                    </button>
+                  )}
+                </div>
                 <span>{a.prompt}</span>
+                {redoKey === a.key && (
+                  <form className="planner-redo-form" onSubmit={(e) => { e.preventDefault(); void redo(a.key, redoNote) }}>
+                    <input
+                      autoFocus
+                      className="planner-redo-input"
+                      value={redoNote}
+                      maxLength={200}
+                      placeholder="What should change? (optional)"
+                      onChange={(e) => setRedoNote(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRedoKey(null) } }}
+                    />
+                    <button type="submit" className="planner-redo-go">Remake ✦ 60</button>
+                  </form>
+                )}
               </li>
             ))}
           </ul>

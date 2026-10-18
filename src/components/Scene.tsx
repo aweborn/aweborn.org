@@ -15,7 +15,7 @@ import { PortalBeacon } from './PortalBeacon'
 import { WorldTransition } from './WorldTransition'
 import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
-import { useWorldStore, kickObject, settleObject } from '../stores/worldStore'
+import { useWorldStore, kickObject, settleObject, moveObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
 import { usePlannerStore } from '../stores/plannerStore'
@@ -348,6 +348,15 @@ function UniverseView({ onPortalActivate, playerColor }: { onPortalActivate: () 
  * draws the local player, and runs a third-person follow camera.
  */
 /** 1 close · 2 medium · 3 far · 4 cinematic (same keys as flight) */
+/** Where a carried object sits: in front of the player, at the height it was picked up from. */
+function carryPosition(
+  s: { x: number; y: number; z: number; fx: number; fz: number },
+  h: { dist: number; lift: number },
+  o: { scaleY: number },
+): { x: number; y: number; z: number } {
+  return { x: s.x + s.fx * h.dist, y: Math.max(s.y + h.lift, Math.abs(o.scaleY || 1) / 2), z: s.z + s.fz * h.dist }
+}
+
 const CAM_DISTANCES = { 1: 3, 2: 4.5, 3: 9, 4: 20 } as const
 const CAM_KEYS: Record<string, keyof typeof CAM_DISTANCES> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4 }
 const NO_BOXES: Box[] = []
@@ -362,11 +371,57 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const ghostBoxes = usePlannerStore((s) => (s.visible && s.worldId === activeWorldId ? s.colliders : NO_BOXES))
   const ghostTerrain = usePlannerStore((s) => s.blueprint?.terrain)
   const voxelTerrain = useWorldStore((s) => s.voxelTerrain)
+  // Grab (G): carry the object in front of you; Z / X turn it; G again sets it down
+  const [heldId, setHeldId] = useState<string | null>(null)
+  const held = useRef<{ id: string; rotY: number; dist: number; lift: number; lastWrite: number } | null>(null)
+  const turnKeys = useRef({ z: false, x: false })
   const boxes = useMemo(() => {
     const real = worldVoxels(voxelTerrain)?.colliders ?? NO_BOXES
     const ghost = sameTerrain(voxelTerrain, ghostTerrain) ? NO_BOXES : ghostBoxes
-    return [...collidersFor(Array.from(objects.values()).filter((o) => !o.kick)), ...real, ...ghost]
-  }, [objects, ghostBoxes, ghostTerrain, voxelTerrain])
+    return [...collidersFor(Array.from(objects.values()).filter((o) => !o.kick && o.id !== heldId)), ...real, ...ghost]
+  }, [objects, ghostBoxes, ghostTerrain, voxelTerrain, heldId])
+
+  useEffect(() => {
+    const typing = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')
+    }
+    const down = (e: KeyboardEvent) => {
+      if (typing(e)) return
+      if (e.code === 'KeyZ') turnKeys.current.z = true
+      if (e.code === 'KeyX') turnKeys.current.x = true
+      if (e.code !== 'KeyG' || e.repeat) return
+      const doc = useUniverseStore.getState().activeWorldDoc
+      const s = interiorController.state
+      if (held.current) {
+        // Set it down where it is now
+        const o = useWorldStore.getState().objects.get(held.current.id)
+        if (doc && o) {
+          const p = carryPosition(s, held.current, o)
+          moveObject(doc, o.id, p, held.current.rotY)
+        }
+        held.current = null
+        setHeldId(null)
+        return
+      }
+      const all = Array.from(useWorldStore.getState().objects.values()).filter((o) => !o.kick)
+      const target = kickTarget(s, all)
+      if (!target) return
+      const half = 0.5 * Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleZ || 1))
+      held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: target.y - s.y, lastWrite: 0 }
+      setHeldId(target.id)
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'KeyZ') turnKeys.current.z = false
+      if (e.code === 'KeyX') turnKeys.current.x = false
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  }, [])
   const camTarget = useRef(new THREE.Vector3())
   const camPos = useRef(new THREE.Vector3())
   const camDist = useRef<number>(CAM_DISTANCES[2])
@@ -430,6 +485,22 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
 
     // Kick (N): the object in front of you; 2 CRDT writes per kick
     const doc = useUniverseStore.getState().activeWorldDoc
+    // Carrying: the object follows in front of you; everyone sees it move (≤ 10 writes/s)
+    if (doc && held.current) {
+      const h = held.current
+      const o = objects.get(h.id)
+      if (!o) {
+        held.current = null
+        setHeldId(null)
+      } else {
+        h.rotY += ((turnKeys.current.x ? 1 : 0) - (turnKeys.current.z ? 1 : 0)) * 1.8 * delta
+        const now = performance.now()
+        if (now - h.lastWrite > 100) {
+          h.lastWrite = now
+          moveObject(doc, h.id, carryPosition(s, h, o), h.rotY)
+        }
+      }
+    }
     if (doc) {
       if (inputManager.getEvents().justPressed.has('interact')) {
         const target = kickTarget(s, Array.from(objects.values()).filter((o) => !o.kick))
