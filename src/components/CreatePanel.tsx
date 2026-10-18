@@ -54,6 +54,9 @@ export function CreatePanel() {
     if (open) setTimeout(() => inputRef.current?.focus(), 0)
   }, [open])
 
+  // Bumped after every poll round (even failed ones) so the loop always re-arms
+  const [pollTick, setPollTick] = useState(0)
+
   // Poll open makings; place each one when it completes
   useEffect(() => {
     const pending = makings.filter((m) => m.status === 'queued' || m.status === 'processing')
@@ -74,9 +77,10 @@ export function CreatePanel() {
           /* keep polling */
         }
       }
+      setPollTick((n) => n + 1)
     }, POLL_MS)
     return () => clearTimeout(t)
-  }, [makings, playerId])
+  }, [makings, playerId, pollTick])
 
   // Drop finished makings from the list after a moment
   useEffect(() => {

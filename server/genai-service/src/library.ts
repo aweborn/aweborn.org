@@ -14,7 +14,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s
 import { createReadStream, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
-import { ensureOptimized, optPath } from "./optimize.js";
+import { ensureOptimizedIsolated, optPath } from "./optimize.js";
 import type { DatabaseSync } from "node:sqlite";
 
 const BUCKET = process.env.ASSETS_BUCKET ?? "";
@@ -83,7 +83,7 @@ export async function syncOptimized(db: DatabaseSync, assetDir: string, file: st
   if (s3 && (await exists(`models/opt/${file}`))) return void flag();
   const src = join(assetDir, file);
   if (!existsSync(src) || statSync(src).size > OPT_MAX_BYTES) return;
-  const out = await ensureOptimized(assetDir, file);
+  const out = await ensureOptimizedIsolated(assetDir, file);
   if (!out) return;
   if (s3) {
     await s3.send(new PutObjectCommand({

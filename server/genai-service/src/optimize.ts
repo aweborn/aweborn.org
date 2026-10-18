@@ -7,6 +7,8 @@
  */
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fork } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { dedup, prune, simplify, textureCompress, weld } from "@gltf-transform/functions";
@@ -52,4 +54,31 @@ export async function ensureOptimized(assetDir: string, file: string): Promise<s
     console.error(`[optimize] ${file} failed:`, (err as Error).message);
     return null;
   }
+}
+
+/**
+ * Same as ensureOptimized, but in a child process. Decoding + simplifying a 20+ MB model
+ * is seconds of synchronous JS; in-process it froze the event loop, so status polls
+ * failed (503) while the job finished, and the client gave up at 99%.
+ */
+export function ensureOptimizedIsolated(assetDir: string, file: string): Promise<string | null> {
+  const out = optPath(assetDir, file);
+  if (existsSync(out)) return Promise.resolve(out);
+  return new Promise((resolve) => {
+    const child = fork(fileURLToPath(import.meta.url), ["--optimize-child", assetDir, file], {
+      execArgv: process.execArgv,
+      execPath: process.execPath,
+    });
+    child.on("error", (err) => {
+      console.error(`[optimize] ${file} child failed:`, err.message);
+      resolve(null);
+    });
+    child.on("exit", () => resolve(existsSync(out) ? out : null));
+  });
+}
+
+// Child-process entry point (see ensureOptimizedIsolated)
+if (process.argv[2] === "--optimize-child") {
+  const [, , , assetDir, file] = process.argv;
+  ensureOptimized(assetDir, file).then(() => process.exit(0), () => process.exit(1));
 }

@@ -86,6 +86,9 @@ export function PlannerPanel() {
     }
   }, [sessionId, activeWorldId])
 
+  // Bumped after every poll round (even failed ones) so the loop always re-arms
+  const [pollTick, setPollTick] = useState(0)
+
   // Poll manifest jobs; place each model where the blueprint put it (works with the panel closed)
   useEffect(() => {
     const pending = makings.filter((m) => m.jobId && (m.status === 'queued' || m.status === 'processing'))
@@ -118,9 +121,10 @@ export function PlannerPanel() {
           /* keep polling */
         }
       }
+      setPollTick((n) => n + 1)
     }, POLL_MS)
     return () => clearTimeout(t)
-  }, [makings, playerId])
+  }, [makings, playerId, pollTick])
 
   // Entering a world resumes your last plan there (everything is saved server-side)
   useEffect(() => {
