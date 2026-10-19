@@ -60,10 +60,11 @@ Caps are per rolling 24 h (the per-minute window in the formula is just how the 
 
 | Stage | `base` (mana / 24 h) | Why |
 |---|---|---|
+| Unsaved (anonymous) player | **60** | A taste of making: about one textured model (60) or a handful of planner turns. Saving the player lifts it (Alex, 2026-10-19; tune in play) |
 | Chapters 1–4 (move … build) | **0** | Nothing generative yet; building and arranging are free |
-| Chapter 5 (Maker tutorials) | **150** | Finish every tutorial in one sitting with room for a retry |
-| Chapter 6–7 | **250** | Experimenting with every tool |
-| After warp, per level | **+25 per level, up to 1,000** | Levels come from channeled mana + breadth |
-| `p_solo` | **400** | A lone player can always make one whole new world per day |
+| Chapter 5 (Maker tutorials) | **600** | A whole textured world (~9 models + planner turns) fits in a day (raised 2026-10-17 from 150) |
+| Chapter 6–7 | **1,000** | Experimenting with every tool (raised from 250) |
+| After warp, per level | **+50 per level, up to 2,500** | Levels come from channeled mana + breadth (raised from +25 / 1,000) |
+| `p_solo` | **1,200** | A lone player can always make one whole new world per day (raised from 400) |
 
-Solar ±10% applies on top. **Approved by Alex 2026-10-16** ("perfect"); implemented as `MANA_CAPS` / `baseCap()` in `shared/crdt-schema.ts`.
+Solar ±10% applies on top. **Approved by Alex 2026-10-16** ("perfect"), raised 2026-10-17 and the guest row added 2026-10-19; implemented as `MANA_CAPS` / `baseCap()` in `shared/crdt-schema.ts` (the guest cap is applied by `ManaAdmission.capFor`).
