@@ -57,12 +57,16 @@ function GeneratedModel({ asset }: { asset: string }) {
 
 // ── Object Geometries ────────────────────────────────────────────────
 
+const pyramid = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4) // base corners at radius 0.707 → a 1 x 1 square
+pyramid.rotateY(Math.PI / 4)
+
 const GEOMETRIES: Record<string, THREE.BufferGeometry> = {
   cube: new THREE.BoxGeometry(1, 1, 1),
   sphere: new THREE.SphereGeometry(0.5, 24, 24),
-  cylinder: new THREE.CylinderGeometry(0.4, 0.4, 1, 16),
-  cone: new THREE.ConeGeometry(0.5, 1, 16),
-  torus: new THREE.TorusGeometry(0.4, 0.15, 12, 32),
+  cylinder: new THREE.CylinderGeometry(0.5, 0.5, 1, 24),
+  cone: new THREE.ConeGeometry(0.5, 1, 24),
+  pyramid,
+  torus: new THREE.TorusGeometry(0.35, 0.15, 12, 32), // 1 m across, matching its unit collider
 }
 
 function getGeometry(type: string): THREE.BufferGeometry {
@@ -76,8 +80,12 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
   const groupRef = useRef<THREE.Group>(null!)
   const geo = useMemo(() => getGeometry(obj.type), [obj.type])
 
-  // Material color — derive from world color + object type
+  // Library items (blocks, shapes) keep the exact color they were placed with and stand still
+  const placedLook = !!obj.color
+
+  // Material color: derive from world color + object type (legacy objects)
   const color = useMemo(() => {
+    if (obj.color) return new THREE.Color(obj.color)
     const base = new THREE.Color(worldColor)
     // Vary hue slightly by object type for visual diversity
     const hsl = { h: 0, s: 0, l: 0 }
@@ -90,7 +98,7 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
     hsl.s = Math.min(hsl.s + 0.1, 1)
     hsl.l = Math.min(hsl.l + 0.15, 0.85)
     return new THREE.Color().setHSL(hsl.h, hsl.s, hsl.l)
-  }, [worldColor, obj.type])
+  }, [worldColor, obj.type, obj.color])
 
   // Subtle float animation; a kicked object follows the shared flight sim
   useFrame((state) => {
@@ -106,6 +114,11 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
         // Generated models stand still where they were placed
         target.position.set(obj.x, obj.y, obj.z)
         target.rotation.set(0, obj.rotY, 0)
+        return
+      }
+      if (placedLook) {
+        target.position.set(obj.x, obj.y, obj.z)
+        target.rotation.set(obj.rotX, obj.rotY, obj.rotZ)
         return
       }
       target.position.set(obj.x, obj.y + Math.sin(state.clock.elapsedTime * 0.5 + obj.x * 0.1) * 0.05, obj.z)
@@ -133,13 +146,23 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
       rotation={[obj.rotX, obj.rotY, obj.rotZ]}
       scale={[obj.scaleX, obj.scaleY, obj.scaleZ]}
     >
-      <meshStandardMaterial
-        color={color}
-        roughness={0.35}
-        metalness={0.3}
-        emissive={color}
-        emissiveIntensity={0.2}
-      />
+      {placedLook ? (
+        <meshStandardMaterial
+          color={color}
+          roughness={0.7}
+          metalness={obj.material === 'gold' ? 0.8 : 0.05}
+          transparent={obj.material === 'glass'}
+          opacity={obj.material === 'glass' ? 0.45 : 1}
+        />
+      ) : (
+        <meshStandardMaterial
+          color={color}
+          roughness={0.35}
+          metalness={0.3}
+          emissive={color}
+          emissiveIntensity={0.2}
+        />
+      )}
     </mesh>
   )
 }

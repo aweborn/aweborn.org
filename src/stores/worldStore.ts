@@ -18,6 +18,7 @@ import type {
   ChatMessage,
 } from "@aweborn/shared/crdt-schema";
 import { DEFAULT_PHYSICS } from "@aweborn/shared/crdt-schema";
+import { cleanColor } from "@aweborn/shared/library";
 
 interface WorldState {
   /** World metadata */
@@ -115,6 +116,7 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
       scaleY: (m.get("scaleY") as number) ?? 1,
       scaleZ: (m.get("scaleZ") as number) ?? 1,
       material: (m.get("material") as string) ?? "default",
+      color: (m.get("color") as string) ?? undefined,
       placedBy: (m.get("placedBy") as string) ?? "",
       placedAt: (m.get("placedAt") as number) ?? 0,
       kick: (m.get("kick") as PlacedObject["kick"]) ?? undefined,
@@ -312,6 +314,62 @@ export function placeModel(
     doc.getMap("objects").set(id, m);
   });
   return id;
+}
+
+/**
+ * Place a Library item (a block or a basic shape) in the world CRDT. Free: no
+ * server involved, so it works offline and syncs when the connection is back.
+ */
+function placeLibraryItem(
+  doc: Y.Doc,
+  item: { type: string; material: string; label: string; color: string; scale: number; rotY?: number },
+  position: { x: number; y: number; z: number },
+  placedBy: string,
+): string {
+  const id = `obj-${Math.random().toString(36).slice(2, 8)}`;
+  doc.transact(() => {
+    const m = new Y.Map();
+    m.set("id", id);
+    m.set("type", item.type);
+    m.set("x", position.x);
+    m.set("y", position.y);
+    m.set("z", position.z);
+    m.set("rotX", 0);
+    m.set("rotY", item.rotY ?? 0);
+    m.set("rotZ", 0);
+    m.set("scaleX", item.scale);
+    m.set("scaleY", item.scale);
+    m.set("scaleZ", item.scale);
+    m.set("material", item.material);
+    m.set("color", cleanColor(item.color));
+    m.set("placedBy", placedBy);
+    m.set("placedAt", Date.now());
+    m.set("prompt", item.label.slice(0, 60));
+    doc.getMap("objects").set(id, m);
+  });
+  return id;
+}
+
+/** A unit block (terrain-style) at a cell center. */
+export function placeBlock(
+  doc: Y.Doc,
+  block: { id: string; name: string; color: string },
+  position: { x: number; y: number; z: number },
+  placedBy: string,
+): string {
+  return placeLibraryItem(doc, { type: "block", material: block.id, label: block.name, color: block.color, scale: 1 }, position, placedBy);
+}
+
+/** A basic shape (cube, sphere, cone, ring …) in any color and size. */
+export function placeShape(
+  doc: Y.Doc,
+  shape: { id: string; name: string },
+  opts: { color: string; size: number },
+  position: { x: number; y: number; z: number },
+  placedBy: string,
+  rotY = 0,
+): string {
+  return placeLibraryItem(doc, { type: shape.id, material: "default", label: shape.name, color: opts.color, scale: opts.size, rotY }, position, placedBy);
 }
 
 /** Move/rotate a placed object (grab, Phase 07). Clears any kick in flight. */

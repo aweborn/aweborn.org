@@ -258,6 +258,8 @@ export interface PlacedObject {
   scaleY: number;
   scaleZ: number;
   material: string;
+  /** Library items (blocks, shapes): the exact color they were placed with (`#rrggbb`). Absent = derived from the world color. */
+  color?: string;
   placedBy: string;
   placedAt: number;
   /** Generated asset (Phase 07): content-addressed GLB name, served at `/assets/<name>`. */
