@@ -129,6 +129,7 @@ export function stepInterior(
   physics: PhysicsParams,
   boxes: readonly Box[],
   dt: number = INTERIOR_DT,
+  halfExtent: number = INTERIOR_HALF_EXTENT,
 ): InteriorState {
   const move = clamp(input.move, -1, 1);
   const strafe = clamp(input.strafe, -1, 1);
@@ -208,7 +209,7 @@ export function stepInterior(
       vx = 0;
     }
   }
-  x = clamp(x, -INTERIOR_HALF_EXTENT, INTERIOR_HALF_EXTENT);
+  x = clamp(x, -halfExtent, halfExtent);
 
   let z = s.z + vz * dt;
   for (const b of boxes) {
@@ -221,7 +222,7 @@ export function stepInterior(
       vz = 0;
     }
   }
-  z = clamp(z, -INTERIOR_HALF_EXTENT, INTERIOR_HALF_EXTENT);
+  z = clamp(z, -halfExtent, halfExtent);
 
   let y = feet + vy * dt;
   let grounded = false;

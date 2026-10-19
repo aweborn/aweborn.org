@@ -25,13 +25,15 @@ export interface QualityTier {
   mediumDist: number
   bloom: boolean
   stars: number
+  /** In-world terrain is drawn this many 32 m chunks out from the player (fog hides the edge). */
+  worldChunks: number
 }
 
 export const QUALITY_TIERS: readonly QualityTier[] = [
-  { name: 'Low', dpr: 1, fogNear: 30, fogFar: 200, cameraFar: 400, mediumDist: 150, bloom: false, stars: 1500 },
-  { name: 'Medium', dpr: 1.25, fogNear: 30, fogFar: 250, cameraFar: 500, mediumDist: 200, bloom: true, stars: 3000 },
-  { name: 'High', dpr: 1.5, fogNear: 60, fogFar: 600, cameraFar: 1000, mediumDist: 400, bloom: true, stars: 5000 },
-  { name: 'Ultra', dpr: 2, fogNear: 120, fogFar: 1500, cameraFar: 2500, mediumDist: 800, bloom: true, stars: 8000 },
+  { name: 'Low', dpr: 1, fogNear: 30, fogFar: 200, cameraFar: 400, mediumDist: 150, bloom: false, stars: 1500, worldChunks: 3 },
+  { name: 'Medium', dpr: 1.25, fogNear: 30, fogFar: 250, cameraFar: 500, mediumDist: 200, bloom: true, stars: 3000, worldChunks: 4 },
+  { name: 'High', dpr: 1.5, fogNear: 60, fogFar: 600, cameraFar: 1000, mediumDist: 400, bloom: true, stars: 5000, worldChunks: 5 },
+  { name: 'Ultra', dpr: 2, fogNear: 120, fogFar: 1500, cameraFar: 2500, mediumDist: 800, bloom: true, stars: 8000, worldChunks: 6 },
 ]
 
 export type QualitySetting = 'auto' | 0 | 1 | 2 | 3

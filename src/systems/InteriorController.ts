@@ -45,6 +45,17 @@ class InteriorController {
     this._acc = 0
   }
 
+  /**
+   * Raise the player's feet to `y` if they're below it (terrain appeared under them).
+   * Terrain boxes only let you step up ~1 voxel, so someone inside a 3-voxel ground
+   * would otherwise be shoved sideways along its edge and be unable to walk anywhere.
+   */
+  liftTo(y: number): void {
+    if (this.state.y >= y) return
+    this.state = { ...this.state, y, vy: 0, grounded: true }
+    this.prev = this.state
+  }
+
   readInput(): InteriorInput {
     const a = inputManager.getActions()
     const b = (v: boolean) => (v ? 1 : 0)
@@ -64,13 +75,13 @@ class InteriorController {
    * Advance by a frame's delta. Returns the interpolation factor (0..1)
    * between `prev` and `state` for smooth rendering.
    */
-  update(delta: number, physics: PhysicsParams, boxes: readonly Box[]): number {
+  update(delta: number, physics: PhysicsParams, boxes: readonly Box[], halfExtent?: number): number {
     this._acc += Math.min(delta, 0.1)
     const input = this.readInput()
     let n = 0
     while (this._acc >= INTERIOR_DT && n < MAX_SUBSTEPS) {
       this.prev = this.state
-      this.state = stepInterior(this.state, input, physics, boxes, INTERIOR_DT)
+      this.state = stepInterior(this.state, input, physics, boxes, INTERIOR_DT, halfExtent)
       this._acc -= INTERIOR_DT
       n++
     }

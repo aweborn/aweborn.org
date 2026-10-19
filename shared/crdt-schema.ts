@@ -169,6 +169,8 @@ export const MANA_CAPS = {
   activeMs: 30 * 60 * 1000,
   /** Chapters 1–4 (move … build): nothing generative yet. */
   beforeMaker: 0,
+  /** An unsaved (anonymous) player: a taste of making, about one model. Saving the player lifts it. */
+  guest: 60,
   /** Chapter 5 (Maker tutorials). */
   maker: 600,
   /** Chapters 6–7 and the start of post-warp play. */

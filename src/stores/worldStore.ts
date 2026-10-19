@@ -8,7 +8,7 @@
  * This store is only active when the player has entered a world.
  */
 
-import type { BlueprintDraft } from '@aweborn/shared/blueprint';
+import type { BlueprintDraft, BlueprintSky } from '@aweborn/shared/blueprint';
 import { create } from "zustand";
 import * as Y from "yjs";
 import type {
@@ -37,6 +37,8 @@ interface WorldState {
 
   /** Manifested voxel terrain params (Phase 07); everyone regenerates the same grid from them */
   voxelTerrain: VoxelTerrain | null;
+  /** Shaped sky/lighting (null = the daylight default) */
+  sky: BlueprintSky | null;
 
   /** Whether the world doc is loaded and synced */
   loaded: boolean;
@@ -137,9 +139,24 @@ function readVoxelTerrain(doc: Y.Doc): VoxelTerrain | null {
   }
 }
 
-/** Manifest the terrain: every client regenerates the same grid (shared/voxel.ts). */
-export function setVoxelTerrain(doc: Y.Doc, terrain: VoxelTerrain): void {
-  doc.getMap("terrain").set("voxel", JSON.stringify(terrain));
+function readSky(doc: Y.Doc): BlueprintSky | null {
+  const raw = doc.getMap("terrain").get("sky");
+  if (typeof raw !== "string") return null;
+  try {
+    return JSON.parse(raw) as BlueprintSky;
+  } catch {
+    return null;
+  }
+}
+
+/** Manifest the terrain (and its sky): every client regenerates the same grid (shared/voxel.ts). */
+export function setVoxelTerrain(doc: Y.Doc, terrain: VoxelTerrain, sky?: BlueprintSky | null): void {
+  doc.transact(() => {
+    const m = doc.getMap("terrain");
+    m.set("voxel", JSON.stringify(terrain));
+    if (sky) m.set("sky", JSON.stringify(sky));
+    else m.delete("sky");
+  });
 }
 
 function readChat(doc: Y.Doc): ChatMessage[] {
@@ -163,6 +180,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
   chat: [],
   terrainSeed: 0,
   voxelTerrain: null,
+  sky: null,
   loaded: false,
 
   loadFromDoc: (doc) => {
@@ -174,6 +192,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
       chat: readChat(doc),
       terrainSeed: (doc.getMap("terrain").get("seed") as number) ?? 0,
       voxelTerrain: readVoxelTerrain(doc),
+      sky: readSky(doc),
       loaded: true,
     });
 
@@ -182,7 +201,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
     doc.getMap("physics").observeDeep(() => set({ physics: readPhysics(doc) }));
     doc.getMap("objects").observeDeep(() => set({ objects: readObjects(doc) }));
     doc.getArray("chat").observe(() => set({ chat: readChat(doc) }));
-    doc.getMap("terrain").observe(() => set({ voxelTerrain: readVoxelTerrain(doc) }));
+    doc.getMap("terrain").observe(() => set({ voxelTerrain: readVoxelTerrain(doc), sky: readSky(doc) }));
   },
 
   placeObject: (doc, type, position, rotation, scale, material) => {
@@ -229,7 +248,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
   },
 
   reset: () => {
-    set({ voxelTerrain: null,
+    set({ voxelTerrain: null, sky: null,
       meta: null,
       physics: { ...DEFAULT_PHYSICS },
       objects: new Map(),

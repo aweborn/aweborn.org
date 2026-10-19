@@ -27,10 +27,30 @@ export interface BlueprintAsset {
   rotationY?: number;
 }
 
+/** Light and sky: what a world looks like from inside. Fog fades to the horizon color. */
+export interface BlueprintSky {
+  zenith: string;
+  horizon: string;
+  /** Meters at which the distance has fully faded into the horizon (clamped to what the device draws). */
+  fog: number;
+  sun: { color: string; intensity: number; dir: Vec3 };
+  ambient: { color: string; intensity: number };
+}
+
+/** Gentle daylight; used when a blueprint doesn't say (every blueprint from before sky existed). */
+export const DEFAULT_SKY: BlueprintSky = {
+  zenith: "#4a6fb0",
+  horizon: "#d5deef",
+  fog: 200,
+  sun: { color: "#fff1d6", intensity: 1.3, dir: [0.4, 0.8, 0.3] },
+  ambient: { color: "#a9b6d9", intensity: 0.6 },
+};
+
 /** What the planner writes. */
 export interface BlueprintDraft {
   name: string;
   style: { artDirection: string; palette: string[]; lighting: string; timeOfDay?: string };
+  sky?: BlueprintSky;
   terrain: { kind: "voxel"; size: Vec3; seed: number; blocks: BlueprintBlock[]; features: BlueprintFeature[] };
   assets: BlueprintAsset[];
   lore?: { name: string; text: string };
@@ -67,7 +87,10 @@ export function estimate(d: BlueprintDraft, plannerMana: number): Estimate {
 }
 
 // ── Validation ─────────────────────────────────────────────────────────
-export const LIMITS = { assets: 24, features: 32, blocks: 12, palette: 8, chips: 3, grid: 40, prompt: 400 } as const;
+/** `grid` caps heights/altitudes (cells); `world` caps the x/z footprint (default 320: ~100x the old 32x32 area). */
+export const LIMITS = { assets: 24, features: 32, blocks: 12, palette: 8, chips: 3, grid: 40, world: 320, prompt: 400 } as const;
+/** Default world: footprint x height x footprint, in cells (1 cell = 1 m). */
+export const DEFAULT_WORLD_SIZE: Vec3 = [LIMITS.world, 16, LIMITS.world];
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -80,6 +103,11 @@ const slug = (v: unknown) => str(v, 40).toLowerCase().replace(/[^a-z0-9-]+/g, "-
 function vec(v: unknown, lo: number, hi: number): Vec3 | undefined {
   if (!Array.isArray(v) || v.length !== 3) return undefined;
   return [num(v[0], lo, hi, 0), num(v[1], lo, hi, 0), num(v[2], lo, hi, 0)];
+}
+/** Per-axis clamp: x/z get the world footprint range, y the height range. */
+function vecXYZ(v: unknown, lo: Vec3, hi: Vec3): Vec3 | undefined {
+  if (!Array.isArray(v) || v.length !== 3) return undefined;
+  return [num(v[0], lo[0], hi[0], lo[0]), num(v[1], lo[1], hi[1], lo[1]), num(v[2], lo[2], hi[2], lo[2])];
 }
 const oneOf = <T extends string>(v: unknown, opts: readonly T[]): T | undefined =>
   opts.includes(v as T) ? (v as T) : undefined;
@@ -97,8 +125,8 @@ export function parseDraft(raw: unknown): Parsed<BlueprintDraft> {
   const palette = (Array.isArray(st.palette) ? st.palette : []).map((c) => color(c, "")).filter(Boolean).slice(0, LIMITS.palette);
 
   const tr = isObj(raw.terrain) ? raw.terrain : {};
-  const G = LIMITS.grid;
-  const size = vec(tr.size, 4, G) ?? [32, 16, 32];
+  const G = LIMITS.grid, W = LIMITS.world;
+  const size = vecXYZ(tr.size, [4, 4, 4], [W, G, W]) ?? DEFAULT_WORLD_SIZE;
   const blocks: BlueprintBlock[] = [];
   for (const b of Array.isArray(tr.blocks) ? tr.blocks.slice(0, LIMITS.blocks) : []) {
     if (!isObj(b)) continue;
@@ -116,8 +144,8 @@ export function parseDraft(raw: unknown): Parsed<BlueprintDraft> {
     if (!blocks.some((b) => b.id === block)) { warnings.push(`dropped ${type}: unknown block ${block}`); continue; }
     features.push({
       type, block,
-      at: vec(f.at, 0, G) ?? [size[0] / 2, 0, size[2] / 2],
-      radius: num(f.radius, 1, G / 2, 4),
+      at: vecXYZ(f.at, [0, 0, 0], [W, G, W]) ?? [size[0] / 2, 0, size[2] / 2],
+      radius: num(f.radius, 1, W / 8, 4),
       height: f.height === undefined ? undefined : num(f.height, 0, G, 4),
     });
   }
@@ -134,7 +162,7 @@ export function parseDraft(raw: unknown): Parsed<BlueprintDraft> {
     assets.push({
       key, kind, prompt,
       quality: oneOf(a.quality, ["quick", "full"] as const) ?? "quick",
-      at: vec(a.at, -G, G), size: vec(a.size, 0.1, 20),
+      at: vecXYZ(a.at, [0, -G, 0], [W, G, W]), size: vec(a.size, 0.1, 20),
       rotationY: a.rotationY === undefined ? undefined : num(a.rotationY, -Math.PI * 2, Math.PI * 2, 0),
     });
   }
@@ -147,6 +175,22 @@ export function parseDraft(raw: unknown): Parsed<BlueprintDraft> {
     assets,
   };
   if (isObj(raw.lore) && str(raw.lore.text, 1)) draft.lore = { name: str(raw.lore.name, 60), text: str(raw.lore.text, 800) };
+  if (isObj(raw.sky)) {
+    const k = raw.sky, sun = isObj(k.sun) ? k.sun : {}, amb = isObj(k.ambient) ? k.ambient : {};
+    const D = DEFAULT_SKY;
+    draft.sky = {
+      zenith: color(k.zenith, D.zenith),
+      horizon: color(k.horizon, D.horizon),
+      fog: num(k.fog, 40, 400, D.fog),
+      sun: {
+        color: color(sun.color, D.sun.color),
+        intensity: num(sun.intensity, 0, 3, D.sun.intensity),
+        // Direction the light comes FROM; keep it above the horizon so the ground is always lit
+        dir: vecXYZ(sun.dir, [-1, 0.15, -1], [1, 1, 1]) ?? D.sun.dir,
+      },
+      ambient: { color: color(amb.color, D.ambient.color), intensity: num(amb.intensity, 0, 1.5, D.ambient.intensity) },
+    };
+  }
   if (isObj(raw.physics)) {
     const p = raw.physics;
     draft.physics = {};

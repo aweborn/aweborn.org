@@ -62,6 +62,22 @@ const creations = {
 
 type Json = (status: number, body: unknown) => void;
 
+/** GET /api/player/mana: this player's allowance, usage and averages, plus the universe flow. Read-only. */
+export function manaStatus(rooms: RoomManager, playerId: string, json: Json, guest = false): void {
+  const now = Date.now();
+  const usage = rooms.mana.playerUsage(playerId, now - 7 * 24 * 60 * 60 * 1000);
+  const { available, ...status } = rooms.admission.status(playerId, PROVISIONAL_PROGRESS);
+  return json(200, {
+    ...status,
+    guest,
+    remaining: available,
+    held: usage.held,
+    week: { plan: usage.plan, model: usage.model },
+    recent: usage.recent,
+    pool: { creative: rooms.mana.state().creative, available: rooms.mana.available() },
+  });
+}
+
 export async function startCreation(rooms: RoomManager, playerId: string, prompt: unknown, json: Json): Promise<void> {
   const text = typeof prompt === "string" ? prompt.trim().slice(0, 600) : "";
   if (!text) return json(400, { error: "empty_prompt" });

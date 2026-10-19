@@ -12,13 +12,24 @@ import type { BlueprintDraft, BlueprintBlock } from "./blueprint.js";
 import type { Box } from "./sim/interior.js";
 
 export interface VoxelGrid {
+  /** This grid's own extent (a whole world, or one chunk of it). */
   size: [number, number, number];
+  /** Global cell (x, z) of this grid's local (0, 0). [0, 0] for a whole world. */
+  origin: [number, number];
+  /** The whole world's footprint in cells (x, z); the world is centered on the world origin. */
+  world: [number, number];
   /** 0 = empty, n = blocks[n - 1]; index (i, j, k) = i + sx * (k + sz * j) */
   cells: Uint8Array;
   blocks: BlueprintBlock[];
   /** Per block index (0-based): liquids don't collide and render translucent. */
   liquid: boolean[];
 }
+
+/** Chunk edge in cells: terrain is generated, drawn and collided one chunk at a time. */
+export const CHUNK = 32;
+
+/** Generate only this slice of the world (global cell coordinates, inside the footprint). */
+export interface VoxelRegion { x0: number; z0: number; w: number; d: number }
 
 /** Base ground thickness (cells); ponds dig into it. */
 export const GROUND = 3;
@@ -42,8 +53,10 @@ function noise(seed: number, x: number, z: number, scale: number): number {
   return a + (b - a) * tx + (c - a) * tz + (a - b - c + d) * tx * tz;
 }
 
-export function generateVoxels(t: BlueprintDraft["terrain"]): VoxelGrid {
-  const [sx, sy, sz] = t.size;
+export function generateVoxels(t: BlueprintDraft["terrain"], region?: VoxelRegion): VoxelGrid {
+  const [wx, sy, wz] = t.size;
+  const x0 = region?.x0 ?? 0, z0 = region?.z0 ?? 0;
+  const sx = region?.w ?? wx, sz = region?.d ?? wz;
   const seed = t.seed | 0;
   const blocks = t.blocks;
   const liquid = blocks.map((b) => LIQUID.test(b.id) || LIQUID.test(b.name.toLowerCase()));
@@ -61,7 +74,7 @@ export function generateVoxels(t: BlueprintDraft["terrain"]): VoxelGrid {
 
   for (let k = 0; k < sz; k++) for (let i = 0; i < sx; i++) {
     const c = i + sx * k;
-    height[c] = GROUND + (noise(seed, i, k, 7) > 0.72 ? 1 : 0); // gentle base, deep enough to dig ponds into
+    height[c] = GROUND + (noise(seed, x0 + i, z0 + k, 7) > 0.72 ? 1 : 0); // gentle base, deep enough to dig ponds into
     top[c] = ground;
   }
 
@@ -70,10 +83,11 @@ export function generateVoxels(t: BlueprintDraft["terrain"]): VoxelGrid {
     const r = f.radius;
     const block = idx(f.block);
     const h = Math.round(f.height ?? 3);
-    for (let k = Math.max(0, Math.floor(cz - r)); k <= Math.min(sz - 1, Math.ceil(cz + r)); k++) {
-      for (let i = Math.max(0, Math.floor(cx - r)); i <= Math.min(sx - 1, Math.ceil(cx + r)); i++) {
-        const dx = i + 0.5 - cx, dz = k + 0.5 - cz;
-        const n = noise(seed + 101, i, k, 3);
+    for (let gk = Math.max(z0, Math.floor(cz - r)); gk <= Math.min(z0 + sz - 1, Math.ceil(cz + r)); gk++) {
+      for (let gi = Math.max(x0, Math.floor(cx - r)); gi <= Math.min(x0 + sx - 1, Math.ceil(cx + r)); gi++) {
+        const i = gi - x0, k = gk - z0; // local to this grid
+        const dx = gi + 0.5 - cx, dz = gk + 0.5 - cz;
+        const n = noise(seed + 101, gi, gk, 3);
         const d = Math.sqrt(dx * dx + dz * dz) / r; // 0 center … 1 edge
         const c = i + sx * k;
         // at.y: lift above the ground for ground features, altitude for floating islands
@@ -129,7 +143,7 @@ export function generateVoxels(t: BlueprintDraft["terrain"]): VoxelGrid {
   }
   for (const e of extras) for (let j = e.from; j <= e.to; j++) set(e.i, j, e.k, j === e.to ? e.block : filler);
 
-  return { size: [sx, sy, sz], cells, blocks, liquid };
+  return { size: [sx, sy, sz], origin: [x0, z0], world: [wx, wz], cells, blocks, liquid };
 }
 
 export const cellAt = (g: VoxelGrid, i: number, j: number, k: number): number => {
@@ -145,7 +159,7 @@ const solid = (g: VoxelGrid, v: number) => v !== 0 && !g.liquid[v - 1];
  */
 export function voxelColliders(g: VoxelGrid): Box[] {
   const [sx, sy, sz] = g.size;
-  const ox = -sx / 2, oz = -sz / 2;
+  const ox = g.origin[0] - g.world[0] / 2, oz = g.origin[1] - g.world[1] / 2;
   const boxes: Box[] = [];
   for (let k = 0; k < sz; k++) {
     let open = new Map<string, Box>();
@@ -189,12 +203,15 @@ export function visibleCells(g: VoxelGrid): { i: number; j: number; k: number; v
   return out;
 }
 
-/** Grid cell (as the planner places things) → world position at the cell's surface. */
+/**
+ * Grid cell (global, as the planner places things) → world position at the cell's surface.
+ * `g` must contain the cell (use the chunk it falls in); outside it clamps to the grid's edge.
+ */
 export function cellToWorld(g: VoxelGrid, at: [number, number, number]): { x: number; y: number; z: number } {
   const [sx, sy, sz] = g.size;
-  const i = Math.min(sx - 1, Math.max(0, Math.floor(at[0])));
-  const k = Math.min(sz - 1, Math.max(0, Math.floor(at[2])));
+  const i = Math.min(sx - 1, Math.max(0, Math.floor(at[0]) - g.origin[0]));
+  const k = Math.min(sz - 1, Math.max(0, Math.floor(at[2]) - g.origin[1]));
   let y = 0;
   for (let j = sy - 1; j >= 0; j--) if (cellAt(g, i, j, k)) { y = j + 1; break; }
-  return { x: i - sx / 2 + 0.5, y, z: k - sz / 2 + 0.5 };
+  return { x: g.origin[0] + i - g.world[0] / 2 + 0.5, y, z: g.origin[1] + k - g.world[1] / 2 + 0.5 };
 }

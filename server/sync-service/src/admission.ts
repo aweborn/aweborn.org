@@ -50,11 +50,25 @@ export type DrawDecision =
 export class ManaAdmission {
   /** playerId → last activity (ms). */
   private lastSeen = new Map<string, number>();
+  /** Players whose current session is anonymous (unsaved): they get the small guest cap. */
+  private guests = new Set<string>();
 
   constructor(
     private ledger: ManaLedger,
     private now: () => number = Date.now,
   ) {}
+
+  /** Set from each authenticated request: an unsaved player gets the guest cap until they save. */
+  setGuest(playerId: string, isGuest: boolean): void {
+    if (isGuest) this.guests.add(playerId);
+    else this.guests.delete(playerId);
+  }
+
+  /** A player's personal cap per 24 h (before solar). Unsaved players are capped small. */
+  capFor(playerId: string, progress: PlayerProgress, solar = 1): number {
+    const base = this.guests.has(playerId) ? Math.min(MANA_CAPS.guest, baseCap(progress)) : baseCap(progress);
+    return base * clamp(solar, 0.9, 1.1);
+  }
 
   /** Called on connect and on every message: activity puts a player in the fair split. */
   markActive(playerId: string, at = this.now()): void {
@@ -100,6 +114,27 @@ export class ManaAdmission {
     return waterFill(remainingFlow, caps)[0];
   }
 
+  /**
+   * Read-only view for a player's mana tracker: the same numbers admission
+   * uses, without holding anything. `available` is what they could draw now.
+   */
+  status(playerId: string, progress: PlayerProgress, solar = 1, at = this.now()) {
+    const cap = this.capFor(playerId, progress, solar);
+    const { total, byPlayer } = this.ledger.creationSpendSince(at - MANA_CAPS.windowMs);
+    const spent = byPlayer.get(playerId) ?? 0;
+    const available = cap > 0 ? this.shareFor(playerId, cap, at) : 0;
+    const flow = this.globalFlow();
+    return {
+      cap: round3(cap),
+      spent: round3(spent),
+      available: round3(available),
+      flow: round3(flow),
+      flowSpent: round3(total),
+      activePlayers: this.activePlayers(at).length,
+      windowMs: MANA_CAPS.windowMs,
+    };
+  }
+
   /** Admit and hold, or refuse gently. */
   requestDraw(req: DrawRequest): DrawDecision {
     const at = this.now();
@@ -107,7 +142,7 @@ export class ManaAdmission {
       return { ok: false, reason: "bad_amount", message: REPLENISH_MESSAGE, remainingToday: 0 };
     }
     const solar = clamp(req.solar ?? 1, 0.9, 1.1);
-    const cap = baseCap(req.progress) * solar;
+    const cap = this.capFor(req.playerId, req.progress, solar);
     if (cap <= 0) {
       return { ok: false, reason: "not_unlocked", message: "Making things comes a little later on your path.", remainingToday: 0 };
     }

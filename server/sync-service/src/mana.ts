@@ -344,6 +344,41 @@ export class ManaLedger {
   }
 
   /**
+   * One player's creation history since `since`, for their mana tracker:
+   * what's still held in flight, what settled (count + total + average) split
+   * into planner turns vs. models, and the most recent settles.
+   */
+  playerUsage(playerId: string, since: number, recentLimit = 8) {
+    const held = [...this.open.values()].filter((o) => o.playerId === playerId).reduce((s, o) => s + o.mm, 0);
+    const rows = this.db
+      .prepare(
+        `SELECT s.at AS at, s.amount_mm AS mm, s.ref AS ref, s.note AS note
+           FROM mana_ledger s
+          WHERE s.kind = 'settle' AND s.player_id = ? AND s.at >= ?
+          ORDER BY s.id DESC`,
+      )
+      .all(playerId, since) as { at: number; mm: number; ref: string | null; note: string | null }[];
+    const kindOf = (ref: string | null): "plan" | "model" => (ref?.startsWith("plan:") ? "plan" : "model");
+    const agg = { plan: { count: 0, mm: 0 }, model: { count: 0, mm: 0 } };
+    for (const r of rows) {
+      const a = agg[kindOf(r.ref)];
+      a.count += 1;
+      a.mm += r.mm;
+    }
+    const stat = (a: { count: number; mm: number }) => ({
+      count: a.count,
+      total: toMana(a.mm),
+      average: a.count ? toMana(a.mm) / a.count : 0,
+    });
+    return {
+      held: toMana(held),
+      plan: stat(agg.plan),
+      model: stat(agg.model),
+      recent: rows.slice(0, recentLimit).map((r) => ({ at: r.at, amount: toMana(r.mm), kind: kindOf(r.ref), note: r.note })),
+    };
+  }
+
+  /**
    * The generation finished: draw what the providers actually billed. If it
    * cost more than the estimate, the overage still comes out (the money was
    * spent) but the creative share never goes below 0.

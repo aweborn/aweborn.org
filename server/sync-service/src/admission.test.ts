@@ -58,6 +58,18 @@ test("a lone maker gets their whole personal cap, then a gentle no", () => {
   assert.equal(b.remainingToday, 46);
 });
 
+test("an unsaved player gets the small guest cap, and saving lifts it", () => {
+  const { adm } = setup();
+  adm.setGuest("g1", true);
+  assert.equal(adm.status("g1", maker).cap, MANA_CAPS.guest);
+  assert.equal(adm.requestDraw({ playerId: "g1", ref: "g-a", estimate: 60, progress: maker }).ok, true);
+  const no = adm.requestDraw({ playerId: "g1", ref: "g-b", estimate: 10, progress: maker });
+  assert.equal(!no.ok && no.reason, "personal_cap");
+  adm.setGuest("g1", false); // saved their player
+  assert.equal(adm.status("g1", maker).cap, MANA_CAPS.maker);
+  assert.equal(adm.requestDraw({ playerId: "g1", ref: "g-c", estimate: 10, progress: maker }).ok, true);
+});
+
 test("released holds don't count; settled ones count at their actual cost", () => {
   const { mana, adm } = setup();
   adm.requestDraw({ playerId: "p1", ref: "r1", estimate: MANA_CAPS.maker, progress: maker });

@@ -587,7 +587,12 @@ export async function initAuth(db: Database.Database): Promise<Auth | null> {
 export async function getRawSession(auth: Auth, headers: Headers) {
   const res = await auth.api.getSession({ headers });
   if (!res) return null;
-  return { userId: res.user.id, sessionId: res.session.id, playerId: (res.user as RawUser).playerId ?? null };
+  return {
+    userId: res.user.id,
+    sessionId: res.session.id,
+    playerId: (res.user as RawUser).playerId ?? null,
+    isAnonymous: Boolean((res.user as RawUser).isAnonymous),
+  };
 }
 
 /** Resolve the account + active character behind a request's session cookie, or null. */

@@ -20,7 +20,9 @@ import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
 import { usePlannerStore } from '../stores/plannerStore'
-import { worldVoxels, sameTerrain } from '../stores/worldVoxels'
+import { chunksAround, placeOnTerrain, sameTerrain, halfExtentOf, COLLIDE_RADIUS } from '../stores/worldVoxels'
+import { usePlayerChunk } from '../hooks/usePlayerChunk'
+import { useAtmosphere } from '../hooks/useAtmosphere'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
@@ -373,17 +375,22 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const avatar = useRef<THREE.Group>(null!)
   const objects = useWorldStore((s) => s.objects)
-  const ghostBoxes = usePlannerStore((s) => (s.visible && s.worldId === activeWorldId ? s.colliders : NO_BOXES))
+  const ghostVisible = usePlannerStore((s) => s.visible && s.worldId === activeWorldId)
   const ghostTerrain = usePlannerStore((s) => s.blueprint?.terrain)
   const voxelTerrain = useWorldStore((s) => s.voxelTerrain)
+  // Terrain collides one chunk neighborhood at a time, following the player
+  const refTerrain = voxelTerrain ?? ghostTerrain
+  const [pcx, pcz] = usePlayerChunk(refTerrain)
+  const halfExtent = refTerrain ? halfExtentOf(refTerrain) : undefined
   const shapes = useModelShapes((s) => s.shapes)
   // Grab (G): carry the object in front of you; Z / X turn it; G again sets it down
   const [heldId, setHeldId] = useState<string | null>(null)
   const held = useRef<{ id: string; rotY: number; dist: number; lift: number; lastWrite: number; k: number; base: { x: number; y: number; z: number } } | null>(null)
   const turnKeys = useRef({ z: false, x: false, r: false, f: false })
   const boxes = useMemo(() => {
-    const real = worldVoxels(voxelTerrain)?.colliders ?? NO_BOXES
-    const ghost = sameTerrain(voxelTerrain, ghostTerrain) ? NO_BOXES : ghostBoxes
+    const near = (t: NonNullable<typeof refTerrain>) => chunksAround(t, pcx, pcz, COLLIDE_RADIUS).flatMap((c) => c.colliders)
+    const real = voxelTerrain ? near(voxelTerrain) : NO_BOXES
+    const ghost = ghostVisible && ghostTerrain && !sameTerrain(voxelTerrain, ghostTerrain) ? near(ghostTerrain) : NO_BOXES
     const solid = Array.from(objects.values()).filter((o) => !o.kick && o.id !== heldId)
     const out: Box[] = []
     for (const o of solid) {
@@ -392,7 +399,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       else out.push(...collidersFor([o]))
     }
     return [...out, ...real, ...ghost]
-  }, [objects, ghostBoxes, ghostTerrain, voxelTerrain, heldId, shapes])
+  }, [objects, ghostVisible, ghostTerrain, voxelTerrain, heldId, shapes, pcx, pcz])
 
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -466,10 +473,18 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     camera.lookAt(camTarget.current)
   }, [camera])
 
+  // New or reshaped terrain under the player: stand on top of it, not inside it
+  useEffect(() => {
+    if (!refTerrain) return
+    const s = interiorController.state
+    const surface = placeOnTerrain(refTerrain, [s.x + refTerrain.size[0] / 2, 0, s.z + refTerrain.size[2] / 2]).y
+    interiorController.liftTo(surface)
+  }, [refTerrain])
+
   useFrame((_state, delta) => {
     const physics = useWorldStore.getState().physics
     // Hold still until the world has loaded: its terrain isn't there to stand on yet
-    const t = useWorldStore.getState().loaded ? interiorController.update(delta, physics, boxes) : 1
+    const t = useWorldStore.getState().loaded ? interiorController.update(delta, physics, boxes, halfExtent) : 1
     const p = interiorController.prev
     const s = interiorController.state
     const x = p.x + (s.x - p.x) * t
@@ -634,6 +649,7 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const isInWorld = activeWorldId !== null
   const tier = useQualityTier()
+  const atmosphere = useAtmosphere()
 
   // Get player color from presence (stored in sessionStorage)
   const { playerColor } = usePresence()
@@ -654,9 +670,9 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
       {/* Fog — different for universe vs world interior */}
       {/* Universe fog follows the quality tier (view distance) */}
       <fog attach="fog" args={[
-        isInWorld ? '#050510' : '#050510',
-        isInWorld ? 15 : tier.fogNear,
-        isInWorld ? 50 : tier.fogFar,
+        isInWorld ? (atmosphere?.sky.horizon ?? '#050510') : '#050510',
+        isInWorld ? (atmosphere?.fogNear ?? 15) : tier.fogNear,
+        isInWorld ? (atmosphere?.fogFar ?? 50) : tier.fogFar,
       ]} />
 
       {/* Universe view — star map (hidden when inside a world) */}

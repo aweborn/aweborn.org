@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
+import { refreshMana } from '../stores/manaTrackerStore'
 import type { Blueprint } from '@aweborn/shared/blueprint'
 import { usePlannerStore } from '../stores/plannerStore'
 import { setVoxelTerrain, placeModel, replaceModelAsset, useWorldStore } from '../stores/worldStore'
 import { usePresence } from '../hooks/usePresence'
-import { cellToWorld, generateVoxels } from '@aweborn/shared/voxel'
+import { placeOnTerrain } from '../stores/worldVoxels'
 import type { BlueprintAsset } from '@aweborn/shared/blueprint'
 
 /**
@@ -50,6 +51,10 @@ export function PlannerPanel() {
   const logRef = useRef<HTMLDivElement>(null)
 
   const ghostVisible = usePlannerStore((s) => s.visible)
+  const worldObjects = useWorldStore((s) => s.objects)
+  const worldTerrain = useWorldStore((s) => s.voxelTerrain)
+  const worldSky = useWorldStore((s) => s.sky)
+  const placedKeys = new Set([...worldObjects.values()].map((o) => o.planKey))
   const { playerId } = usePresence()
   const [makings, setMakings] = useState<Making[]>([])
   const [manifesting, setManifesting] = useState(false)
@@ -67,6 +72,7 @@ export function PlannerPanel() {
         body: JSON.stringify({ sessionId, key, note: note.trim() || undefined }),
       })
       const j = (await res.json().catch(() => ({}))) as { jobId?: string; blueprint?: Blueprint; message?: string }
+      void refreshMana()
       if (!res.ok || !j.jobId || !j.blueprint) {
         setError(j.message ?? "The remake didn't start. Nothing was drawn.")
         return
@@ -99,11 +105,11 @@ export function PlannerPanel() {
           const res = await fetch(`${AUTH_URL}/api/player/create/${m.jobId}`, { credentials: 'include' })
           if (!res.ok) continue
           const j = (await res.json()) as { status: Making['status']; progress: number; asset?: string; error?: string }
+          if (j.status === 'complete' || j.status === 'failed') void refreshMana()
           if (j.status === 'complete' && j.asset) {
             const doc = useUniverseStore.getState().activeWorldDoc
-            const grid = generateVoxels(m.terrain)
-            const at = m.asset.at ?? [grid.size[0] / 2, 0, grid.size[2] / 2]
-            const p = cellToWorld(grid, at)
+            const at = m.asset.at ?? [m.terrain.size[0] / 2, 0, m.terrain.size[2] / 2]
+            const p = placeOnTerrain(m.terrain, at)
             const scale = Math.max(...(m.asset.size ?? [1.5, 1.5, 1.5]))
             const planKey = `${m.blueprintId}:${m.key}`
             const existing = [...useWorldStore.getState().objects.values()].find((o) => o.planKey === planKey)
@@ -197,27 +203,39 @@ export function PlannerPanel() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
   }, [turns, busy])
 
-  const manifest = useCallback(async () => {
+  // Terrain is its own step: instant, no server call (the planner turn already paid for it). Everyone in the world sees it.
+  const shapeTerrain = useCallback(() => {
+    if (!blueprint) return
+    const doc = useUniverseStore.getState().activeWorldDoc
+    if (doc) setVoxelTerrain(doc, blueprint.terrain, blueprint.sky ?? null)
+  }, [blueprint])
+
+  // The button is only live while the previewed blueprint differs from what the world already has
+  const terrainShaped = !!blueprint && !!worldTerrain &&
+    JSON.stringify(worldTerrain) === JSON.stringify(blueprint.terrain) &&
+    JSON.stringify(worldSky ?? null) === JSON.stringify(blueprint.sky ?? null)
+
+  // Models are made separately: all of them, or just the given keys (one by one)
+  const manifest = useCallback(async (keys?: string[]) => {
     if (!blueprint || !sessionId || manifesting || !activeWorldId) return
     setManifesting(true)
     setError(null)
     try {
+      const modelKeys = keys ?? blueprint.assets.filter((a) => a.kind === 'model' || a.kind === 'terrain-piece').map((a) => a.key)
       const res = await fetch(`${AUTH_URL}/api/player/plan/manifest`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId, keys: modelKeys }),
       })
       const j = (await res.json().catch(() => ({}))) as {
         terrain?: Blueprint['terrain']; items?: { key: string; jobId?: string; error?: string; message?: string }[]; message?: string
       }
+      void refreshMana()
       if (!res.ok || !j.terrain || !j.items) {
         setError(j.message ?? 'The manifest didn\'t start. Nothing was drawn.')
         return
       }
-      // Terrain is free and instant: write it to the world so everyone sees it
-      const doc = useUniverseStore.getState().activeWorldDoc
-      if (doc) setVoxelTerrain(doc, j.terrain)
       const byKey = new Map(blueprint.assets.map((a) => [a.key, a]))
       setMakings((prev) => [
         ...prev.filter((m) => m.status === 'queued' || m.status === 'processing'),
@@ -257,6 +275,7 @@ export function PlannerPanel() {
         const j = (await res.json().catch(() => ({}))) as {
           sessionId?: string; reply?: string; chips?: string[]; blueprint?: Blueprint; model?: string; mana?: number; message?: string
         }
+        void refreshMana()
         if (!res.ok || !j.reply) {
           setError(j.message ?? (res.status === 401 ? 'Save your player first to plan.' : 'Something went wrong.'))
           return
@@ -350,6 +369,17 @@ export function PlannerPanel() {
               <li key={a.key}>
                 <div className="planner-asset-head">
                   <strong>{a.key}</strong> <em>{a.kind}{a.quality === 'full' ? ' · full' : ''}</em>
+                  {(a.kind === 'model' || a.kind === 'terrain-piece') && !placedKeys.has(`${blueprint.id}:${a.key}`) && (
+                    <button
+                      type="button"
+                      className="planner-redo"
+                      title="Make just this one"
+                      disabled={manifesting || busy}
+                      onClick={() => void manifest([a.key])}
+                    >
+                      ✦
+                    </button>
+                  )}
                   {(a.kind === 'model' || a.kind === 'terrain-piece') && (
                     <button
                       type="button"
@@ -399,9 +429,14 @@ export function PlannerPanel() {
       )}
 
       {blueprint && (
-        <button id="planner-manifest" className="planner-manifest" type="button" onClick={manifest} disabled={manifesting || busy}>
-          {manifesting ? 'Manifesting…' : `Manifest ✦ ≈${blueprint.estimate.items.reduce((s, i) => s + i.mana, 0)} mana`}
-        </button>
+        <div className="planner-actions">
+          <button id="planner-terrain" className="planner-manifest" type="button" onClick={shapeTerrain} disabled={busy || terrainShaped}>
+            {terrainShaped ? 'Terrain shaped ✓' : worldTerrain ? 'Reshape terrain' : 'Shape terrain'}
+          </button>
+          <button id="planner-manifest" className="planner-manifest" type="button" onClick={() => void manifest()} disabled={manifesting || busy}>
+            {manifesting ? 'Manifesting…' : `Make models ✦ ≈${blueprint.estimate.items.reduce((s, i) => s + i.mana, 0)} mana`}
+          </button>
+        </div>
       )}
 
       <form className="planner-form" onSubmit={(e) => { e.preventDefault(); void send(input) }}>

@@ -9,7 +9,7 @@ import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
-import { startCreation, creationStatus, handleAssets, handleLibrary } from "./creations.js";
+import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus } from "./creations.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
 import { removeOwnAsset, handleTrashAdmin } from "./trash.js";
 
@@ -156,6 +156,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   const session = await getRawSession(auth, fromNodeHeaders(req.headers));
   if (!session?.playerId) return json(401, { error: "no_session" });
   const accountId = session.userId;
+  rooms.admission.setGuest(session.playerId, session.isAnonymous);
   const path = req.url?.split("?")[0];
 
   if (path === "/api/player/me" && req.method === "GET") {
@@ -222,6 +223,8 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (!loc) return json(400, { error: "bad_request" });
     return json(saveLocation(session.playerId, loc) ? 200 : 429, { ok: true });
   }
+  // Mana tracker: this player's allowance, usage and averages
+  if (path === "/api/player/mana" && req.method === "GET") return manaStatus(rooms, session.playerId, json, session.isAnonymous);
   // Creations (Phase 07): reserve → generate → settle
   if (path === "/api/player/create" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { prompt?: unknown } | null;

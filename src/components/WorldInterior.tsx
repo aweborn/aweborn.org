@@ -1,5 +1,5 @@
 import { GhostPreview, WorldTerrain } from './GhostPreview'
-import { useRef, useMemo, Component, type ReactNode } from 'react'
+import { useRef, useMemo, useEffect, Component, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useWorldStore } from '../stores/worldStore'
@@ -10,6 +10,8 @@ import { Suspense } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { AUTH_URL } from '../lib/player'
 import { registerModelShape } from '../stores/modelShapes'
+import { useAtmosphere } from '../hooks/useAtmosphere'
+import type { BlueprintSky } from '@aweborn/shared/blueprint'
 
 /** A model that fails to load must not take the whole scene down: show a wireframe stand-in instead. */
 class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -172,22 +174,28 @@ function GroundGrid({ worldColor }: { worldColor: string }) {
 
 // ── Sky Dome ─────────────────────────────────────────────────────────
 
-function SkyDome({ worldColor }: { worldColor: string }) {
+function SkyDome({ worldColor, sky }: { worldColor: string; sky: BlueprintSky | null }) {
   const ref = useRef<THREE.Mesh>(null!)
+  // Created once and mutated: swapping the uniforms object after the first compile wouldn't reach the GPU
+  const uniforms = useMemo(
+    () => ({ uSkyColor: { value: new THREE.Color() }, uHorizonColor: { value: new THREE.Color() }, uSrgb: { value: 0 } }),
+    [],
+  )
 
-  const skyColor = useMemo(() => {
-    const c = new THREE.Color(worldColor)
-    const hsl = { h: 0, s: 0, l: 0 }
-    c.getHSL(hsl)
-    // Dark, desaturated version of world color for sky
-    return new THREE.Color().setHSL(hsl.h, hsl.s * 0.3, 0.03)
-  }, [worldColor])
-
-  const horizonColor = useMemo(() => {
-    const c = new THREE.Color(worldColor)
-    c.multiplyScalar(0.15)
-    return c
-  }, [worldColor])
+  useEffect(() => {
+    if (sky) {
+      uniforms.uSkyColor.value.set(sky.zenith)
+      uniforms.uHorizonColor.value.set(sky.horizon)
+      uniforms.uSrgb.value = 1
+    } else {
+      // Old rooms: dark, desaturated version of the world color
+      const hsl = { h: 0, s: 0, l: 0 }
+      new THREE.Color(worldColor).getHSL(hsl)
+      uniforms.uSkyColor.value.setHSL(hsl.h, hsl.s * 0.3, 0.03)
+      uniforms.uHorizonColor.value.set(worldColor).multiplyScalar(0.15)
+      uniforms.uSrgb.value = 0
+    }
+  }, [sky, worldColor, uniforms])
 
   return (
     <mesh ref={ref} scale={[-1, 1, 1]}>
@@ -203,20 +211,21 @@ function SkyDome({ worldColor }: { worldColor: string }) {
         fragmentShader={/* glsl */ `
           uniform vec3 uSkyColor;
           uniform vec3 uHorizonColor;
+          uniform float uSrgb;
           varying vec3 vWorldPosition;
           void main() {
             float h = normalize(vWorldPosition).y;
             float t = smoothstep(-0.1, 0.5, h);
             vec3 color = mix(uHorizonColor, uSkyColor, t);
             gl_FragColor = vec4(color, 1.0);
+            // Match what lit materials and fog show for the same color
+            if (uSrgb > 0.5) gl_FragColor = linearToOutputTexel(gl_FragColor);
           }
         `}
-        uniforms={{
-          uSkyColor: { value: skyColor },
-          uHorizonColor: { value: horizonColor },
-        }}
+        uniforms={uniforms}
         side={THREE.BackSide}
         depthWrite={false}
+        fog={false}
       />
     </mesh>
   )
@@ -229,6 +238,7 @@ export function WorldInterior() {
   const objects = useWorldStore((s) => s.objects)
   const loaded = useWorldStore((s) => s.loaded)
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
+  const atmo = useAtmosphere()
 
   const worldColor = meta?.color ?? '#6b3fa0'
   // Worlds are small and the camera can fly far above them, so fog only touches the extreme distance (any nearer turned the terrain dark from altitude)
@@ -240,7 +250,7 @@ export function WorldInterior() {
   return (
     <group>
       {/* Sky dome */}
-      <SkyDome worldColor={worldColor} />
+      <SkyDome worldColor={worldColor} sky={atmo?.sky ?? null} />
 
       {/* Ground grid */}
       <GroundGrid worldColor={worldColor} />
@@ -254,24 +264,27 @@ export function WorldInterior() {
         <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} />
       ))}
 
-      {/* Lighting — colored by world palette */}
-      <ambientLight intensity={0.25} color={worldColor} />
-      <directionalLight
-        position={[5, 10, 5]}
-        intensity={0.6}
-        color="#ffffff"
-        castShadow={false}
-      />
-      <pointLight
-        position={[0, 8, 0]}
-        intensity={0.5}
-        color={worldColor}
-        distance={20}
-        decay={2}
-      />
+      {/* Lighting: the blueprint's sun + ambient in voxel worlds, world-palette tint in the old rooms */}
+      {atmo ? (
+        <>
+          <ambientLight color={atmo.sky.ambient.color} intensity={atmo.sky.ambient.intensity} />
+          <directionalLight
+            position={atmo.sky.sun.dir.map((v) => v * 40) as [number, number, number]}
+            intensity={atmo.sky.sun.intensity}
+            color={atmo.sky.sun.color}
+            castShadow={false}
+          />
+        </>
+      ) : (
+        <>
+          <ambientLight intensity={0.25} color={worldColor} />
+          <directionalLight position={[5, 10, 5]} intensity={0.6} color="#ffffff" castShadow={false} />
+          <pointLight position={[0, 8, 0]} intensity={0.5} color={worldColor} distance={20} decay={2} />
+        </>
+      )}
 
-      {/* Fog for depth */}
-      <fog attach="fog" args={[fogColor, 400, 1200]} />
+      {/* Voxel worlds' fog is set in Scene (horizon color, distance from the sky); the old rooms keep this one */}
+      {!atmo && <fog attach="fog" args={[fogColor, 400, 1200]} />}
     </group>
   )
 }

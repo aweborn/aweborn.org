@@ -73,3 +73,40 @@ test("player walks up one-voxel steps instead of stopping", () => {
   for (let n = 0; n < 60; n++) t = stepInterior(t, { ...NO_INPUT, move: 1 }, physics, [{ ...box, step: false }]);
   assert.ok(t.z > -1, "blocked");
 });
+
+test("chunks equal the same slice of the full grid, with matching world mapping", () => {
+  const d = draft();
+  const t = { ...d.terrain, size: [48, 12, 48] as [number, number, number] };
+  const full = generateVoxels(t);
+  const x0 = 16, z0 = 8, w = 20, dd = 24;
+  const part = generateVoxels(t, { x0, z0, w, d: dd });
+  for (let j = 0; j < 12; j++) for (let k = 0; k < dd; k++) for (let i = 0; i < w; i++) {
+    assert.equal(cellAt(part, i, j, k), cellAt(full, x0 + i, j, z0 + k), `cell ${i},${j},${k}`);
+  }
+  // colliders of every chunk, together, cover the same space as the whole grid's
+  const vol = (bs: ReturnType<typeof voxelColliders>) => bs.reduce((a, b) => a + (b.maxX - b.minX) * (b.maxY - b.minY) * (b.maxZ - b.minZ), 0);
+  let chunked = 0;
+  for (let z = 0; z < 48; z += 16) for (let x = 0; x < 48; x += 16) chunked += vol(voxelColliders(generateVoxels(t, { x0: x, z0: z, w: 16, d: 16 })));
+  assert.equal(chunked, vol(voxelColliders(full)));
+});
+
+test("default blueprint world is 320 x 16 x 320", () => {
+  const p = parseDraft({ ...raw, terrain: { ...raw.terrain, size: undefined } });
+  assert.ok(p.ok);
+  assert.deepEqual(p.value.terrain.size, [320, 16, 320]);
+});
+
+test("sky: clamped, defaulted, optional", () => {
+  const none = parseDraft(raw);
+  assert.ok(none.ok);
+  assert.equal(none.value.sky, undefined);
+  const p = parseDraft({ ...raw, sky: { zenith: "#102030", horizon: "nope", fog: 9999, sun: { intensity: 50, dir: [0, -5, 0] }, ambient: { intensity: -2 } } });
+  assert.ok(p.ok);
+  const s = p.value.sky!;
+  assert.equal(s.zenith, "#102030");
+  assert.equal(s.horizon, "#d5deef"); // bad color → default
+  assert.equal(s.fog, 400);
+  assert.equal(s.sun.intensity, 3);
+  assert.ok(s.sun.dir[1] >= 0.15); // sun stays above the horizon
+  assert.equal(s.ambient.intensity, 0);
+});
