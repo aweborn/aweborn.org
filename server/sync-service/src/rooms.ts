@@ -34,6 +34,8 @@ import { ManaAdmission } from "./admission.js";
 import { insideFrontier, solidifyWithinFrontier } from "./frontier.js";
 import { createWorldDoc } from "./world-factory.js";
 import { resolveNewWorld } from "./resolver.js";
+import { prepareChat, ChatLimiter, CHAT_HISTORY, CHAT_MAX_BYTES } from "../../../shared/chat.js";
+import { touchesChat } from "./chat-guard.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -69,6 +71,8 @@ export class RoomManager {
   private playerIds = new WeakMap<WebSocket, string>();
   /** Account behind a socket, for the World Index. */
   private accountIds = new WeakMap<WebSocket, string>();
+  /** Chat send limits, per player. */
+  private chatLimiter = new ChatLimiter();
 
   /** The universal mana pool & ledger (server-authoritative). */
   readonly mana: ManaLedger;
@@ -335,8 +339,16 @@ export class RoomManager {
           // Client sent a CRDT update for a specific world
           const room = message.worldId ? this.worldRooms.get(message.worldId) : null;
           if (room) {
+            if (touchesChat(room.doc, message.data)) {
+              console.warn("[rooms] refused client write to chat log");
+              break;
+            }
             Y.applyUpdate(room.doc, message.data, ws);
           }
+          break;
+        }
+        case "chat": {
+          this.handleChat(ws, message.worldId, message.data);
           break;
         }
         case "create-world": {
@@ -585,6 +597,40 @@ export class RoomManager {
     }
   }
 
+  /**
+   * A player says something in the world they're in. The sender is whoever the
+   * server knows this socket to be (never anything the client claims); the text
+   * is cleaned, filtered and rate limited here. It is appended to the world's
+   * chat log, which every player in the room receives like any other change.
+   */
+  private handleChat(ws: WebSocket, worldId: string | null, data: Uint8Array): void {
+    const reply = (body: object) => {
+      if (ws.readyState === 1) ws.send(this.encodeMessage("chat", new TextEncoder().encode(JSON.stringify(body)), worldId ?? undefined));
+    };
+    const playerId = this.playerIds.get(ws);
+    const room = worldId ? this.worldRooms.get(worldId) : null;
+    if (!playerId) return reply({ error: "no_session" });
+    if (!room || !room.clients.has(ws)) return;
+    if (data.length === 0 || data.length > CHAT_MAX_BYTES) return;
+    let raw: unknown;
+    try {
+      raw = (JSON.parse(new TextDecoder().decode(data)) as { text?: unknown }).text;
+    } catch {
+      return;
+    }
+    const text = prepareChat(raw);
+    if (!text) return;
+    const now = Date.now();
+    const limited = this.chatLimiter.check(playerId, now);
+    if (limited) return reply({ error: limited });
+    room.doc.transact(() => {
+      const chat = room.doc.getArray("chat");
+      chat.push([{ sender: playerId, text, t: now }]);
+      const over = chat.length - CHAT_HISTORY;
+      if (over > 0) chat.delete(0, over);
+    }, "server");
+  }
+
   // ── Wire Protocol ────────────────────────────────────────────────
   //
   // Simple binary protocol:
@@ -599,6 +645,7 @@ export class RoomManager {
   //   0x06 = update-sectors   (client → server: JSON payload)
   //   0x07 = join-world       (client → server: worldId in header)
   //   0x08 = leave-world      (client → server: worldId in header)
+  //   0x0a = chat             (client → server: { text }; server → client: { error })
 
   private static readonly MSG_TYPES: Record<string, number> = {
     "universe-sync": 0x01,
@@ -610,6 +657,7 @@ export class RoomManager {
     "join-world": 0x07,
     "leave-world": 0x08,
     "presence": 0x09,
+    "chat": 0x0a,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

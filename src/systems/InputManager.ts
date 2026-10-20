@@ -18,6 +18,9 @@
 
 // ── Action Types ─────────────────────────────────────────────────────
 
+import { BINDING_DEFS } from '@aweborn/shared/keybindings'
+import { useKeybindingStore } from '../stores/keybindingStore'
+
 export type InputContext = 'universe' | 'world'
 
 /**
@@ -97,60 +100,31 @@ export function shapeAxis(value: number, deadzone: number, exponent = 2): number
 // ── Key → Action Mapping ─────────────────────────────────────────────
 
 /**
- * Maps physical keys to action names.
- * In WORLD context, the same keys map to different semantic meanings
- * but we keep the same action names — the FlightController / WorldController
- * interprets them differently.
+ * Maps physical keys to action names, from the player's keybindings (the
+ * Keys & controls panel; defaults live in shared/keybindings.ts). Rebuilt
+ * when they change and when the context switches, so a key that means one
+ * thing in flight and another in a world resolves to the right action.
+ *
+ * In WORLD context the same action names are kept; the FlightController /
+ * InteriorController interprets them differently.
  */
-const KEY_TO_ACTION: Record<string, keyof ActionState> = {
-  // Left hand — navigation
-  KeyW: 'thrust',
-  Space: 'brake',
-  KeyQ: 'yawLeft',
-  KeyR: 'yawRight',
-  KeyA: 'rollRight',
-  KeyF: 'rollLeft',
-  KeyS: 'reverse',
-  KeyE: 'pitchUp',
-  KeyD: 'pitchDown',
-
-  // Camera
-  Digit1: 'cameraClose',
-  Digit2: 'cameraMedium',
-  Digit3: 'cameraFar',
-  Digit4: 'cameraCinematic',
-  KeyZ: 'lockBehind',
-  KeyX: 'freeLook',
-  KeyC: 'lookBehind',
-  KeyG: 'gravityToggle',
-  KeyT: 'autoOrient',
-
-  // Right hand — interaction
-  KeyN: 'interact',
-  KeyJ: 'lockOn',
-  KeyK: 'warp',
-  KeyL: 'scan',
-
-  // Star mod slots
-  KeyU: 'modTrail',
-  KeyI: 'modAura',
-  KeyO: 'modShape',
-  KeyP: 'modEmote',
-
-  // System
-  KeyM: 'worldIndex',
-  Escape: 'escape',
+function buildKeyMap(ctx: InputContext): Map<string, keyof ActionState> {
+  const map = new Map<string, keyof ActionState>()
+  const bindings = useKeybindingStore.getState().bindings
+  for (const def of BINDING_DEFS) {
+    // UI-only shortcuts (panels, carry, chat) have no ActionState slot: their components listen themselves.
+    if (!ACTION_IDS.has(def.id) || !def.contexts.includes(ctx)) continue
+    const code = bindings[def.id]
+    if (code) map.set(code, def.id as keyof ActionState)
+  }
+  map.set('Escape', 'escape') // fixed, never remappable
+  return map
 }
 
-/** Keys that should prevent default browser behavior when pressed. */
-const PREVENT_DEFAULT_KEYS = new Set([
-  'Space',    // Prevent page scroll
-  'KeyW', 'KeyE', 'KeyQ', 'KeyR', 'KeyA', 'KeyF', 'KeyS', 'KeyD',
-  'KeyN', 'KeyJ', 'KeyK', 'KeyL', 'KeyG',
-  'KeyU', 'KeyI', 'KeyO', 'KeyP',
-  'KeyZ', 'KeyX', 'KeyC', 'KeyT',
-  'Digit1', 'Digit2', 'Digit3', 'Digit4',
-])
+/** Every bound key stops the browser acting on it too (page scroll on Space, quick-find …). Escape keeps its default. */
+function shouldPreventDefault(code: string, map: Map<string, keyof ActionState>): boolean {
+  return code !== 'Escape' && map.has(code)
+}
 
 // ── Input Manager Singleton ──────────────────────────────────────────
 
@@ -190,7 +164,12 @@ function createEmptyState(): ActionState {
   }
 }
 
+/** Names of every real ActionState slot (the rest of the binding ids are UI shortcuts). */
+const ACTION_IDS: ReadonlySet<string> = new Set(Object.keys(createEmptyState()))
+
 class InputManager {
+  private _keyMap = buildKeyMap('universe')
+  private _unsubscribeBindings: (() => void) | null = null
   private _state: ActionState = createEmptyState()
   private _prevState: ActionState = createEmptyState()
   private _context: InputContext = 'universe'
@@ -229,6 +208,13 @@ class InputManager {
     if (this._initialized) return
     this._initialized = true
 
+    // Remaps apply live, and drop any key held under the old mapping.
+    this._unsubscribeBindings = useKeybindingStore.subscribe((s, prev) => {
+      if (s.bindings === prev.bindings) return
+      this._keyMap = buildKeyMap(this._context)
+      this._state = createEmptyState()
+    })
+
     window.addEventListener('keydown', this._onKeyDown)
     window.addEventListener('keyup', this._onKeyUp)
     // Prevent stuck keys when window loses focus
@@ -237,6 +223,8 @@ class InputManager {
 
   /** Clean up listeners. */
   destroy(): void {
+    this._unsubscribeBindings?.()
+    this._unsubscribeBindings = null
     window.removeEventListener('keydown', this._onKeyDown)
     window.removeEventListener('keyup', this._onKeyUp)
     window.removeEventListener('blur', this._onBlur)
@@ -277,6 +265,7 @@ class InputManager {
   /** Switch input context (universe flight ↔ world interior). */
   setContext(ctx: InputContext): void {
     this._context = ctx
+    this._keyMap = buildKeyMap(ctx)
     // Reset all held keys on context switch to prevent sticky inputs
     this._state = createEmptyState()
     this._clearAxes()
@@ -321,9 +310,9 @@ class InputManager {
     // Don't capture when user is typing in an input/textarea
     if (this._isTypingTarget(e.target)) return
 
-    const action = KEY_TO_ACTION[e.code]
+    const action = this._keyMap.get(e.code)
     if (action) {
-      if (PREVENT_DEFAULT_KEYS.has(e.code)) {
+      if (shouldPreventDefault(e.code, this._keyMap)) {
         e.preventDefault()
       }
       this._state[action] = true
@@ -333,7 +322,7 @@ class InputManager {
   private _onKeyUp = (e: KeyboardEvent): void => {
     if (!this._enabled) return
 
-    const action = KEY_TO_ACTION[e.code]
+    const action = this._keyMap.get(e.code)
     if (action) {
       this._state[action] = false
     }

@@ -15,6 +15,7 @@ import { inputManager } from '../systems/InputManager'
 import { warpSystem } from '../systems/WarpSystem'
 import { showNotice } from '../systems/TeleportSystem'
 import { WorldCard } from './WorldCard'
+import { matchesBinding } from '../stores/keybindingStore'
 
 /**
  * World Index (Phase 08B): every world you've found, as cards. Press M (or
@@ -97,7 +98,7 @@ export function WorldIndex() {
   // M toggles (the game's input is disabled while the panel is open, so listen directly).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'KeyM' || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
+      if (!matchesBinding(e, 'worldIndex') || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
       if (isTypingTarget(e.target)) return
       const state = useWorldIndexStore.getState()
       // Don't open on top of another modal (account panel, donation).

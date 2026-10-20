@@ -6,6 +6,7 @@ import { placeOnTerrain } from '../stores/worldVoxels'
 import { usePresence } from '../hooks/usePresence'
 import { interiorController } from '../systems/InteriorController'
 import { libraryThumb } from '../lib/libraryThumbs'
+import { matchesBinding } from '../stores/keybindingStore'
 import {
   STANDARD_BLOCKS, SHAPES, SHAPE_COLORS, SHAPE_SIZE, cleanColor, snapToCell, stackedY,
   type LibraryBlock,
@@ -171,7 +172,7 @@ export function LibraryPanel() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
-      if (e.code === 'KeyB') {
+      if (matchesBinding(e, 'library')) {
         e.preventDefault()
         setOpen((o) => !o)
       }

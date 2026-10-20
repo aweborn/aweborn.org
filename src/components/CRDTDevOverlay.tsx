@@ -4,6 +4,7 @@ import { usePresence, handleWebSocketPresence, setPresenceSender } from "../hook
 import { useUniverseStore } from "../stores/universeStore";
 import { useWorldStore } from "../stores/worldStore";
 import { markMeaningfulMoment } from "../lib/onramp";
+import { useChatStore, onChatNotice } from "../stores/chatStore";
 import type { WorldEntry } from "@aweborn/shared/crdt-schema";
 import { adjacentSectorKeys } from "@aweborn/shared/crdt-schema";
 
@@ -43,7 +44,7 @@ export function CRDTDevOverlay() {
   const worldChat = useWorldStore((s) => s.chat);
   const worldLoaded = useWorldStore((s) => s.loaded);
   const placeObject = useWorldStore((s) => s.placeObject);
-  const sendChat = useWorldStore((s) => s.sendChat);
+  const sendChat = useChatStore((s) => s.send);
   const resetWorld = useWorldStore((s) => s.reset);
 
   // Presence
@@ -75,7 +76,16 @@ export function CRDTDevOverlay() {
     onUniverseUpdate,
     onWorldUpdate,
     handleWebSocketPresence,
+    useCallback((_worldId: string | null, data: Uint8Array) => onChatNotice(data), []),
   );
+
+  // Chat: the server stamps the sender and writes the line into the world's log
+  useEffect(() => {
+    useChatStore.getState().setSender((worldId, text) => {
+      send("chat", new TextEncoder().encode(JSON.stringify({ text })), worldId);
+    });
+    return () => useChatStore.getState().setSender(null);
+  }, [send]);
 
   // Wire world doc update handler: send local world changes to the server
   useEffect(() => {
@@ -160,8 +170,8 @@ export function CRDTDevOverlay() {
   };
 
   const handleSendChat = () => {
-    if (!activeWorldDoc || !chatInput.trim()) return;
-    sendChat(activeWorldDoc, playerId, chatInput.trim());
+    if (!activeWorldId || !chatInput.trim()) return;
+    sendChat(activeWorldId, chatInput.trim());
     setChatInput("");
   };
 

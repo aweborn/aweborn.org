@@ -4,6 +4,7 @@ import { placeModel } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { AUTH_URL } from '../lib/player'
 import { usePresence } from '../hooks/usePresence'
+import { matchesBinding } from '../stores/keybindingStore'
 
 /**
  * Create panel (Phase 07, first gen-AI slice): inside a world, type what you
@@ -41,7 +42,7 @@ export function CreatePanel() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-      if (e.code === 'KeyC') {
+      if (matchesBinding(e, 'createPanel')) {
         e.preventDefault()
         setOpen((o) => !o)
       }

@@ -62,8 +62,6 @@ interface WorldState {
   /** Remove an object from the world */
   removeObject: (doc: Y.Doc, objectId: string) => void;
 
-  /** Send a chat message */
-  sendChat: (doc: Y.Doc, sender: string, text: string) => void;
 
   /** Update physics parameters */
   updatePhysics: (doc: Y.Doc, params: Partial<PhysicsParams>) => void;
@@ -234,10 +232,6 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
 
   removeObject: (doc, objectId) => {
     doc.getMap("objects").delete(objectId);
-  },
-
-  sendChat: (doc, sender, text) => {
-    doc.getArray("chat").push([{ sender, text, t: Date.now() }]);
   },
 
   updatePhysics: (doc, params) => {

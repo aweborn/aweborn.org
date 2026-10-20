@@ -8,6 +8,7 @@ import { setVoxelTerrain, placeModel, replaceModelAsset, useWorldStore } from '.
 import { usePresence } from '../hooks/usePresence'
 import { placeOnTerrain } from '../stores/worldVoxels'
 import type { BlueprintAsset } from '@aweborn/shared/blueprint'
+import { matchesBinding } from '../stores/keybindingStore'
 
 /**
  * World Planner panel (Phase 07): talk a world into a blueprint before
@@ -176,7 +177,7 @@ export function PlannerPanel() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
-      if (e.code === 'KeyP') {
+      if (matchesBinding(e, 'plannerPanel')) {
         e.preventDefault()
         setOpen((o) => !o)
       }

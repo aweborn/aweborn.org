@@ -24,6 +24,7 @@ import { chunksAround, placeOnTerrain, sameTerrain, halfExtentOf, COLLIDE_RADIUS
 import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
+import { ChatBubble } from './ChatBubble'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
 import { cameraController } from '../systems/CameraController'
@@ -36,6 +37,7 @@ import { gamepadInputAdapter } from '../systems/GamepadInputAdapter'
 import { TouchInputAdapter } from '../systems/TouchInputAdapter'
 import { SolidificationWave } from '../effects/SolidificationWave'
 import { useQualityStore, useQualityTier } from '../stores/qualityStore'
+import { matchesBinding } from '../stores/keybindingStore'
 
 // ── Module-level slingshot visual state ──
 // Shared between FlightSystem (writer) and SlingshotArc/UniverseView (reader)
@@ -365,13 +367,13 @@ function scaleOf(h: { k: number; base: { x: number; y: number; z: number } }) {
 }
 
 const CAM_DISTANCES = { 1: 3, 2: 4.5, 3: 9, 4: 20 } as const
-const CAM_KEYS: Record<string, keyof typeof CAM_DISTANCES> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4 }
+const CAM_KEYS: Record<string, keyof typeof CAM_DISTANCES> = { cameraClose: 1, cameraMedium: 2, cameraFar: 3, cameraCinematic: 4 }
 const NO_BOXES: Box[] = []
 const EYE_HEIGHT = 1.5
 
 function InteriorSystem({ playerColor }: { playerColor: string }) {
   const { camera } = useThree()
-  const { updatePosition } = usePresence()
+  const { updatePosition, playerId } = usePresence()
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const avatar = useRef<THREE.Group>(null!)
   const objects = useWorldStore((s) => s.objects)
@@ -408,11 +410,11 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     }
     const down = (e: KeyboardEvent) => {
       if (typing(e)) return
-      if (e.code === 'KeyZ') turnKeys.current.z = true
-      if (e.code === 'KeyX') turnKeys.current.x = true
-      if (e.code === 'Equal') turnKeys.current.r = true
-      if (e.code === 'Minus') turnKeys.current.f = true
-      if (e.code !== 'KeyG' || e.repeat) return
+      if (matchesBinding(e, 'heldRotateLeft')) turnKeys.current.z = true
+      if (matchesBinding(e, 'heldRotateRight')) turnKeys.current.x = true
+      if (matchesBinding(e, 'heldGrow')) turnKeys.current.r = true
+      if (matchesBinding(e, 'heldShrink')) turnKeys.current.f = true
+      if (!matchesBinding(e, 'carry') || e.repeat) return
       const doc = useUniverseStore.getState().activeWorldDoc
       const s = interiorController.state
       if (held.current) {
@@ -434,10 +436,10 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       setHeldId(target.id)
     }
     const up = (e: KeyboardEvent) => {
-      if (e.code === 'KeyZ') turnKeys.current.z = false
-      if (e.code === 'KeyX') turnKeys.current.x = false
-      if (e.code === 'Equal') turnKeys.current.r = false
-      if (e.code === 'Minus') turnKeys.current.f = false
+      if (matchesBinding(e, 'heldRotateLeft')) turnKeys.current.z = false
+      if (matchesBinding(e, 'heldRotateRight')) turnKeys.current.x = false
+      if (matchesBinding(e, 'heldGrow')) turnKeys.current.r = false
+      if (matchesBinding(e, 'heldShrink')) turnKeys.current.f = false
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -455,7 +457,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return
-      const k = CAM_KEYS[e.code]
+      const id = Object.keys(CAM_KEYS).find((a) => matchesBinding(e, a))
+      const k = id ? CAM_KEYS[id] : undefined
       if (k) camDistGoal.current = CAM_DISTANCES[k]
     }
     window.addEventListener('keydown', onKey)
@@ -556,6 +559,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     <>
       <group ref={avatar}>
         <CapsuleAvatar color={playerColor} />
+        {playerId && <ChatBubble playerId={playerId} />}
       </group>
       {activeWorldId && <InteriorPlayers worldId={activeWorldId} />}
     </>
@@ -614,6 +618,7 @@ function InteriorPlayers({ worldId }: { worldId: string }) {
           }}
         >
           <CapsuleAvatar color={p.color} />
+          <ChatBubble playerId={p.id} />
         </group>
       ))}
     </>

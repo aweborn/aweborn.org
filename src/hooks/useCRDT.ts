@@ -26,6 +26,7 @@ const MSG_TYPES: Record<string, number> = {
   "join-world": 0x07,
   "leave-world": 0x08,
   "presence": 0x09,
+  "chat": 0x0a,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -88,6 +89,7 @@ export interface SyncConnection {
 export type UniverseUpdateHandler = (type: string, data: Uint8Array) => void;
 export type WorldUpdateHandler = (type: string, worldId: string, data: Uint8Array) => void;
 export type PresenceHandler = (data: Uint8Array) => void;
+export type ChatNoticeHandler = (worldId: string | null, data: Uint8Array) => void;
 
 /**
  * React hook that manages a WebSocket connection to the sync-service.
@@ -103,17 +105,20 @@ export function useSyncConnection(
   onUniverseUpdate?: UniverseUpdateHandler,
   onWorldUpdate?: WorldUpdateHandler,
   onPresence?: PresenceHandler,
+  onChat?: ChatNoticeHandler,
 ): SyncConnection {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const onUniverseUpdateRef = useRef(onUniverseUpdate);
   const onWorldUpdateRef = useRef(onWorldUpdate);
   const onPresenceRef = useRef(onPresence);
+  const onChatRef = useRef(onChat);
 
   // Keep handler refs current
   onUniverseUpdateRef.current = onUniverseUpdate;
   onWorldUpdateRef.current = onWorldUpdate;
   onPresenceRef.current = onPresence;
+  onChatRef.current = onChat;
 
   const send = useCallback(
     (type: string, data: Uint8Array, worldId?: string) => {
@@ -243,6 +248,9 @@ export function useSyncConnection(
             break;
           case "presence":
             onPresenceRef.current?.(msg.data);
+            break;
+          case "chat":
+            onChatRef.current?.(msg.worldId, msg.data);
             break;
         }
       });

@@ -8,6 +8,9 @@ import { RadarMinimap } from './RadarMinimap'
 import { PlayerAccount } from './PlayerAccount'
 import { WorldIndexChip } from './WorldIndex'
 import { DisplaySettings } from './DisplaySettings'
+import { KeybindingsButton, KeybindingsPanel } from './KeybindingsPanel'
+import { useKeybindingStore, keyCapLabel } from '../stores/keybindingStore'
+import { DEF_BY_ID } from '@aweborn/shared/keybindings'
 
 // ── Mod Slot Labels ──────────────────────────────────────────────────
 
@@ -21,91 +24,43 @@ const SHAPE_LABELS: Record<string, string> = {
   sphere: '● Sphere', crystal: '◆ Crystal', spiral: '✿ Spiral', spike: '▲ Spike', jellyfish: '🪼 Jelly',
 }
 
-// ── Key → ActionState mapping (for live highlighting) ────────────────
+// ── Live key caps ────────────────────────────────────────────────────
 
 type ActionKey = keyof ReturnType<typeof inputManager.getActions>
 
-/**
- * Maps physical key codes (as displayed on the keyboard visual)
- * to the action they trigger in InputManager.
- */
-const KEY_TO_ACTION_MAP: Record<string, ActionKey> = {
-  Q: 'yawLeft',
-  W: 'thrust',
-  E: 'pitchUp',
-  R: 'yawRight',
-  A: 'rollRight',
-  S: 'reverse',
-  D: 'pitchDown',
-  F: 'rollLeft',
-  T: 'autoOrient',
-  Z: 'lockBehind',
-  X: 'freeLook',
-  C: 'lookBehind',
-  G: 'gravityToggle',
-  U: 'modTrail',
-  I: 'modAura',
-  O: 'modShape',
-  P: 'modEmote',
-  J: 'lockOn',
-  K: 'warp',
-  L: 'scan',
-  N: 'interact',
-  M: 'worldIndex',
-  '1': 'cameraClose',
-  '2': 'cameraMedium',
-  '3': 'cameraFar',
-  '4': 'cameraCinematic',
-  SPACE: 'brake',
-  ESC: 'escape',
-}
+/** Actions that have a key cap or key hint on screen; polled each frame for the pressed highlight. */
+const HUD_ACTIONS: readonly ActionKey[] = ['yawLeft', 'thrust', 'pitchUp', 'yawRight', 'rollRight', 'reverse', 'pitchDown', 'rollLeft', 'autoOrient', 'lockBehind', 'freeLook', 'lookBehind', 'gravityToggle', 'modTrail', 'modAura', 'modShape', 'modEmote', 'lockOn', 'warp', 'scan', 'interact', 'worldIndex', 'cameraClose', 'cameraMedium', 'cameraFar', 'cameraCinematic', 'brake', 'escape']
 
-// ── Key labels & tooltips ────────────────────────────────────────────
-
-const KEY_LABELS: Record<string, string> = {
-  Q: 'Yaw ←',
-  W: 'Thrust',
-  E: 'Pitch ↑',
-  R: 'Yaw →',
-  A: 'Roll →',
-  S: 'Reverse',
-  D: 'Pitch ↓',
-  F: 'Roll ←',
-  T: 'Auto-orient',
-  Z: 'Lock behind',
-  X: 'Free look',
-  C: 'Look behind',
-  G: 'Toggle mode',
-  U: 'Trail mod',
-  I: 'Aura mod',
-  O: 'Shape mod',
-  P: 'Emote',
-  J: 'Lock-on',
-  K: 'Warp',
-  L: 'Scan',
-  N: 'Interact',
-  M: 'World Index',
-  '1': 'Close cam',
-  '2': 'Medium cam',
-  '3': 'Far cam',
-  '4': 'Cinematic cam',
-  SPACE: 'Brake',
-  ESC: 'Exit',
+/** What a cap shows for an action: its current key (follows the player's remaps), or a dash if unbound. */
+function useKeyText(action: string): string {
+  const code = useKeybindingStore((s) => s.bindings[action] ?? null)
+  const layout = useKeybindingStore((s) => s.layout)
+  if (action === 'escape') return 'ESC' // fixed, never remapped
+  if (!code) return '–'
+  return code === 'Space' ? 'SPACE' : keyCapLabel(code, layout)
 }
 
 /**
- * A single key cap that lights up when its corresponding action is active.
+ * A single key cap that lights up when its action is active. It shows the
+ * key the action is bound to right now, so the HUD stays truthful after a remap.
  */
-const KeyCap = memo(function KeyCap({ keyName, pressed, wide }: { keyName: string; pressed: boolean; wide?: boolean }) {
+const KeyCap = memo(function KeyCap({ action, pressed, wide }: { action: ActionKey; pressed: boolean; wide?: boolean }) {
+  const text = useKeyText(action)
+  const def = DEF_BY_ID.get(action)
   return (
     <div
       className={`hud-keycap${pressed ? ' hud-keycap--active' : ''}${wide ? ' hud-keycap--wide' : ''}`}
-      title={KEY_LABELS[keyName] ?? keyName}
+      title={def?.label ?? (action === 'escape' ? 'Exit' : action)}
     >
-      {keyName}
+      {text}
     </div>
   )
 })
+
+/** Inline <kbd> hint that follows the binding. */
+function Kbd({ action }: { action: string }) {
+  return <kbd>{useKeyText(action)}</kbd>
+}
 
 /** 12.3 nearby; 1,204 across the universe (World Index locks). */
 function formatDistance(d: number): string {
@@ -163,9 +118,9 @@ export function HUD() {
       // Poll input state every frame for key highlighting
       const actions = inputManager.getActions()
       const active = new Set<string>()
-      for (const [key, action] of Object.entries(KEY_TO_ACTION_MAP)) {
+      for (const action of HUD_ACTIONS) {
         if (actions[action]) {
-          active.add(key)
+          active.add(action)
         }
       }
 
@@ -193,6 +148,7 @@ export function HUD() {
 
   return (
     <div className="hud-overlay">
+      <KeybindingsPanel />
       {/* Top left — Brand + player ("Save your player") */}
       <div className="hud-top-left">
         <div className="hud-brand">aweborn</div>
@@ -216,7 +172,10 @@ export function HUD() {
           )}
         </div>
         <div className="hud-fps">{fps} FPS</div>
-        <DisplaySettings />
+        <div className="hud-tools">
+          <KeybindingsButton />
+          <DisplaySettings />
+        </div>
       </div>
 
       {/* Top center — Lock-on target info */}
@@ -253,19 +212,19 @@ export function HUD() {
 
           {/* Gravity mode indicator */}
           <div className={`hud-gravity-mode ${flightController.isGravityEnabled() ? 'hud-gravity-mode--neutral' : 'hud-gravity-mode--drive'}`}>
-            <kbd>G</kbd> {flightController.isGravityEnabled() ? '◉ NEUTRAL' : '⬡ DRIVE'}
+            <Kbd action="gravityToggle" /> {flightController.isGravityEnabled() ? '◉ NEUTRAL' : '⬡ DRIVE'}
           </div>
 
           {/* Mod slot indicators */}
           <div className="hud-mod-slots">
-            <div className={`hud-mod-slot${isPressed('U') ? ' hud-mod-slot--active' : ''}`} title="Trail (U)">
-              <kbd>U</kbd> {TRAIL_LABELS[mods.trail] ?? mods.trail}
+            <div className={`hud-mod-slot${isPressed('modTrail') ? ' hud-mod-slot--active' : ''}`} title="Trail">
+              <Kbd action="modTrail" /> {TRAIL_LABELS[mods.trail] ?? mods.trail}
             </div>
-            <div className={`hud-mod-slot${isPressed('I') ? ' hud-mod-slot--active' : ''}`} title="Aura (I)">
-              <kbd>I</kbd> {AURA_LABELS[mods.aura] ?? mods.aura}
+            <div className={`hud-mod-slot${isPressed('modAura') ? ' hud-mod-slot--active' : ''}`} title="Aura">
+              <Kbd action="modAura" /> {AURA_LABELS[mods.aura] ?? mods.aura}
             </div>
-            <div className={`hud-mod-slot${isPressed('O') ? ' hud-mod-slot--active' : ''}`} title="Shape (O)">
-              <kbd>O</kbd> {SHAPE_LABELS[mods.shape] ?? mods.shape}
+            <div className={`hud-mod-slot${isPressed('modShape') ? ' hud-mod-slot--active' : ''}`} title="Shape">
+              <Kbd action="modShape" /> {SHAPE_LABELS[mods.shape] ?? mods.shape}
             </div>
           </div>
         </div>
@@ -279,36 +238,36 @@ export function HUD() {
             <div className="hud-cluster-label">Navigation</div>
             {/* Number row (camera) */}
             <div className="hud-key-row">
-              <KeyCap keyName="1" pressed={isPressed('1')} />
-              <KeyCap keyName="2" pressed={isPressed('2')} />
-              <KeyCap keyName="3" pressed={isPressed('3')} />
-              <KeyCap keyName="4" pressed={isPressed('4')} />
+              <KeyCap action="cameraClose" pressed={isPressed('cameraClose')} />
+              <KeyCap action="cameraMedium" pressed={isPressed('cameraMedium')} />
+              <KeyCap action="cameraFar" pressed={isPressed('cameraFar')} />
+              <KeyCap action="cameraCinematic" pressed={isPressed('cameraCinematic')} />
             </div>
             {/* QWER row */}
             <div className="hud-key-row">
-              <KeyCap keyName="Q" pressed={isPressed('Q')} />
-              <KeyCap keyName="W" pressed={isPressed('W')} />
-              <KeyCap keyName="E" pressed={isPressed('E')} />
-              <KeyCap keyName="R" pressed={isPressed('R')} />
-              <KeyCap keyName="T" pressed={isPressed('T')} />
+              <KeyCap action="yawLeft" pressed={isPressed('yawLeft')} />
+              <KeyCap action="thrust" pressed={isPressed('thrust')} />
+              <KeyCap action="pitchUp" pressed={isPressed('pitchUp')} />
+              <KeyCap action="yawRight" pressed={isPressed('yawRight')} />
+              <KeyCap action="autoOrient" pressed={isPressed('autoOrient')} />
             </div>
             {/* ASDF row */}
             <div className="hud-key-row hud-key-row--offset-1">
-              <KeyCap keyName="A" pressed={isPressed('A')} />
-              <KeyCap keyName="S" pressed={isPressed('S')} />
-              <KeyCap keyName="D" pressed={isPressed('D')} />
-              <KeyCap keyName="F" pressed={isPressed('F')} />
+              <KeyCap action="rollRight" pressed={isPressed('rollRight')} />
+              <KeyCap action="reverse" pressed={isPressed('reverse')} />
+              <KeyCap action="pitchDown" pressed={isPressed('pitchDown')} />
+              <KeyCap action="rollLeft" pressed={isPressed('rollLeft')} />
             </div>
             {/* ZXC row */}
             <div className="hud-key-row hud-key-row--offset-2">
-              <KeyCap keyName="Z" pressed={isPressed('Z')} />
-              <KeyCap keyName="X" pressed={isPressed('X')} />
-              <KeyCap keyName="C" pressed={isPressed('C')} />
-              <KeyCap keyName="G" pressed={isPressed('G')} />
+              <KeyCap action="lockBehind" pressed={isPressed('lockBehind')} />
+              <KeyCap action="freeLook" pressed={isPressed('freeLook')} />
+              <KeyCap action="lookBehind" pressed={isPressed('lookBehind')} />
+              <KeyCap action="gravityToggle" pressed={isPressed('gravityToggle')} />
             </div>
             {/* Space */}
             <div className="hud-key-row hud-key-row--space">
-              <KeyCap keyName="SPACE" pressed={isPressed('SPACE')} wide />
+              <KeyCap action="brake" pressed={isPressed('brake')} wide />
             </div>
           </div>
 
@@ -317,21 +276,21 @@ export function HUD() {
             <div className="hud-cluster-label">Interact / Mods</div>
             {/* UIOP row (mods) */}
             <div className="hud-key-row">
-              <KeyCap keyName="U" pressed={isPressed('U')} />
-              <KeyCap keyName="I" pressed={isPressed('I')} />
-              <KeyCap keyName="O" pressed={isPressed('O')} />
-              <KeyCap keyName="P" pressed={isPressed('P')} />
+              <KeyCap action="modTrail" pressed={isPressed('modTrail')} />
+              <KeyCap action="modAura" pressed={isPressed('modAura')} />
+              <KeyCap action="modShape" pressed={isPressed('modShape')} />
+              <KeyCap action="modEmote" pressed={isPressed('modEmote')} />
             </div>
             {/* JKL row */}
             <div className="hud-key-row hud-key-row--offset-1">
-              <KeyCap keyName="J" pressed={isPressed('J')} />
-              <KeyCap keyName="K" pressed={isPressed('K')} />
-              <KeyCap keyName="L" pressed={isPressed('L')} />
+              <KeyCap action="lockOn" pressed={isPressed('lockOn')} />
+              <KeyCap action="warp" pressed={isPressed('warp')} />
+              <KeyCap action="scan" pressed={isPressed('scan')} />
             </div>
             {/* N row */}
             <div className="hud-key-row hud-key-row--offset-2">
-              <KeyCap keyName="N" pressed={isPressed('N')} />
-              <KeyCap keyName="M" pressed={isPressed('M')} />
+              <KeyCap action="interact" pressed={isPressed('interact')} />
+              <KeyCap action="worldIndex" pressed={isPressed('worldIndex')} />
             </div>
           </div>
         </div>
@@ -342,7 +301,7 @@ export function HUD() {
         <div className="hud-keyboard hud-keyboard--world">
           <div className="hud-keyboard-cluster">
             <div className="hud-key-row">
-              <KeyCap keyName="ESC" pressed={isPressed('ESC')} />
+              <KeyCap action="escape" pressed={isPressed('escape')} />
               <span className="hud-key-label">Exit World</span>
             </div>
           </div>

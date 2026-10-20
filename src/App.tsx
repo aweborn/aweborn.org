@@ -2,6 +2,7 @@ import { CreatePanel } from './components/CreatePanel'
 import { PlannerPanel } from './components/PlannerPanel'
 import { ManaTracker } from './components/ManaTracker'
 import { LibraryPanel } from './components/LibraryPanel'
+import { ChatPanel } from './components/ChatPanel'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
@@ -121,6 +122,7 @@ export default function App() {
           <PlannerPanel />
           <ManaTracker />
           <LibraryPanel />
+          <ChatPanel />
         </>
       )}
       {isLoaded && webglSupported && <CardReveal />}
