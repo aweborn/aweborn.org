@@ -34,7 +34,7 @@ import { ManaAdmission } from "./admission.js";
 import { insideFrontier, solidifyWithinFrontier } from "./frontier.js";
 import { createWorldDoc } from "./world-factory.js";
 import { resolveNewWorld } from "./resolver.js";
-import { prepareChat, ChatLimiter, CHAT_HISTORY, CHAT_MAX_BYTES } from "../../../shared/chat.js";
+import { prepareChat, cleanChatText, ChatLimiter, CHAT_HISTORY, CHAT_MAX_BYTES } from "../../../shared/chat.js";
 import { touchesChat } from "./chat-guard.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
@@ -618,11 +618,24 @@ export class RoomManager {
     } catch {
       return;
     }
-    const text = prepareChat(raw);
+    const original = cleanChatText(raw); // archived as typed (sanitized, not masked)
+    const text = prepareChat(raw); // what players see
     if (!text) return;
     const now = Date.now();
     const limited = this.chatLimiter.check(playerId, now);
     if (limited) return reply({ error: limited });
+    // Permanent archive (research replay): never trimmed, unlike the CRDT log below.
+    try {
+      const d = getDb();
+      d.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, world_id TEXT NOT NULL, player_id TEXT NOT NULL,
+        text TEXT NOT NULL, at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS chat_messages_world ON chat_messages(world_id, at);
+        CREATE INDEX IF NOT EXISTS chat_messages_player ON chat_messages(player_id, at);`);
+      d.prepare("INSERT INTO chat_messages (world_id, player_id, text, at) VALUES (?, ?, ?, ?)").run(worldId, playerId, original, now);
+    } catch (err) {
+      console.error("[rooms] failed to archive chat message", err);
+    }
     room.doc.transact(() => {
       const chat = room.doc.getArray("chat");
       chat.push([{ sender: playerId, text, t: now }]);
