@@ -64,14 +64,17 @@ const stripeAppearance = {
 }
 
 // --- Constants ---
+// 1 mana = $0.01 (K = 100), so mana === cents. Players see mana; Stripe sees cents.
 const PRESET_AMOUNTS = [
-  { label: '$10', cents: 1000 },
-  { label: '$25', cents: 2500 },
-  { label: '$50', cents: 5000 },
-  { label: '$100', cents: 10000 },
-  { label: '$250', cents: 25000 },
-  { label: '$500', cents: 50000 },
+  { label: '🏷️ 1,000 mana', cents: 1000 },
+  { label: '🏷️ 2,500 mana', cents: 2500 },
+  { label: '🏷️ 5,000 mana', cents: 5000 },
+  { label: '🏷️ 10,000 mana', cents: 10000 },
+  { label: '🏷️ 25,000 mana', cents: 25000 },
+  { label: '🏷️ 50,000 mana', cents: 50000 },
 ]
+
+const formatMana = (mana: number) => `${mana.toLocaleString('en-US')} mana`
 
 type ModalStep = 'amount' | 'payment' | 'success'
 
@@ -98,7 +101,7 @@ function PaymentForm({
   const [error, setError] = useState<string | null>(null)
   const [elementReady, setElementReady] = useState(false)
 
-  const displayAmount = `$${(amountInCents / 100).toFixed(2)}`
+  const displayAmount = `🏷️ ${formatMana(amountInCents)}`
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -137,7 +140,7 @@ function PaymentForm({
       </button>
 
       <div className="payment-amount-banner">
-        Donating <strong>{displayAmount}</strong>
+        Adding <strong>{displayAmount}</strong>
       </div>
 
       <div className="stripe-element-wrapper">
@@ -162,7 +165,7 @@ function PaymentForm({
         {processing ? (
           <span className="btn-spinner">Processing…</span>
         ) : (
-          `Complete Donation — ${displayAmount}`
+          `Add mana — ${displayAmount}`
         )}
       </button>
 
@@ -184,7 +187,7 @@ function SuccessScreen({ onClose }: { onClose: () => void }) {
       <div className="success-icon">✓</div>
       <h2 className="modal-title">Thank You!</h2>
       <p className="modal-subtitle">
-        Your donation is making a real difference. We're grateful for your generous support.
+        Your mana is in the pool. We're grateful for your generous support.
       </p>
       <button
         className="donate-btn"
@@ -232,7 +235,7 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
   }
 
   const handleCustomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/[^0-9.]/g, '')
+    const value = e.target.value.replace(/[^0-9]/g, '')
     setCustomAmount(value)
     setSelectedAmount(null)
     clearError()
@@ -241,22 +244,20 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
   const getAmountInCents = (): number => {
     if (customAmount) {
       const parsed = parseFloat(customAmount)
-      return isNaN(parsed) ? 0 : Math.round(parsed * 100)
+      return isNaN(parsed) ? 0 : Math.round(parsed)
     }
     return selectedAmount || 0
   }
 
   const handleContinueToPayment = async () => {
     const cents = getAmountInCents()
-    if (cents < 100) return // Minimum $1
+    if (cents < 100) return // Minimum 100 mana ($1)
     await createPaymentIntent(cents)
     // Step transition happens via useEffect-like check below
   }
 
   const amountInCents = getAmountInCents()
-  const displayAmount = amountInCents > 0
-    ? `$${(amountInCents / 100).toFixed(2)}`
-    : '$0.00'
+  const displayAmount = `🏷️ ${formatMana(amountInCents)}`
 
   // Determine effective step: if we have a clientSecret and step is 'amount', advance
   const effectiveStep = step === 'amount' && clientSecret ? 'payment' : step
@@ -277,7 +278,7 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
         {/* ---- Step 1: Amount Selection ---- */}
         {effectiveStep === 'amount' && (
           <div className="modal-step modal-step-amount">
-            <h2 className="modal-title">Support Aweborn</h2>
+            <h2 className="modal-title">Add mana to the universe</h2>
             <p className="modal-subtitle">
               Every gift becomes mana in the universe’s pool. Half is the creative share all players create with; the rest funds our research.{' '}
               <a href="/giving.html" target="_blank" rel="noopener" id="donation-giving-link">Where your gift goes</a>
@@ -300,15 +301,15 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
             {/* Custom amount */}
             <div className="custom-amount-container">
               <label className="custom-amount-label" htmlFor="custom-amount-input">
-                Or enter a custom amount
+                Or enter a custom amount of mana (min 100)
               </label>
-              <span className="custom-amount-prefix">$</span>
+              <span className="custom-amount-prefix">🏷️</span>
               <input
                 id="custom-amount-input"
                 className="custom-amount-input"
                 type="text"
-                inputMode="decimal"
-                placeholder="0.00"
+                inputMode="numeric"
+                placeholder="0"
                 value={customAmount}
                 onChange={handleCustomChange}
               />

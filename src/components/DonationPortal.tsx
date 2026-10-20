@@ -1,7 +1,8 @@
 import { useRef, useState, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Float, Text, MeshDistortMaterial } from '@react-three/drei'
+import { Float, Html, MeshDistortMaterial } from '@react-three/drei'
 import * as THREE from 'three'
+import { ORIGIN_WORLD_ENTRY } from '@aweborn/shared/crdt-schema'
 
 interface DonationPortalProps {
   onActivate: () => void
@@ -143,19 +144,28 @@ export function DonationPortal({ onActivate }: DonationPortalProps) {
           decay={2}
         />
 
-        {/* Floating text label */}
-        <Text
-          position={[0, -1.6, 0]}
-          fontSize={0.18}
-          color="#e8b94a"
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.005}
-          outlineColor="#000000"
-          fillOpacity={hovered ? 1 : 0.6}
+        {/* Name label — same style as every other world (UniverseWorlds) */}
+        <Html
+          position={[0, 1.9, 0]}
+          center
+          distanceFactor={8}
+          style={{ pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap' }}
         >
-          {hovered ? '✦ Click to Donate ✦' : '✦ Donation Portal ✦'}
-        </Text>
+          <div style={{
+            color: 'white',
+            fontSize: '13px',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontWeight: 600,
+            textShadow: '0 0 8px rgba(0,0,0,0.9), 0 0 20px rgba(0,0,0,0.6)',
+            textAlign: 'center',
+            lineHeight: 1.3,
+          }}>
+            <div>{ORIGIN_WORLD_ENTRY.name}</div>
+            <div style={{ fontSize: '10px', fontWeight: 400, color: '#e8b94a' }}>
+              ✨ solid
+            </div>
+          </div>
+        </Html>
       </group>
     </Float>
   )

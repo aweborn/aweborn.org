@@ -94,11 +94,11 @@ export function FallbackScene({ onReady, onDonate }: FallbackSceneProps) {
       <p className="fallback-body">
         Your browser doesn't currently support 3D graphics (WebGL).
         <br />
-        You can still support the Aweborn mission below!
+        You can still add mana to the universe below!
       </p>
 
       <button className="donate-btn" onClick={onDonate} style={{ maxWidth: '300px' }}>
-        ✦ Donate Now ✦
+        ✦ Add Mana ✦
       </button>
 
       {/* Collapsible "How to enable 3D" helper */}
