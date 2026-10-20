@@ -72,7 +72,7 @@ export const BINDING_DEFS: readonly BindingDef[] = [
   { id: 'interact', group: 'interact', label: 'Interact', worldLabel: 'Kick', contexts: BOTH, default: 'KeyN' },
   { id: 'lockOn', group: 'interact', label: 'Lock on to a target', contexts: UNI, default: 'KeyJ' },
   { id: 'scan', group: 'interact', label: 'Scan', contexts: UNI, default: 'KeyL' },
-  { id: 'chat', group: 'interact', label: 'Chat', contexts: WORLD, default: 'Enter' },
+  { id: 'chat', group: 'interact', label: 'Chat', contexts: BOTH, default: 'Enter' },
 
   // Star mods
   { id: 'modTrail', group: 'mods', label: 'Cycle trail', contexts: UNI, default: 'KeyU' },

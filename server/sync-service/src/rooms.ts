@@ -42,6 +42,35 @@ const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 /** `creator` for worlds made by sockets with no session. */
 const GUEST_CREATOR = "guest";
 
+// ── Presence (Card Event Readiness, 2026-10-20) ───────────────────────────
+// Relaying every presence message to every client was O(n²) sends and pegged
+// a core at 50 players (scripts/loadtest/bots.mjs). Now the server keeps each
+// socket's latest presence and, once per tick, sends every client ONE batch
+// with the freshest states of the nearest players in the same place (space,
+// or the same world). Same total bytes at small n, ~n× fewer sends, and a
+// hard ceiling on what any phone has to parse.
+/** Batches per second = 1000 / tick. Clients smooth between updates. */
+const PRESENCE_TICK_MS = 100;
+/** Most players any one client hears about per tick (nearest first). */
+const PRESENCE_MAX_NEIGHBORS = 30;
+/** Bigger presence payloads are dropped (a normal one is ~200 bytes). */
+const PRESENCE_MAX_BYTES = 1024;
+
+interface PresenceEntry {
+  /** The client's JSON, validated as an object. */
+  json: string;
+  x: number;
+  y: number;
+  z: number;
+  /** "" = flying in space; otherwise the world id (interior coordinates). */
+  group: string;
+  /** Last update time. */
+  at: number;
+}
+
+/** Chat id for space (the universe outside worlds, Origin included). */
+export const SPACE_CHAT_ID = "space";
+
 interface WorldRoom {
   doc: Y.Doc;
   clients: Set<WebSocket>;
@@ -73,6 +102,12 @@ export class RoomManager {
   private accountIds = new WeakMap<WebSocket, string>();
   /** Chat send limits, per player. */
   private chatLimiter = new ChatLimiter();
+  /** Space chat: last CHAT_HISTORY lines, in memory (the archive keeps them all). */
+  private spaceChat: Array<{ sender: string; text: string; t: number }> = [];
+  /** Latest presence per socket, sent out in batches. */
+  private presence = new Map<WebSocket, PresenceEntry>();
+  private presenceTimer: ReturnType<typeof setInterval> | null = null;
+  private lastPresenceTick = 0;
 
   /** The universal mana pool & ledger (server-authoritative). */
   readonly mana: ManaLedger;
@@ -82,6 +117,8 @@ export class RoomManager {
   constructor() {
     this.universeDoc = initUniverseDoc();
     this.startFlushTimer();
+    this.lastPresenceTick = Date.now();
+    this.presenceTimer = setInterval(() => this.presenceTick(), PRESENCE_TICK_MS);
 
     // When the universe doc changes, broadcast updates to subscribed clients
     this.universeDoc.on("update", (update: Uint8Array, _origin: unknown) => {
@@ -126,6 +163,10 @@ export class RoomManager {
     // Send current universe state to the new client
     const state = Y.encodeStateAsUpdate(this.universeDoc);
     ws.send(this.encodeMessage("universe-sync", state));
+    // …and what's been said out in space, so latecomers can read it
+    if (this.spaceChat.length) {
+      ws.send(this.encodeMessage("chat", new TextEncoder().encode(JSON.stringify({ lines: this.spaceChat, history: true })), SPACE_CHAT_ID));
+    }
 
     console.log(`[rooms] client joined universe (${sectorKeys.length} sectors)`);
   }
@@ -145,6 +186,7 @@ export class RoomManager {
    */
   leaveUniverse(ws: WebSocket): void {
     this.universeClients.delete(ws);
+    this.presence.delete(ws);
   }
 
   // ── World Rooms ──────────────────────────────────────────────────
@@ -388,8 +430,8 @@ export class RoomManager {
           break;
         }
         case "presence": {
-          // Relay presence to all other universe clients
-          this.relayPresence(ws, message.data);
+          // Kept until the next batch tick (see presenceTick)
+          this.storePresence(ws, message.data);
           break;
         }
         default:
@@ -444,6 +486,10 @@ export class RoomManager {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
+    }
+    if (this.presenceTimer) {
+      clearInterval(this.presenceTimer);
+      this.presenceTimer = null;
     }
 
     this.flushAll();
@@ -584,16 +630,117 @@ export class RoomManager {
     }
   }
 
+  /** Validate and keep a client's latest presence. The payload stays opaque JSON otherwise. */
+  private storePresence(sender: WebSocket, data: Uint8Array): void {
+    if (data.length === 0 || data.length > PRESENCE_MAX_BYTES) return;
+    let json: string;
+    let p: { position?: { x?: unknown; y?: unknown; z?: unknown }; inWorld?: unknown };
+    try {
+      json = new TextDecoder().decode(data);
+      p = JSON.parse(json);
+    } catch {
+      return;
+    }
+    if (!p || typeof p !== "object" || Array.isArray(p)) return;
+    const x = Number(p.position?.x), y = Number(p.position?.y), z = Number(p.position?.z);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+    const group = typeof p.inWorld === "string" ? p.inWorld : "";
+    this.presence.set(sender, { json, x, y, z, group, at: Date.now() });
+  }
+
   /**
-   * Relay a presence message to all other universe clients.
-   * The data is opaque JSON — the server just forwards it.
+   * One presence batch per client per tick: the players in the same place
+   * (space, or the same world) that moved since the last tick, nearest first,
+   * at most PRESENCE_MAX_NEIGHBORS. Players who fall out of range simply stop
+   * arriving, and the client drops them after its stale timeout.
    */
-  private relayPresence(sender: WebSocket, data: Uint8Array): void {
-    const msg = this.encodeMessage("presence", data);
-    for (const [, client] of this.universeClients) {
-      if (client.ws !== sender && client.ws.readyState === 1) {
-        client.ws.send(msg);
+  private presenceTick(): void {
+    const since = this.lastPresenceTick;
+    this.lastPresenceTick = Date.now();
+    if (this.presence.size < 2) return;
+
+    // Fresh entries, grouped by place
+    const groups = new Map<string, Array<[WebSocket, PresenceEntry]>>();
+    for (const [ws, e] of this.presence) {
+      if (e.at <= since) continue;
+      let g = groups.get(e.group);
+      if (!g) groups.set(e.group, (g = []));
+      g.push([ws, e]);
+    }
+    if (groups.size === 0) return;
+
+    for (const [ws] of this.universeClients) {
+      if (ws.readyState !== 1) continue;
+      const me = this.presence.get(ws);
+      const pool = groups.get(me?.group ?? "");
+      if (!pool) continue;
+      let picked: Array<[WebSocket, PresenceEntry]>;
+      if (pool.length - 1 <= PRESENCE_MAX_NEIGHBORS || !me) {
+        picked = pool.length - 1 <= PRESENCE_MAX_NEIGHBORS ? pool : pool.slice(0, PRESENCE_MAX_NEIGHBORS + 1);
+      } else {
+        const d2 = (e: PresenceEntry) => (e.x - me.x) ** 2 + (e.y - me.y) ** 2 + (e.z - me.z) ** 2;
+        picked = pool
+          .filter(([other]) => other !== ws)
+          .map((pe) => [pe, d2(pe[1])] as const)
+          .sort((a, b) => a[1] - b[1])
+          .slice(0, PRESENCE_MAX_NEIGHBORS)
+          .map(([pe]) => pe);
       }
+      let body = "";
+      for (const [other, e] of picked) {
+        if (other === ws) continue;
+        body += body ? "," + e.json : e.json;
+      }
+      if (!body) continue;
+      ws.send(this.encodeMessage("presence-batch", new TextEncoder().encode("[" + body + "]")));
+    }
+  }
+
+  /**
+   * Someone talks out in space (Origin included): no world doc there, so the
+   * server keeps the recent lines in memory and sends each new line to every
+   * universe client. Same cleaning, filter, limits and archive as world chat.
+   */
+  private handleSpaceChat(ws: WebSocket, data: Uint8Array): void {
+    const reply = (body: object) => {
+      if (ws.readyState === 1) ws.send(this.encodeMessage("chat", new TextEncoder().encode(JSON.stringify(body)), SPACE_CHAT_ID));
+    };
+    const playerId = this.playerIds.get(ws);
+    if (!playerId) return reply({ error: "no_session" });
+    if (!this.universeClients.has(ws)) return;
+    if (data.length === 0 || data.length > CHAT_MAX_BYTES) return;
+    let raw: unknown;
+    try {
+      raw = (JSON.parse(new TextDecoder().decode(data)) as { text?: unknown }).text;
+    } catch {
+      return;
+    }
+    const original = cleanChatText(raw);
+    const text = prepareChat(raw);
+    if (!text) return;
+    const now = Date.now();
+    const limited = this.chatLimiter.check(playerId, now);
+    if (limited) return reply({ error: limited });
+    this.archiveChat(SPACE_CHAT_ID, playerId, original, now);
+    const line = { sender: playerId, text, t: now };
+    this.spaceChat.push(line);
+    if (this.spaceChat.length > CHAT_HISTORY) this.spaceChat.splice(0, this.spaceChat.length - CHAT_HISTORY);
+    const msg = this.encodeMessage("chat", new TextEncoder().encode(JSON.stringify({ lines: [line] })), SPACE_CHAT_ID);
+    for (const [client] of this.universeClients) if (client.readyState === 1) client.send(msg);
+  }
+
+  /** Permanent archive (research replay): never trimmed, unlike the live logs. */
+  private archiveChat(worldId: string, playerId: string, text: string, at: number): void {
+    try {
+      const d = getDb();
+      d.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, world_id TEXT NOT NULL, player_id TEXT NOT NULL,
+        text TEXT NOT NULL, at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS chat_messages_world ON chat_messages(world_id, at);
+        CREATE INDEX IF NOT EXISTS chat_messages_player ON chat_messages(player_id, at);`);
+      d.prepare("INSERT INTO chat_messages (world_id, player_id, text, at) VALUES (?, ?, ?, ?)").run(worldId, playerId, text, at);
+    } catch (err) {
+      console.error("[rooms] failed to archive chat message", err);
     }
   }
 
@@ -604,6 +751,7 @@ export class RoomManager {
    * chat log, which every player in the room receives like any other change.
    */
   private handleChat(ws: WebSocket, worldId: string | null, data: Uint8Array): void {
+    if (!worldId || worldId === SPACE_CHAT_ID) return this.handleSpaceChat(ws, data);
     const reply = (body: object) => {
       if (ws.readyState === 1) ws.send(this.encodeMessage("chat", new TextEncoder().encode(JSON.stringify(body)), worldId ?? undefined));
     };
@@ -625,17 +773,7 @@ export class RoomManager {
     const limited = this.chatLimiter.check(playerId, now);
     if (limited) return reply({ error: limited });
     // Permanent archive (research replay): never trimmed, unlike the CRDT log below.
-    try {
-      const d = getDb();
-      d.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
-        seq INTEGER PRIMARY KEY AUTOINCREMENT, world_id TEXT NOT NULL, player_id TEXT NOT NULL,
-        text TEXT NOT NULL, at INTEGER NOT NULL);
-        CREATE INDEX IF NOT EXISTS chat_messages_world ON chat_messages(world_id, at);
-        CREATE INDEX IF NOT EXISTS chat_messages_player ON chat_messages(player_id, at);`);
-      d.prepare("INSERT INTO chat_messages (world_id, player_id, text, at) VALUES (?, ?, ?, ?)").run(worldId, playerId, original, now);
-    } catch (err) {
-      console.error("[rooms] failed to archive chat message", err);
-    }
+    this.archiveChat(worldId!, playerId, original, now);
     room.doc.transact(() => {
       const chat = room.doc.getArray("chat");
       chat.push([{ sender: playerId, text, t: now }]);
@@ -658,7 +796,8 @@ export class RoomManager {
   //   0x06 = update-sectors   (client → server: JSON payload)
   //   0x07 = join-world       (client → server: worldId in header)
   //   0x08 = leave-world      (client → server: worldId in header)
-  //   0x0a = chat             (client → server: { text }; server → client: { error })
+  //   0x0a = chat             (client → server: { text }; server → client: { error } | { lines, history? } for space)
+  //   0x0b = presence-batch   (server → client: JSON array of presence states, once per tick)
 
   private static readonly MSG_TYPES: Record<string, number> = {
     "universe-sync": 0x01,
@@ -671,6 +810,7 @@ export class RoomManager {
     "leave-world": 0x08,
     "presence": 0x09,
     "chat": 0x0a,
+    "presence-batch": 0x0b,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

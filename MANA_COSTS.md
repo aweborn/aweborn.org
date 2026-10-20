@@ -60,7 +60,7 @@ Caps are per rolling 24 h (the per-minute window in the formula is just how the 
 
 | Stage | `base` (mana / 24 h) | Why |
 |---|---|---|
-| Unsaved (anonymous) player | **60** | A taste of making: about one textured model (60) or a handful of planner turns. Saving the player lifts it (Alex, 2026-10-19; tune in play) |
+| Unsaved (anonymous) player | **0** | No gen AI until signed in: guests explore, enter worlds, place blocks and Library models freely. Making from thought draws on the shared pool (Alex, 2026-10-20; was 60 on 2026-10-19) |
 | Chapters 1–4 (move … build) | **0** | Nothing generative yet; building and arranging are free |
 | Chapter 5 (Maker tutorials) | **600** | A whole textured world (~9 models + planner turns) fits in a day (raised 2026-10-17 from 150) |
 | Chapter 6–7 | **1,000** | Experimenting with every tool (raised from 250) |

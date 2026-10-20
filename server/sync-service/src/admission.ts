@@ -25,6 +25,8 @@ import { MANA_CAPS, MANA_PARAMS, baseCap, type PlayerProgress } from "../../../s
 import type { ManaLedger } from "./mana.js";
 
 export const REPLENISH_MESSAGE = "The world must be replenished…";
+/** Guests explore and build freely; making from thought draws on the shared pool (Alex, 2026-10-20). */
+export const SIGN_IN_MESSAGE = "Making from thought draws on the shared mana pool. Sign in to channel it.";
 
 export interface DrawRequest {
   playerId: string;
@@ -41,7 +43,7 @@ export type DrawDecision =
   | { ok: true; ref: string; estimate: number; remainingToday: number }
   | {
       ok: false;
-      reason: "not_unlocked" | "personal_cap" | "universe_flow" | "insufficient_creative" | "duplicate" | "bad_amount";
+      reason: "sign_in_required" | "not_unlocked" | "personal_cap" | "universe_flow" | "insufficient_creative" | "duplicate" | "bad_amount";
       message: string;
       /** What this player could still draw right now (mana). */
       remainingToday: number;
@@ -50,7 +52,7 @@ export type DrawDecision =
 export class ManaAdmission {
   /** playerId → last activity (ms). */
   private lastSeen = new Map<string, number>();
-  /** Players whose current session is anonymous (unsaved): they get the small guest cap. */
+  /** Players whose current session is anonymous (unsaved): no generative allowance until they sign in. */
   private guests = new Set<string>();
 
   constructor(
@@ -58,13 +60,18 @@ export class ManaAdmission {
     private now: () => number = Date.now,
   ) {}
 
-  /** Set from each authenticated request: an unsaved player gets the guest cap until they save. */
+  /** Set from each authenticated request: an unsaved player can't draw until they sign in. */
   setGuest(playerId: string, isGuest: boolean): void {
     if (isGuest) this.guests.add(playerId);
     else this.guests.delete(playerId);
   }
 
-  /** A player's personal cap per 24 h (before solar). Unsaved players are capped small. */
+  /** Whether this player's current session is unsaved (anonymous). */
+  isGuest(playerId: string): boolean {
+    return this.guests.has(playerId);
+  }
+
+  /** A player's personal cap per 24 h (before solar). Unsaved players get MANA_CAPS.guest (0). */
   capFor(playerId: string, progress: PlayerProgress, solar = 1): number {
     const base = this.guests.has(playerId) ? Math.min(MANA_CAPS.guest, baseCap(progress)) : baseCap(progress);
     return base * clamp(solar, 0.9, 1.1);
@@ -140,6 +147,9 @@ export class ManaAdmission {
     const at = this.now();
     if (!(req.estimate > 0) || !Number.isFinite(req.estimate)) {
       return { ok: false, reason: "bad_amount", message: REPLENISH_MESSAGE, remainingToday: 0 };
+    }
+    if (this.guests.has(req.playerId)) {
+      return { ok: false, reason: "sign_in_required", message: SIGN_IN_MESSAGE, remainingToday: 0 };
     }
     const solar = clamp(req.solar ?? 1, 0.9, 1.1);
     const cap = this.capFor(req.playerId, req.progress, solar);

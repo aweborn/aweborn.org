@@ -27,6 +27,8 @@ const MSG_TYPES: Record<string, number> = {
   "leave-world": 0x08,
   "presence": 0x09,
   "chat": 0x0a,
+  /** Server → client: JSON array of presence states, once per tick (2026-10-20). */
+  "presence-batch": 0x0b,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -247,6 +249,7 @@ export function useSyncConnection(
             }
             break;
           case "presence":
+          case "presence-batch":
             onPresenceRef.current?.(msg.data);
             break;
           case "chat":

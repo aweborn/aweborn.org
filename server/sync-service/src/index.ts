@@ -12,6 +12,10 @@ import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus } from "./creations.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
 import { removeOwnAsset, handleTrashAdmin } from "./trash.js";
+import { SIGN_IN_MESSAGE } from "./admission.js";
+
+/** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
+const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -225,7 +229,10 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   // Mana tracker: this player's allowance, usage and averages
   if (path === "/api/player/mana" && req.method === "GET") return manaStatus(rooms, session.playerId, json, session.isAnonymous);
-  // Creations (Phase 07): reserve → generate → settle
+  // Creations (Phase 07): reserve → generate → settle. Signed-in players only.
+  if (session.isAnonymous && req.method === "POST" && path && GENAI_POST_PATHS.has(path)) {
+    return json(403, { error: "sign_in_required", message: SIGN_IN_MESSAGE });
+  }
   if (path === "/api/player/create" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { prompt?: unknown } | null;
     return startCreation(rooms, session.playerId, body?.prompt, json);

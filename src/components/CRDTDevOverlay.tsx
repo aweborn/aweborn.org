@@ -76,7 +76,7 @@ export function CRDTDevOverlay() {
     onUniverseUpdate,
     onWorldUpdate,
     handleWebSocketPresence,
-    useCallback((_worldId: string | null, data: Uint8Array) => onChatNotice(data), []),
+    useCallback((worldId: string | null, data: Uint8Array) => onChatNotice(data, worldId), []),
   );
 
   // Chat: the server stamps the sender and writes the line into the world's log

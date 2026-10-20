@@ -2,8 +2,17 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import type { PlayerPresence, Vec3 } from "@aweborn/shared/crdt-schema";
 import { playerReady } from "../lib/player";
 
-const BROADCAST_INTERVAL_MS = 50; // ~20Hz
+/**
+ * ~10 Hz (was 20 Hz until 2026-10-20). The server batches presence on the same
+ * tick (rooms.ts presenceTick), and renderers already smooth toward the latest
+ * position, so halving the rate halves the traffic without visible stutter.
+ */
+const BROADCAST_INTERVAL_MS = 100;
 const STALE_TIMEOUT_MS = 3000; // Remove players not heard from in 3s
+
+/** 1 cm precision: trims ~40% off every presence payload. */
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const roundVec = (v: Vec3): Vec3 => ({ x: r2(v.x), y: r2(v.y), z: r2(v.z) });
 
 // ── Singleton Presence Manager ───────────────────────────────────────
 //
@@ -80,7 +89,13 @@ function startPresenceLoop() {
     if (!_playerResolved) return;
     _broadcastChannel?.postMessage(_localState);
     if (_wsSend) {
-      const payload = new TextEncoder().encode(JSON.stringify(_localState));
+      const wire = {
+        ..._localState,
+        position: roundVec(_localState.position),
+        velocity: roundVec(_localState.velocity),
+        ...(_localState.facing ? { facing: { x: r2(_localState.facing.x), z: r2(_localState.facing.z) } } : {}),
+      };
+      const payload = new TextEncoder().encode(JSON.stringify(wire));
       _wsSend("presence", payload);
     }
   }, BROADCAST_INTERVAL_MS);
@@ -145,13 +160,15 @@ function handleLocalPresence(event: MessageEvent<PlayerPresence>) {
 }
 
 /**
- * Handle presence data received from the WebSocket (server relay).
+ * Handle presence data received from the WebSocket: a single state (legacy
+ * relay) or a server batch (an array of states, one per nearby player).
  */
 export function handleWebSocketPresence(data: Uint8Array): void {
   try {
     const json = new TextDecoder().decode(data);
-    const presence = JSON.parse(json) as PlayerPresence;
-    applyPresence(presence);
+    const parsed = JSON.parse(json) as PlayerPresence | PlayerPresence[];
+    if (Array.isArray(parsed)) for (const p of parsed) applyPresence(p);
+    else applyPresence(parsed);
   } catch {
     // Ignore malformed presence data
   }

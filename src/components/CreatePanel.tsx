@@ -5,6 +5,7 @@ import { interiorController } from '../systems/InteriorController'
 import { AUTH_URL } from '../lib/player'
 import { usePresence } from '../hooks/usePresence'
 import { matchesBinding } from '../stores/keybindingStore'
+import { ManaSeal, useCanChannel } from './ManaSeal'
 
 /**
  * Create panel (Phase 07, first gen-AI slice): inside a world, type what you
@@ -26,6 +27,7 @@ const POLL_MS = 2000
 export function CreatePanel() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const { playerId } = usePresence()
+  const { canChannel } = useCanChannel()
   const [open, setOpen] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
@@ -52,8 +54,8 @@ export function CreatePanel() {
   }, [activeWorldId])
 
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 0)
-  }, [open])
+    if (open && canChannel) setTimeout(() => inputRef.current?.focus(), 0)
+  }, [open, canChannel])
 
   // Bumped after every poll round (even failed ones) so the loop always re-arms
   const [pollTick, setPollTick] = useState(0)
@@ -141,7 +143,9 @@ export function CreatePanel() {
         </ul>
       )}
 
-      {open ? (
+      {open && !canChannel ? (
+        <ManaSeal kind="create" onClose={() => setOpen(false)} />
+      ) : open ? (
         <form className="create-form" onSubmit={submit}>
           <input
             id="create-prompt"
@@ -164,7 +168,12 @@ export function CreatePanel() {
           {error && <p className="create-error">{error}</p>}
         </form>
       ) : (
-        <button id="create-open" className="create-open" type="button" onClick={() => setOpen(true)}>
+        <button
+          id="create-open"
+          className={`create-open${canChannel ? '' : ' is-sealed'}`}
+          type="button"
+          onClick={() => setOpen(true)}
+        >
           ✦ Create <kbd>C</kbd>
         </button>
       )}

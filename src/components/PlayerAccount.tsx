@@ -42,6 +42,7 @@ import {
 import { canPromptNow, onMeaningfulMoment, recordPrompted, trackPlaytime } from '../lib/onramp'
 import { EmailSignIn } from './EmailSignIn'
 import { SetPassword } from './SetPassword'
+import { OPEN_ACCOUNT_EVENT } from './ManaSeal'
 
 type Busy = null | 'passkey-save' | 'passkey-signin' | 'google' | 'signout' | 'switch' | 'confirm' | `remove-${string}`
 type Tab = 'signin' | 'save'
@@ -155,6 +156,13 @@ export function PlayerAccount() {
   }, [refreshLinked])
 
   const close = useCallback(() => dialogRef.current?.close(), [])
+
+  // Other UI (e.g. the mana seal on Create / Plan) can ask for this dialog.
+  useEffect(() => {
+    const onOpen = () => open()
+    window.addEventListener(OPEN_ACCOUNT_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_ACCOUNT_EVENT, onOpen)
+  }, [open])
 
   // Back from a Google round trip: reopen the panel with a note.
   useEffect(() => {

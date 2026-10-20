@@ -169,8 +169,13 @@ export const MANA_CAPS = {
   activeMs: 30 * 60 * 1000,
   /** Chapters 1–4 (move … build): nothing generative yet. */
   beforeMaker: 0,
-  /** An unsaved (anonymous) player: a taste of making, about one model. Saving the player lifts it. */
-  guest: 60,
+  /**
+   * An unsaved (anonymous) player: no generative allowance. Guests explore,
+   * enter worlds, place blocks and library models freely; making something
+   * from thought draws on the shared pool and needs a signed-in player
+   * (Alex, 2026-10-20; was 60 on 2026-10-19).
+   */
+  guest: 0,
   /** Chapter 5 (Maker tutorials). */
   maker: 600,
   /** Chapters 6–7 and the start of post-warp play. */

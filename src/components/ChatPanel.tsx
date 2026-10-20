@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
-import { useChatStore } from '../stores/chatStore'
+import { useChatStore, SPACE_CHAT } from '../stores/chatStore'
 import { usePresence } from '../hooks/usePresence'
 import { matchesBinding } from '../stores/keybindingStore'
 import { CHAT_MAX_CHARS, prepareChat } from '@aweborn/shared/chat'
@@ -29,15 +29,17 @@ const typing = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
 
 /**
- * In-world chat: a log in the corner (Enter to talk, Esc to stop) plus the
- * speech bubbles over heads (ChatBubble). The log is the world's own chat
- * history, so latecomers can read what was said. Everything is rendered as
- * text; nothing here ever touches innerHTML.
+ * Chat everywhere: inside a world it's the world's own log; out in space
+ * (Origin and the open universe, 2026-10-20) it's the space log the server
+ * keeps. A log in the corner (Enter to talk, Esc to stop) plus speech bubbles
+ * over heads (ChatBubble). Latecomers can read recent history. Everything is
+ * rendered as text; nothing here ever touches innerHTML.
  */
 export function ChatPanel() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const loaded = useWorldStore((s) => s.loaded)
-  const chat = useWorldStore((s) => s.chat)
+  const worldChat = useWorldStore((s) => s.chat)
+  const spaceChat = useChatStore((s) => s.space)
   const open = useChatStore((s) => s.open)
   const notice = useChatStore((s) => s.notice)
   const { playerId } = usePresence()
@@ -45,7 +47,9 @@ export function ChatPanel() {
   const [now, setNow] = useState(() => Date.now())
   const inputRef = useRef<HTMLInputElement>(null)
   const logRef = useRef<HTMLDivElement>(null)
-  const visible = !!activeWorldId && loaded
+  const target = activeWorldId ?? SPACE_CHAT
+  const visible = activeWorldId ? loaded : true
+  const chat = activeWorldId ? worldChat : spaceChat
 
   // Cleaned once per change (the server already did; this covers older lines)
   const lines = useMemo(
@@ -87,22 +91,24 @@ export function ChatPanel() {
     if (el) el.scrollTop = el.scrollHeight
   }, [lines.length, open])
 
-  if (!visible || !activeWorldId) return null
+  if (!visible) return null
 
   const shown = open
     ? lines.slice(-OPEN_LINES)
     : lines.slice(-RESTING_LINES).filter((m) => Math.abs(now - m.t) < FADE_MS)
 
   const submit = () => {
-    const sent = useChatStore.getState().send(activeWorldId, text)
+    const sent = useChatStore.getState().send(target, text)
     if (sent) setText('')
     useChatStore.getState().setOpen(false)
   }
 
   return (
-    <section className={`chat-panel${open ? ' is-open' : ''}`} aria-label="Chat">
+    <section className={`chat-panel${open ? ' is-open' : ''}${activeWorldId ? '' : ' is-space'}`} aria-label="Chat">
       <div className="chat-log" ref={logRef} role="log" aria-live="polite" aria-relevant="additions">
-        {shown.length === 0 && open && <p className="chat-empty">Nothing said here yet. Say hello.</p>}
+        {shown.length === 0 && open && (
+          <p className="chat-empty">{activeWorldId ? 'Nothing said here yet. Say hello.' : 'Nothing said out in space yet. Say hello.'}</p>
+        )}
         {shown.map((m) => {
           const mine = m.sender === playerId
           return (

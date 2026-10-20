@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { useManaTracker, refreshMana, type UsageStat } from '../stores/manaTrackerStore'
+import { openAccount } from './ManaSeal'
+import { subscribePlayer } from '../lib/player'
 
 const fmt = (n: number) => (n >= 100 ? Math.round(n).toLocaleString() : (Math.round(n * 10) / 10).toString())
 const ago = (at: number) => {
@@ -43,8 +45,23 @@ export function ManaTracker() {
     return () => clearInterval(id)
   }, [open])
 
+  // Signing in (or out) changes the allowance: refresh right away.
+  useEffect(() => subscribePlayer(() => void refreshMana()), [])
+
   // A guest (no session) has no personal allowance to show
   if (!status) return null
+
+  // Unsaved players can't channel mana (Alex, 2026-10-20): invite, don't show a zero.
+  if (status.guest) {
+    return (
+      <div className="mana-tracker is-sealed">
+        <button id="mana-pill" className="mana-pill" type="button" onClick={openAccount} title="Sign in to make things from thought">
+          <span className="mana-pill-icon">✦</span>
+          <span className="mana-pill-label">Sign in<span className="mana-pill-wide"> to channel mana</span></span>
+        </button>
+      </div>
+    )
+  }
 
   const low = status.cap > 0 && status.remaining < status.cap * 0.15
   const creative = universe?.creative ?? status.pool.creative
@@ -78,11 +95,6 @@ export function ManaTracker() {
             You can draw {fmt(status.remaining)} right now
             {status.remaining < status.cap - status.spent - 0.5 ? ' (the world’s flow is the limit)' : ''}. It returns as older draws leave the 24 h window.
           </p>
-          {status.guest && (
-            <p className="mana-note mana-note--guest">
-              A starter allowance, enough for about one model. Save your player to make more.
-            </p>
-          )}
 
           <div className="mana-avgs">
             <Avg label="Per planner turn" s={status.week.plan} />

@@ -2,6 +2,7 @@ import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
+import { ChatBubble } from './ChatBubble'
 
 /**
  * Renders other players as glowing orbs drifting through the universe.
@@ -142,6 +143,8 @@ function PlayerStar({ data }: { data: PlayerStarData }) {
         </mesh>
         {/* Small point light */}
         <pointLight color={color} intensity={0.8} distance={3} decay={2} />
+        {/* What they said out in space (2026-10-20) */}
+        <ChatBubble playerId={data.id} source="space" height={0.7} />
       </group>
 
       {/* Comet trail */}

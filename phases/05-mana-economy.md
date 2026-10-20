@@ -1,6 +1,6 @@
 # Phase 05: Mana Economy & Donations
 
-**Status:** `[ ]` Not Started (design ~settled 2026-10-13; see [The Mana Pool Formula](#the-mana-pool-formula))
+**Status:** `[x]` Complete† (2026-10-20, Alex): pool, ledger, admission, donation pipeline, Frontier + wave, tracker and guest rule shipped. **Deferred until after the first community card event:** Awe → XP, Experience & Levels (incl. beginner cradle + warp gate), Shooting Stars, pool-driven ambience, Solar Cycle, opt-in donor names. Guests have 0 mana, and saved players keep the flat caps until levels exist.
 **Depends on:** [Phase 02: Multiplayer Core](./02-multiplayer-core.md), [Phase 04: Navigation & Controls](./04-navigation-controls.md)
 **ROADMAP reference:** [The Mana Mechanic: The Frontier of Dreams](../ROADMAP.md#the-mana-mechanic-the-frontier-of-dreams) (rewritten for the October model 2026-10-14)
 **Estimated sessions:** 4-5
@@ -287,17 +287,17 @@ Frontier
 
 ## Acceptance Criteria
 
-- [ ] Mana pool is visible in the Universe CRDT and reflected visually
-- [ ] A donation adds exactly `K · net` mana to the pool and high-water line and `K · α · net` to the creative share, and triggers the solidification wave
-- [ ] Every outflow is recorded with a category; players can never draw on anything but the creative share
-- [ ] A lone player gets their full personal cap; many players share the global flow max-min fairly
-- [ ] Manifesting draws the real cost; a request the pool or caps can't cover is gently denied; failures cost nothing
-- [ ] The pool can't drain faster than the global cap allows
-- [ ] Ghost worlds solidify when the Frontier (from the high-water line) reaches them
-- [ ] Awe events grant XP and high-water reach, never pool mana
-- [ ] Mana draws are server-validated and ledgered
-- [ ] Ghost creation is free and requires no server validation
-- [ ] Universe ambience changes based on pool level
+- [x] Mana pool is visible in the Universe CRDT and reflected visually (server-published `mana` map, mana tracker pill + panel, Frontier edge)
+- [x] A donation adds exactly `K · net` mana to the pool and high-water line and `K · α · net` to the creative share, and triggers the solidification wave (Alex's real $1 gift, 2026-10-17)
+- [x] Every outflow is recorded with a category; players can never draw on anything but the creative share
+- [x] A lone player gets their full personal cap; many players share the global flow max-min fairly (`admission.ts`, tests)
+- [~] Manifesting draws the real cost; a request the pool or caps can't cover is gently denied; failures cost nothing (reserve → settle → release exists; **refund on a failed Meshy job not re-verified end to end**)
+- [x] The pool can't drain faster than the global cap allows
+- [x] Ghost worlds solidify when the Frontier (from the high-water line) reaches them
+- [ ] Awe events grant XP and high-water reach, never pool mana *(deferred: after the first community)*
+- [x] Mana draws are server-validated and ledgered
+- [x] Ghost creation is free and requires no server validation (Option C)
+- [ ] Universe ambience changes based on pool level *(deferred; see the 2026-10-16 flag: drive it from creative flow vs demand, not the raw treasury)*
 
 ## Files Changed
 
@@ -351,3 +351,5 @@ Frontier
 | 2026-10-17 | **Alex's real $1 gift exposed a webhook gap, fixed and deployed.** The Link payment `pi_3URaynPkgUqNqJwu0xby9Vfb` succeeded 17:01:09 UTC, but `aweborn-stripe-webhook` returned **503 "balance transaction not ready"**: Link attaches the balance transaction (the net after Stripe's fee) to the charge ~80 s *after* `payment_intent.succeeded`, so no inflow was recorded and no wave played. **Replayed** by hand: `POST /api/mana/inflow` (ref = the PI, `netDollars: 0.67`, original time) → ledger entry #2, pool 100,067 (the ref dedupes any Stripe retry). **Fix (no polling):** Stripe sends `charge.updated` with `previous_attributes.balance_transaction: null` when it attaches, so the Lambda now also handles that event (only when the balance transaction was just attached), loads the PaymentIntent by id, and reads the donation metadata from it; still 503s when not ready so Stripe retries. Locally simulated (503 → ignored unrelated update → recorded). **Deployed** `aweborn-website` (preview: only the Lambda code + its integration changed) and **subscribed the Stripe endpoint `we_1URYrLPkgUqNqJwuXM3aIL2R` to `payment_intent.succeeded` + `charge.updated`**. Not yet seen: a live donation through the new path. Unrelated pending items from earlier today are in the previous row. | Next real gift: check Lambda logs show `recorded` from `charge.updated` and the wave plays. If the wave didn't show for the replayed entry, check whether the client only fires on fresh `lastDonationAt`. Commit the `cloudformation.yml` change |
 | 2026-10-17 (evening) | **Solidification meter dropped (Alex).** Built the server side (meter math, per-world counts from `world_index`, checks on entry/sighting/Frontier change, 38 tests), then Alex: "all these rules are a little too much and that it won't work offline is deterring me." Reverted entirely, never committed; Privacy page untouched. **The Frontier is the only path from Ghost to solid.** Decision rows + tasks updated; ROADMAP stripped too (Alex asked). | Next: Dreamt card edition (Phase 08) or Phase 07 Interior Movement; small: dev panel places new worlds in front of the player |
 | 2026-10-19 | **Guest allowance (Alex).** An **unsaved (anonymous) player gets a small personal cap: 60 mana per rolling 24 h** (`MANA_CAPS.guest`; about one textured model at 60 mana, or ~6 planner turns, not both). Saving the player lifts it to the normal cap; same `playerId`, so creations carry over. Applied in one place (`ManaAdmission.capFor`, flag set per request from the session in `index.ts`; `getRawSession` now returns `isAnonymous`). Before this, anonymous players got the full Chapter 5 cap (600). Alex: ~60 is "a good number", a little under a dollar per guest; refine in play testing. **Public pages updated:** Terms (Making things with AI: daily limits, fair sharing, guest starter allowance; date bumped to Oct 19) and giving.html (How mana works: "Everyone gets a daily allowance"). Privacy needed nothing (per-request cost is already disclosed). Test added in admission.test.ts. | Playtest: does 60 feel right, should the first planner turn be free for guests |
+| 2026-10-20 | **Guests get no gen AI (Alex, reverses the 2026-10-19 row).** Making from thought is "an extremely powerful entity" and draws on a shared resource, so it needs a signed-in (saved) player. Guests still enter worlds, place blocks and Library models. `MANA_CAPS.guest = 0`; `ManaAdmission.requestDraw` refuses guests first with `sign_in_required` (`SIGN_IN_MESSAGE`); `index.ts` returns 403 `sign_in_required` for anonymous POSTs to create / plan / plan/redo / plan/manifest before any provider call. Client: `ManaSeal.tsx` (sealed invitation on C / P, opens the account dialog via `aweborn:open-account`), tracker pill shows *Sign in* for guests. Terms (Oct 20), giving.html, MANA_COSTS.md updated; admission test rewritten (36/36 pass). Uncommitted. | Alex reviews seal copy; rebuild sync-service + deploy |
+| 2026-10-20 (grill) | **Phase 05 closed as Complete† (Alex).** Goal for the next ~4 weeks is **Card Event Readiness** (see phases/README → Active Phase): strangers must trust the game. The rest of 05 (awe → XP, levels, cradle, warp gate, shooting stars, ambience, solar, donor names) waits until after the first community event; saved players keep the flat caps. Acceptance criteria ticked against what shipped; one `[~]`: verify a failed Meshy job releases its hold. Docs only, no code. | Card Event Readiness step 1: bot load test |

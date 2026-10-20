@@ -9,6 +9,7 @@ import { usePresence } from '../hooks/usePresence'
 import { placeOnTerrain } from '../stores/worldVoxels'
 import type { BlueprintAsset } from '@aweborn/shared/blueprint'
 import { matchesBinding } from '../stores/keybindingStore'
+import { ManaSeal, useCanChannel } from './ManaSeal'
 
 /**
  * World Planner panel (Phase 07): talk a world into a blueprint before
@@ -57,6 +58,7 @@ export function PlannerPanel() {
   const worldSky = useWorldStore((s) => s.sky)
   const placedKeys = new Set([...worldObjects.values()].map((o) => o.planKey))
   const { playerId } = usePresence()
+  const { canChannel } = useCanChannel()
   const [makings, setMakings] = useState<Making[]>([])
   const [manifesting, setManifesting] = useState(false)
   const [redoKey, setRedoKey] = useState<string | null>(null)
@@ -304,12 +306,14 @@ export function PlannerPanel() {
 
   if (!open) {
     return (
-      <button id="planner-open" className="planner-open" type="button" onClick={() => setOpen(true)}>
+      <button id="planner-open" className={`planner-open${canChannel ? '' : ' is-sealed'}`} type="button" onClick={() => setOpen(true)}>
         ✧ Plan <kbd>P</kbd>
         {active.length > 0 && <span className="planner-open-badge">{active.length} manifesting</span>}
       </button>
     )
   }
+
+  if (!canChannel) return <ManaSeal kind="plan" onClose={() => setOpen(false)} />
 
   const lastChips = turns.length && turns[turns.length - 1].who === 'planner' ? turns[turns.length - 1].chips ?? [] : []
 
