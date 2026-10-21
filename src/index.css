@@ -989,6 +989,21 @@ html.touch-ui .hud-mod-slots {
   top: calc(var(--touch-safe-top) + 64px);
 }
 
+/* Phones (2026-10-20, found with touch emulation): the fullscreen button
+   covered the display-settings gear, so quality was unreachable. The keyboard
+   panel button has no use without a keyboard; the gear becomes a real tap
+   target and fullscreen moves under it. */
+@media (hover: none) and (pointer: coarse) {
+  /* Doubled selectors: the base rules come later in the cascade */
+  button.keybindings-toggle { display: none; }
+  .display-settings .display-settings-toggle { width: 40px; height: 40px; }
+  .display-settings .display-settings-toggle svg { width: 20px; height: 20px; }
+  .touch-overlay:not(.touch-overlay--in-world) .touch-fullscreen {
+    top: calc(var(--touch-safe-top) + 136px);
+    right: calc(var(--touch-safe-right) + 24px);
+  }
+}
+
 .touch-toast {
   position: fixed;
   top: calc(var(--touch-safe-top) + 84px);
@@ -3960,6 +3975,13 @@ html.touch-ui .library-open { right: auto; left: 16px; }
 .chat-bubble--space { max-width: 180px; font-size: 13px; padding: 5px 10px; transform: translateY(-14px); }
 @media (hover: none) and (pointer: coarse) {
   .chat-panel { bottom: 150px; }
+  /* Space: the radar fills the bottom-left, so chat sits just above it
+     (still below the steer zone) (2026-10-20, seen with touch emulation) */
+  .chat-panel.is-space { bottom: 196px; }
+}
+/* Landscape phones: the radar fills the left column, so chat goes right of it */
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  .chat-panel.is-space { left: 204px; bottom: 16px; width: min(340px, calc(100vw - 470px)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-line, .chat-bubble { animation: none; }
