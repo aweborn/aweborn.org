@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { useUniverseStore } from '../stores/universeStore'
 import { SIGHT_DISTANCE } from '../stores/worldIndexStore'
 import { heldAsGhost } from '../stores/waveStore'
-import { useQualityStore, QUALITY_TIERS, activeTierIndex } from '../stores/qualityStore'
+import { useQualityStore, QUALITY_TIERS, activeTierIndex, useQualityTier } from '../stores/qualityStore'
 import type { WorldEntry } from '@aweborn/shared/crdt-schema'
 import {
   createWorldGlowMaterial,
@@ -20,7 +20,8 @@ import {
  * Renders all worlds from the Universe CRDT as 3D objects with LOD.
  *
  * LOD tiers (distances relative to normalized scene coordinates):
- *  - Close (< 5 units):  Full mesh with glow shader, halo, ring, label, point light
+ *  - Close (< 5 units):  Full mesh with glow shader, halo, ring, label
+ *    (real light comes from the shared PlanetLights pool, nearest first)
  *  - Medium (5-12 units): Billboard sprite with color glow
  *  - Far (12+ units):    Batched THREE.Points — single draw call
  *
@@ -177,15 +178,61 @@ function WorldOrbClose({ world }: { world: WorldEntry }) {
           </div>
         </Html>
 
-        {/* Point light */}
+        {/* No per-planet pointLight (2026-10-20): see PlanetLights. */}
+      </group>
+    </Float>
+  )
+}
+
+// ── Planet lights: a fixed pool for the nearest worlds ───────────────
+
+/**
+ * The quality tier sets how many real lights planets get (Low 0 … Ultra 8).
+ * The pool size never changes while flying: lights move to the nearest close
+ * worlds and spare ones sit at intensity 0. A per-planet light changed the
+ * scene's light count on every fly-by, which recompiles every lit shader in
+ * three.js (a hitch, worst on phones). The halo still glows on every planet.
+ */
+function PlanetLights({ worlds }: { worlds: WorldEntry[] }) {
+  const count = useQualityTier().planetLights
+  const camera = useThree((s) => s.camera)
+  const lights = useRef<(THREE.PointLight | null)[]>([])
+  const frame = useRef(0)
+
+  useFrame(() => {
+    if (frame.current++ % 10 !== 0 || count === 0) return
+    const cam = camera.position
+    const ranked = worlds
+      .map((w) => {
+        const p = w.resolvedPosition
+        const dx = p.x - cam.x, dy = p.y - cam.y, dz = p.z - cam.z
+        return { w, d: dx * dx + dy * dy + dz * dz }
+      })
+      .sort((a, b) => a.d - b.d)
+    for (let i = 0; i < count; i++) {
+      const light = lights.current[i]
+      if (!light) continue
+      const hit = ranked[i]
+      if (!hit) { light.intensity = 0; continue }
+      const p = hit.w.resolvedPosition
+      light.position.set(p.x, p.y, p.z)
+      light.color.set(hit.w.color)
+      light.intensity = hit.w.solidified ? 2.5 : 0.6
+    }
+  })
+
+  return (
+    <>
+      {Array.from({ length: count }, (_, i) => (
         <pointLight
-          color={color}
-          intensity={world.solidified ? 2.5 : 0.6}
+          key={i}
+          ref={(el) => { lights.current[i] = el }}
+          intensity={0}
           distance={5}
           decay={2}
         />
-      </group>
-    </Float>
+      ))}
+    </>
   )
 }
 
@@ -443,6 +490,7 @@ export function UniverseWorlds() {
       {close.map((w) => (
         <WorldOrbClose key={w.id} world={w} />
       ))}
+      <PlanetLights worlds={close} />
 
       {/* Medium LOD — billboard sprites */}
       {medium.map((w) => (
