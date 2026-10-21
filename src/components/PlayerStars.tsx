@@ -141,8 +141,9 @@ function PlayerStar({ data }: { data: PlayerStarData }) {
             side={THREE.BackSide}
           />
         </mesh>
-        {/* Small point light */}
-        <pointLight color={color} intensity={0.8} distance={3} decay={2} />
+        {/* No per-orb pointLight (2026-10-20): every join/leave changed the
+            light count, which recompiles all lit shaders (a hitch), and 30
+            lights cost per pixel on phones. The additive orb + bloom glows. */}
         {/* What they said out in space (2026-10-20) */}
         <ChatBubble playerId={data.id} source="space" height={0.7} />
       </group>
