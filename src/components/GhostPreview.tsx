@@ -4,66 +4,72 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { usePlannerStore } from '../stores/plannerStore'
 import { useWorldStore } from '../stores/worldStore'
-import { chunksAround, placeOnTerrain, sameTerrain } from '../stores/worldVoxels'
+import { chunksAround, getChunk, placeOnTerrain, sameTerrain, type Chunk } from '../stores/worldVoxels'
 import { useUniverseStore } from '../stores/universeStore'
 import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
-import { visibleCells, type VoxelGrid } from '@aweborn/shared/voxel'
+import { cellAt } from '@aweborn/shared/voxel'
+import { buildChunkMesh, kindOf, AIR, type OutsideLookup } from '@aweborn/shared/voxelMesh'
 import type { BlueprintAsset, BlueprintDraft } from '@aweborn/shared/blueprint'
 
 /**
  * Ghost preview (Phase 07): the blueprint, standing in the world.
- * Voxel terrain is real (instanced cubes, walkable); planned assets are
- * wireframe "dreams" with their name, until manifested.
+ * Voxel terrain is real (one face-culled mesh per chunk, walkable); planned
+ * assets are wireframe "dreams" with their name, until manifested.
  */
 
-const cube = new THREE.BoxGeometry(1, 1, 1)
-const tmp = new THREE.Object3D()
 const col = new THREE.Color()
 
-export function VoxelLayer({ grid, liquid, ghost }: { grid: VoxelGrid; liquid: boolean; ghost?: boolean }) {
-  const ref = useRef<THREE.InstancedMesh>(null!)
-  const cells = useMemo(
-    () => visibleCells(grid).filter((c) => grid.liquid[c.v - 1] === liquid),
-    [grid, liquid],
-  )
-  const [ox, oz] = [grid.origin[0] - grid.world[0] / 2, grid.origin[1] - grid.world[1] / 2]
+// Shared by every chunk: one shader program each, no per-chunk material churn.
+// Solid ground is Lambert (2026-10-21): it looked the same as rough PBR here and
+// costs far less per pixel on phones.
+const SOLID_MAT = new THREE.MeshLambertMaterial({ vertexColors: true })
+const LIQUID_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.6, roughness: 0.1, metalness: 0.1 })
+const GHOST_SOLID_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.45, roughness: 0.6, emissive: '#8f7bff', emissiveIntensity: 0.35 })
+const GHOST_LIQUID_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.3, roughness: 0.6, emissive: '#8f7bff', emissiveIntensity: 0.35 })
 
-  useEffect(() => {
-    const m = ref.current
-    if (!m) return
-    cells.forEach((c, n) => {
-      const h = liquid ? 0.85 : 1
-      tmp.position.set(ox + c.i + 0.5, c.j + h / 2, oz + c.k + 0.5)
-      tmp.scale.set(1, h, 1)
-      tmp.updateMatrix()
-      m.setMatrixAt(n, tmp.matrix)
-      // Slight per-cell shade so flat areas still read as blocks
-      const gi = grid.origin[0] + c.i, gk = grid.origin[1] + c.k
-      const shade = 0.78 + 0.22 * (((gi * 7 + gk * 13 + c.j * 5) % 5) / 4) * (0.85 + 0.15 * ((gi + gk) % 2))
-      col.set(grid.blocks[c.v - 1].color).multiplyScalar(shade)
-      m.setColorAt(n, col)
-    })
-    m.count = cells.length
-    m.instanceMatrix.needsUpdate = true
-    if (m.instanceColor) m.instanceColor.needsUpdate = true
-      ; (m.material as THREE.Material).needsUpdate = true // shader must pick up instanceColor
-    m.computeBoundingSphere()
-  }, [cells, grid, liquid, ox, oz])
+/** Linear RGB with a slight per-cell shade so flat areas still read as blocks. */
+function cellColor(hex: string, gi: number, j: number, gk: number): [number, number, number] {
+  const shade = 0.78 + 0.22 * (((gi * 7 + gk * 13 + j * 5) % 5) / 4) * (0.85 + 0.15 * ((gi + gk) % 2))
+  col.set(hex).multiplyScalar(shade)
+  return [col.r, col.g, col.b]
+}
 
-  if (!cells.length) return null
-  return (
-    <instancedMesh ref={ref} args={[cube, undefined, cells.length]}>
-      {ghost ? (
-        // A preview, not real ground yet: see-through with a faint violet glow
-        <meshStandardMaterial transparent opacity={liquid ? 0.3 : 0.45} roughness={0.6} emissive="#8f7bff" emissiveIntensity={0.35} />
-      ) : liquid ? (
-        <meshStandardMaterial transparent opacity={0.6} roughness={0.1} metalness={0.1} />
-      ) : (
-        <meshStandardMaterial roughness={0.85} />
-      )}
-    </instancedMesh>
-  )
+/**
+ * One layer (solid or liquid) of a chunk: only the faces that border air (2026-10-21).
+ * It used to be a full instanced cube per visible voxel: ~7× the triangles, ~86%
+ * of them buried against a neighbour, which made phones drop frames when facing
+ * big terrain (a volcano) or with the camera inside the ground.
+ */
+export function ChunkLayer({ chunk, terrain, liquid, ghost }: { chunk: Chunk; terrain: BlueprintDraft['terrain']; liquid: boolean; ghost?: boolean }) {
+  const geometry = useMemo(() => {
+    const g = chunk.grid
+    const [sx, , sz] = g.size
+    // Faces on the chunk edge ask the neighbouring chunk (generated once, cached).
+    const outside: OutsideLookup = (i, j, k) => {
+      const dx = i < 0 ? -1 : i >= sx ? 1 : 0
+      const dz = k < 0 ? -1 : k >= sz ? 1 : 0
+      const n = getChunk(terrain, chunk.cx + dx, chunk.cz + dz)
+      if (!n) return AIR // the world's edge
+      const [nx, , nz] = n.grid.size
+      return kindOf(n.grid, cellAt(n.grid, dx < 0 ? nx - 1 : dx > 0 ? 0 : i, j, dz < 0 ? nz - 1 : dz > 0 ? 0 : k))
+    }
+    const m = buildChunkMesh(g, liquid, outside, (v, gi, j, gk) => cellColor(g.blocks[v - 1].color, gi, j, gk))
+    if (!m.faces) return null
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(m.positions, 3))
+    geo.setAttribute('normal', new THREE.BufferAttribute(m.normals, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(m.colors, 3))
+    geo.setIndex(new THREE.BufferAttribute(m.indices, 1))
+    geo.computeBoundingSphere()
+    return geo
+  }, [chunk, terrain, liquid])
+
+  useEffect(() => () => geometry?.dispose(), [geometry])
+
+  if (!geometry) return null
+  const material = ghost ? (liquid ? GHOST_LIQUID_MAT : GHOST_SOLID_MAT) : liquid ? LIQUID_MAT : SOLID_MAT
+  return <mesh geometry={geometry} material={material} />
 }
 
 /** The chunks around the player, drawn solid + liquid. Past this radius it's beyond the fog. */
@@ -76,8 +82,8 @@ function TerrainChunks({ terrain, ghost }: { terrain: BlueprintDraft['terrain'];
     <>
       {chunks.map((c) => (
         <group key={c.id}>
-          <VoxelLayer grid={c.grid} liquid={false} ghost={ghost} />
-          <VoxelLayer grid={c.grid} liquid ghost={ghost} />
+          <ChunkLayer chunk={c} terrain={terrain} liquid={false} ghost={ghost} />
+          <ChunkLayer chunk={c} terrain={terrain} liquid ghost={ghost} />
         </group>
       ))}
     </>
