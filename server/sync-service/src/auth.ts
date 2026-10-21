@@ -429,11 +429,15 @@ function buildOptions(db: Database.Database) {
     rateLimit: {
       // Local e2e scripts only. Never in production.
       enabled: IS_PROD || !process.env.DEV_NO_RATE_LIMIT,
+      // Per IP. Phones on cellular share carrier-grade NAT addresses, so one IP
+      // can be a whole room (2026-10-20 load test: at 30/min, 30 of 60 phones
+      // failed to start). Sized for growth (Alex: "hundreds and hundreds of
+      // players in the span of weeks"); abuse is bounded by the email/passkey
+      // routes' own checks and by guests having no gen AI.
       window: 60,
-      max: 100,
+      max: 600,
       customRules: {
-        // Generous: a whole event on one venue Wi-Fi may tap cards at once.
-        "/sign-in/anonymous": { window: 60, max: 30 },
+        "/sign-in/anonymous": { window: 60, max: 300 },
       },
     },
 

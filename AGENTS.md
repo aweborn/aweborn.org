@@ -1,5 +1,40 @@
 # Aweborn agent rules
 
+## Ship it: deploy working things (Alex, 2026-10-20)
+
+**Almost always deploy a working thing or a doc update.** When a change
+works (typecheck clean, tests pass, checked in the browser where it's UI),
+commit it and push to `main`. Pushing *is* the deploy (`deploy.yml`: servers
+first, then the frontend). Don't leave finished work sitting uncommitted.
+
+- Group the commit by what it does and write an honest message. If another
+  session's uncommitted work is in the tree, commit it separately (or ask).
+- Public pages move in the **same** push as the change they describe
+  (Terms, Privacy, giving: see `phases/README.md` → Session Protocol).
+  Never let new data collection reach prod before Privacy says so.
+- Exceptions: anything risky to prod data or infra (the `aweborn-vps` stack,
+  migrations that can't be undone, secrets), or when Alex says to hold. Ask.
+- After pushing, check the run (`gh run list --workflow deploy.yml -L 1`).
+
+## Build for viral growth (Alex, 2026-10-20)
+
+**Aweborn aims to go viral: plan for many hundreds of players arriving
+within weeks, and rooms full of people tapping cards at once.** Every
+design choice should hold up at that scale:
+
+- **Never O(n²) per message.** Fan-out goes through batching, interest
+  management (nearest K, same place) or rate caps. Presence is batched per
+  tick to the nearest 30 (`rooms.ts`).
+- **Many phones share one IP** (carrier-grade NAT, venue Wi-Fi). Per-IP
+  limits must allow a crowd: sign-in is 300 / min per IP, other auth routes
+  600 / min. Prefer per-player or per-account limits for abuse.
+- **Measure before and after** anything on the hot path with
+  `scripts/loadtest/bots.mjs`; use `scripts/loadtest/throwaway-vps.sh` for a
+  prod-sized box (never load-test prod). The bar: 100 bots under ~50% of one
+  core.
+- Guests are welcome everywhere they cost little (flying, chat, Library);
+  shared, expensive resources (gen AI) need a saved player.
+
 ## Design standard: portrait phone first, then desktop (Alex, 2026-10-20)
 
 More and more people hold a phone upright. Aweborn has to win them first,
