@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- /proto, /proto/, /proto/mobile-ui (no .html) hit the SPA fallback; send them to the prototype -->
+    <script>if (/^\/proto(\/|$)/.test(location.pathname)) location.replace('/proto/mobile-ui.html')</script>
 
     <!-- Installed web app (Add to Home Screen): no browser UI, full bleed -->
     <meta name="mobile-web-app-capable" content="yes" />
