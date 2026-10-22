@@ -46,7 +46,7 @@ await shot('0-space')
 await click('#touch-dock-more')
 await sleep(500)
 r.sheet = await rect('#more-sheet')
-r.sheetHitsThumbs = ['#touch-btn-mode', '#touch-btn-thrust', '.touch-joystick-base', '.touch-dock']
+r.sheetHitsThumbs = ['#touch-btn-mode', '#touch-btn-thrust', '#touch-stick-left', '#touch-stick-right', '.touch-dock']
 r.sheetOverlaps = {}
 for (const s of r.sheetHitsThumbs) r.sheetOverlaps[s] = overlap(r.sheet, await rect(s))
 await shot('1-more-space')
@@ -92,7 +92,7 @@ await click('#touch-dock-more')
 await sleep(500)
 r.sheetWorld = await rect('#more-sheet')
 r.worldOverlaps = {}
-for (const s of ['#touch-btn-enter', '#touch-btn-brake', '.touch-joystick-base', '.touch-dock']) r.worldOverlaps[s] = overlap(r.sheetWorld, await rect(s))
+for (const s of ['#touch-btn-enter', '#touch-btn-brake', '#touch-stick-left', '#touch-stick-right', '.touch-dock']) r.worldOverlaps[s] = overlap(r.sheetWorld, await rect(s))
 r.legendWorld = await text('.more-legend li')
 await shot('5-more-world')
 await click('#touch-dock-make')

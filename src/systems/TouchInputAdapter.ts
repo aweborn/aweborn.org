@@ -37,6 +37,7 @@
 
 import { inputManager, shapeAxis, type ActionState } from './InputManager'
 import { flightController } from './FlightController'
+import { cameraController } from './CameraController'
 import { useUniverseStore } from '../stores/universeStore'
 import { TURN_RATE, LOOK_RATE } from '@aweborn/shared/sim/interior'
 import { warpSystem } from './WarpSystem'
@@ -104,12 +105,18 @@ const BUTTONS: ButtonSpec[] = [
 export class TouchInputAdapter {
   private _active = false
   private _stick: StickState | null = null
+  private _rightStick: StickState | null = null
   private _thrustId: number | null = null
   /** Where the thrust thumb landed (y), for pull-back-to-brake. */
   private _thrustAnchorY = 0
   private _thrustBraking = false
   private _smoothYaw = 0
   private _smoothPitch = 0
+  private _smoothLookYaw = 0
+  private _smoothLookPitch = 0
+  private _rightStickDownAt = 0
+  private _rightStickMaxDist = 0
+  private _lastRightTapAt = 0
   private _rafId: number | null = null
   private _lastTick = 0
   private _lastUiPoll = 0
@@ -133,6 +140,8 @@ export class TouchInputAdapter {
   private _stickBase: HTMLDivElement | null = null
   private _stickKnob: HTMLDivElement | null = null
   private _stickLabel: HTMLSpanElement | null = null
+  private _rightStickBase: HTMLDivElement | null = null
+  private _rightStickKnob: HTMLDivElement | null = null
   private _stickR = 0
   private _thrustBtn: HTMLButtonElement | null = null
   private _modeButton: HTMLButtonElement | null = null
@@ -189,6 +198,7 @@ export class TouchInputAdapter {
     this._removeOverlay()
     document.documentElement.classList.remove('touch-ui')
     this._stick = null
+    this._rightStick = null
     this._thrustId = null
     inputManager.clearAllActions()
   }
@@ -197,7 +207,7 @@ export class TouchInputAdapter {
     return this._active
   }
 
-  // ── Canvas touches (stick + thrust) ──
+  // ── Canvas touches (sticks + tap/drag) ──
 
   /** Only touches that land on the 3D scene drive flight. */
   private _isSceneTarget(target: EventTarget | null): boolean {
@@ -207,12 +217,23 @@ export class TouchInputAdapter {
   private _onPointerDown = (e: PointerEvent): void => {
     if (e.pointerType !== 'touch' || !this._isSceneTarget(e.target)) return
 
-    // The stick sits still (CSS places it); a touch on or near it grabs it
-    const c = this._stickCenter()
+    // Left stick sits still (CSS places it); a touch on or near it grabs it
+    const c = this._stickCenter(this._stickBase)
     if (this._stick === null && c && Math.hypot(e.clientX - c.x, e.clientY - c.y) <= c.r * STICK_GRAB) {
       this._stick = { id: e.pointerId, originX: c.x, originY: c.y, radius: c.r, targetYaw: 0, targetPitch: 0 }
       this._showStick()
       this._moveStick(e.clientX, e.clientY)
+      return
+    }
+
+    // Right stick (camera look / rotate)
+    const rc = this._stickCenter(this._rightStickBase)
+    if (this._rightStick === null && rc && Math.hypot(e.clientX - rc.x, e.clientY - rc.y) <= rc.r * STICK_GRAB) {
+      this._rightStick = { id: e.pointerId, originX: rc.x, originY: rc.y, radius: rc.r, targetYaw: 0, targetPitch: 0 }
+      this._rightStickDownAt = performance.now()
+      this._rightStickMaxDist = 0
+      this._showRightStick()
+      this._moveRightStick(e.clientX, e.clientY)
       return
     }
 
@@ -229,6 +250,8 @@ export class TouchInputAdapter {
     }
     if (this._stick && e.pointerId === this._stick.id) {
       this._moveStick(e.clientX, e.clientY)
+    } else if (this._rightStick && e.pointerId === this._rightStick.id) {
+      this._moveRightStick(e.clientX, e.clientY)
     } else if (this._look && e.pointerId === this._look.id) {
       this._lookDX += e.clientX - this._look.x
       this._lookDY += e.clientY - this._look.y
@@ -255,6 +278,22 @@ export class TouchInputAdapter {
       this._setStickSprint(false)
       this._hideStick()
     }
+    if (this._rightStick && e.pointerId === this._rightStick.id) {
+      const now = performance.now()
+      if (!this._inWorld && e.type === 'pointerup' && now - this._rightStickDownAt <= TAP_MAX_MS && this._rightStickMaxDist <= TAP_MAX_MOVE_PX) {
+        if (now - this._lastRightTapAt <= 350) {
+          cameraController.resetOrbit()
+          this._lastRightTapAt = 0
+        } else {
+          this._lastRightTapAt = now
+        }
+      }
+      this._rightStick = null
+      this._smoothLookYaw = 0
+      this._smoothLookPitch = 0
+      this._zeroRightStickAxes()
+      this._hideRightStick()
+    }
     if (this._look && e.pointerId === this._look.id) {
       this._look = null
       this._lookDX = 0
@@ -269,6 +308,11 @@ export class TouchInputAdapter {
     inputManager.setAxis('pitch', 0, 'touch')
     inputManager.setAxis('moveX', 0, 'touch')
     inputManager.setAxis('moveY', 0, 'touch')
+  }
+
+  private _zeroRightStickAxes(): void {
+    inputManager.setAxis('lookYaw', 0, 'touch')
+    inputManager.setAxis('lookPitch', 0, 'touch')
   }
 
   /** World: sprint while the stick is pushed to its rim (never cancels a held K key). */
@@ -359,9 +403,35 @@ export class TouchInputAdapter {
     if (this._stickKnob) this._stickKnob.style.transform = `translate(${dx}px, ${dy}px)`
   }
 
-  /** Centre and radius of the stick as laid out by CSS (null while hidden). */
-  private _stickCenter(): { x: number; y: number; r: number } | null {
-    const r = this._stickBase?.getBoundingClientRect()
+  private _moveRightStick(x: number, y: number): void {
+    const s = this._rightStick
+    if (!s) return
+    let dx = x - s.originX
+    let dy = y - s.originY
+    let dist = Math.hypot(dx, dy)
+    if (dist > this._rightStickMaxDist) this._rightStickMaxDist = dist
+
+    if (dist > s.radius) {
+      dx = (dx / dist) * s.radius
+      dy = (dy / dist) * s.radius
+      dist = s.radius
+    }
+
+    const shaped = shapeAxis(dist / s.radius, STICK_DEADZONE, STICK_EXPONENT)
+    if (dist > 0 && shaped > 0) {
+      s.targetYaw = (dx / dist) * shaped
+      s.targetPitch = -(dy / dist) * shaped // screen up = look up
+    } else {
+      s.targetYaw = 0
+      s.targetPitch = 0
+    }
+
+    if (this._rightStickKnob) this._rightStickKnob.style.transform = `translate(${dx}px, ${dy}px)`
+  }
+
+  /** Centre and radius of a stick as laid out by CSS (null while hidden). */
+  private _stickCenter(base: HTMLDivElement | null): { x: number; y: number; r: number } | null {
+    const r = base?.getBoundingClientRect()
     if (!r || r.width === 0) return null
     return { x: r.left + r.width / 2, y: r.top + r.height / 2, r: r.width / 2 }
   }
@@ -393,6 +463,14 @@ export class TouchInputAdapter {
       // World: the stick walks (x = strafe, y = forward); space: it steers
       inputManager.setAxis(this._inWorld ? 'moveX' : 'yaw', this._smoothYaw, 'touch')
       inputManager.setAxis(this._inWorld ? 'moveY' : 'pitch', this._smoothPitch, 'touch')
+    }
+
+    if (this._rightStick) {
+      const k = 1 - Math.exp(-dt / STICK_SMOOTHING_TAU)
+      this._smoothLookYaw += (this._rightStick.targetYaw - this._smoothLookYaw) * k
+      this._smoothLookPitch += (this._rightStick.targetPitch - this._smoothLookPitch) * k
+      inputManager.setAxis('lookYaw', this._smoothLookYaw, 'touch')
+      inputManager.setAxis('lookPitch', this._smoothLookPitch, 'touch')
     }
 
     // World drag-look: turn this frame's finger travel into the sim's turn/look rate
@@ -465,6 +543,7 @@ export class TouchInputAdapter {
 
   private _releaseAll = (): void => {
     this._stick = null
+    this._rightStick = null
     this._tap = null
     this._look = null
     this._lookDX = 0
@@ -477,7 +556,10 @@ export class TouchInputAdapter {
     this._thrustBtn?.style.setProperty('--pull', '0')
     this._smoothYaw = 0
     this._smoothPitch = 0
+    this._smoothLookYaw = 0
+    this._smoothLookPitch = 0
     this._hideStick()
+    this._hideRightStick()
     inputManager.clearAllActions()
     this._overlay?.querySelectorAll('.touch-btn--pressed').forEach((el) => el.classList.remove('touch-btn--pressed'))
   }
@@ -565,11 +647,12 @@ export class TouchInputAdapter {
     const overlay = document.createElement('div')
     overlay.className = 'touch-overlay'
 
-    // Fixed stick: CSS places and sizes it (--stick-r); only the knob moves
-    // (by transform, no CSS transition = no lag/jitter). Always visible, so it
-    // is its own hint.
+    // Fixed sticks: CSS places and sizes them (--stick-r); only the knobs move
+    // (by transform, no CSS transition = no lag/jitter). Always visible, so they
+    // are their own hints.
     const base = document.createElement('div')
-    base.className = 'touch-joystick-base'
+    base.id = 'touch-stick-left'
+    base.className = 'touch-joystick-base touch-joystick-base--left'
     const label = document.createElement('span')
     label.className = 'touch-joystick-label'
     label.textContent = 'STEER'
@@ -577,7 +660,17 @@ export class TouchInputAdapter {
     knob.className = 'touch-joystick-knob'
     base.append(label, knob)
 
-    // Action buttons (right thumb)
+    const rightBase = document.createElement('div')
+    rightBase.id = 'touch-stick-right'
+    rightBase.className = 'touch-joystick-base touch-joystick-base--right'
+    const rightLabel = document.createElement('span')
+    rightLabel.className = 'touch-joystick-label'
+    rightLabel.textContent = 'LOOK'
+    const rightKnob = document.createElement('div')
+    rightKnob.className = 'touch-joystick-knob'
+    rightBase.append(rightLabel, rightKnob)
+
+    // Action buttons (surrounding the right joystick)
     const cluster = document.createElement('div')
     cluster.className = 'touch-actions'
     for (const spec of BUTTONS) cluster.appendChild(this._makeButton(spec))
@@ -600,7 +693,7 @@ export class TouchInputAdapter {
     this._bindButton(mode, 'gravityToggle')
     cluster.prepend(mode)
 
-    overlay.append(base, cluster)
+    overlay.append(base, rightBase, cluster)
 
     // Fullscreen lives in ••• More (2026-10-22); the toast here explains the
     // iPhone case. Not needed when already running as an installed app.
@@ -618,6 +711,8 @@ export class TouchInputAdapter {
     this._stickBase = base
     this._stickKnob = knob
     this._stickLabel = label
+    this._rightStickBase = rightBase
+    this._rightStickKnob = rightKnob
     this._stickR = 0
     this._thrustBtn = thrust
     this._warpBtn = cluster.querySelector<HTMLButtonElement>('#touch-btn-warp')
@@ -677,6 +772,8 @@ export class TouchInputAdapter {
     this._stickBase = null
     this._stickKnob = null
     this._stickLabel = null
+    this._rightStickBase = null
+    this._rightStickKnob = null
     this._thrustBtn = null
     this._warpBtn = null
     this._enterBtn = null
@@ -692,6 +789,17 @@ export class TouchInputAdapter {
     this._stickBase?.classList.remove('touch-joystick-base--active')
     if (this._stickKnob) this._stickKnob.style.transform = 'translate(0px, 0px)'
     this._overlay?.classList.remove('touch-overlay--steering')
+  }
+
+  private _showRightStick(): void {
+    this._rightStickBase?.classList.add('touch-joystick-base--active')
+    this._overlay?.classList.add('touch-overlay--looking')
+  }
+
+  private _hideRightStick(): void {
+    this._rightStickBase?.classList.remove('touch-joystick-base--active')
+    if (this._rightStickKnob) this._rightStickKnob.style.transform = 'translate(0px, 0px)'
+    this._overlay?.classList.remove('touch-overlay--looking')
   }
 }
 

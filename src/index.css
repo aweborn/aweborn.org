@@ -780,6 +780,11 @@ html.touch-ui .hud-top-center {
   border-color: rgba(140, 200, 255, 0.4);
 }
 
+.touch-joystick-base--right {
+  left: auto;
+  right: calc(var(--touch-safe-right) + 20px);
+}
+
 .touch-joystick-label {
   position: absolute;
   left: 0;
@@ -807,7 +812,7 @@ html.touch-ui .hud-top-center {
   will-change: transform;
 }
 
-/* THRUST (space): the big right-thumb button, where JUMP sits in a world.
+/* THRUST (space): the big right-thumb button above the right LOOK stick.
    --pull (0–1, from JS) = how far the thumb has slid down toward brake:
    thrust orange → deep brake red. */
 .touch-btn.touch-btn--thrust {
@@ -815,20 +820,21 @@ html.touch-ui .hud-top-center {
   --ring-thrust: rgb(255, 170, 90);
   --ring-brake: rgb(190, 30, 36);
   --ring-color: color-mix(in oklab, var(--ring-brake) calc(var(--pull) * 100%), var(--ring-thrust));
-  grid-area: thrust;
-  width: 88px;
-  height: 88px;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 72px;
+  height: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: color-mix(in srgb, var(--ring-color) 90%, white);
   border: 2px solid color-mix(in srgb, var(--ring-color) 70%, transparent);
   box-shadow: 0 0 22px color-mix(in srgb, var(--ring-color) 30%, transparent), inset 0 0 16px color-mix(in srgb, var(--ring-color) 14%, transparent);
 }
-.touch-btn-sub { font-size: 0.55rem; font-weight: 600; letter-spacing: 0.08em; opacity: 0.6; }
+.touch-btn-sub { font-size: 0.52rem; font-weight: 600; letter-spacing: 0.06em; opacity: 0.65; }
 .touch-btn.touch-btn--thrust.touch-btn--pressed {
   transform: scale(0.94);
   background: color-mix(in srgb, var(--ring-color) 22%, rgba(18, 20, 42, 0.6));
@@ -846,27 +852,22 @@ html.touch-ui .hud-top-center {
   50% { box-shadow: 0 0 30px color-mix(in srgb, var(--ring-color) 65%, transparent); }
 }
 
-/* Right-thumb cluster. Its big button (THRUST in space, JUMP in a world) is
-   centred level with the stick. */
+/* Right-thumb action arc surrounding the right LOOK stick (#touch-stick-right).
+   Anchored to the same box as the right stick so buttons hug its top and left
+   flank without ever overlapping the stick itself. */
 .touch-actions {
   position: fixed;
-  right: calc(var(--touch-safe-right) + 14px);
-  bottom: calc(var(--thumbs-bottom) + var(--stick-r) - 44px);
-  display: grid;
-  grid-template-columns: 64px 88px;
-  grid-template-areas:
-    'mode  mode'
-    '.     enter'
-    'warp  thrust';
-  align-items: end;
-  justify-items: center;
-  gap: 12px;
+  right: calc(var(--touch-safe-right) + 20px);
+  bottom: var(--thumbs-bottom);
+  width: calc(var(--stick-r) * 2);
+  height: calc(var(--stick-r) * 2);
   pointer-events: none;
 }
 
 .touch-btn {
-  width: 64px;
-  height: 64px;
+  position: absolute;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   border: 1.5px solid rgba(255, 255, 255, 0.16);
   background: rgba(18, 20, 42, 0.55);
@@ -890,18 +891,19 @@ html.touch-ui .hud-top-center {
   box-shadow: 0 0 18px rgba(140, 200, 255, 0.45);
 }
 
-.touch-btn--enter { grid-area: enter; }
-/* Space: ENTER is a gold pill like KICK (contextual: only near a world) */
-.touch-overlay:not(.touch-overlay--in-world) .touch-btn--enter {
-  width: 88px;
-  height: 48px;
+/* ENTER (space) / KICK (world): upper-left flank of the right stick */
+.touch-btn--enter {
+  right: calc(100% + 8px);
+  bottom: calc(100% - 46px);
+  width: 72px;
+  height: 44px;
   border-radius: 999px;
   color: var(--touch-gold);
   border-color: rgba(232, 185, 74, 0.6);
-  box-shadow: 0 0 18px rgba(232, 185, 74, 0.3);
+  box-shadow: 0 0 18px rgba(232, 185, 74, 0.25);
 }
 /* Contextual buttons (2026-10-22): WARP only while locked on, ENTER only near a
-   world. They keep their grid cell, so nothing else shifts when they appear. */
+   world. They keep their arc slot, so nothing else shifts when they appear. */
 .touch-btn.touch-btn--off {
   opacity: 0;
   visibility: hidden;
@@ -911,8 +913,17 @@ html.touch-ui .hud-top-center {
 .touch-btn--warp, .touch-btn--enter {
   transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s, background 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
 }
-.touch-btn--warp { grid-area: warp; color: rgba(190, 160, 255, 0.95); }
-.touch-btn--brake { grid-area: brake; }
+/* WARP: lower-left flank of the right stick */
+.touch-btn--warp {
+  right: calc(100% + 8px);
+  bottom: 4px;
+  color: rgba(190, 160, 255, 0.95);
+}
+/* JUMP (world): directly above the right stick, same slot as THRUST in space */
+.touch-btn--brake {
+  right: 0;
+  bottom: calc(100% + 8px);
+}
 /* JUMP is world-only; THRUST is space-only */
 .touch-overlay:not(.touch-overlay--in-world) .touch-btn--brake,
 .touch-overlay--in-world .touch-btn--thrust { display: none; }
@@ -922,10 +933,13 @@ html.touch-ui .hud-top-center {
   border-color: rgba(190, 160, 255, 0.8);
 }
 
-/* DRIVE / NEUTRAL — top of the right-thumb cluster */
+/* DRIVE / NEUTRAL — top-left of the arc above the right stick */
 .touch-mode-toggle {
-  grid-area: mode;
+  position: absolute;
+  right: 80px;
+  bottom: calc(100% + 18px);
   min-height: 44px;
+  white-space: nowrap;
   pointer-events: auto;
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -956,26 +970,17 @@ html.touch-ui .hud-top-center {
 }
 
 /* Inside a world (docs/mobile-ui/SPEC.md): left stick walks (rim = sprint),
-   drag anywhere else looks, JUMP is the big right-thumb button with KICK above it.
+   right stick looks, JUMP is above the right stick and KICK is on its upper-left.
    Flight-only controls go. */
 .touch-overlay--in-world .touch-btn--warp,
 .touch-overlay--in-world .touch-mode-toggle {
   display: none;
 }
 
-.touch-overlay--in-world .touch-actions {
-  right: calc(var(--touch-safe-right) + 18px);
-  grid-template-columns: 88px;
-  grid-template-areas:
-    'enter'
-    'brake';
-  gap: 14px;
-}
-
 .touch-overlay--in-world .touch-btn--brake {
-  width: 88px;
-  height: 88px;
-  font-size: 0.85rem;
+  width: 72px;
+  height: 72px;
+  font-size: 0.8rem;
   color: rgba(140, 230, 255, 0.95);
   border: 2px solid rgba(110, 220, 255, 0.75);
   box-shadow: 0 0 22px rgba(110, 220, 255, 0.35), inset 0 0 16px rgba(110, 220, 255, 0.15);
@@ -987,10 +992,11 @@ html.touch-ui .hud-top-center {
 }
 
 .touch-overlay--in-world .touch-btn--enter {
-  width: auto;
-  min-width: 88px;
-  height: 48px;
-  padding: 0 16px;
+  right: 80px;
+  bottom: calc(100% + 18px);
+  width: 72px;
+  height: 44px;
+  padding: 0 12px;
   border-radius: 999px;
   color: var(--touch-gold);
   border-color: rgba(232, 185, 74, 0.55);
@@ -3934,7 +3940,7 @@ html.touch-ui .plant-open kbd { display: none; }
    the stick and the right-thumb cluster. */
 html.touch-ui .planner {
   top: calc(60px + env(safe-area-inset-top, 0px));
-  bottom: calc(264px + env(safe-area-inset-bottom, 0px)); /* above KICK + JUMP */
+  bottom: calc(296px + env(safe-area-inset-bottom, 0px)); /* above right stick + JUMP/THRUST */
   left: 12px;
   right: 12px;
   width: auto;
@@ -3944,7 +3950,7 @@ html.touch-ui .planner {
     top: calc(12px + env(safe-area-inset-top, 0px));
     bottom: calc(76px + env(safe-area-inset-bottom, 0px));
     left: calc(168px + env(safe-area-inset-left, 0px));
-    right: calc(192px + env(safe-area-inset-right, 0px));
+    right: calc(232px + env(safe-area-inset-right, 0px));
   }
 }
 .planner-ghost { background: none; border: 1px solid var(--glass-border); border-radius: 8px; color: var(--color-text-secondary); cursor: pointer; padding: 2px 7px; font-size: 13px; }
@@ -4100,7 +4106,7 @@ html.touch-ui .create-panel .make-tabs {
 .more-sheet {
   position: fixed;
   top: calc(60px + env(safe-area-inset-top, 0px));
-  bottom: calc(264px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(296px + env(safe-area-inset-bottom, 0px));
   left: 12px;
   right: 12px;
   z-index: 41;
@@ -4117,13 +4123,13 @@ html.touch-ui .create-panel .make-tabs {
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   animation: rise-in 0.22s ease both;
 }
-.more-sheet.is-space { bottom: calc(336px + env(safe-area-inset-bottom, 0px)); } /* above DRIVE */
+.more-sheet.is-space { bottom: calc(296px + env(safe-area-inset-bottom, 0px)); }
 @media (orientation: landscape) {
   .more-sheet, .more-sheet.is-space {
     top: calc(12px + env(safe-area-inset-top, 0px));
     bottom: calc(76px + env(safe-area-inset-bottom, 0px));
     left: calc(168px + env(safe-area-inset-left, 0px));
-    right: calc(192px + env(safe-area-inset-right, 0px));
+    right: calc(232px + env(safe-area-inset-right, 0px));
   }
 }
 .more-head { flex: none; display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
@@ -4388,19 +4394,18 @@ html.touch-ui .mana-pill-wide { display: none; }
    the cluster, above the dock. (The radar moved to the top-left on 2026-10-22.) */
 html.touch-ui .chat-panel {
   left: calc(16px + env(safe-area-inset-left, 0px));
-  bottom: calc(264px + env(safe-area-inset-bottom, 0px)); /* above the stick and KICK */
+  bottom: calc(296px + env(safe-area-inset-bottom, 0px)); /* above sticks and action arc */
   width: min(300px, calc(100vw - 210px));
 }
 html.touch-ui .chat-panel.is-open { width: min(380px, calc(100vw - 32px)); }
-/* Space: the right-thumb cluster is taller (LOCK / ENTER / DRIVE), so the wide box rises above it */
-html.touch-ui .chat-panel.is-open.is-space { bottom: calc(336px + env(safe-area-inset-bottom, 0px)); }
+html.touch-ui .chat-panel.is-open.is-space { bottom: calc(296px + env(safe-area-inset-bottom, 0px)); }
 @media (orientation: landscape) {
   html.touch-ui .chat-panel,
   html.touch-ui .chat-panel.is-open,
   html.touch-ui .chat-panel.is-open.is-space {
     left: calc(168px + env(safe-area-inset-left, 0px));
     bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-    width: min(340px, calc(100vw - 380px));
+    width: min(340px, calc(100vw - 410px));
   }
 }
 @media (prefers-reduced-motion: reduce) {

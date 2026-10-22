@@ -65,8 +65,8 @@ class InteriorController {
     return {
       move: Math.max(-1, Math.min(1, b(a.thrust) - b(a.reverse) + inputManager.getAxis('moveY'))),
       strafe: Math.max(-1, Math.min(1, b(a.pitchDown) - b(a.rollRight) + inputManager.getAxis('moveX'))),
-      turn: Math.max(-1, Math.min(1, b(a.pitchUp) - b(a.yawLeft) + inputManager.getAxis('yaw'))),
-      look: Math.max(-1, Math.min(1, b(a.yawRight) - b(a.rollLeft) + inputManager.getAxis('pitch'))),
+      turn: Math.max(-1, Math.min(1, b(a.pitchUp) - b(a.yawLeft) + inputManager.getAxis('yaw') + inputManager.getAxis('lookYaw'))),
+      look: Math.max(-1, Math.min(1, b(a.yawRight) - b(a.rollLeft) + inputManager.getAxis('pitch') + inputManager.getAxis('lookPitch'))),
       jump: a.brake,
       sprint: a.warp,
     }

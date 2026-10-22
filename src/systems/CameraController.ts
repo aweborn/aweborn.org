@@ -50,6 +50,10 @@ const HEIGHTS: Record<CameraPreset, number> = {
 const DISTANCE_LERP_SPEED = 3.0
 /** How fast the look-behind rotation transitions */
 const LOOK_BEHIND_SPEED = 6.0
+/** Angular speed (rad/s) when orbiting the camera with the right look stick */
+const ORBIT_YAW_RATE = 2.2
+const ORBIT_PITCH_RATE = 1.6
+const ORBIT_MAX_PITCH = 1.25
 
 // ── Camera Controller ────────────────────────────────────────────────
 
@@ -71,6 +75,13 @@ class CameraController {
 
   /** Look-behind blend (0 = normal, 1 = fully behind) */
   private _lookBehindBlend = 0
+
+  /** Orbit angles (radians) around the player from the look stick */
+  private _orbitYaw = 0
+  private _orbitPitch = 0
+  private _orbitEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+  private _orbitQuat = new THREE.Quaternion()
+  private _combinedQuat = new THREE.Quaternion()
 
   /** Temp vectors */
   private _idealPosition = new THREE.Vector3()
@@ -122,6 +133,20 @@ class CameraController {
     this._lookBehindBlend += (targetLookBehind - this._lookBehindBlend) * Math.min(1, LOOK_BEHIND_SPEED * dt)
 
     // ── Determine camera orientation source ──
+    if (events.justPressed.has('autoOrient')) {
+      this._orbitYaw = 0
+      this._orbitPitch = 0
+    }
+    const lookYaw = inputManager.getAxis('lookYaw')
+    const lookPitch = inputManager.getAxis('lookPitch')
+    if (lookYaw !== 0 || lookPitch !== 0) {
+      this._orbitYaw -= lookYaw * ORBIT_YAW_RATE * dt
+      this._orbitPitch = Math.max(
+        -ORBIT_MAX_PITCH,
+        Math.min(ORBIT_MAX_PITCH, this._orbitPitch + lookPitch * ORBIT_PITCH_RATE * dt),
+      )
+    }
+
     let orientQuat: THREE.Quaternion
 
     if (this._freeLook) {
@@ -137,6 +162,12 @@ class CameraController {
       orientQuat = new THREE.Quaternion().setFromRotationMatrix(lookMatrix)
     } else {
       orientQuat = playerQuat
+    }
+
+    if (this._orbitYaw !== 0 || this._orbitPitch !== 0) {
+      this._orbitEuler.set(this._orbitPitch, this._orbitYaw, 0, 'YXZ')
+      this._orbitQuat.setFromEuler(this._orbitEuler)
+      orientQuat = this._combinedQuat.copy(orientQuat).multiply(this._orbitQuat)
     }
 
     // ── Compute ideal camera position ──
@@ -185,6 +216,17 @@ class CameraController {
     return this._freeLook
   }
 
+  /** Reset the camera orbit offset back behind the player. */
+  resetOrbit(): void {
+    this._orbitYaw = 0
+    this._orbitPitch = 0
+  }
+
+  /** Get the current look-stick orbit angles (radians). */
+  getOrbit(): { yaw: number; pitch: number } {
+    return { yaw: this._orbitYaw, pitch: this._orbitPitch }
+  }
+
   /** Reset the camera state (e.g., when entering/exiting worlds). */
   reset(): void {
     this._preset = CameraPreset.Medium
@@ -193,6 +235,8 @@ class CameraController {
     this._springVelocity.set(0, 0, 0)
     this._freeLook = false
     this._lookBehindBlend = 0
+    this._orbitYaw = 0
+    this._orbitPitch = 0
   }
 
   /**
@@ -200,6 +244,8 @@ class CameraController {
    * Use after teleporting the player or entering a world.
    */
   snapToTarget(camera: THREE.Camera, playerPos: THREE.Vector3, playerQuat: THREE.Quaternion): void {
+    this._orbitYaw = 0
+    this._orbitPitch = 0
     const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerQuat)
     const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(playerQuat)
 
