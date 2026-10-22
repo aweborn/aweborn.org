@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Aweborn · Mobile UI prototype</title>
+<meta name="description" content="Clickable prototype of Aweborn's portrait-first phone controls: stick, thrust/jump, contextual action, dock and sheets.">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root {
+  --glass: rgb(16 14 40 / 0.55);
+  --glass-strong: rgb(16 14 40 / 0.82);
+  --line: rgb(180 200 255 / 0.22);
+  --cyan: hsl(186 90% 62%);
+  --gold: hsl(44 92% 64%);
+  --violet: hsl(266 80% 70%);
+  --red: hsl(4 80% 52%);
+  --text: hsl(230 40% 94%);
+  --muted: hsl(230 20% 72%);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --thumb: 88px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #05040f; color: var(--text); font-family: Inter, system-ui, sans-serif; }
+body { display: grid; place-items: center; overflow: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* Stage: full screen on a phone, a 390×844 phone-sized stage on desktop. */
+#stage {
+  position: relative; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+  width: 100vw; height: 100dvh;
+}
+@media (min-width: 700px) and (min-height: 700px) {
+  #stage { width: 390px; height: 844px; border-radius: 36px; box-shadow: 0 0 0 10px #15132a, 0 30px 80px rgb(0 0 0 / .6); }
+  body.landscape #stage { width: 844px; height: 390px; }
+}
+
+/* Backgrounds (CSS only) */
+.bg { position: absolute; inset: 0; transition: opacity .6s; }
+.bg-space {
+  background:
+    radial-gradient(circle at 50% 46%, transparent 0 21%, hsl(40 90% 80% / .55) 21.6%, transparent 24%),
+    radial-gradient(circle at 50% 46%, hsl(250 40% 12%) 0 21%, transparent 21.2%),
+    radial-gradient(circle at 86% 20%, hsl(220 60% 40% / .9) 0 6%, transparent 6.4%),
+    radial-gradient(circle at 15% 28%, hsl(300 50% 45% / .7) 0 4%, transparent 4.4%),
+    radial-gradient(ellipse at 40% 30%, hsl(280 70% 35% / .55), transparent 55%),
+    radial-gradient(ellipse at 70% 70%, hsl(230 80% 30% / .5), transparent 60%),
+    #070418;
+}
+.bg-space::after {
+  content: ""; position: absolute; inset: 0; opacity: .8;
+  background-image: radial-gradient(1px 1px at 20% 30%, #fff, transparent), radial-gradient(1px 1px at 70% 10%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 85% 60%, #cdf, transparent), radial-gradient(1px 1px at 35% 80%, #fff, transparent),
+    radial-gradient(1px 1px at 55% 55%, #fff, transparent), radial-gradient(1.2px 1.2px at 10% 65%, #fdf, transparent);
+  background-size: 180px 180px;
+}
+.bg-world {
+  opacity: 0;
+  background:
+    linear-gradient(transparent 52%, hsl(95 45% 32%) 52% 60%, hsl(90 40% 24%) 60%),
+    radial-gradient(circle at 18% 38%, hsl(45 100% 85%) 0 4%, transparent 14%),
+    conic-gradient(from 160deg at 50% 52%, transparent 0 8deg, hsl(15 45% 30%) 8deg 40deg, transparent 40deg),
+    linear-gradient(hsl(30 80% 82%), hsl(20 70% 68%) 52%);
+}
+#stage.world .bg-world { opacity: 1; }
+#stage.world .bg-space { opacity: 0; }
+
+/* Player orb + target planet hit area */
+.orb { position: absolute; left: 50%; top: 62%; width: 46px; height: 46px; margin: -23px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, hsl(190 90% 75%) 40%, hsl(220 80% 50% / .6)); box-shadow: 0 0 30px hsl(190 100% 70% / .8); transition: transform .3s; }
+#planet { position: absolute; left: 50%; top: 46%; width: 42%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; background: none; border: 0; }
+#planet.locked { outline: 2px dashed var(--gold); outline-offset: 8px; animation: spin 8s linear infinite; }
+@keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+#stage.world #planet { display: none; }
+#crystal { position: absolute; left: 66%; top: 58%; width: 34px; height: 44px; border: 0; display: none;
+  background: linear-gradient(135deg, #fff, hsl(200 60% 80%) 50%, hsl(260 50% 60%)); clip-path: polygon(50% 0, 100% 35%, 80% 100%, 20% 100%, 0 35%); filter: drop-shadow(0 0 8px #fff); }
+#stage.world #crystal { display: block; }
+#stage.holding #crystal { left: calc(50% + 14px); top: calc(62% - 60px); }
+
+/* Glass primitive */
+.glass { background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(14px) saturate(1.3); -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 4px 20px rgb(0 0 0 / .35), inset 0 1px 0 rgb(255 255 255 / .08); }
+
+/* Top bar */
+#radar { position: absolute; top: calc(12px + var(--safe-t)); left: calc(12px + var(--safe-l)); width: 84px; height: 84px; border-radius: 50%; padding: 0;
+  background: repeating-radial-gradient(circle, transparent 0 13px, var(--line) 13px 14px), var(--glass); transition: width .25s, height .25s; }
+#radar.big { width: 180px; height: 180px; }
+#radar .blip { position: absolute; width: 14px; height: 14px; margin: -7px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 8px var(--gold); border: 0; padding: 0; }
+#radar .blip.cy { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+#radar .me { position: absolute; left: 50%; top: 50%; width: 0; height: 0; border: 6px solid transparent; border-bottom: 12px solid var(--cyan); transform: translate(-50%, -70%); }
+#stage.world #radar { display: none; }
+
+#place { position: absolute; top: calc(16px + var(--safe-t)); right: calc(12px + var(--safe-r)); min-height: 44px; padding: 0 16px; border-radius: 999px;
+  font: 500 15px Outfit, sans-serif; display: flex; align-items: center; gap: 8px; overflow: hidden; }
+#place .mana { color: var(--gold); }
+#place .ring { position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: conic-gradient(var(--cyan) calc(var(--p, 0) * 1turn), transparent 0); opacity: .35; }
+#place small { font-size: 11px; color: var(--muted); display: none; }
+#stage.world #place small { display: inline; }
+
+#target { position: absolute; top: calc(70px + var(--safe-t)); left: 50%; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px;
+  font: 500 13px Outfit; color: var(--gold); display: none; white-space: nowrap; }
+#stage.lock #target { display: block; }
+
+/* Bottom: thumbs */
+#stickZone { position: absolute; left: 0; bottom: 0; width: 50%; height: 55%; }
+#stick { position: absolute; width: 128px; height: 128px; margin: -64px; border-radius: 50%; pointer-events: none;
+  left: calc(84px + var(--safe-l)); top: calc(100% - 156px - var(--safe-b)); opacity: .55; transition: opacity .2s; }
+#stick.on { opacity: 1; transition: none; }
+#knob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px; border-radius: 50%; background: rgb(255 255 255 / .18); border: 1px solid rgb(255 255 255 / .35); }
+#stick.edge #knob { background: hsl(186 90% 62% / .45); box-shadow: 0 0 18px var(--cyan); }
+#lookZone { position: absolute; right: 0; top: 18%; width: 50%; height: 82%; }
+
+.cluster { position: absolute; right: calc(16px + var(--safe-r)); bottom: calc(84px + var(--safe-b)); display: grid; justify-items: end; gap: 10px; pointer-events: none; }
+.cluster > * { pointer-events: auto; }
+.row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+#thrust { width: var(--thumb); height: var(--thumb); border-radius: 50%; font: 600 15px Outfit; letter-spacing: .06em;
+  border: 2px solid var(--cyan); box-shadow: 0 0 24px hsl(186 90% 62% / .5), inset 0 0 18px hsl(186 90% 62% / .25); touch-action: none; transition: transform .08s; }
+#thrust.down { transform: scale(.94); background: hsl(186 90% 40% / .45); }
+#thrust.brake { border-color: var(--red); box-shadow: 0 0 24px hsl(4 80% 52% / .6); background: hsl(4 70% 30% / .5); }
+.pill { min-height: 44px; min-width: 44px; padding: 0 18px; border-radius: 999px; font: 600 14px Outfit; letter-spacing: .05em; }
+#ctx { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 18px hsl(44 92% 64% / .4); display: none; min-width: 120px; }
+#ctx.show { display: inline-block; animation: pop .2s ease-out; }
+@keyframes pop { from { transform: scale(.7); opacity: 0; } }
+#warp { display: none; border-color: var(--violet); color: var(--violet); position: relative; overflow: hidden; }
+#warp .fill { position: absolute; inset: 0; background: hsl(266 80% 70% / .4); transform-origin: left; transform: scaleX(var(--p, 0)); }
+#stage.lock:not(.world) #warp { display: inline-block; }
+#mode { font-size: 12px; color: var(--muted); }
+#stage.world #mode { display: none; }
+#held { display: none; gap: 8px; }
+#stage.holding #held { display: flex; }
+#held button { width: 44px; height: 44px; border-radius: 12px; font-size: 18px; padding: 0; }
+
+/* Floating chat lines */
+#lines { position: absolute; left: calc(16px + var(--safe-l)); bottom: calc(240px + var(--safe-b)); width: calc(50% - 24px); font-size: 14px;
+  text-shadow: 0 1px 4px #000; pointer-events: none; display: grid; gap: 4px; transition: opacity .2s; }
+#stage.holding #lines { opacity: 0; }
+#lines div { opacity: .75; } #lines div:first-child { opacity: .35; }
+#lines b { color: var(--cyan); font-weight: 600; }
+
+/* Dock */
+#dock { position: absolute; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%); display: flex; gap: 4px; padding: 5px; border-radius: 999px; }
+#dock button { width: 48px; height: 48px; border-radius: 50%; border: 0; background: transparent; display: grid; place-items: center; font-size: 20px; }
+#dock button:active, #dock button[aria-expanded="true"] { background: rgb(255 255 255 / .12); }
+#dock [data-sheet="make"] { display: none; }
+#stage.world #dock [data-sheet="make"] { display: grid; }
+
+/* Sheets: non-modal dialogs inside the stage so the world stays visible */
+dialog.sheet { position: absolute; inset: auto 0 0 0; margin: 0; width: 100%; max-width: none; max-height: 58%; padding: 0 0 calc(12px + var(--safe-b));
+  border: 1px solid var(--line); border-bottom: 0; border-radius: 22px 22px 0 0; color: var(--text); background: var(--glass-strong);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); z-index: 20; overflow: auto;
+  transform: translateY(0); transition: transform .28s cubic-bezier(.2,.8,.2,1), display .28s allow-discrete; }
+dialog.sheet[open] { display: block; @starting-style { transform: translateY(100%); } }
+dialog.sheet:not([open]) { transform: translateY(100%); }
+@media (prefers-reduced-motion: reduce) { dialog.sheet { transition-duration: .01s; } }
+body.landscape dialog.sheet { inset: 0 0 0 auto; width: 50%; max-height: none; border-radius: 22px 0 0 22px; border: 1px solid var(--line); }
+.sheet header { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: inherit; }
+.sheet header::before { content: ""; position: absolute; top: 6px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 4px; background: var(--line); }
+.sheet h2 { font: 600 18px Outfit; margin: 10px 0 0; }
+.sheet .x { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: transparent; font-size: 18px; }
+.sheet .body { padding: 4px 16px 12px; }
+.tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; }
+.tabs button { flex: none; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; font-size: 14px; }
+.tabs button[aria-selected="true"] { background: hsl(186 90% 62% / .2); border-color: var(--cyan); }
+.tabs .sep { width: 1px; background: var(--line); margin: 6px 2px; flex: none; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+.grid button { aspect-ratio: 1; border-radius: 14px; border: 1px solid var(--line); background: rgb(255 255 255 / .05); font-size: 28px; }
+.list { display: grid; gap: 8px; }
+.list button, .item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgb(255 255 255 / .04); text-align: left; font-size: 15px; }
+.item .go { margin-left: auto; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--violet); background: transparent; color: var(--violet); font-size: 13px; }
+.section { font: 600 12px Outfit; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
+.seal { text-align: center; padding: 18px 8px; border-radius: 16px; border: 1px solid hsl(44 92% 64% / .4); background: radial-gradient(circle at 50% 0, hsl(44 92% 64% / .18), transparent 70%); }
+.seal .sig { font-size: 40px; filter: drop-shadow(0 0 10px var(--gold)); }
+.seal button { margin-top: 10px; min-height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--gold); background: transparent; color: var(--gold); }
+.chatlog { display: grid; gap: 6px; font-size: 15px; margin-bottom: 10px; }
+.chatform { display: flex; gap: 8px; position: sticky; bottom: 0; }
+.chatform input { flex: 1; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: rgb(0 0 0 / .3); color: var(--text); font-size: 16px; }
+.chatform button { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--cyan); background: transparent; }
+
+/* Toast: what action fired (prototype aid) */
+#toast { position: absolute; left: 50%; top: calc(110px + var(--safe-t)); transform: translateX(-50%); padding: 6px 12px; border-radius: 10px; font: 500 12px Inter;
+  background: rgb(0 0 0 / .6); opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap; z-index: 30; }
+#toast.show { opacity: 1; }
+#flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 25; transition: opacity .4s; }
+
+/* Prototype controls (outside the game UI) */
+#proto { position: fixed; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 50; max-width: calc(100vw - 24px); }
+#proto button { min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #444; background: #111a; color: #ccc; font-size: 12px; }
+#proto button[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); }
+@media (max-width: 699px), (max-height: 699px) {
+  #proto { top: calc(16px + var(--safe-t)); left: 50%; transform: translateX(-50%); max-width: 150px; justify-content: center; }
+  #proto:not(.open) > :not(#pToggle) { display: none; }
+  #proto.open { background: #000c; padding: 6px; border-radius: 10px; }
+}
+@media (min-width: 700px) and (min-height: 700px) { #pToggle { display: none; } }
+</style>
+</head>
+<body>
+<div id="proto" aria-label="Prototype controls">
+  <button id="pToggle" aria-expanded="false">proto ▾</button>
+  <button id="pSpace" aria-pressed="true">Space</button>
+  <button id="pWorld" aria-pressed="false">World</button>
+  <button id="pLand" aria-pressed="false">Landscape</button>
+  <button id="pGuest" aria-pressed="true">Guest</button>
+</div>
+
+<main id="stage" aria-label="Aweborn phone layout prototype">
+  <h1 hidden>Aweborn mobile UI prototype</h1>
+  <div class="bg bg-space"></div>
+  <div class="bg bg-world"></div>
+  <div class="orb" aria-hidden="true"></div>
+
+  <div id="stickZone" aria-hidden="true"></div>
+  <div id="lookZone" aria-hidden="true"></div>
+  <button id="planet" aria-label="Planet: tap to lock on"></button>
+  <button id="crystal" aria-label="Crystal (an object you can pick up)"></button>
+  <div id="stick" aria-hidden="true"><div id="knob"></div></div>
+
+  <button id="radar" class="glass" aria-label="Radar: tap to expand">
+    <span class="me"></span>
+    <span class="blip" style="left:58%;top:24%" data-blip="Ember Reach"></span>
+    <span class="blip cy" style="left:72%;top:40%" data-blip="Lost World"></span>
+    <span class="blip" style="left:28%;top:70%" data-blip="Glasswood"></span>
+  </button>
+  <button id="place" class="glass" aria-label="Account and mana. In a world, hold to leave.">
+    <span class="ring"></span><span id="placeName">Origin</span> · <span class="mana">✦ 240</span>
+  </button>
+  <div id="target" class="glass">◎ Locked: <span id="targetName">Origin</span> · 420 u</div>
+
+  <div id="lines"><div><b>ren:</b> first time here</div><div><b>mira:</b> whoa look at that one</div><div><b>kai:</b> going in!</div></div>
+
+  <div class="cluster">
+    <div class="row" id="held">
+      <button class="glass" data-act="Rotate left" aria-label="Rotate left">⟲</button>
+      <button class="glass" data-act="Rotate right" aria-label="Rotate right">⟳</button>
+      <button class="glass" data-act="Shrink" aria-label="Shrink">−</button>
+      <button class="glass" data-act="Grow" aria-label="Grow">+</button>
+    </div>
+    <div class="row">
+      <button id="warp" class="pill glass" aria-label="Warp: hold to charge"><span class="fill"></span><span style="position:relative">WARP</span></button>
+      <button id="ctx" class="pill glass">ENTER</button>
+    </div>
+    <div class="row">
+      <button id="mode" class="pill glass" aria-label="Flight mode: Drive. Tap to switch.">DRIVE</button>
+      <button id="thrust" class="glass" aria-label="Thrust: hold. Slide down to brake.">THRUST</button>
+    </div>
+  </div>
+
+  <nav id="dock" class="glass" aria-label="Panels">
+    <button data-sheet="index" aria-label="World Index" aria-expanded="false">🗺️</button>
+    <button data-sheet="chat" aria-label="Chat" aria-expanded="false">💬</button>
+    <button data-sheet="make" aria-label="Make" aria-expanded="false">🧱</button>
+    <button data-sheet="more" aria-label="More" aria-expanded="false">•••</button>
+  </nav>
+
+  <dialog class="sheet" id="sheet-index" aria-labelledby="h-index">
+    <header><h2 id="h-index">World Index</h2><button class="x" aria-label="Close">✕</button></header>
+    <div class="body list">
+      <div class="item">✨ Origin <button class="go">Warp here</button></div>
+      <div class="item">🌋 Lost World <button class="go">Warp here</button></div>
+      <div class="item">🌲 Glasswood <button class="go">Warp here</button></div>
+      <div class="item">❔ Sighted: Ember Reach <button class="go">Warp here</button></div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="sheet-chat" aria-labelledby="h-chat">
+    <header><h2 id="h-chat"><span id="chatWhere">Space</span> chat</h2><button class="x" aria-label="Close">✕</button></header>
+    <div class="body">
+      <div class="chatlog" id="chatlog"><div><b style="color:var(--cyan)">ren:</b> first time here</div><div><b style="color:var(--cyan)">mira:</b> whoa look at that one</div><div><b style="color:var(--cyan)">kai:</b> going in!</div></div>
+      <form class="chatform" id="chatform"><input id="chatin" placeholder="Say something" autocomplete="off" enterkeyhint="send" aria-label="Message"><button>Send</button></form>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="sheet-make" aria-labelledby="h-make">
+    <header><h2 id="h-make">Make</h2><button class="x" aria-label="Close">✕</button></header>
+    <div class="body">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="blocks">Blocks</button>
+        <button role="tab" aria-selected="false" data-tab="shapes">Shapes</button>
+        <button role="tab" aria-selected="false" data-tab="made">Made</button>
+        <span class="sep"></span>
+        <button role="tab" aria-selected="false" data-tab="create">✦ Create</button>
+        <button role="tab" aria-selected="false" data-tab="plan">✦ Plan</button>
+      </div>
+      <div id="makebody"></div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="sheet-more" aria-labelledby="h-more">
+    <header><h2 id="h-more">More</h2><button class="x" aria-label="Close">✕</button></header>
+    <div class="body list">
+      <div class="section">Me</div>
+      <button data-act="Scan">📡 Scan</button>
+      <button data-act="Cycle trail">✨ Trail</button>
+      <button data-act="Cycle aura">🌀 Aura</button>
+      <button data-act="Cycle shape">🔷 Shape</button>
+      <button data-act="Emote">👋 Emote</button>
+      <div class="section">Settings</div>
+      <button data-act="Display quality">⚙️ Display quality · Auto</button>
+      <button data-act="FPS overlay">📈 Show FPS</button>
+      <button data-act="Fullscreen">⛶ Full screen</button>
+      <button data-act="Controls legend">🎮 Controls</button>
+      <div class="section">Aweborn</div>
+      <button data-act="Give">💛 Give mana</button>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="sheet-account" aria-labelledby="h-acct">
+    <header><h2 id="h-acct">You</h2><button class="x" aria-label="Close">✕</button></header>
+    <div class="body list">
+      <div class="item">✦ 240 mana available today</div>
+      <button data-act="Save this player">💾 Save this player</button>
+      <button data-act="Sign in">🔑 Sign in</button>
+      <div class="section">How mana works</div>
+      <div class="item" style="font-size:14px;color:var(--muted)">Everyone draws from one shared pool. Gifts make it flow faster for all.</div>
+    </div>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="flash"></div>
+</main>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s)
+const $$ = (s, r = document) => [...r.querySelectorAll(s)]
+const stage = $('#stage')
+const S = { world: false, near: null, holding: false, lock: false, guest: true, drive: true }
+
+let toastT
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1200) }
+$$('[data-act]').forEach(b => b.addEventListener('click', () => toast(b.dataset.act)))
+
+/* ── Context: what's actionable right now ── */
+function render() {
+  stage.classList.toggle('world', S.world)
+  stage.classList.toggle('holding', S.holding)
+  stage.classList.toggle('lock', S.lock && !S.world)
+  $('#planet').classList.toggle('locked', S.lock)
+  $('#thrust').textContent = S.world ? 'JUMP' : 'THRUST'
+  $('#thrust').setAttribute('aria-label', S.world ? 'Jump (hold in the air: jetpack)' : 'Thrust: hold. Slide down to brake.')
+  $('#placeName').textContent = S.world ? 'Lost World' : 'Origin'
+  $('#chatWhere').textContent = S.world ? 'Lost World' : 'Space'
+  const ctx = $('#ctx')
+  let label = null
+  if (S.world) label = S.holding ? 'SET DOWN' : (S.near === 'object' ? 'PICK UP' : null)
+  else label = S.near === 'world' ? 'ENTER' : null
+  ctx.textContent = label || ''
+  ctx.classList.toggle('show', !!label)
+  $('#pSpace').setAttribute('aria-pressed', !S.world); $('#pWorld').setAttribute('aria-pressed', S.world)
+}
+$('#ctx').addEventListener('click', () => {
+  const l = $('#ctx').textContent
+  toast(l)
+  if (l === 'ENTER') return travel(true)
+  if (l === 'PICK UP') S.holding = true
+  else if (l === 'SET DOWN') S.holding = false
+  render()
+})
+function travel(toWorld) {
+  const f = $('#flash'); f.style.opacity = .8
+  setTimeout(() => { S.world = toWorld; S.holding = false; S.lock = false; S.near = toWorld ? 'object' : 'world'; closeSheets(); render(); f.style.opacity = 0 }, 350)
+}
+
+/* Lock on: tap the planet or a radar blip */
+function lockOn(name) { S.lock = true; S.near = 'world'; $('#targetName').textContent = name; toast('Locked on: ' + name); render() }
+$('#planet').addEventListener('click', () => lockOn('Origin'))
+$('#radar').addEventListener('click', e => {
+  const b = e.target.closest('[data-blip]')
+  if (b && $('#radar').classList.contains('big')) { lockOn(b.dataset.blip); $('#radar').classList.remove('big'); return }
+  $('#radar').classList.toggle('big')
+})
+$('#crystal').addEventListener('click', () => { S.near = 'object'; render(); toast('Near: crystal') })
+$('#mode').addEventListener('click', () => { S.drive = !S.drive; $('#mode').textContent = S.drive ? 'DRIVE' : 'NEUTRAL'; toast(S.drive ? 'Drive' : 'Neutral (gravity on)') })
+
+/* Hold helper: fills --p over ms, fires done() at 1 */
+function holdButton(el, ms, onDone, onTap) {
+  let raf, t0, fired
+  const stop = () => { cancelAnimationFrame(raf); el.style.setProperty('--p', 0) }
+  el.addEventListener('pointerdown', e => {
+    el.setPointerCapture(e.pointerId); t0 = performance.now(); fired = false
+    const step = now => { const p = Math.min(1, (now - t0) / ms); el.style.setProperty('--p', p); if (p >= 1) { fired = true; stop(); onDone() } else raf = requestAnimationFrame(step) }
+    raf = requestAnimationFrame(step)
+  })
+  el.addEventListener('pointerup', () => { const quick = !fired && performance.now() - t0 < 250; stop(); if (quick && onTap) onTap() })
+  el.addEventListener('pointercancel', stop)
+  el.addEventListener('click', e => e.preventDefault())
+}
+holdButton($('#warp'), 1200, () => { toast('WARP!'); travel(false); S.lock = false; render() }, () => toast('Hold to charge warp'))
+holdButton($('#place'), 600, () => { if (S.world) { toast('Leaving world…'); travel(false) } }, () => openSheet('account'))
+
+/* THRUST / JUMP: hold; slide down = brake (space); hold = jetpack (world) */
+;(() => {
+  const b = $('#thrust'); let y0, id, jetT
+  b.addEventListener('pointerdown', e => {
+    id = e.pointerId; y0 = e.clientY; b.setPointerCapture(id); b.classList.add('down')
+    if (S.world) { toast('Jump'); jetT = setTimeout(() => toast('Jetpack (holding)'), 350) } else toast('Thrust')
+  })
+  b.addEventListener('pointermove', e => {
+    if (e.pointerId !== id || S.world) return
+    const pull = e.clientY - y0
+    if (pull > 36 && !b.classList.contains('brake')) { b.classList.add('brake'); toast('Brake') }
+    else if (pull < 24 && b.classList.contains('brake')) { b.classList.remove('brake'); toast('Thrust') }
+  })
+  const end = e => { if (e.pointerId !== id) return; clearTimeout(jetT); b.classList.remove('down', 'brake'); id = null }
+  b.addEventListener('pointerup', end); b.addEventListener('pointercancel', end)
+})()
+
+/* Floating stick (left) + look drag (right) */
+;(() => {
+  const zone = $('#stickZone'), stick = $('#stick'), knob = $('#knob'); let id, cx, cy
+  const R = 64
+  const home = () => { stick.style.left = ''; stick.style.top = ''; knob.style.transform = ''; stick.classList.remove('on', 'edge') }
+  zone.addEventListener('pointerdown', e => {
+    id = e.pointerId; zone.setPointerCapture(id)
+    const r = stage.getBoundingClientRect(); cx = e.clientX; cy = e.clientY
+    stick.style.left = (cx - r.left) + 'px'; stick.style.top = (cy - r.top) + 'px'; stick.classList.add('on')
+  })
+  zone.addEventListener('pointermove', e => {
+    if (e.pointerId !== id) return
+    let dx = e.clientX - cx, dy = e.clientY - cy; const d = Math.hypot(dx, dy)
+    if (d > R) { dx *= R / d; dy *= R / d }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`
+    const edge = d > R * 0.95; stick.classList.toggle('edge', edge && S.world)
+    const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? (S.world ? 'strafe right' : 'yaw right') : (S.world ? 'strafe left' : 'yaw left')) : (dy < 0 ? (S.world ? 'walk forward' : 'pitch down') : (S.world ? 'walk back' : 'pitch up'))
+    if (d > 10) toast((edge && S.world ? 'Sprint · ' : '') + dir)
+  })
+  const end = e => { if (e.pointerId === id) { id = null; home() } }
+  zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end)
+
+  const look = $('#lookZone'); let lid, lx
+  look.addEventListener('pointerdown', e => { lid = e.pointerId; lx = e.clientX; look.setPointerCapture(lid) })
+  look.addEventListener('pointermove', e => { if (e.pointerId === lid && Math.abs(e.clientX - lx) > 8) toast(S.world ? 'Look around' : 'Orbit camera') })
+  look.addEventListener('pointerup', e => { if (e.pointerId === lid) lid = null })
+})()
+
+/* Sheets */
+function closeSheets() { $$('dialog.sheet[open]').forEach(d => d.close()); $$('#dock button').forEach(b => b.setAttribute('aria-expanded', 'false')) }
+function openSheet(name) {
+  const d = $('#sheet-' + name); const was = d.open
+  closeSheets(); if (was) return
+  d.show()
+  const btn = $(`#dock [data-sheet="${name}"]`); if (btn) btn.setAttribute('aria-expanded', 'true')
+  if (name === 'chat') setTimeout(() => $('#chatin').focus(), 50)
+}
+$$('#dock button').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.sheet)))
+$$('dialog.sheet .x').forEach(x => x.addEventListener('click', closeSheets))
+$$('.go').forEach(g => g.addEventListener('click', () => { toast('Warping…'); travel(false) }))
+$('#chatform').addEventListener('submit', e => {
+  e.preventDefault(); const v = $('#chatin').value.trim(); if (!v) return
+  const line = `<div><b style="color:var(--cyan)">you:</b> ${v.replace(/[<&]/g, c => ({ '<': '&lt;', '&': '&amp;' })[c])}</div>`
+  $('#chatlog').insertAdjacentHTML('beforeend', line); $('#lines').insertAdjacentHTML('beforeend', line); $('#lines').firstElementChild.remove(); $('#chatin').value = ''
+})
+
+/* Make sheet tabs */
+const MAKE = {
+  blocks: () => `<div class="grid">${['🟫','🟩','⬜','🟦','🟥','🟨','⬛','🟪'].map(x => `<button data-pick>${x}</button>`).join('')}</div>`,
+  shapes: () => `<div class="grid">${['🔺','⚪','🔷','⭐','🌙','❤️'].map(x => `<button data-pick>${x}</button>`).join('')}</div>`,
+  made: () => `<div class="grid">${['🏮','💎','🌳','🪑','🗿'].map(x => `<button data-pick>${x}</button>`).join('')}</div>`,
+  create: () => S.guest ? seal('Make from thought') : `<div class="chatform"><input placeholder="Describe a thing…" aria-label="Describe"><button>Create</button></div>`,
+  plan: () => S.guest ? seal('Dream a world') : `<div class="chatform"><input placeholder="Describe your world…" aria-label="Describe world"><button>Plan</button></div>`,
+}
+function seal(t) { return `<div class="seal"><div class="sig">✦</div><div style="font:600 17px Outfit">${t}</div><div style="color:var(--muted);font-size:14px">Sign in to channel mana</div><button data-acct>Sign in</button></div>` }
+function showTab(name) {
+  $$('#sheet-make [role=tab]').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === name))
+  $('#makebody').innerHTML = MAKE[name]()
+  $$('#makebody [data-pick]').forEach(p => p.addEventListener('click', () => { S.holding = true; closeSheets(); render(); toast('In hand: ' + p.textContent) }))
+  const a = $('#makebody [data-acct]'); if (a) a.addEventListener('click', () => openSheet('account'))
+}
+$$('#sheet-make [role=tab]').forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)))
+showTab('blocks')
+
+/* Prototype switches */
+$('#pSpace').onclick = () => { S.world = false; S.holding = false; S.near = null; closeSheets(); render() }
+$('#pWorld').onclick = () => { S.world = true; S.lock = false; S.near = null; closeSheets(); render() }
+$('#pLand').onclick = e => { const on = document.body.classList.toggle('landscape'); e.target.setAttribute('aria-pressed', on) }
+$('#pGuest').onclick = e => { S.guest = !S.guest; e.target.setAttribute('aria-pressed', S.guest); showTab('blocks') }
+$('#pToggle').onclick = e => { const on = $('#proto').classList.toggle('open'); e.target.setAttribute('aria-expanded', on) }
+render()
+</script>
+</body>
+</html>
