@@ -3708,8 +3708,8 @@ html.touch-ui .hud-mod-slots {
   background: linear-gradient(90deg, #ffd27a, #ff9f5a);
   transition: width 0.6s ease;
 }
-/* Touch: clear the right-thumb cluster (JUMP 88 + KICK 48 above it, bottom ~180 px). Interim until the dock + Make sheet (docs/mobile-ui/SPEC.md). */
-html.touch-ui .create-panel { bottom: calc(196px + env(safe-area-inset-bottom, 0px)); }
+/* Touch: Library / Create / Plan sit up top, under the top bar: the bottom belongs to the thumbs (stick left, JUMP + KICK right; a bottom row blocked the stick). Interim until the dock + Make sheet (docs/mobile-ui/SPEC.md). */
+html.touch-ui .create-panel { top: calc(124px + env(safe-area-inset-top, 0px)); bottom: auto; }
 
 /* ── World Planner (Phase 07) ───────────────────────────────────────── */
 .planner-open {
@@ -3798,7 +3798,7 @@ html.touch-ui .create-panel { bottom: calc(196px + env(safe-area-inset-bottom, 0
 }
 .planner-send:disabled { opacity: 0.4; cursor: default; }
 .planner-error { margin: 0; font-size: var(--text-xs); color: #ffb4a0; }
-html.touch-ui .planner-open { bottom: calc(196px + env(safe-area-inset-bottom, 0px)); }
+html.touch-ui .planner-open { top: calc(124px + env(safe-area-inset-top, 0px)); bottom: auto; }
 html.touch-ui .planner { top: 60px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); right: 16px; }
 .planner-ghost { background: none; border: 1px solid var(--glass-border); border-radius: 8px; color: var(--color-text-secondary); cursor: pointer; padding: 2px 7px; font-size: 13px; }
 .planner-ghost.is-on { color: #cfc4ff; border-color: rgba(180, 160, 255, 0.5); background: rgba(150, 125, 255, 0.15); }

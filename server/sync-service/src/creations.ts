@@ -134,6 +134,9 @@ export async function creationStatus(rooms: RoomManager, playerId: string, jobId
   });
 }
 
+/** Dev only: where assets missing locally can be found (e.g. https://sync.aweborn.org). Unset in prod. */
+const ASSET_FALLBACK_URL = (process.env.ASSET_FALLBACK_URL ?? "").replace(/\/$/, "");
+
 /** Public, immutable asset proxy (content-addressed names only). */
 export function handleAssets(req: IncomingMessage, res: ServerResponse): boolean {
   const m = /^\/assets\/([a-f0-9]{64}\.(?:glb|png))$/.exec(req.url?.split("?")[0] ?? "");
@@ -148,6 +151,13 @@ export function handleAssets(req: IncomingMessage, res: ServerResponse): boolean
         return;
       }
       if (!up.ok || !up.body) {
+        // Dev only (unset in prod): a prod world pulled into the local DB
+        // (scripts/dev/pull-prod-worlds.sh) references prod's assets.
+        if (up.status === 404 && ASSET_FALLBACK_URL) {
+          res.writeHead(302, { Location: `${ASSET_FALLBACK_URL}/assets/${m[1]}` });
+          res.end();
+          return;
+        }
         res.writeHead(404);
         res.end();
         return;

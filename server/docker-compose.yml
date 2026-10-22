@@ -15,6 +15,7 @@ services:
       - DB_PATH=/data/universe.db
       - GENAI_URL=http://genai-service:3001
       - MANA_ADMIN_TOKEN=${MANA_ADMIN_TOKEN:-dev-admin}  # local only; seed the dev pool via POST /api/mana/inflow
+      - ASSET_FALLBACK_URL=https://sync.aweborn.org  # prod worlds pulled locally (scripts/dev/pull-prod-worlds.sh) load prod's models
     volumes:
       - ./sync-service/src:/app/server/sync-service/src
       - ./data:/data
