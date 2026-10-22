@@ -30,6 +30,7 @@ import { flightController } from '../systems/FlightController'
 import { cameraController } from '../systems/CameraController'
 import { gravitySystem } from '../systems/GravitySystem'
 import { warpSystem } from '../systems/WarpSystem'
+import { sceneHints, setPickCamera } from '../systems/tapTargeting'
 import { teleportSystem } from '../systems/TeleportSystem'
 import { starModSlots } from '../systems/StarModSlots'
 import { touchInputAdapter } from '../systems/TouchInputAdapter'
@@ -118,14 +119,18 @@ function FlightSystem() {
   const physicsAccumulator = useRef(0)
   const lastSlingshotWorld = useRef<string | null>(null)
 
-  useFrame((_state, delta) => {
+  useFrame((state, delta) => {
     // Process input edge events at frame start
     inputManager.beginFrame()
 
     // ── Star mod slots (always process, even in world) ──
     starModSlots.update()
 
-    if (isInWorld) return // Flight is disabled inside worlds
+    if (isInWorld) {
+      sceneHints.canEnter = false
+      return // Flight is disabled inside worlds
+    }
+    setPickCamera(state.camera) // touch: tap a planet to lock on
 
     // Latch J / Esc for the fixed-step warp logic below (a frame may have 0..4 steps)
     warpSystem.captureInput()
@@ -282,7 +287,9 @@ function FlightSystem() {
     }
 
     // ── World entry: press N near a world ──
-    if (events.justPressed.has('interact') && gravResult.nearestWorld && gravResult.nearestDistance < 3.0) {
+    const canEnter = !!gravResult.nearestWorld && gravResult.nearestDistance < 3.0
+    sceneHints.canEnter = canEnter // touch: ENTER only shows when it would work
+    if (events.justPressed.has('interact') && canEnter && gravResult.nearestWorld) {
       useUniverseStore.getState().enterWorld(gravResult.nearestWorld.id)
     }
   })

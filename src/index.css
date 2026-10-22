@@ -469,7 +469,7 @@ html, body, #root {
 
 .hud-top-center {
   position: absolute;
-  top: var(--space-xl);
+  top: calc(var(--space-lg) + 48px); /* below the centred mana pill */
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
@@ -689,6 +689,30 @@ html.touch-ui .radar-container {
 }
 html.touch-ui .hud-speed { min-width: 96px; }
 
+/* Tap-to-lock (2026-10-22): tap a radar blip to lock on; tap the target chip to
+   switch to the next world in range (the touch LOCK button is gone). */
+.radar-container { pointer-events: auto; cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+button.hud-target-info {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+button.hud-target-info:active { transform: scale(0.97); background: rgba(80, 120, 200, 0.18); }
+button.hud-target-info:focus-visible { outline: 2px solid rgba(160, 195, 255, 0.7); outline-offset: 2px; }
+.hud-target-switch { display: none; }
+html.touch-ui .hud-target-switch {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: rgba(160, 195, 255, 0.5);
+}
+
 @media (orientation: portrait) {
   html.touch-ui .hud-top-center {
     top: calc(var(--space-lg) + 84px); /* below Sign in / UNIVERSE */
@@ -822,7 +846,7 @@ html.touch-ui .hud-speed { min-width: 96px; }
   grid-template-columns: 64px 88px;
   grid-template-areas:
     'mode  mode'
-    'lock  enter'
+    '.     enter'
     'warp  thrust';
   align-items: end;
   justify-items: center;
@@ -857,7 +881,26 @@ html.touch-ui .hud-speed { min-width: 96px; }
 }
 
 .touch-btn--enter { grid-area: enter; }
-.touch-btn--lock { grid-area: lock; }
+/* Space: ENTER is a gold pill like KICK (contextual: only near a world) */
+.touch-overlay:not(.touch-overlay--in-world) .touch-btn--enter {
+  width: 88px;
+  height: 48px;
+  border-radius: 999px;
+  color: var(--touch-gold);
+  border-color: rgba(232, 185, 74, 0.6);
+  box-shadow: 0 0 18px rgba(232, 185, 74, 0.3);
+}
+/* Contextual buttons (2026-10-22): WARP only while locked on, ENTER only near a
+   world. They keep their grid cell, so nothing else shifts when they appear. */
+.touch-btn.touch-btn--off {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scale(0.8);
+}
+.touch-btn--warp, .touch-btn--enter {
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s, background 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
 .touch-btn--warp { grid-area: warp; color: rgba(190, 160, 255, 0.95); }
 .touch-btn--brake { grid-area: brake; }
 /* JUMP is world-only; THRUST is space-only */
@@ -926,7 +969,6 @@ html.touch-ui .hud-speed { min-width: 96px; }
 /* Inside a world (docs/mobile-ui/SPEC.md): left stick walks (rim = sprint),
    drag anywhere else looks, JUMP is the big right-thumb button with KICK above it.
    Flight-only controls go. */
-.touch-overlay--in-world .touch-btn--lock,
 .touch-overlay--in-world .touch-btn--warp,
 .touch-overlay--in-world .touch-mode-toggle {
   display: none;

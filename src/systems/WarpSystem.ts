@@ -328,6 +328,24 @@ class WarpSystem {
   }
 
   /**
+   * Lock onto a world in range by id (touch: tap the planet or its radar blip).
+   * False if it isn't a candidate (too far) or a leap is under way.
+   */
+  lockOnto(worldId: string): boolean {
+    if (this._phase === 'charging' || this._phase === 'leaping' || this._phase === 'arriving') return false
+    const c = this._candidates.find((x) => x.world.id === worldId)
+    if (!c) return false
+    this._lockOn(c)
+    this._firstSpawnDone = true
+    return true
+  }
+
+  /** Next target in range, like pressing J (touch: tap the target chip). */
+  cycleTarget(): void {
+    this._pendingLockOn = true
+  }
+
+  /**
    * Set the screen-space position of the locked target.
    * Called by FlightSystem each frame after projecting the 3D position.
    * @param pos  Normalized screen coords (x: 0-100%, y: 0-100%), or null to clear.

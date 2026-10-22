@@ -119,8 +119,9 @@ export function MoreSheet() {
             <>
               <li><b>Left stick</b> steer</li>
               <li><b>THRUST</b> hold to fly · slide down to brake</li>
-              <li><b>LOCK</b> target the world ahead · <b>WARP</b> jump to it</li>
-              <li><b>ENTER</b> land on a world you're close to</li>
+              <li><b>Tap a world</b> (or its radar dot) to lock on · tap the name at the top to switch</li>
+              <li><b>WARP</b> appears when you're locked on · hold, then let go to leap</li>
+              <li><b>ENTER</b> appears when you're close enough to land</li>
               <li><b>DRIVE / NEUTRAL</b> switch flight mode</li>
             </>
           )}

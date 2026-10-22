@@ -46,7 +46,7 @@ await shot('0-space')
 await click('#touch-dock-more')
 await sleep(500)
 r.sheet = await rect('#more-sheet')
-r.sheetHitsThumbs = ['#touch-btn-mode', '#touch-btn-lock', '#touch-btn-thrust', '.touch-joystick-base', '.touch-dock']
+r.sheetHitsThumbs = ['#touch-btn-mode', '#touch-btn-thrust', '.touch-joystick-base', '.touch-dock']
 r.sheetOverlaps = {}
 for (const s of r.sheetHitsThumbs) r.sheetOverlaps[s] = overlap(r.sheet, await rect(s))
 await shot('1-more-space')

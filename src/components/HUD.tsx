@@ -172,17 +172,27 @@ export function HUD() {
         </div>
       </div>
 
-      {/* Top center — Lock-on target info */}
+      {/* Top center — Lock-on target. Tap / click = next target in range (like J). */}
       {isLocked && warp.lockedTarget && (
         <div className="hud-top-center">
-          <div className="hud-target-info">
-            <div className="hud-target-name">
+          <button
+            id="hud-target-chip"
+            type="button"
+            className="hud-target-info"
+            onClick={(e) => {
+              warpSystem.cycleTarget()
+              if (e.detail > 0) e.currentTarget.blur() // hand the keys back to flight
+            }}
+            aria-label={`Locked on ${warp.lockedTarget.name}. Switch target`}
+          >
+            <span className="hud-target-name">
               ◇ {warp.lockedTarget.name}
-            </div>
-            <div className="hud-target-distance">
+            </span>
+            <span className="hud-target-distance">
               {warp.lockedTargetPosition ? formatDistance(warp.lockedTargetPosition.distanceTo(flightController.position)) : '?'} u
-            </div>
-          </div>
+            </span>
+            {warp.candidates.length > 1 && <span className="hud-target-switch">tap to switch</span>}
+          </button>
         </div>
       )}
 

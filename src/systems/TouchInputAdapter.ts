@@ -11,10 +11,13 @@
  *    strafe, push it to the rim → sprint). Its base never moves: touch
  *    anywhere near it and the knob follows the thumb, clamped to the rim
  *    (Alex, 2026-10-22: "the base seems to move around while I'm moving the knob").
+ *  - Space, a quick tap anywhere else: lock onto the planet under the finger
+ *    (tapTargeting.ts; the LOCK button is gone, 2026-10-22)
  *  - World, anywhere else: drag → look (turn / look up-down)
  *
  * On-screen buttons:
- *  - Space: THRUST (hold; slide down on it = brake) · LOCK (J) · WARP (hold, K) · ENTER (N) · DRIVE / NEUTRAL (G)
+ *  - Space: THRUST (hold; slide down on it = brake) · DRIVE / NEUTRAL (G) · and, only
+ *    when they'd do something, WARP (hold, K; while locked on) and ENTER (N; near a world)
  *  - World: JUMP (big, right thumb; hold in the air = jetpack) · KICK (N) · EXIT (Escape)
  *  The dock between the thumbs is React (TouchDock.tsx).
  *  Layout spec: docs/mobile-ui/SPEC.md (grill 2026-10-21).
@@ -35,6 +38,8 @@ import { inputManager, shapeAxis, type ActionState } from './InputManager'
 import { flightController } from './FlightController'
 import { useUniverseStore } from '../stores/universeStore'
 import { TURN_RATE, LOOK_RATE } from '@aweborn/shared/sim/interior'
+import { warpSystem } from './WarpSystem'
+import { pickWorldAt, sceneHints } from './tapTargeting'
 
 // ── Tuning ───────────────────────────────────────────────────────────
 
@@ -64,6 +69,9 @@ const UI_POLL_MS = 200
 const SPRINT_AT = 0.92
 /** World: drag-to-look sensitivity (radians of view per CSS px of finger travel). */
 const LOOK_RAD_PER_PX = 0.0055
+/** Space: a touch this short and this still is a tap (lock onto the planet under it). */
+const TAP_MAX_MS = 350
+const TAP_MAX_MOVE_PX = 12
 
 type StickState = {
   id: number
@@ -87,7 +95,6 @@ const BUTTONS: ButtonSpec[] = [
   // World only: the big right-thumb button (space has THRUST in this spot)
   { id: 'touch-btn-brake', label: 'JUMP', action: 'brake', className: 'touch-btn touch-btn--brake', ariaLabel: 'Jump (hold in the air for jetpack)' },
   { id: 'touch-btn-warp', label: 'WARP', action: 'warp', className: 'touch-btn touch-btn--warp', ariaLabel: 'Warp (hold to charge, release to leap)' },
-  { id: 'touch-btn-lock', label: 'LOCK', action: 'lockOn', className: 'touch-btn touch-btn--lock', ariaLabel: 'Lock on to a world (tap again to cycle)' },
   { id: 'touch-btn-enter', label: 'ENTER', action: 'interact', className: 'touch-btn touch-btn--enter', ariaLabel: 'Enter the nearby world' },
 ]
 
@@ -113,6 +120,13 @@ export class TouchInputAdapter {
   private _lookDY = 0
   /** World: the stick (not the keyboard) is holding sprint. */
   private _stickSprint = false
+  /** Space: a finger that may turn out to be a tap (tap a planet = lock on). */
+  private _tap: { id: number; x: number; y: number; t: number } | null = null
+  /** Contextual buttons' last shown state (null = not rendered yet). */
+  private _warpShown: boolean | null = null
+  private _enterShown: boolean | null = null
+  private _warpBtn: HTMLButtonElement | null = null
+  private _enterBtn: HTMLButtonElement | null = null
 
   private _overlay: HTMLDivElement | null = null
   private _stickBase: HTMLDivElement | null = null
@@ -203,10 +217,15 @@ export class TouchInputAdapter {
 
     if (this._inWorld && this._look === null) {
       this._look = { id: e.pointerId, x: e.clientX, y: e.clientY }
+    } else if (!this._inWorld && this._tap === null) {
+      this._tap = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }
     }
   }
 
   private _onPointerMove = (e: PointerEvent): void => {
+    if (this._tap && e.pointerId === this._tap.id && Math.hypot(e.clientX - this._tap.x, e.clientY - this._tap.y) > TAP_MAX_MOVE_PX) {
+      this._tap = null // a drag, not a tap
+    }
     if (this._stick && e.pointerId === this._stick.id) {
       this._moveStick(e.clientX, e.clientY)
     } else if (this._look && e.pointerId === this._look.id) {
@@ -218,6 +237,14 @@ export class TouchInputAdapter {
   }
 
   private _onPointerUp = (e: PointerEvent): void => {
+    if (this._tap && e.pointerId === this._tap.id) {
+      const tap = this._tap
+      this._tap = null
+      if (e.type === 'pointerup' && performance.now() - tap.t <= TAP_MAX_MS) {
+        const id = pickWorldAt(e.clientX, e.clientY)
+        if (id) warpSystem.lockOnto(id)
+      }
+    }
     if (this._stick && e.pointerId === this._stick.id) {
       this._stick = null
       // Instant stop on release, same as letting go of a key
@@ -382,12 +409,31 @@ export class TouchInputAdapter {
     const neutral = flightController.isGravityEnabled()
     if (neutral !== this._modeIsNeutral) this._renderMode(neutral)
 
+    // Contextual buttons (space): WARP while locked on (or charging), ENTER near a world
+    if (!this._inWorld) {
+      const phase = warpSystem.getState().phase
+      this._showContextual('warp', phase === 'locked' || phase === 'charging')
+      this._showContextual('enter', sceneHints.canEnter)
+    }
+
     if (now - this._lastUiPoll > UI_POLL_MS) {
       this._lastUiPoll = now
       this._syncVisibility()
     }
 
     this._rafId = requestAnimationFrame(this._tick)
+  }
+
+  /** Space's contextual buttons fade in only when they'd do something (SPEC: "only when actionable"). */
+  private _showContextual(which: 'warp' | 'enter', on: boolean): void {
+    const btn = which === 'warp' ? this._warpBtn : this._enterBtn
+    const shown = which === 'warp' ? this._warpShown : this._enterShown
+    if (!btn || on === shown) return
+    if (which === 'warp') this._warpShown = on
+    else this._enterShown = on
+    btn.classList.toggle('touch-btn--off', !on)
+    btn.setAttribute('aria-hidden', String(!on))
+    btn.tabIndex = on ? 0 : -1
   }
 
   /** Inside worlds: walking layout (JUMP big under the thumb, KICK above it); hide behind modals. */
@@ -400,6 +446,11 @@ export class TouchInputAdapter {
       // The thumbs mean different things now: drop whatever they were holding
       this._releaseAll()
       this._inWorld = inWorld
+      // KICK (the same button) is always there inside a world; space re-decides both
+      this._enterBtn?.classList.remove('touch-btn--off')
+      this._enterBtn?.removeAttribute('aria-hidden')
+      this._enterShown = null
+      this._warpShown = null
       const enter = this._overlay.querySelector<HTMLButtonElement>('#touch-btn-enter')
       if (enter) {
         enter.textContent = inWorld ? 'KICK' : 'ENTER'
@@ -413,6 +464,7 @@ export class TouchInputAdapter {
 
   private _releaseAll = (): void => {
     this._stick = null
+    this._tap = null
     this._look = null
     this._lookDX = 0
     this._lookDY = 0
@@ -573,6 +625,10 @@ export class TouchInputAdapter {
     this._stickLabel = label
     this._stickR = 0
     this._thrustBtn = thrust
+    this._warpBtn = cluster.querySelector<HTMLButtonElement>('#touch-btn-warp')
+    this._enterBtn = cluster.querySelector<HTMLButtonElement>('#touch-btn-enter')
+    this._warpShown = null
+    this._enterShown = null
     this._modeButton = mode
     this._modeIsNeutral = null
     this._renderMode(flightController.isGravityEnabled())
@@ -627,6 +683,8 @@ export class TouchInputAdapter {
     this._stickKnob = null
     this._stickLabel = null
     this._thrustBtn = null
+    this._warpBtn = null
+    this._enterBtn = null
     this._modeButton = null
   }
 

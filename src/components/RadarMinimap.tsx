@@ -1,7 +1,10 @@
-import { memo, useRef, useEffect, useCallback } from 'react'
+import { memo, useRef, useEffect, useCallback, type PointerEvent as ReactPointerEvent } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { getPresenceState } from '../hooks/usePresence'
 import { flightController } from '../systems/FlightController'
+import { warpSystem } from '../systems/WarpSystem'
+import { radarHits } from '../systems/tapTargeting'
+import { ORIGIN_WORLD_ENTRY } from '@aweborn/shared/crdt-schema'
 import * as THREE from 'three'
 
 /**
@@ -83,7 +86,12 @@ interface BlipInfo {
   color: string
   size: number
   isPortal: boolean
+  /** World id (worlds + Origin only; other players can't be locked). */
+  worldId?: string
 }
+
+/** A tap this close (radar CSS px, before scaling) to a blip picks it. */
+const BLIP_PICK_PX = 16
 
 // ── Component ────────────────────────────────────────────────────────
 
@@ -202,6 +210,7 @@ export const RadarMinimap = memo(function RadarMinimap() {
       color: COLOR_PORTAL,
       size: 4,
       isPortal: true,
+      worldId: ORIGIN_WORLD_ENTRY.id,
     })
 
     // Worlds
@@ -224,6 +233,7 @@ export const RadarMinimap = memo(function RadarMinimap() {
         color,
         size,
         isPortal: false,
+        worldId: world.id,
       })
     }
 
@@ -248,6 +258,7 @@ export const RadarMinimap = memo(function RadarMinimap() {
     }
 
     // ── Draw blips ──
+    radarHits.length = 0 // where each lockable blip lands (tap = lock on)
     for (const blip of blips) {
       // Project onto disc: local X → screen X, local Z → screen Y
       // THREE.js forward is -Z, so negate localZ so "in front" maps to disc top
@@ -273,6 +284,7 @@ export const RadarMinimap = memo(function RadarMinimap() {
       // Blip position (stalk tip)
       const blipX = discX
       const blipY = discY - stalkPx // up on screen = above player
+      if (blip.worldId) radarHits.push({ id: blip.worldId, x: blipX, y: blipY })
 
       // Elevation tint: warm (above) vs cool (below) shift
       const elevTint = Math.abs(elevationNorm) > 0.1
@@ -365,6 +377,22 @@ export const RadarMinimap = memo(function RadarMinimap() {
     rafRef.current = requestAnimationFrame(draw)
   }, [])
 
+  // Tap / click a blip → lock onto that world (then WARP appears)
+  const onPick = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    if (!r.width) return
+    const x = ((e.clientX - r.left) / r.width) * CANVAS_SIZE
+    const y = ((e.clientY - r.top) / r.height) * CANVAS_SIZE
+    const scale = CANVAS_SIZE / r.width // a 96 px radar still needs a finger-sized target
+    let best: string | null = null
+    let bestD = BLIP_PICK_PX * Math.max(1, scale)
+    for (const h of radarHits) {
+      const d = Math.hypot(h.x - x, h.y - y)
+      if (d < bestD) { bestD = d; best = h.id }
+    }
+    if (best) warpSystem.lockOnto(best)
+  }, [])
+
   // Start/stop render loop
   useEffect(() => {
     rafRef.current = requestAnimationFrame(draw)
@@ -374,7 +402,7 @@ export const RadarMinimap = memo(function RadarMinimap() {
   }, [draw])
 
   return (
-    <div className="radar-container" title="3D Radar">
+    <div id="radar" className="radar-container" title="3D Radar · tap a world to lock on" onPointerUp={onPick}>
       <canvas
         ref={canvasRef}
         width={CANVAS_SIZE * DPR}
