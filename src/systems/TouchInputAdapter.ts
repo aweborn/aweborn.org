@@ -37,6 +37,8 @@
 
 import { inputManager, shapeAxis, type ActionState } from './InputManager'
 import { flightController } from './FlightController'
+import { cameraController } from './CameraController'
+import { interiorController } from './InteriorController'
 import { useUniverseStore } from '../stores/universeStore'
 import { TURN_RATE, LOOK_RATE } from '@aweborn/shared/sim/interior'
 import { warpSystem } from './WarpSystem'
@@ -126,6 +128,8 @@ export class TouchInputAdapter {
   private _stickSprint = false
   /** Space: a finger that may turn out to be a tap (tap a planet = lock on). */
   private _tap: { id: number; x: number; y: number; t: number } | null = null
+  /** Non-stick canvas touches (for 2-finger pinch-to-zoom camera in/out). */
+  private _canvasTouches = new Map<number, { x: number; y: number }>()
   /** Contextual buttons' last shown state (null = not rendered yet). */
   private _warpShown: boolean | null = null
   private _enterShown: boolean | null = null
@@ -195,6 +199,7 @@ export class TouchInputAdapter {
     document.documentElement.classList.remove('touch-ui')
     this._stick = null
     this._rightStick = null
+    this._canvasTouches.clear()
     this._thrustId = null
     inputManager.clearAllActions()
   }
@@ -203,7 +208,7 @@ export class TouchInputAdapter {
     return this._active
   }
 
-  // ── Canvas touches (sticks + tap/drag) ──
+  // ── Canvas touches (sticks + tap/drag + 2-finger pinch-to-zoom) ──
 
   /** Only touches that land on the 3D scene drive flight. */
   private _isSceneTarget(target: EventTarget | null): boolean {
@@ -231,6 +236,20 @@ export class TouchInputAdapter {
       return
     }
 
+    this._canvasTouches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (this._canvasTouches.size >= 2) {
+      // Two fingers on the open canvas = pinch-to-zoom; cancel single-finger tap or drag-to-look
+      this._tap = null
+      if (this._look) {
+        this._look = null
+        this._lookDX = 0
+        this._lookDY = 0
+        inputManager.setAxis('yaw', 0, 'touch')
+        inputManager.setAxis('pitch', 0, 'touch')
+      }
+      return
+    }
+
     if (this._inWorld && this._look === null) {
       this._look = { id: e.pointerId, x: e.clientX, y: e.clientY }
     } else if (!this._inWorld && this._tap === null) {
@@ -244,9 +263,29 @@ export class TouchInputAdapter {
     }
     if (this._stick && e.pointerId === this._stick.id) {
       this._moveStick(e.clientX, e.clientY)
-    } else if (this._rightStick && e.pointerId === this._rightStick.id) {
+      return
+    }
+    if (this._rightStick && e.pointerId === this._rightStick.id) {
       this._moveRightStick(e.clientX, e.clientY)
-    } else if (this._look && e.pointerId === this._look.id) {
+      return
+    }
+    if (this._canvasTouches.has(e.pointerId)) {
+      if (this._canvasTouches.size === 2) {
+        const pts = Array.from(this._canvasTouches.entries())
+        const prevSpan = Math.hypot(pts[0][1].x - pts[1][1].x, pts[0][1].y - pts[1][1].y)
+        this._canvasTouches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        const nextPts = Array.from(this._canvasTouches.values())
+        const newSpan = Math.hypot(nextPts[0].x - nextPts[1].x, nextPts[0].y - nextPts[1].y)
+        if (prevSpan > 8 && newSpan > 8) {
+          const factor = prevSpan / newSpan
+          if (this._inWorld) interiorController.zoomBy(factor)
+          else cameraController.zoomBy(factor)
+        }
+        return
+      }
+      this._canvasTouches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    }
+    if (this._look && e.pointerId === this._look.id) {
       this._lookDX += e.clientX - this._look.x
       this._lookDY += e.clientY - this._look.y
       this._look.x = e.clientX
@@ -255,6 +294,7 @@ export class TouchInputAdapter {
   }
 
   private _onPointerUp = (e: PointerEvent): void => {
+    this._canvasTouches.delete(e.pointerId)
     if (this._tap && e.pointerId === this._tap.id) {
       const tap = this._tap
       this._tap = null
@@ -528,6 +568,7 @@ export class TouchInputAdapter {
   private _releaseAll = (): void => {
     this._stick = null
     this._rightStick = null
+    this._canvasTouches.clear()
     this._tap = null
     this._look = null
     this._lookDX = 0

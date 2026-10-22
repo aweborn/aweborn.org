@@ -57,6 +57,30 @@ r.mode = await rect('#touch-btn-mode')
 r.dock = await rect('.touch-dock')
 await shot('0-space')
 
+// Two-finger pinch-to-zoom in space
+const py = Math.round(H * 0.35), px1 = Math.round(W * 0.38), px2 = Math.round(W * 0.62)
+const spaceDistInitial = await page.evaluate(async () => {
+  const { cameraController } = await window.__imp('/src/systems/CameraController.ts')
+  return +cameraController.getTargetDistance().toFixed(2)
+})
+await touch('touchStart', [[px1, py, 1], [px2, py, 2]])
+await sleep(30)
+await touch('touchMove', [[px1 - 50, py, 1], [px2 + 50, py, 2]])
+await sleep(50)
+const spaceDistZoomedIn = await page.evaluate(async () => {
+  const { cameraController } = await window.__imp('/src/systems/CameraController.ts')
+  return +cameraController.getTargetDistance().toFixed(2)
+})
+await touch('touchMove', [[px1 + 25, py, 1], [px2 - 25, py, 2]])
+await sleep(50)
+const spaceDistZoomedOut = await page.evaluate(async () => {
+  const { cameraController } = await window.__imp('/src/systems/CameraController.ts')
+  return +cameraController.getTargetDistance().toFixed(2)
+})
+await touch('touchEnd', [])
+await sleep(30)
+r.spacePinchZoom = { initial: spaceDistInitial, zoomedIn: spaceDistZoomedIn, zoomedOut: spaceDistZoomedOut }
+
 // ── Enter a world: right LOOK stick appears with JUMP + KICK surrounding it ──
 await page.evaluate(async () => {
   const { useUniverseStore } = await window.__imp('/src/stores/universeStore.ts')
@@ -110,6 +134,29 @@ const afterWorld = await page.evaluate(async () => {
   return { fx: +s.fx.toFixed(3), fz: +s.fz.toFixed(3), pitch: +s.pitch.toFixed(3) }
 })
 r.worldLook = { before: beforeWorld, after: afterWorld }
+
+// Two-finger pinch-to-zoom inside a world
+const worldDistInitial = await page.evaluate(async () => {
+  const { interiorController } = await window.__imp('/src/systems/InteriorController.ts')
+  return +interiorController.camDistGoal.toFixed(2)
+})
+await touch('touchStart', [[px1, py, 7], [px2, py, 8]])
+await sleep(30)
+await touch('touchMove', [[px1 - 50, py, 7], [px2 + 50, py, 8]])
+await sleep(50)
+const worldDistZoomedIn = await page.evaluate(async () => {
+  const { interiorController } = await window.__imp('/src/systems/InteriorController.ts')
+  return +interiorController.camDistGoal.toFixed(2)
+})
+await touch('touchMove', [[px1 + 25, py, 7], [px2 - 25, py, 8]])
+await sleep(50)
+const worldDistZoomedOut = await page.evaluate(async () => {
+  const { interiorController } = await window.__imp('/src/systems/InteriorController.ts')
+  return +interiorController.camDistGoal.toFixed(2)
+})
+await touch('touchEnd', [])
+await sleep(30)
+r.worldPinchZoom = { initial: worldDistInitial, zoomedIn: worldDistZoomedIn, zoomedOut: worldDistZoomedOut }
 
 r.errors = errors
 console.log(JSON.stringify(r, null, 1))

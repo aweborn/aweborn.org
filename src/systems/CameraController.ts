@@ -51,11 +51,30 @@ const DISTANCE_LERP_SPEED = 3.0
 /** How fast the look-behind rotation transitions */
 const LOOK_BEHIND_SPEED = 6.0
 
+/** Convert any camera distance in [3.5, 25] to its matching height offset along the preset curve. */
+function heightForDistance(d: number): number {
+  if (d <= DISTANCES[CameraPreset.Close]) return HEIGHTS[CameraPreset.Close]
+  if (d <= DISTANCES[CameraPreset.Medium]) {
+    const t = (d - DISTANCES[CameraPreset.Close]) / (DISTANCES[CameraPreset.Medium] - DISTANCES[CameraPreset.Close])
+    return HEIGHTS[CameraPreset.Close] + t * (HEIGHTS[CameraPreset.Medium] - HEIGHTS[CameraPreset.Close])
+  }
+  if (d <= DISTANCES[CameraPreset.Far]) {
+    const t = (d - DISTANCES[CameraPreset.Medium]) / (DISTANCES[CameraPreset.Far] - DISTANCES[CameraPreset.Medium])
+    return HEIGHTS[CameraPreset.Medium] + t * (HEIGHTS[CameraPreset.Far] - HEIGHTS[CameraPreset.Medium])
+  }
+  const t = Math.min(1, (d - DISTANCES[CameraPreset.Far]) / (DISTANCES[CameraPreset.Cinematic] - DISTANCES[CameraPreset.Far]))
+  return HEIGHTS[CameraPreset.Far] + t * (HEIGHTS[CameraPreset.Cinematic] - HEIGHTS[CameraPreset.Far])
+}
+
 // ── Camera Controller ────────────────────────────────────────────────
 
 class CameraController {
   /** Current distance preset */
   private _preset: CameraPreset = CameraPreset.Medium
+  /** Target camera distance (set by preset keys 1–4 or pinch-to-zoom) */
+  private _targetDistance = DISTANCES[CameraPreset.Medium]
+  /** Target camera height offset */
+  private _targetHeight = HEIGHTS[CameraPreset.Medium]
   /** Current actual camera distance (lerps toward target) */
   private _currentDistance = DISTANCES[CameraPreset.Medium]
   /** Current actual camera height offset */
@@ -97,10 +116,10 @@ class CameraController {
     const events = inputManager.getEvents()
 
     // ── Handle preset changes ──
-    if (events.justPressed.has('cameraClose')) this._preset = CameraPreset.Close
-    if (events.justPressed.has('cameraMedium')) this._preset = CameraPreset.Medium
-    if (events.justPressed.has('cameraFar')) this._preset = CameraPreset.Far
-    if (events.justPressed.has('cameraCinematic')) this._preset = CameraPreset.Cinematic
+    if (events.justPressed.has('cameraClose')) this.setPreset(CameraPreset.Close)
+    if (events.justPressed.has('cameraMedium')) this.setPreset(CameraPreset.Medium)
+    if (events.justPressed.has('cameraFar')) this.setPreset(CameraPreset.Far)
+    if (events.justPressed.has('cameraCinematic')) this.setPreset(CameraPreset.Cinematic)
 
     // ── Toggle free-look ──
     if (events.justPressed.has('freeLook')) {
@@ -112,10 +131,8 @@ class CameraController {
     }
 
     // ── Lerp distance/height toward target ──
-    const targetDist = DISTANCES[this._preset]
-    const targetHeight = HEIGHTS[this._preset]
-    this._currentDistance += (targetDist - this._currentDistance) * Math.min(1, DISTANCE_LERP_SPEED * dt)
-    this._currentHeight += (targetHeight - this._currentHeight) * Math.min(1, DISTANCE_LERP_SPEED * dt)
+    this._currentDistance += (this._targetDistance - this._currentDistance) * Math.min(1, DISTANCE_LERP_SPEED * dt)
+    this._currentHeight += (this._targetHeight - this._currentHeight) * Math.min(1, DISTANCE_LERP_SPEED * dt)
 
     // ── Look-behind blend ──
     const targetLookBehind = actions.lookBehind ? 1 : 0
@@ -175,9 +192,44 @@ class CameraController {
     camera.lookAt(this._lookTarget)
   }
 
+  /** Set a discrete camera distance preset (keys 1–4). */
+  setPreset(preset: CameraPreset): void {
+    this._preset = preset
+    this._targetDistance = DISTANCES[preset]
+    this._targetHeight = HEIGHTS[preset]
+  }
+
+  /**
+   * Pinch-to-zoom camera distance in/out continuously across [Close, Cinematic].
+   * `scaleFactor < 1` zooms in (spread fingers); `scaleFactor > 1` zooms out (pinch fingers).
+   */
+  zoomBy(scaleFactor: number): void {
+    if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) return
+    const minD = DISTANCES[CameraPreset.Close]
+    const maxD = DISTANCES[CameraPreset.Cinematic]
+    this._targetDistance = Math.max(minD, Math.min(maxD, this._targetDistance * scaleFactor))
+    this._targetHeight = heightForDistance(this._targetDistance)
+    // Keep _preset aligned with the nearest discrete preset
+    let best: CameraPreset = CameraPreset.Medium
+    let bestDiff = Infinity
+    for (const p of [CameraPreset.Close, CameraPreset.Medium, CameraPreset.Far, CameraPreset.Cinematic]) {
+      const diff = Math.abs(DISTANCES[p] - this._targetDistance)
+      if (diff < bestDiff) {
+        bestDiff = diff
+        best = p
+      }
+    }
+    this._preset = best
+  }
+
   /** Get the current distance preset. */
   getPreset(): CameraPreset {
     return this._preset
+  }
+
+  /** Get the current target camera distance (after preset or pinch-to-zoom). */
+  getTargetDistance(): number {
+    return this._targetDistance
   }
 
   /** Get the current free-look state. */
@@ -188,6 +240,8 @@ class CameraController {
   /** Reset the camera state (e.g., when entering/exiting worlds). */
   reset(): void {
     this._preset = CameraPreset.Medium
+    this._targetDistance = DISTANCES[CameraPreset.Medium]
+    this._targetHeight = HEIGHTS[CameraPreset.Medium]
     this._currentDistance = DISTANCES[CameraPreset.Medium]
     this._currentHeight = HEIGHTS[CameraPreset.Medium]
     this._springVelocity.set(0, 0, 0)

@@ -458,7 +458,6 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const camTarget = useRef(new THREE.Vector3())
   const camPos = useRef(new THREE.Vector3())
   const camDist = useRef<number>(CAM_DISTANCES[2])
-  const camDistGoal = useRef<number>(CAM_DISTANCES[2])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -466,7 +465,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return
       const id = Object.keys(CAM_KEYS).find((a) => matchesBinding(e, a))
       const k = id ? CAM_KEYS[id] : undefined
-      if (k) camDistGoal.current = CAM_DISTANCES[k]
+      if (k) interiorController.camDistGoal = CAM_DISTANCES[k]
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -507,7 +506,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     }
 
     // Camera behind the player, raised by the look pitch
-    camDist.current += (camDistGoal.current - camDist.current) * (1 - Math.exp(-4 * delta)) // smooth zoom
+    camDist.current += (interiorController.camDistGoal - camDist.current) * (1 - Math.exp(-4 * delta)) // smooth zoom
     const D = camDist.current
     const cp = Math.cos(s.pitch)
     const sp = Math.sin(s.pitch)

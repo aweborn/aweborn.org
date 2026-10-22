@@ -29,6 +29,8 @@ class InteriorController {
   state: InteriorState = spawnInterior()
   /** State before the latest step, for render interpolation. */
   prev: InteriorState = this.state
+  /** Target third-person camera distance inside a world (presets 1–4 or pinch-to-zoom). */
+  camDistGoal = 4.5
   private _acc = 0
 
   private _restore: Partial<InteriorState> | null = null
@@ -43,7 +45,17 @@ class InteriorController {
     this.state = { ...spawnInterior(), ...(this._restore ?? {}) }
     this._restore = null
     this.prev = this.state
+    this.camDistGoal = 4.5
     this._acc = 0
+  }
+
+  /**
+   * Pinch-to-zoom camera distance in/out continuously across [3, 20].
+   * `scaleFactor < 1` zooms in (spread fingers); `scaleFactor > 1` zooms out (pinch fingers).
+   */
+  zoomBy(scaleFactor: number): void {
+    if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) return
+    this.camDistGoal = Math.max(3, Math.min(20, this.camDistGoal * scaleFactor))
   }
 
   /**
