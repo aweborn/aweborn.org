@@ -3,7 +3,8 @@ import { useUniverseStore } from '../stores/universeStore'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
 import { warpSystem } from '../systems/WarpSystem'
-import { starModSlots } from '../systems/StarModSlots'
+import { starModSlots, MOD_LABELS } from '../systems/StarModSlots'
+import { useHudPrefsStore } from '../stores/hudPrefsStore'
 import { RadarMinimap } from './RadarMinimap'
 import { PlayerAccount } from './PlayerAccount'
 import { WorldIndexChip } from './WorldIndex'
@@ -12,17 +13,9 @@ import { KeybindingsButton, KeybindingsPanel } from './KeybindingsPanel'
 import { useKeybindingStore, keyCapLabel } from '../stores/keybindingStore'
 import { DEF_BY_ID } from '@aweborn/shared/keybindings'
 
-// ── Mod Slot Labels ──────────────────────────────────────────────────
+// ── Mod Slot Labels (shared with ••• More, in StarModSlots) ──────────
 
-const TRAIL_LABELS: Record<string, string> = {
-  comet: '☄ Comet', sparkle: '✦ Sparkle', ribbon: '〰 Ribbon', helix: '🧬 Helix', none: '○ None',
-}
-const AURA_LABELS: Record<string, string> = {
-  glow: '◉ Glow', pulse: '◎ Pulse', rings: '◯ Rings', flame: '🔥 Flame', none: '○ None',
-}
-const SHAPE_LABELS: Record<string, string> = {
-  sphere: '● Sphere', crystal: '◆ Crystal', spiral: '✿ Spiral', spike: '▲ Spike', jellyfish: '🪼 Jelly',
-}
+const { trail: TRAIL_LABELS, aura: AURA_LABELS, shape: SHAPE_LABELS } = MOD_LABELS
 
 // ── Live key caps ────────────────────────────────────────────────────
 
@@ -93,6 +86,7 @@ export function HUD() {
 
   // ── FPS counter + live key state polling ──
   const [fps, setFps] = useState(0)
+  const showFps = useHudPrefsStore((s) => s.showFps)
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set())
   const framesRef = useRef(0)
   const lastTimeRef = useRef(performance.now())
@@ -171,7 +165,7 @@ export function HUD() {
             </>
           )}
         </div>
-        <div className="hud-fps">{fps} FPS</div>
+        <div className={`hud-fps${showFps ? ' hud-fps--pinned' : ''}`}>{fps} FPS</div>
         <div className="hud-tools">
           <KeybindingsButton />
           <DisplaySettings />

@@ -9,12 +9,12 @@ import { useSheetStore } from '../stores/sheetStore'
  * It replaces the World Index chip, the chat bubble and the Library /
  * Create / Plan / Plant pills that crowded the top of a phone.
  *
- *   space:  🗺 Index · 💬 Chat · 🌱 Plant
- *   world:  🗺 Index · 💬 Chat · 🧱 Make (Library · Create · Plan tabs)
+ *   space:  🗺 Index · 💬 Chat · 🌱 Plant · ••• More
+ *   world:  🗺 Index · 💬 Chat · 🧱 Make (Library · Create · Plan tabs) · ••• More
  *
  * Touch only: CSS shows it under `html.touch-ui`. Desktop keeps its pills and
  * keys for now (the spec's desktop dock with <kbd> hints comes later).
- * ••• More (settings, fullscreen, controls) is the next slice: docs/mobile-ui/SPEC.md.
+ * ••• More (MoreSheet) holds the account, star look, settings, controls, Give.
  */
 export function TouchDock() {
   const inWorld = useUniverseStore((s) => s.activeWorldId !== null)
@@ -85,6 +85,17 @@ export function TouchDock() {
           <span className="touch-dock-label">Plant</span>
         </button>
       )}
+      <button
+        id="touch-dock-more"
+        type="button"
+        className={`touch-dock-btn${sheet === 'more' ? ' is-on' : ''}`}
+        onClick={() => useSheetStore.getState().setSheet('more', (o) => !o)}
+        aria-label="More: your player, settings, controls, give"
+        aria-expanded={sheet === 'more'}
+      >
+        <span className="touch-dock-icon touch-dock-icon--more" aria-hidden="true">•••</span>
+        <span className="touch-dock-label">More</span>
+      </button>
     </nav>
   )
 }

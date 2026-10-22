@@ -37,6 +37,13 @@ const AURA_OPTIONS: AuraStyle[] = ['glow', 'pulse', 'rings', 'flame', 'none']
 const SHAPE_OPTIONS: ShapeStyle[] = ['sphere', 'crystal', 'spiral', 'spike', 'jellyfish']
 const EMOTE_OPTIONS: EmoteStyle[] = ['wave', 'sos', 'beacon', 'celebration']
 
+/** Display names (HUD mod slots, ••• More → Me). */
+export const MOD_LABELS: Record<'trail' | 'aura' | 'shape', Record<string, string>> = {
+  trail: { comet: '☄ Comet', sparkle: '✦ Sparkle', ribbon: '〰 Ribbon', helix: '🧬 Helix', none: '○ None' },
+  aura: { glow: '◉ Glow', pulse: '◎ Pulse', rings: '◯ Rings', flame: '🔥 Flame', none: '○ None' },
+  shape: { sphere: '● Sphere', crystal: '◆ Crystal', spiral: '✿ Spiral', spike: '▲ Spike', jellyfish: '🪼 Jelly' },
+}
+
 // ── Storage ──────────────────────────────────────────────────────────
 
 const STORAGE_KEY = 'aweborn:modSlots'
@@ -104,6 +111,18 @@ class StarModSlots {
   /** Get current mod slot state. */
   getState(): Readonly<ModSlotState> {
     return this._state
+  }
+
+  /** Cycle one slot without a key (touch: ••• More → Me). */
+  cycle(slot: 'trail' | 'aura' | 'shape'): void {
+    if (slot === 'trail') this._cycleTrail()
+    else if (slot === 'aura') this._cycleAura()
+    else this._cycleShape()
+  }
+
+  /** Trigger the next emote without a key (touch: ••• More → Me). */
+  emote(): void {
+    this._triggerEmote()
   }
 
   // ── Cycling ──

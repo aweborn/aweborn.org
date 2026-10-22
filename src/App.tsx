@@ -8,6 +8,8 @@ import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
 import { HUD } from './components/HUD'
 import { DonationModal } from './components/DonationModal'
+import { MoreSheet } from './components/MoreSheet'
+import { OPEN_GIVE_EVENT } from './stores/hudPrefsStore'
 import { SyncBridge } from './components/SyncBridge'
 import { PlantWorldPanel } from './components/PlantWorldPanel'
 import { TouchDock } from './components/TouchDock'
@@ -78,6 +80,12 @@ export default function App() {
     setShowDonationModal(false)
   }, [])
 
+  // ••• More → Give (touch) opens the same gift modal as the Origin portal.
+  useEffect(() => {
+    window.addEventListener(OPEN_GIVE_EVENT, handlePortalActivate)
+    return () => window.removeEventListener(OPEN_GIVE_EVENT, handlePortalActivate)
+  }, [handlePortalActivate])
+
   return (
     <>
       {/* 3D Scene — only attempt when WebGL is available */}
@@ -127,6 +135,7 @@ export default function App() {
           <ChatPanel />
           <PlantWorldPanel />
           <TouchDock />
+          <MoreSheet />
         </>
       )}
       {isLoaded && webglSupported && <CardReveal />}

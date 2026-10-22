@@ -10,7 +10,7 @@
 import { useCallback } from 'react'
 import { create } from 'zustand'
 
-export type SheetName = 'library' | 'create' | 'plan' | 'plant'
+export type SheetName = 'library' | 'create' | 'plan' | 'plant' | 'more'
 type Next = boolean | ((open: boolean) => boolean)
 
 interface SheetState {

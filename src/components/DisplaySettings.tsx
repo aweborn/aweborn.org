@@ -26,15 +26,7 @@ function fromSlider(v: number): QualitySetting {
 
 export function DisplaySettings() {
   const [open, setOpen] = useState(false)
-  const setting = useQualityStore((s) => s.setting)
-  const tierIndex = useQualityStore((s) => activeTierIndex(s))
-  const setSetting = useQualityStore((s) => s.setSetting)
-  const tier = QUALITY_TIERS[tierIndex]
   const rootRef = useRef<HTMLDivElement>(null)
-  const sliderId = useId()
-
-  const value = toSlider(setting)
-  const label = setting === 'auto' ? `Auto · ${tier.name}` : tier.name
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -81,43 +73,60 @@ export function DisplaySettings() {
       {open && (
         <div id="display-settings-panel" className="display-settings-panel" role="group" aria-label="Display settings">
           <div className="display-settings-title">Display</div>
-
-          <label htmlFor={sliderId} className="display-settings-label">
-            <span>Quality</span>
-            <span className="display-settings-value">{label}</span>
-          </label>
-          <input
-            id={sliderId}
-            className="quality-slider"
-            type="range"
-            min={0}
-            max={STOPS.length - 1}
-            step={1}
-            value={value}
-            aria-valuetext={label}
-            style={{ '--control-value': `${(value / (STOPS.length - 1)) * 100}%` } as CSSProperties}
-            onChange={(e) => setSetting(fromSlider(Number(e.target.value)))}
-            // Mouse/touch: give the keys back to flight. Keyboard users keep focus.
-            onPointerUp={(e) => e.currentTarget.blur()}
-          />
-          <div className="quality-stops" aria-hidden="true">
-            {STOPS.map((s, i) => (
-              <span key={s} className={i === value ? 'quality-stop--active' : undefined}>{s}</span>
-            ))}
-          </div>
-
-          <dl className="display-settings-stats">
-            <div><dt>View distance</dt><dd>{tier.fogFar.toLocaleString()} u</dd></div>
-            <div><dt>Resolution</dt><dd>{Math.min(tier.dpr, window.devicePixelRatio || 1)}×</dd></div>
-            <div><dt>Glow</dt><dd>{tier.bloom ? 'On' : 'Off'}</dd></div>
-          </dl>
-
-          <p className="display-settings-note">
-            {setting === 'auto' && 'Auto adjusts to your frame rate. '}
-            Worlds still count as sighted at {SIGHT_DISTANCE} u on every setting.
-          </p>
+          <QualityControl />
         </div>
       )}
     </div>
+  )
+}
+
+/** The quality slider + what it changes. Desktop: inside the gear panel; touch: ••• More → Settings. */
+export function QualityControl() {
+  const setting = useQualityStore((s) => s.setting)
+  const tierIndex = useQualityStore((s) => activeTierIndex(s))
+  const setSetting = useQualityStore((s) => s.setSetting)
+  const tier = QUALITY_TIERS[tierIndex]
+  const sliderId = useId()
+
+  const value = toSlider(setting)
+  const label = setting === 'auto' ? `Auto · ${tier.name}` : tier.name
+
+  return (
+    <>
+      <label htmlFor={sliderId} className="display-settings-label">
+        <span>Quality</span>
+        <span className="display-settings-value">{label}</span>
+      </label>
+      <input
+        id={sliderId}
+        className="quality-slider"
+        type="range"
+        min={0}
+        max={STOPS.length - 1}
+        step={1}
+        value={value}
+        aria-valuetext={label}
+        style={{ '--control-value': `${(value / (STOPS.length - 1)) * 100}%` } as CSSProperties}
+        onChange={(e) => setSetting(fromSlider(Number(e.target.value)))}
+        // Mouse/touch: give the keys back to flight. Keyboard users keep focus.
+        onPointerUp={(e) => e.currentTarget.blur()}
+      />
+      <div className="quality-stops" aria-hidden="true">
+        {STOPS.map((s, i) => (
+          <span key={s} className={i === value ? 'quality-stop--active' : undefined}>{s}</span>
+        ))}
+      </div>
+
+      <dl className="display-settings-stats">
+        <div><dt>View distance</dt><dd>{tier.fogFar.toLocaleString()} u</dd></div>
+        <div><dt>Resolution</dt><dd>{Math.min(tier.dpr, window.devicePixelRatio || 1)}×</dd></div>
+        <div><dt>Glow</dt><dd>{tier.bloom ? 'On' : 'Off'}</dd></div>
+      </dl>
+
+      <p className="display-settings-note">
+        {setting === 'auto' && 'Auto adjusts to your frame rate. '}
+        Worlds still count as sighted at {SIGHT_DISTANCE} u on every setting.
+      </p>
+    </>
   )
 }

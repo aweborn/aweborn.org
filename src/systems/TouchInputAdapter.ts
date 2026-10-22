@@ -65,11 +65,6 @@ const SPRINT_AT = 0.92
 /** World: drag-to-look sensitivity (radians of view per CSS px of finger travel). */
 const LOOK_RAD_PER_PX = 0.0055
 
-const svgIcon = (d: string) =>
-  `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`
-const FULLSCREEN_ENTER_ICON = svgIcon('M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5')
-const FULLSCREEN_EXIT_ICON = svgIcon('M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5')
-
 type StickState = {
   id: number
   originX: number
@@ -127,7 +122,6 @@ export class TouchInputAdapter {
   private _thrustBtn: HTMLButtonElement | null = null
   private _modeButton: HTMLButtonElement | null = null
   private _modeIsNeutral: boolean | null = null
-  private _fullscreenButton: HTMLButtonElement | null = null
   private _toast: HTMLDivElement | null = null
   private _toastTimer: number | null = null
 
@@ -561,18 +555,9 @@ export class TouchInputAdapter {
 
     overlay.append(base, cluster, exit)
 
-    // Fullscreen (hidden when already running as an installed app)
+    // Fullscreen lives in ••• More (2026-10-22); the toast here explains the
+    // iPhone case. Not needed when already running as an installed app.
     if (!isStandalone()) {
-      const fs = document.createElement('button')
-      fs.type = 'button'
-      fs.id = 'touch-btn-fullscreen'
-      fs.className = 'touch-fullscreen'
-      fs.addEventListener('click', this._onFullscreenClick)
-      document.addEventListener('fullscreenchange', this._renderFullscreen)
-      document.addEventListener('webkitfullscreenchange', this._renderFullscreen)
-      overlay.append(fs)
-      this._fullscreenButton = fs
-
       const toast = document.createElement('div')
       toast.className = 'touch-toast'
       toast.setAttribute('role', 'status')
@@ -591,17 +576,17 @@ export class TouchInputAdapter {
     this._modeButton = mode
     this._modeIsNeutral = null
     this._renderMode(flightController.isGravityEnabled())
-    this._renderFullscreen()
     this._syncVisibility()
   }
 
   // ── Fullscreen ──
 
-  private _onFullscreenClick = async (): Promise<void> => {
+  /** Enter / leave full screen (••• More → Settings). */
+  toggleFullscreen = async (): Promise<void> => {
     const doc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => Promise<void> }
     const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }
 
-    if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+    if (isFullscreen()) {
       await (doc.exitFullscreen?.() ?? doc.webkitExitFullscreen?.())?.catch(() => { })
       return
     }
@@ -615,22 +600,10 @@ export class TouchInputAdapter {
     try {
       if (root.requestFullscreen) await root.requestFullscreen({ navigationUI: 'hide' })
       else await root.webkitRequestFullscreen?.()
-      // Android: also pin landscape while fullscreen (not supported everywhere)
-      const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }
-      await orientation?.lock?.('landscape').catch(() => { })
+      // No orientation lock any more: the layout is portrait-first (AGENTS.md).
     } catch {
       this._showToast('Full screen isn’t available here.')
     }
-  }
-
-  private _renderFullscreen = (): void => {
-    const btn = this._fullscreenButton
-    if (!btn) return
-    const doc = document as Document & { webkitFullscreenElement?: Element }
-    const on = !!(doc.fullscreenElement || doc.webkitFullscreenElement)
-    btn.innerHTML = on ? FULLSCREEN_EXIT_ICON : FULLSCREEN_ENTER_ICON
-    btn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen')
-    btn.classList.toggle('touch-fullscreen--on', on)
   }
 
   private _showToast(text: string): void {
@@ -645,13 +618,10 @@ export class TouchInputAdapter {
   }
 
   private _removeOverlay(): void {
-    document.removeEventListener('fullscreenchange', this._renderFullscreen)
-    document.removeEventListener('webkitfullscreenchange', this._renderFullscreen)
     if (this._toastTimer !== null) clearTimeout(this._toastTimer)
     this._toastTimer = null
     this._overlay?.remove()
     this._overlay = null
-    this._fullscreenButton = null
     this._toast = null
     this._stickBase = null
     this._stickKnob = null
@@ -682,8 +652,14 @@ function fullscreenSupported(): boolean {
   return !!(doc.fullscreenEnabled || doc.webkitFullscreenEnabled)
 }
 
+/** The page is in element fullscreen right now. */
+export function isFullscreen(): boolean {
+  const doc = document as Document & { webkitFullscreenElement?: Element }
+  return !!(doc.fullscreenElement || doc.webkitFullscreenElement)
+}
+
 /** Launched from the home screen as an installed web app (already fullscreen-ish). */
-function isStandalone(): boolean {
+export function isStandalone(): boolean {
   return (
     window.matchMedia?.('(display-mode: fullscreen), (display-mode: standalone)').matches ||
     (navigator as Navigator & { standalone?: boolean }).standalone === true
