@@ -710,17 +710,15 @@ export function Scene({ onPortalActivate, onProgress }: SceneProps) {
   const dpr = Math.min(tier.dpr, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1)
 
   const handleCreated = useCallback(() => {
-    // Simulate loading progress (assets are lightweight for this scene)
-    let progress = 0
-    const interval = setInterval(() => {
-      progress += Math.random() * 15 + 5
-      if (progress >= 100) {
-        progress = 100
-        clearInterval(interval)
+    // Done as soon as the scene has really drawn (2026-10-22, Alex: "make it
+    // faster"). This used to fill a fake bar on a random 200 ms timer (~1.6 s of
+    // pure waiting). Two animation frames = the first frame was rendered and shown.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
         setReady(true)
-      }
-      onProgress(progress)
-    }, 200)
+        onProgress(100)
+      }),
+    )
   }, [onProgress])
 
   return (

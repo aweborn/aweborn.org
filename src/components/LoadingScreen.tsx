@@ -5,15 +5,22 @@ interface LoadingScreenProps {
   onComplete: () => void
 }
 
+/** Fade-out length; matches `.loading-screen` transition in index.css. */
+const FADE_MS = 300
+
+/**
+ * Splash while the 3D scene starts. The bar is no longer a fake percentage
+ * (2026-10-22): there's nothing to measure once the JS has loaded, only
+ * "the first frame is drawn". So it sweeps (indeterminate) until the Scene
+ * reports 100, then the splash fades out at once (was +600 ms hold +800 ms fade).
+ */
 export function LoadingScreen({ progress, onComplete }: LoadingScreenProps) {
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     if (progress >= 100) {
-      const timer = setTimeout(() => {
-        setLoaded(true)
-        setTimeout(onComplete, 800)
-      }, 600)
+      setLoaded(true)
+      const timer = setTimeout(onComplete, FADE_MS)
       return () => clearTimeout(timer)
     }
   }, [progress, onComplete])
@@ -40,12 +47,9 @@ export function LoadingScreen({ progress, onComplete }: LoadingScreenProps) {
       <div className="loading-logo">aweborn</div>
       <div className="loading-subtitle">Entering the cosmos</div>
 
-      {/* Progress bar */}
-      <div className="loading-bar-container">
-        <div
-          className="loading-bar"
-          style={{ width: `${Math.min(progress, 100)}%` }}
-        />
+      {/* Progress bar: sweeps until the scene is drawn, then fills */}
+      <div className="loading-bar-container" role="progressbar" aria-label="Loading">
+        <div className={`loading-bar${progress >= 100 ? ' is-done' : ''}`} />
       </div>
     </div>
   )
