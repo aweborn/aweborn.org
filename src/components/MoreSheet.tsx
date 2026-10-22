@@ -113,7 +113,7 @@ export function MoreSheet() {
               <li><b>Left stick</b> walk · push to the rim to sprint</li>
               <li><b>Drag anywhere else</b> look around</li>
               <li><b>JUMP</b> jump · <b>KICK</b> kick a block</li>
-              <li><b>✕ EXIT</b> back to space</li>
+              <li><b>Hold the world name</b> (top right) to return to space</li>
             </>
           ) : (
             <>

@@ -676,10 +676,10 @@ html.touch-ui .hud-mod-slots {
 }
 
 /* Touch: the bottom belongs to the thumbs and the dock (2026-10-22), so the
-   radar + speed move up under the brand / Save chip (the World Index chip
-   that sat there is the dock's 🗺 now). */
+   radar + speed move up under the brand (the World Index chip is the dock's 🗺,
+   and the Save chip moved into ••• More). */
 html.touch-ui .hud-bottom-left {
-  top: calc(var(--space-lg) + 76px);
+  top: calc(var(--space-lg) + 38px);
   bottom: auto;
 }
 html.touch-ui .radar-container {
@@ -713,9 +713,19 @@ html.touch-ui .hud-target-switch {
   color: rgba(160, 195, 255, 0.5);
 }
 
+/* Touch: the place + mana pill moved to the top-right (SPEC.md), so in
+   landscape the top-centre is wide open; in portrait the target chip sits
+   below the top-right pill, clear of the 96 px radar on the left. */
+html.touch-ui .hud-top-center {
+  top: var(--space-lg);
+}
 @media (orientation: portrait) {
   html.touch-ui .hud-top-center {
-    top: calc(var(--space-lg) + 84px); /* below Sign in / UNIVERSE */
+    top: calc(var(--space-lg) + 58px);
+    right: var(--space-lg);
+    left: auto;
+    transform: none;
+    max-width: calc(100vw - 156px);
   }
 }
 
@@ -945,27 +955,6 @@ html.touch-ui .hud-target-switch {
   box-shadow: 0 0 10px rgba(232, 185, 74, 0.15);
 }
 
-/* Exit — only inside a world */
-.touch-btn--exit {
-  position: fixed;
-  top: calc(var(--touch-safe-top) + 64px);
-  left: 50%;
-  width: auto;
-  height: 44px;
-  padding: 0 20px;
-  border-radius: 999px;
-  transform: translateX(-50%);
-  display: none;
-}
-
-.touch-btn--exit.touch-btn--pressed {
-  transform: translateX(-50%) scale(0.94);
-}
-
-.touch-overlay--in-world .touch-btn--exit {
-  display: block;
-}
-
 /* Inside a world (docs/mobile-ui/SPEC.md): left stick walks (rim = sprint),
    drag anywhere else looks, JUMP is the big right-thumb button with KICK above it.
    Flight-only controls go. */
@@ -1020,14 +1009,16 @@ html.touch-ui .hud-target-switch {
 
 /* Phones: the keyboard panel button has no use without a keyboard.
    2026-10-22: the gear, the fullscreen button and the "Save · Sign in" chip
-   moved into ••• More (MoreSheet), so the top of a phone keeps only the mana
-   pill, the place name and (in space) the radar. FPS shows only if pinned. */
+   moved into ••• More (MoreSheet), and the place name + mana pill merged into
+   one top-right pill (#mana-pill, with 0.6 s hold-to-leave in worlds). */
 @media (hover: none) and (pointer: coarse) {
   button.keybindings-toggle { display: none; }
 }
 html.touch-ui .hud-tools,
+html.touch-ui .hud-mode,
 html.touch-ui #player-account-chip,
 html.touch-ui .hud-fps:not(.hud-fps--pinned) { display: none; }
+html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
 
 .touch-toast {
   position: fixed;
@@ -4206,18 +4197,43 @@ html.touch-ui .create-panel .make-tabs {
 .library-thumb { grid-column: 1; grid-row: 1 / span 2; width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: rgba(255, 255, 255, 0.06); }
 .library-thumb--none { display: grid; place-items: center; font-size: 24px; color: rgba(200, 190, 255, 0.35); }
 
-/* ── Mana tracker (personal allowance + world pool) ─────────────────── */
+/* ── Mana tracker + top-right Place · Mana pill on touch (SPEC.md) ─── */
 .mana-tracker { position: fixed; top: var(--space-lg); left: 50%; transform: translateX(-50%); z-index: 41; font-family: var(--font-body); color: var(--color-text-primary); display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.mana-pill { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: var(--text-sm); color: inherit; cursor: pointer; padding: 6px 14px; border-radius: var(--radius-full); background: var(--glass-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255, 210, 122, 0.4); box-shadow: 0 4px 18px rgba(255, 170, 80, 0.18); transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.2s ease; }
+.mana-pill { --hold-p: 0; position: relative; overflow: hidden; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font: inherit; font-size: var(--text-sm); color: inherit; cursor: pointer; padding: 6px 14px; border-radius: var(--radius-full); background: var(--glass-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255, 210, 122, 0.4); box-shadow: 0 4px 18px rgba(255, 170, 80, 0.18); touch-action: manipulation; -webkit-user-select: none; user-select: none; transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.2s ease; }
 .mana-pill:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(255, 170, 80, 0.35); }
+.mana-pill.is-holding { transform: scale(0.97); border-color: rgba(110, 220, 255, 0.75); }
+.mana-pill-hold { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(110, 220, 255, 0.38), rgba(232, 185, 74, 0.45)); transform-origin: left center; transform: scaleX(var(--hold-p, 0)); }
+.mana-pill-row { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.mana-pill-place { display: none; align-items: center; gap: 5px; font-weight: 600; color: var(--color-text-primary); }
+.mana-pill-place-icon { font-size: 13px; }
+.mana-pill-place-name { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 380px) { .mana-pill-place-name { max-width: 86px; } }
+.mana-pill-sep { color: rgba(200, 190, 255, 0.45); margin: 0 1px; }
+.mana-pill-leave-sub { display: none; position: relative; font-size: 10px; line-height: 1.1; letter-spacing: 0.08em; color: rgba(200, 190, 255, 0.6); }
 .mana-pill-icon { color: #ffd27a; }
 .mana-pill-num { font-weight: 700; font-variant-numeric: tabular-nums; }
 .mana-pill-label { color: var(--color-text-secondary); font-size: var(--text-xs); }
 .mana-pill-held { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(180, 160, 255, 0.2); color: #d8ceff; animation: mana-pulse 1.6s ease-in-out infinite; }
 .mana-tracker.is-low .mana-pill { border-color: rgba(255, 120, 110, 0.65); }
 .mana-tracker.is-low .mana-pill-icon { color: #ff8a80; }
+html.touch-ui .mana-tracker {
+  top: calc(var(--space-lg) + env(safe-area-inset-top, 0px));
+  right: calc(var(--space-lg) + env(safe-area-inset-right, 0px));
+  left: auto;
+  transform: none;
+  align-items: flex-end;
+}
+html.touch-ui .mana-pill { min-height: 44px; padding: 5px 14px; }
+html.touch-ui .mana-pill-place { display: inline-flex; }
+html.touch-ui .mana-pill-leave-sub { display: block; }
+html.touch-ui .mana-pill-desktop-only,
+html.touch-ui .mana-pill-wide { display: none; }
 @keyframes mana-pulse { 50% { opacity: 0.55; } }
-.mana-panel { width: min(340px, calc(100vw - 32px)); padding: 14px 16px; border-radius: 18px; background: linear-gradient(160deg, rgba(30, 22, 60, 0.9), rgba(12, 14, 32, 0.92)); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid rgba(255, 210, 122, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); font-size: var(--text-sm); animation: rise-in 0.2s var(--ease-out-expo) both; }
+.mana-panel { width: min(340px, calc(100vw - 32px)); max-height: calc(100dvh - 88px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px; border-radius: 18px; background: linear-gradient(160deg, rgba(30, 22, 60, 0.9), rgba(12, 14, 32, 0.92)); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid rgba(255, 210, 122, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); font-size: var(--text-sm); animation: rise-in 0.2s var(--ease-out-expo) both; }
+.mana-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.mana-panel-head h3 { margin: 0; }
+.mana-panel-close { width: 32px; height: 32px; border: none; border-radius: 50%; cursor: pointer; font-size: 14px; line-height: 1; color: var(--color-text-secondary); background: rgba(255, 255, 255, 0.07); }
+.mana-panel-account { margin-top: 12px; width: 100%; min-height: 44px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; font: inherit; font-size: var(--text-xs); font-weight: 600; color: var(--color-text-primary); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-border); border-radius: 12px; cursor: pointer; }
 .mana-panel h3 { margin: 12px 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 220, 160, 0.7); }
 .mana-panel h3:first-child { margin-top: 0; }
 .mana-row { display: flex; justify-content: space-between; gap: 12px; margin: 3px 0; color: var(--color-text-secondary); }

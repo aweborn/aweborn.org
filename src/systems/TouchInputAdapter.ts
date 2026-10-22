@@ -18,7 +18,8 @@
  * On-screen buttons:
  *  - Space: THRUST (hold; slide down on it = brake) · DRIVE / NEUTRAL (G) · and, only
  *    when they'd do something, WARP (hold, K; while locked on) and ENTER (N; near a world)
- *  - World: JUMP (big, right thumb; hold in the air = jetpack) · KICK (N) · EXIT (Escape)
+ *  - World: JUMP (big, right thumb; hold in the air = jetpack) · KICK (N); hold the
+ *    top-right place pill (0.6 s) to return to space
  *  The dock between the thumbs is React (TouchDock.tsx).
  *  Layout spec: docs/mobile-ui/SPEC.md (grill 2026-10-21).
  *
@@ -599,13 +600,7 @@ export class TouchInputAdapter {
     this._bindButton(mode, 'gravityToggle')
     cluster.prepend(mode)
 
-    // Exit (inside worlds)
-    const exit = this._makeButton({
-      id: 'touch-btn-exit', label: '✕ EXIT', action: 'escape',
-      className: 'touch-btn touch-btn--exit', ariaLabel: 'Exit world',
-    })
-
-    overlay.append(base, cluster, exit)
+    overlay.append(base, cluster)
 
     // Fullscreen lives in ••• More (2026-10-22); the toast here explains the
     // iPhone case. Not needed when already running as an installed app.
