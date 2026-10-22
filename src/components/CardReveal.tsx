@@ -29,8 +29,11 @@ export function CardReveal() {
     if (!entry) return
     lastPlayedSeq = reveal.seq
 
-    // Where to fly: the HUD chip (fall back to the top-left corner).
-    const chip = document.getElementById('world-index-chip')?.getBoundingClientRect()
+    // Where to fly: the HUD chip, or the dock's Index button on touch (whichever
+    // is showing; fall back to the top-left corner).
+    const chip = ['world-index-chip', 'touch-dock-index']
+      .map((id) => document.getElementById(id)?.getBoundingClientRect())
+      .find((r) => r && r.width > 0)
     const tx = (chip ? chip.left + chip.width / 2 : 80) - window.innerWidth / 2
     const ty = (chip ? chip.top + chip.height / 2 : 80) - window.innerHeight / 2
     setActive({ entry, seq: reveal.seq, fly: { '--cr-tx': `${tx}px`, '--cr-ty': `${ty}px` } as CSSProperties })

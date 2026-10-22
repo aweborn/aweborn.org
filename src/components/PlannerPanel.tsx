@@ -9,6 +9,8 @@ import { usePresence } from '../hooks/usePresence'
 import { placeOnTerrain } from '../stores/worldVoxels'
 import type { BlueprintAsset } from '@aweborn/shared/blueprint'
 import { matchesBinding } from '../stores/keybindingStore'
+import { useSheet } from '../stores/sheetStore'
+import { MakeTabs } from './MakeTabs'
 import { ManaSeal, useCanChannel } from './ManaSeal'
 
 /**
@@ -40,7 +42,7 @@ const MODEL_LABEL = (id: string) => id.split('/')[1] ?? id
 
 export function PlannerPanel() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useSheet('plan')
   const [models, setModels] = useState<string[]>([])
   const [model, setModel] = useState('')
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -172,7 +174,7 @@ export function PlannerPanel() {
     return () => {
       cancelled = true
     }
-  }, [activeWorldId])
+  }, [activeWorldId, setOpen])
 
   useEffect(() => {
     if (!activeWorldId) return
@@ -186,7 +188,7 @@ export function PlannerPanel() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeWorldId])
+  }, [activeWorldId, setOpen])
 
   useEffect(() => {
     if (!open) return
@@ -319,6 +321,7 @@ export function PlannerPanel() {
 
   return (
     <aside className="planner" aria-label="World planner">
+      <MakeTabs current="plan" />
       <header className="planner-head">
         <h2 className="planner-title">{blueprint?.name ?? 'Dream a world'}</h2>
         <select id="planner-model" className="planner-model" value={model} onChange={(e) => setModel(e.target.value)} title="Planner model">

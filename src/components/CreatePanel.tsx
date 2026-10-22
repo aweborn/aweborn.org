@@ -6,6 +6,8 @@ import { AUTH_URL } from '../lib/player'
 import { usePresence } from '../hooks/usePresence'
 import { matchesBinding } from '../stores/keybindingStore'
 import { ManaSeal, useCanChannel } from './ManaSeal'
+import { useSheet } from '../stores/sheetStore'
+import { MakeTabs } from './MakeTabs'
 
 /**
  * Create panel (Phase 07, first gen-AI slice): inside a world, type what you
@@ -28,7 +30,7 @@ export function CreatePanel() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const { playerId } = usePresence()
   const { canChannel } = useCanChannel()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useSheet('create')
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +53,7 @@ export function CreatePanel() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeWorldId])
+  }, [activeWorldId, setOpen])
 
   useEffect(() => {
     if (open && canChannel) setTimeout(() => inputRef.current?.focus(), 0)
@@ -120,7 +122,7 @@ export function CreatePanel() {
         setBusy(false)
       }
     },
-    [prompt, busy],
+    [prompt, busy, setOpen],
   )
 
   if (!activeWorldId) return null
@@ -143,6 +145,7 @@ export function CreatePanel() {
         </ul>
       )}
 
+      {open && canChannel && <MakeTabs current="create" />}
       {open && !canChannel ? (
         <ManaSeal kind="create" onClose={() => setOpen(false)} />
       ) : open ? (

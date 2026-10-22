@@ -7,6 +7,8 @@ import { usePresence } from '../hooks/usePresence'
 import { interiorController } from '../systems/InteriorController'
 import { libraryThumb } from '../lib/libraryThumbs'
 import { matchesBinding } from '../stores/keybindingStore'
+import { useSheet } from '../stores/sheetStore'
+import { MakeTabs } from './MakeTabs'
 import {
   STANDARD_BLOCKS, SHAPES, SHAPE_COLORS, SHAPE_SIZE, cleanColor, snapToCell, stackedY,
   type LibraryBlock,
@@ -121,7 +123,7 @@ function AssetThumb({ a }: { a: Asset }) {
 export function LibraryPanel() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const { playerId } = usePresence()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useSheet('library')
   const [q, setQ] = useState('')
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(false)
@@ -179,7 +181,7 @@ export function LibraryPanel() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeWorldId])
+  }, [activeWorldId, setOpen])
 
   // Search as you type (debounced). Only the Made shelf needs the network: Blocks and Shapes work offline.
   useEffect(() => {
@@ -279,6 +281,7 @@ export function LibraryPanel() {
 
   return (
     <aside id="library-panel" className="planner library" aria-label="Asset library">
+      <MakeTabs current="library" />
       <header className="planner-head">
         <h2 className="planner-title">Library</h2>
         <button className="planner-close" type="button" aria-label="Close library" onClick={() => setOpen(false)}>

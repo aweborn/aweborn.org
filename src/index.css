@@ -675,28 +675,23 @@ html.touch-ui .hud-mod-slots {
   display: none;
 }
 
-/* Portrait phone: the top row is too narrow for the target pill and
-   the bottom-left corner is shared by the radar and the stick. */
+/* Touch: the bottom belongs to the thumbs and the dock (2026-10-22), so the
+   radar + speed move up under the brand / Save chip (the World Index chip
+   that sat there is the dock's 🗺 now). */
+html.touch-ui .hud-bottom-left {
+  top: calc(var(--space-lg) + 76px);
+  bottom: auto;
+}
+html.touch-ui .radar-container {
+  width: 96px;
+  height: 96px;
+  margin-bottom: var(--space-xs);
+}
+html.touch-ui .hud-speed { min-width: 96px; }
+
 @media (orientation: portrait) {
   html.touch-ui .hud-top-center {
-    top: calc(var(--space-lg) + 84px); /* below World Index / UNIVERSE */
-  }
-
-  html.touch-ui .radar-container {
-    width: 112px;
-    height: 112px;
-    margin-bottom: var(--space-sm);
-  }
-
-  html.touch-ui .touch-hint--steer {
-    left: calc(var(--touch-safe-left) + 10%);
-    bottom: calc(var(--touch-safe-bottom) + 240px); /* above the radar */
-  }
-
-  html.touch-ui .touch-hint--thrust {
-    right: calc(var(--touch-safe-right) + 18px);
-    bottom: calc(var(--touch-safe-bottom) + 270px); /* above the buttons */
-    text-align: right;
+    top: calc(var(--space-lg) + 84px); /* below Sign in / UNIVERSE */
   }
 }
 
@@ -707,6 +702,11 @@ html.touch-ui .hud-mod-slots {
   --touch-safe-left: env(safe-area-inset-left, 0px);
   --touch-accent: rgba(140, 200, 255, 0.9);
   --touch-gold: rgba(232, 185, 74, 0.95);
+  /* Stick radius (JS keeps it in step with the screen) and the thumbs' baseline:
+     portrait leaves room under the thumbs for the dock; landscape puts the
+     dock between them. */
+  --stick-r: 62px;
+  --thumbs-bottom: calc(var(--touch-safe-bottom) + 84px);
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -714,61 +714,51 @@ html.touch-ui .hud-mod-slots {
   font-family: var(--font-mono);
   transition: opacity 0.2s ease;
 }
+@media (orientation: landscape) {
+  .touch-overlay { --thumbs-bottom: calc(var(--touch-safe-bottom) + 16px); }
+}
 
 .touch-overlay--hidden {
   opacity: 0;
   visibility: hidden;
 }
 
-/* Idle hints */
-.touch-hint {
-  position: fixed;
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  color: rgba(255, 255, 255, 0.28);
-  pointer-events: none;
-  transition: opacity 0.25s ease;
-}
-
-.touch-hint--steer {
-  left: calc(var(--touch-safe-left) + 12%);
-  bottom: calc(var(--touch-safe-bottom) + 24%);
-  padding: 34px 26px;
-  border: 1px dashed rgba(255, 255, 255, 0.12);
-  border-radius: 50%;
-}
-
-.touch-hint--thrust {
-  right: calc(var(--touch-safe-right) + 190px);
-  bottom: calc(var(--touch-safe-bottom) + 34%);
-}
-
-.touch-overlay--steering .touch-hint--steer,
-.touch-overlay--thrusting .touch-hint--thrust {
-  opacity: 0;
-}
-
-/* Floating analog stick — positioned by transform from JS, no CSS
-   transition (a transition lags behind the thumb and reads as jitter). */
+/* Fixed analog stick (Alex, 2026-10-22: the base must not wander). CSS places
+   it; JS only moves the knob, by transform, with no transition (a transition
+   lags behind the thumb and reads as jitter). */
 .touch-joystick-base {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 140px;
-  height: 140px;
+  left: calc(var(--touch-safe-left) + 20px);
+  bottom: var(--thumbs-bottom);
+  width: calc(var(--stick-r) * 2);
+  height: calc(var(--stick-r) * 2);
   border-radius: 50%;
   background: radial-gradient(circle, rgba(140, 200, 255, 0.07), rgba(140, 200, 255, 0.02) 70%);
   border: 1.5px solid rgba(140, 200, 255, 0.22);
   box-shadow: 0 0 24px rgba(140, 200, 255, 0.08), inset 0 0 18px rgba(140, 200, 255, 0.06);
   pointer-events: none;
-  opacity: 0;
-  will-change: transform;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .touch-joystick-base--active {
   opacity: 1;
+  border-color: rgba(140, 200, 255, 0.4);
 }
+
+.touch-joystick-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12%;
+  text-align: center;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.35);
+  transition: opacity 0.15s ease;
+}
+.touch-joystick-base--active .touch-joystick-label { opacity: 0; }
 
 .touch-joystick-knob {
   position: absolute;
@@ -783,67 +773,59 @@ html.touch-ui .hud-mod-slots {
   will-change: transform;
 }
 
-/* Thrust ring under the right thumb */
-/* --pull (0–1, from JS) = how far the thumb is pulled back toward brake.
-   Blends thrust orange → deep brake red. */
-.touch-thrust-ring {
+/* THRUST (space): the big right-thumb button, where JUMP sits in a world.
+   --pull (0–1, from JS) = how far the thumb has slid down toward brake:
+   thrust orange → deep brake red. */
+.touch-btn.touch-btn--thrust {
   --pull: 0;
   --ring-thrust: rgb(255, 170, 90);
-  --ring-brake: rgb(150, 18, 24);
+  --ring-brake: rgb(190, 30, 36);
   --ring-color: color-mix(in oklab, var(--ring-brake) calc(var(--pull) * 100%), var(--ring-thrust));
-  position: fixed;
-  top: -40px;
-  left: -40px;
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--ring-color) 55%, transparent);
-  background: radial-gradient(circle,
-    color-mix(in srgb, var(--ring-brake) calc(var(--pull) * 45%), transparent) 0%,
-    color-mix(in srgb, var(--ring-brake) calc(var(--pull) * 20%), transparent) 60%,
-    transparent 72%);
-  box-shadow:
-    0 0 22px color-mix(in srgb, var(--ring-color) 40%, transparent),
-    inset 0 0 14px color-mix(in srgb, var(--ring-color) 25%, transparent);
-  pointer-events: none;
-  opacity: 0;
-  will-change: transform;
+  grid-area: thrust;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--ring-color) 90%, white);
+  border: 2px solid color-mix(in srgb, var(--ring-color) 70%, transparent);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--ring-color) 30%, transparent), inset 0 0 16px color-mix(in srgb, var(--ring-color) 14%, transparent);
 }
-
-.touch-thrust-ring--active {
-  opacity: 1;
+.touch-btn-sub { font-size: 0.55rem; font-weight: 600; letter-spacing: 0.08em; opacity: 0.6; }
+.touch-btn.touch-btn--thrust.touch-btn--pressed {
+  transform: scale(0.94);
+  background: color-mix(in srgb, var(--ring-color) 22%, rgba(18, 20, 42, 0.6));
   animation: touch-thrust-pulse 0.9s ease-in-out infinite;
 }
-
-/* Braking: steady deep-red glow, no thrust pulse */
-.touch-thrust-ring--braking {
+.touch-btn.touch-btn--thrust.touch-btn--braking {
   animation: none;
   border-color: rgba(190, 30, 36, 0.9);
-  background: radial-gradient(circle, rgba(120, 10, 18, 0.55) 0%, rgba(70, 4, 10, 0.3) 55%, transparent 72%);
+  background: rgba(110, 10, 18, 0.6);
   box-shadow: 0 0 26px rgba(170, 20, 28, 0.55), inset 0 0 16px rgba(120, 10, 18, 0.5);
 }
 
 @keyframes touch-thrust-pulse {
-  0%, 100% { border-color: color-mix(in srgb, var(--ring-color) 45%, transparent); }
-  50% { border-color: color-mix(in srgb, var(--ring-color) 85%, white 8%); }
+  0%, 100% { box-shadow: 0 0 18px color-mix(in srgb, var(--ring-color) 35%, transparent); }
+  50% { box-shadow: 0 0 30px color-mix(in srgb, var(--ring-color) 65%, transparent); }
 }
 
-.touch-hint-sub {
-  font-size: 0.8em;
-  opacity: 0.7;
-}
-
-/* Action buttons — 2×2 cluster in the right-thumb corner */
+/* Right-thumb cluster. Its big button (THRUST in space, JUMP in a world) is
+   centred level with the stick. */
 .touch-actions {
   position: fixed;
   right: calc(var(--touch-safe-right) + 14px);
-  bottom: calc(var(--touch-safe-bottom) + 18px);
+  bottom: calc(var(--thumbs-bottom) + var(--stick-r) - 44px);
   display: grid;
-  grid-template-columns: repeat(2, 64px);
+  grid-template-columns: 64px 88px;
   grid-template-areas:
     'mode  mode'
-    'enter lock'
-    'warp  brake';
+    'lock  enter'
+    'warp  thrust';
+  align-items: end;
+  justify-items: center;
   gap: 12px;
   pointer-events: none;
 }
@@ -877,16 +859,14 @@ html.touch-ui .hud-mod-slots {
 .touch-btn--enter { grid-area: enter; }
 .touch-btn--lock { grid-area: lock; }
 .touch-btn--warp { grid-area: warp; color: rgba(190, 160, 255, 0.95); }
-.touch-btn--brake { grid-area: brake; color: rgba(255, 140, 140, 0.95); }
+.touch-btn--brake { grid-area: brake; }
+/* JUMP is world-only; THRUST is space-only */
+.touch-overlay:not(.touch-overlay--in-world) .touch-btn--brake,
+.touch-overlay--in-world .touch-btn--thrust { display: none; }
 
 .touch-btn--warp.touch-btn--pressed {
   box-shadow: 0 0 22px rgba(170, 130, 255, 0.6);
   border-color: rgba(190, 160, 255, 0.8);
-}
-
-.touch-btn--brake.touch-btn--pressed {
-  box-shadow: 0 0 22px rgba(255, 110, 110, 0.5);
-  border-color: rgba(255, 150, 150, 0.8);
 }
 
 /* DRIVE / NEUTRAL — top of the right-thumb cluster */
@@ -944,23 +924,20 @@ html.touch-ui .hud-mod-slots {
 }
 
 /* Inside a world (docs/mobile-ui/SPEC.md): left stick walks (rim = sprint),
-   right-side drag looks, JUMP is the big right-thumb button with KICK above it.
+   drag anywhere else looks, JUMP is the big right-thumb button with KICK above it.
    Flight-only controls go. */
 .touch-overlay--in-world .touch-btn--lock,
 .touch-overlay--in-world .touch-btn--warp,
-.touch-overlay--in-world .touch-mode-toggle,
-.touch-overlay--in-world .touch-hint {
+.touch-overlay--in-world .touch-mode-toggle {
   display: none;
 }
 
 .touch-overlay--in-world .touch-actions {
   right: calc(var(--touch-safe-right) + 18px);
-  bottom: calc(var(--touch-safe-bottom) + 28px);
   grid-template-columns: 88px;
   grid-template-areas:
     'enter'
     'brake';
-  justify-items: center;
   gap: 14px;
 }
 
@@ -994,7 +971,7 @@ html.touch-ui .hud-mod-slots {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .touch-thrust-ring--active {
+  .touch-btn.touch-btn--thrust.touch-btn--pressed {
     animation: none;
   }
 }
@@ -1049,6 +1026,13 @@ html.touch-ui .hud-mod-slots {
     top: calc(var(--touch-safe-top) + 136px);
     right: calc(var(--touch-safe-right) + 24px);
   }
+}
+/* 2026-10-22: under the gear it hit DRIVE in landscape, and inside worlds it sat
+   on the gear; so on touch it sits just left of the gear, in space and in worlds.
+   (Both move into ••• More with the dock's next slice.) */
+html.touch-ui .touch-overlay .touch-fullscreen {
+  top: calc(var(--touch-safe-top) + 84px);
+  right: calc(var(--touch-safe-right) + 72px);
 }
 
 .touch-toast {
@@ -3719,8 +3703,11 @@ html.touch-ui .hud-mod-slots {
   background: linear-gradient(90deg, #ffd27a, #ff9f5a);
   transition: width 0.6s ease;
 }
-/* Touch: Library / Create / Plan sit up top, under the top bar: the bottom belongs to the thumbs (stick left, JUMP + KICK right; a bottom row blocked the stick). Interim until the dock + Make sheet (docs/mobile-ui/SPEC.md). */
-html.touch-ui .create-panel { top: calc(124px + env(safe-area-inset-top, 0px)); bottom: auto; }
+/* Touch: Create opens from the dock's 🧱 Make (its pill is hidden below), under the top bar. */
+html.touch-ui .create-panel { top: calc(60px + env(safe-area-inset-top, 0px)); bottom: auto; }
+@media (orientation: landscape) {
+  html.touch-ui .create-panel { top: calc(12px + env(safe-area-inset-top, 0px)); width: min(480px, calc(100vw - 380px)); }
+}
 
 /* ── Plant a world (Create World, 2026-10-21): space only, same slot Create
    takes inside worlds (bottom centre on desktop, under the top bar on touch).
@@ -3732,9 +3719,7 @@ html.touch-ui .create-panel { top: calc(124px + env(safe-area-inset-top, 0px)); 
   transform: translateX(-50%);
   z-index: 40;
 }
-/* Touch: top centre in space is the target label ("◇ Origin  42 u"), so the pill
-   joins the right-hand column under the gear + fullscreen buttons (seen at 390×844). */
-html.touch-ui .plant-panel { top: calc(196px + env(safe-area-inset-top, 0px)); bottom: auto; left: auto; right: 24px; transform: none; }
+/* Touch: the dock's 🌱 Plant opens the sheet; the pill itself is hidden (see the dock). */
 .plant-open {
   position: relative;
   overflow: hidden;
@@ -3959,8 +3944,24 @@ html.touch-ui .plant-open kbd { display: none; }
 }
 .planner-send:disabled { opacity: 0.4; cursor: default; }
 .planner-error { margin: 0; font-size: var(--text-xs); color: #ffb4a0; }
-html.touch-ui .planner-open { top: calc(124px + env(safe-area-inset-top, 0px)); bottom: auto; }
-html.touch-ui .planner { top: 60px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); right: 16px; }
+/* Touch: Library and Plan are the Make sheet, full width and clear of the stick,
+   the thumb buttons and the dock (AGENTS.md → portrait rule 5). Landscape: between
+   the stick and the right-thumb cluster. */
+html.touch-ui .planner {
+  top: calc(60px + env(safe-area-inset-top, 0px));
+  bottom: calc(264px + env(safe-area-inset-bottom, 0px)); /* above KICK + JUMP */
+  left: 12px;
+  right: 12px;
+  width: auto;
+}
+@media (orientation: landscape) {
+  html.touch-ui .planner {
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    left: calc(168px + env(safe-area-inset-left, 0px));
+    right: calc(192px + env(safe-area-inset-right, 0px));
+  }
+}
 .planner-ghost { background: none; border: 1px solid var(--glass-border); border-radius: 8px; color: var(--color-text-secondary); cursor: pointer; padding: 2px 7px; font-size: 13px; }
 .planner-ghost.is-on { color: #cfc4ff; border-color: rgba(180, 160, 255, 0.5); background: rgba(150, 125, 255, 0.15); }
 .ghost-label {
@@ -4004,7 +4005,109 @@ html.touch-ui .planner { top: 60px; bottom: calc(150px + env(safe-area-inset-bot
 
 /* ── Asset library (Phase 07) ───────────────────────────────────────── */
 .library-open { right: auto; left: var(--space-lg); }
-html.touch-ui .library-open { right: auto; left: 16px; }
+
+/* ── Touch dock (2026-10-22): bottom action bar between the thumbs ──
+   🗺 Index · 💬 Chat · 🧱 Make (world) / 🌱 Plant (space). It replaces the pills
+   that crowded the top of a phone, so those hide on touch. */
+html.touch-ui #library-open,
+html.touch-ui #create-open,
+html.touch-ui #planner-open,
+html.touch-ui #plant-open,
+html.touch-ui #world-index-chip,
+html.touch-ui #chat-open { display: none; }
+
+.touch-dock { display: none; }
+html.touch-ui .touch-dock {
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 21;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--radius-full);
+  background: rgba(18, 16, 40, 0.62);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(180, 160, 255, 0.25);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  font-family: var(--font-body);
+}
+/* Behind a modal (World Index, donation…) the dock steps aside like the thumbs do */
+html.touch-ui:has(dialog[open], .modal-backdrop) .touch-dock { display: none; }
+.touch-dock-btn {
+  position: relative;
+  width: 64px;
+  height: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: #e8e2ff;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.touch-dock-btn:active { transform: scale(0.94); }
+.touch-dock-btn.is-on { background: rgba(150, 125, 255, 0.32); }
+.touch-dock-btn:focus-visible { outline: 2px solid rgba(200, 185, 255, 0.8); outline-offset: -2px; }
+.touch-dock-icon { font-size: 20px; line-height: 1; }
+.touch-dock-label { font-size: 10px; font-weight: 600; letter-spacing: 0.04em; color: rgba(232, 226, 255, 0.75); }
+.touch-dock-count {
+  position: absolute;
+  top: 3px;
+  right: 10px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: rgba(232, 185, 74, 0.9);
+  color: #1a1206;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Make sheet tabs (touch): Library · Create · Plan. Desktop keeps its B / C / P pills. */
+.make-tabs { display: none; }
+html.touch-ui .make-tabs {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+html.touch-ui .create-panel .make-tabs {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(24, 18, 48, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(180, 160, 255, 0.22);
+}
+.make-tab {
+  flex: 1;
+  min-height: 40px;
+  font: inherit;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.make-tab.is-on { color: var(--color-text-primary); background: rgba(150, 125, 255, 0.35); }
 .library-list { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 0 4px 0 0; display: flex; flex-direction: column; gap: 8px; }
 .library-item { display: grid; grid-template-columns: 64px 1fr auto; gap: 2px 10px; align-items: center; padding: 10px 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); border-radius: 12px; }
 .library-prompt { grid-column: 2; margin: 0; font-size: var(--text-xs); line-height: 1.4; color: #e8e2ff; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -4177,15 +4280,25 @@ html.touch-ui .library-open { right: auto; left: 16px; }
 @keyframes chat-pop { from { opacity: 0; transform: scale(0.85); } }
 /* Out in space the bubble keeps a fixed screen size over a tiny orb */
 .chat-bubble--space { max-width: 180px; font-size: 13px; padding: 5px 10px; transform: translateY(-14px); }
-@media (hover: none) and (pointer: coarse) {
-  .chat-panel { bottom: 150px; }
-  /* Space: the radar fills the bottom-left, so chat sits just above it
-     (still below the steer zone) (2026-10-20, seen with touch emulation) */
-  .chat-panel.is-space { bottom: 196px; }
+/* Touch: the last lines float above the stick (narrow, clear of the right-thumb
+   cluster); open, the box takes the full width. Landscape: between the stick and
+   the cluster, above the dock. (The radar moved to the top-left on 2026-10-22.) */
+html.touch-ui .chat-panel {
+  left: calc(16px + env(safe-area-inset-left, 0px));
+  bottom: calc(264px + env(safe-area-inset-bottom, 0px)); /* above the stick and KICK */
+  width: min(300px, calc(100vw - 210px));
 }
-/* Landscape phones: the radar fills the left column, so chat goes right of it */
-@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
-  .chat-panel.is-space { left: 204px; bottom: 16px; width: min(340px, calc(100vw - 470px)); }
+html.touch-ui .chat-panel.is-open { width: min(380px, calc(100vw - 32px)); }
+/* Space: the right-thumb cluster is taller (LOCK / ENTER / DRIVE), so the wide box rises above it */
+html.touch-ui .chat-panel.is-open.is-space { bottom: calc(336px + env(safe-area-inset-bottom, 0px)); }
+@media (orientation: landscape) {
+  html.touch-ui .chat-panel,
+  html.touch-ui .chat-panel.is-open,
+  html.touch-ui .chat-panel.is-open.is-space {
+    left: calc(168px + env(safe-area-inset-left, 0px));
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    width: min(340px, calc(100vw - 380px));
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-line, .chat-bubble { animation: none; }

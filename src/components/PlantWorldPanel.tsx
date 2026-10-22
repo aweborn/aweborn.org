@@ -5,6 +5,7 @@ import { matchesBinding } from '../stores/keybindingStore'
 import { AUTH_URL } from '../lib/player'
 import { markMeaningfulMoment } from '../lib/onramp'
 import { ManaSeal, useCanChannel } from './ManaSeal'
+import { useSheet } from '../stores/sheetStore'
 
 /**
  * Create World (Alex, 2026-10-21): "plant where you stand". Out in space, tap
@@ -38,12 +39,12 @@ function plantPosition() {
 export function PlantWorldPanel() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const { canChannel } = useCanChannel()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useSheet('plant')
 
   // Worlds are planted in space; entering one closes the sheet.
   useEffect(() => {
     if (activeWorldId) setOpen(false)
-  }, [activeWorldId])
+  }, [activeWorldId, setOpen])
 
   // Y toggles it in space (not while typing)
   useEffect(() => {
@@ -58,9 +59,9 @@ export function PlantWorldPanel() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeWorldId])
+  }, [activeWorldId, setOpen])
 
-  const close = useCallback(() => setOpen(false), [])
+  const close = useCallback(() => setOpen(false), [setOpen])
 
   if (activeWorldId) return null
 

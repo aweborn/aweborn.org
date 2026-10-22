@@ -10,6 +10,7 @@ import { HUD } from './components/HUD'
 import { DonationModal } from './components/DonationModal'
 import { SyncBridge } from './components/SyncBridge'
 import { PlantWorldPanel } from './components/PlantWorldPanel'
+import { TouchDock } from './components/TouchDock'
 import { TeleportToast } from './components/TeleportToast'
 import { teleportSystem } from './systems/TeleportSystem'
 import { WorldIndex } from './components/WorldIndex'
@@ -125,6 +126,7 @@ export default function App() {
           <LibraryPanel />
           <ChatPanel />
           <PlantWorldPanel />
+          <TouchDock />
         </>
       )}
       {isLoaded && webglSupported && <CardReveal />}

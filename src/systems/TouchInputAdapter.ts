@@ -7,15 +7,16 @@
  *
  * Touch zones (only touches that land on the 3D canvas; UI buttons
  * keep working because their touches never reach these handlers):
- *  - Space, left half:  floating analog stick → yaw / pitch axes
- *  - Space, right half: hold → thrust; pull the thumb back (down) → brake
- *  - World, left half:  floating analog stick → walk / strafe (moveX / moveY);
- *                       push it to the rim → sprint
- *  - World, right half: drag → look (turn / look up-down)
+ *  - Fixed analog stick, bottom-left (space: yaw / pitch; world: walk /
+ *    strafe, push it to the rim → sprint). Its base never moves: touch
+ *    anywhere near it and the knob follows the thumb, clamped to the rim
+ *    (Alex, 2026-10-22: "the base seems to move around while I'm moving the knob").
+ *  - World, anywhere else: drag → look (turn / look up-down)
  *
  * On-screen buttons:
- *  - Space: BRAKE (hold, Space) · LOCK (J) · WARP (hold, K) · ENTER (N) · DRIVE / NEUTRAL (G)
+ *  - Space: THRUST (hold; slide down on it = brake) · LOCK (J) · WARP (hold, K) · ENTER (N) · DRIVE / NEUTRAL (G)
  *  - World: JUMP (big, right thumb; hold in the air = jetpack) · KICK (N) · EXIT (Escape)
+ *  The dock between the thumbs is React (TouchDock.tsx).
  *  Layout spec: docs/mobile-ui/SPEC.md (grill 2026-10-21).
  *
  * Uses Pointer Events so every finger is tracked on its own by
@@ -41,6 +42,8 @@ import { TURN_RATE, LOOK_RATE } from '@aweborn/shared/sim/interior'
 const STICK_RADIUS_FRACTION = 0.16
 const STICK_RADIUS_MIN = 56
 const STICK_RADIUS_MAX = 80
+/** A touch this far from the stick's centre (× radius) still grabs it. */
+const STICK_GRAB = 1.5
 /** Radial deadzone (fraction of stick radius). */
 const STICK_DEADZONE = 0.1
 /** Response curve exponent: >1 = small moves turn slowly. */
@@ -49,7 +52,7 @@ const STICK_EXPONENT = 1.8
 const STICK_SMOOTHING_TAU = 0.05
 /** Shortest press a tap button holds its action, so a quick tap spans a frame. */
 const MIN_PULSE_MS = 90
-/** Thrust thumb: pull this far down from where it landed to switch to brake. */
+/** THRUST button: slide this far down from where the thumb landed to switch to brake. */
 const BRAKE_PULL_PX = 36
 /** …and come back above this to resume thrust (hysteresis, no flicker). */
 const BRAKE_RELEASE_PX = 24
@@ -86,7 +89,8 @@ type ButtonSpec = {
 }
 
 const BUTTONS: ButtonSpec[] = [
-  { id: 'touch-btn-brake', label: 'BRAKE', action: 'brake', className: 'touch-btn touch-btn--brake', ariaLabel: 'Brake (hold)' },
+  // World only: the big right-thumb button (space has THRUST in this spot)
+  { id: 'touch-btn-brake', label: 'JUMP', action: 'brake', className: 'touch-btn touch-btn--brake', ariaLabel: 'Jump (hold in the air for jetpack)' },
   { id: 'touch-btn-warp', label: 'WARP', action: 'warp', className: 'touch-btn touch-btn--warp', ariaLabel: 'Warp (hold to charge, release to leap)' },
   { id: 'touch-btn-lock', label: 'LOCK', action: 'lockOn', className: 'touch-btn touch-btn--lock', ariaLabel: 'Lock on to a world (tap again to cycle)' },
   { id: 'touch-btn-enter', label: 'ENTER', action: 'interact', className: 'touch-btn touch-btn--enter', ariaLabel: 'Enter the nearby world' },
@@ -118,7 +122,9 @@ export class TouchInputAdapter {
   private _overlay: HTMLDivElement | null = null
   private _stickBase: HTMLDivElement | null = null
   private _stickKnob: HTMLDivElement | null = null
-  private _thrustRing: HTMLDivElement | null = null
+  private _stickLabel: HTMLSpanElement | null = null
+  private _stickR = 0
+  private _thrustBtn: HTMLButtonElement | null = null
   private _modeButton: HTMLButtonElement | null = null
   private _modeIsNeutral: boolean | null = null
   private _fullscreenButton: HTMLButtonElement | null = null
@@ -192,31 +198,17 @@ export class TouchInputAdapter {
   private _onPointerDown = (e: PointerEvent): void => {
     if (e.pointerType !== 'touch' || !this._isSceneTarget(e.target)) return
 
-    const leftHalf = e.clientX < window.innerWidth / 2
-
-    if (leftHalf && this._stick === null) {
-      const radius = this._stickRadius()
-      // Keep the whole stick on screen
-      const margin = radius + 8
-      const originX = clamp(e.clientX, margin, window.innerWidth - margin)
-      const originY = clamp(e.clientY, margin, window.innerHeight - margin)
-      this._stick = { id: e.pointerId, originX, originY, radius, targetYaw: 0, targetPitch: 0 }
+    // The stick sits still (CSS places it); a touch on or near it grabs it
+    const c = this._stickCenter()
+    if (this._stick === null && c && Math.hypot(e.clientX - c.x, e.clientY - c.y) <= c.r * STICK_GRAB) {
+      this._stick = { id: e.pointerId, originX: c.x, originY: c.y, radius: c.r, targetYaw: 0, targetPitch: 0 }
       this._showStick()
       this._moveStick(e.clientX, e.clientY)
       return
     }
 
-    if (!leftHalf && this._inWorld && this._look === null) {
+    if (this._inWorld && this._look === null) {
       this._look = { id: e.pointerId, x: e.clientX, y: e.clientY }
-      return
-    }
-
-    if (!leftHalf && !this._inWorld && this._thrustId === null) {
-      this._thrustId = e.pointerId
-      this._thrustAnchorY = e.clientY
-      this._thrustBraking = false
-      inputManager.setAction('thrust', true)
-      this._showThrust(e.clientX, e.clientY)
     }
   }
 
@@ -228,9 +220,6 @@ export class TouchInputAdapter {
       this._lookDY += e.clientY - this._look.y
       this._look.x = e.clientX
       this._look.y = e.clientY
-    } else if (e.pointerId === this._thrustId) {
-      this._updateThrustPull(e.clientY)
-      this._showThrust(e.clientX, e.clientY)
     }
   }
 
@@ -251,12 +240,6 @@ export class TouchInputAdapter {
       inputManager.setAxis('yaw', 0, 'touch')
       inputManager.setAxis('pitch', 0, 'touch')
     }
-    if (e.pointerId === this._thrustId) {
-      this._thrustId = null
-      inputManager.setAction('thrust', false)
-      this._endThrustBrake()
-      this._hideThrust()
-    }
   }
 
   private _zeroStickAxes(): void {
@@ -274,34 +257,57 @@ export class TouchInputAdapter {
     this._stickBase?.classList.toggle('touch-joystick-base--sprint', on)
   }
 
-  /**
-   * Pull the thrust thumb back (down) to brake; push it back up to thrust.
-   * Inside a world the pull walks backward instead (brake = jump there).
-   */
+  /** Slide the thumb down on THRUST to brake; slide back up to thrust again. */
   private _updateThrustPull(y: number): void {
     const pull = y - this._thrustAnchorY
-    const pullAction = this._inWorld ? 'reverse' : 'brake'
     if (!this._thrustBraking && pull >= BRAKE_PULL_PX) {
       this._thrustBraking = true
       inputManager.setAction('thrust', false)
-      inputManager.setAction(pullAction, true)
-      this._thrustRing?.classList.add('touch-thrust-ring--braking')
+      inputManager.setAction('brake', true)
+      this._thrustBtn?.classList.add('touch-btn--braking')
     } else if (this._thrustBraking && pull < BRAKE_RELEASE_PX) {
       this._endThrustBrake()
       inputManager.setAction('thrust', true)
     }
     const t = clamp((pull - BRAKE_TINT_START_PX) / (BRAKE_PULL_PX - BRAKE_TINT_START_PX), 0, 1)
-    this._thrustRing?.style.setProperty('--pull', t.toFixed(3))
+    this._thrustBtn?.style.setProperty('--pull', t.toFixed(3))
   }
 
   private _endThrustBrake(): void {
     if (!this._thrustBraking) return
     this._thrustBraking = false
-    this._thrustRing?.classList.remove('touch-thrust-ring--braking')
-    inputManager.setAction('reverse', false)
-    // Don't cancel a brake the BRAKE button is still holding
-    const buttonHeld = this._overlay?.querySelector('#touch-btn-brake.touch-btn--pressed') !== null
-    if (!buttonHeld) inputManager.setAction('brake', false)
+    this._thrustBtn?.classList.remove('touch-btn--braking')
+    inputManager.setAction('brake', false)
+  }
+
+  /** THRUST: its own finger (pointer capture), so steering and other buttons work at once. */
+  private _bindThrust(el: HTMLButtonElement): void {
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== this._thrustId) return
+      this._thrustId = null
+      inputManager.setAction('thrust', false)
+      this._endThrustBrake()
+      el.classList.remove('touch-btn--pressed')
+      el.style.setProperty('--pull', '0')
+    }
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (this._thrustId !== null) return
+      this._thrustId = e.pointerId
+      this._thrustAnchorY = e.clientY
+      this._thrustBraking = false
+      try { el.setPointerCapture(e.pointerId) } catch { /* already gone */ }
+      el.classList.add('touch-btn--pressed')
+      inputManager.setAction('thrust', true)
+    })
+    el.addEventListener('pointermove', (e) => {
+      if (e.pointerId === this._thrustId) this._updateThrustPull(e.clientY)
+    })
+    el.addEventListener('pointerup', end)
+    el.addEventListener('pointercancel', end)
+    el.addEventListener('lostpointercapture', end)
+    el.addEventListener('contextmenu', (e) => e.preventDefault())
   }
 
   private _moveStick(x: number, y: number): void {
@@ -311,13 +317,10 @@ export class TouchInputAdapter {
     let dy = y - s.originY
     let dist = Math.hypot(dx, dy)
 
-    // Floating origin: if the thumb runs past the rim, drag the base along
+    // Fixed base: past the rim the knob stays on the rim (full deflection)
     if (dist > s.radius) {
-      const excess = dist - s.radius
-      s.originX += (dx / dist) * excess
-      s.originY += (dy / dist) * excess
-      dx = x - s.originX
-      dy = y - s.originY
+      dx = (dx / dist) * s.radius
+      dy = (dy / dist) * s.radius
       dist = s.radius
     }
 
@@ -331,15 +334,27 @@ export class TouchInputAdapter {
     }
     if (this._inWorld) this._setStickSprint(dist >= s.radius * SPRINT_AT)
 
-    if (this._stickBase && this._stickKnob) {
-      this._stickBase.style.transform = `translate(${s.originX - s.radius}px, ${s.originY - s.radius}px)`
-      this._stickKnob.style.transform = `translate(${dx}px, ${dy}px)`
-    }
+    if (this._stickKnob) this._stickKnob.style.transform = `translate(${dx}px, ${dy}px)`
+  }
+
+  /** Centre and radius of the stick as laid out by CSS (null while hidden). */
+  private _stickCenter(): { x: number; y: number; r: number } | null {
+    const r = this._stickBase?.getBoundingClientRect()
+    if (!r || r.width === 0) return null
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, r: r.width / 2 }
   }
 
   private _stickRadius(): number {
     const short = Math.min(window.innerWidth, window.innerHeight)
     return clamp(Math.round(short * STICK_RADIUS_FRACTION), STICK_RADIUS_MIN, STICK_RADIUS_MAX)
+  }
+
+  /** CSS sizes the stick from --stick-r; keep it in step with the screen (rotation). */
+  private _syncStickSize(): void {
+    const r = this._stickRadius()
+    if (r === this._stickR || !this._overlay) return
+    this._stickR = r
+    this._overlay.style.setProperty('--stick-r', `${r}px`)
   }
 
   // ── Per-frame: smoothing + UI state ──
@@ -384,23 +399,19 @@ export class TouchInputAdapter {
   /** Inside worlds: walking layout (JUMP big under the thumb, KICK above it); hide behind modals. */
   private _syncVisibility(): void {
     if (!this._overlay) return
+    this._syncStickSize()
     const inWorld = useUniverseStore.getState().activeWorldId !== null
     const modalOpen = document.querySelector('dialog[open], .modal-backdrop') !== null
     if (inWorld !== this._inWorld) {
       // The thumbs mean different things now: drop whatever they were holding
       this._releaseAll()
       this._inWorld = inWorld
-      const label = (id: string, text: string, aria: string) => {
-        const el = this._overlay?.querySelector<HTMLButtonElement>(`#${id}`)
-        if (el) { el.textContent = text; el.setAttribute('aria-label', aria) }
+      const enter = this._overlay.querySelector<HTMLButtonElement>('#touch-btn-enter')
+      if (enter) {
+        enter.textContent = inWorld ? 'KICK' : 'ENTER'
+        enter.setAttribute('aria-label', inWorld ? 'Kick the object in front of you' : 'Enter the nearby world')
       }
-      if (inWorld) {
-        label('touch-btn-brake', 'JUMP', 'Jump (hold in the air for jetpack)')
-        label('touch-btn-enter', 'KICK', 'Kick the object in front of you')
-      } else {
-        label('touch-btn-brake', 'BRAKE', 'Brake (hold)')
-        label('touch-btn-enter', 'ENTER', 'Enter the nearby world')
-      }
+      if (this._stickLabel) this._stickLabel.textContent = inWorld ? 'MOVE' : 'STEER'
     }
     this._overlay.classList.toggle('touch-overlay--in-world', inWorld)
     this._overlay.classList.toggle('touch-overlay--hidden', modalOpen)
@@ -415,11 +426,11 @@ export class TouchInputAdapter {
     this._stickBase?.classList.remove('touch-joystick-base--sprint')
     this._thrustId = null
     this._thrustBraking = false
-    this._thrustRing?.classList.remove('touch-thrust-ring--braking')
+    this._thrustBtn?.classList.remove('touch-btn--braking')
+    this._thrustBtn?.style.setProperty('--pull', '0')
     this._smoothYaw = 0
     this._smoothPitch = 0
     this._hideStick()
-    this._hideThrust()
     inputManager.clearAllActions()
     this._overlay?.querySelectorAll('.touch-btn--pressed').forEach((el) => el.classList.remove('touch-btn--pressed'))
   }
@@ -507,28 +518,32 @@ export class TouchInputAdapter {
     const overlay = document.createElement('div')
     overlay.className = 'touch-overlay'
 
-    // Idle hints so first-time players know where the thumbs go
-    const steerHint = document.createElement('div')
-    steerHint.className = 'touch-hint touch-hint--steer'
-    steerHint.textContent = 'STEER'
-    const thrustHint = document.createElement('div')
-    thrustHint.className = 'touch-hint touch-hint--thrust'
-    thrustHint.innerHTML = 'HOLD TO THRUST<br><span class="touch-hint-sub">PULL BACK TO BRAKE</span>'
-
-    // Stick (positioned with transforms; no CSS transition = no lag/jitter)
+    // Fixed stick: CSS places and sizes it (--stick-r); only the knob moves
+    // (by transform, no CSS transition = no lag/jitter). Always visible, so it
+    // is its own hint.
     const base = document.createElement('div')
     base.className = 'touch-joystick-base'
+    const label = document.createElement('span')
+    label.className = 'touch-joystick-label'
+    label.textContent = 'STEER'
     const knob = document.createElement('div')
     knob.className = 'touch-joystick-knob'
-    base.appendChild(knob)
-
-    const ring = document.createElement('div')
-    ring.className = 'touch-thrust-ring'
+    base.append(label, knob)
 
     // Action buttons (right thumb)
     const cluster = document.createElement('div')
     cluster.className = 'touch-actions'
     for (const spec of BUTTONS) cluster.appendChild(this._makeButton(spec))
+
+    // THRUST (space): the big right-thumb button; slide down on it to brake
+    const thrust = document.createElement('button')
+    thrust.type = 'button'
+    thrust.id = 'touch-btn-thrust'
+    thrust.className = 'touch-btn touch-btn--thrust'
+    thrust.innerHTML = 'THRUST<span class="touch-btn-sub" aria-hidden="true">↓ brake</span>'
+    thrust.setAttribute('aria-label', 'Thrust (hold; slide down to brake)')
+    this._bindThrust(thrust)
+    cluster.appendChild(thrust)
 
     // Mode toggle (top of the right-thumb cluster)
     const mode = document.createElement('button')
@@ -544,7 +559,7 @@ export class TouchInputAdapter {
       className: 'touch-btn touch-btn--exit', ariaLabel: 'Exit world',
     })
 
-    overlay.append(steerHint, thrustHint, base, ring, cluster, exit)
+    overlay.append(base, cluster, exit)
 
     // Fullscreen (hidden when already running as an installed app)
     if (!isStandalone()) {
@@ -570,7 +585,9 @@ export class TouchInputAdapter {
     this._overlay = overlay
     this._stickBase = base
     this._stickKnob = knob
-    this._thrustRing = ring
+    this._stickLabel = label
+    this._stickR = 0
+    this._thrustBtn = thrust
     this._modeButton = mode
     this._modeIsNeutral = null
     this._renderMode(flightController.isGravityEnabled())
@@ -585,7 +602,7 @@ export class TouchInputAdapter {
     const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }
 
     if (doc.fullscreenElement || doc.webkitFullscreenElement) {
-      await (doc.exitFullscreen?.() ?? doc.webkitExitFullscreen?.())?.catch(() => {})
+      await (doc.exitFullscreen?.() ?? doc.webkitExitFullscreen?.())?.catch(() => { })
       return
     }
 
@@ -600,7 +617,7 @@ export class TouchInputAdapter {
       else await root.webkitRequestFullscreen?.()
       // Android: also pin landscape while fullscreen (not supported everywhere)
       const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }
-      await orientation?.lock?.('landscape').catch(() => {})
+      await orientation?.lock?.('landscape').catch(() => { })
     } catch {
       this._showToast('Full screen isn’t available here.')
     }
@@ -638,16 +655,13 @@ export class TouchInputAdapter {
     this._toast = null
     this._stickBase = null
     this._stickKnob = null
-    this._thrustRing = null
+    this._stickLabel = null
+    this._thrustBtn = null
     this._modeButton = null
   }
 
   private _showStick(): void {
-    if (!this._stickBase || !this._stick) return
-    const size = this._stick.radius * 2
-    this._stickBase.style.width = `${size}px`
-    this._stickBase.style.height = `${size}px`
-    this._stickBase.classList.add('touch-joystick-base--active')
+    this._stickBase?.classList.add('touch-joystick-base--active')
     this._overlay?.classList.add('touch-overlay--steering')
   }
 
@@ -655,19 +669,6 @@ export class TouchInputAdapter {
     this._stickBase?.classList.remove('touch-joystick-base--active')
     if (this._stickKnob) this._stickKnob.style.transform = 'translate(0px, 0px)'
     this._overlay?.classList.remove('touch-overlay--steering')
-  }
-
-  private _showThrust(x: number, y: number): void {
-    if (!this._thrustRing) return
-    this._thrustRing.style.transform = `translate(${x}px, ${y}px)`
-    this._thrustRing.classList.add('touch-thrust-ring--active')
-    this._overlay?.classList.add('touch-overlay--thrusting')
-  }
-
-  private _hideThrust(): void {
-    this._thrustRing?.classList.remove('touch-thrust-ring--active', 'touch-thrust-ring--braking')
-    this._thrustRing?.style.setProperty('--pull', '0')
-    this._overlay?.classList.remove('touch-overlay--thrusting')
   }
 }
 
