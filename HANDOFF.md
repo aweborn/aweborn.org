@@ -42,7 +42,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 - **Backend**: Single Lambda function (Node.js 20, inline in CloudFormation) that proxies to Stripe
 - **Infra (static)**: `infra/cloudformation.yml` — S3, CloudFront, ACM cert, Route53, API Gateway, Lambda
 - **Infra (VPS)**: `infra/cloudformation-vps.yml` — Lightsail instance, static IP, Route53 DNS, k3s bootstrap
-- **CI/CD**: `.github/workflows/deploy.yml`. On push to `main` it deploys any changed VPS services (sync-service, genai-service, agent-runner, caddy) over Tailscale, then the frontend via OIDC. See [CI server deploys](#ci-server-deploys). `.github/workflows/backup.yml` copies the world DB off-box hourly (see [Backups](#backups)).
+- **CI/CD**: `.github/workflows/deploy.yml`. On push to `main` it deploys any changed VPS services (sync-service, genai-service, agent-runner, caddy) over Tailscale, then the frontend via OIDC. See [CI server deploys](#ci-server-deploys). `.github/workflows/backup.yml` copies the world DB off-box, scheduled hourly but GitHub actually runs it every ~3–5 h (found 2026-10-21; see [Backups](#backups) and the README open questions).
 - **Domain**: `aweborn.org` + `www.aweborn.org`, Hosted Zone ID `Z077908710IGH7R1XO587`
 - **VPS**: `sync.aweborn.org` + `api.aweborn.org` → Lightsail (Ubuntu 22.04 + k3s + Caddy auto-TLS)
 - **Tailscale**: VPS is `aweborn-vps` on the Tailnet (Lightsail instance `aweborn-vps-2` since the 2026-10-11 rebuild; Tailnet IP 100.86.61.100, changes on every rebuild, so never hard-code it), tagged `tag:server` (no key expiry). New servers join by themselves on first boot (see [Rebuilding the VPS](#rebuilding-the-vps--tailnet-auto-join)). agent-runner is reachable via the Tailnet only
@@ -61,7 +61,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `src/components/FallbackScene.tsx` | 2D fallback for no-WebGL — includes browser-specific fix instructions |
 | `src/components/CanvasErrorBoundary.tsx` | React error boundary for R3F Canvas crashes |
 | `src/hooks/usePaymentIntent.ts` | Hook — calls `POST /create-payment-intent`, returns `clientSecret` for embedded Elements |
-| `src/hooks/useCRDT.ts` | Hook — connects to sync-service using the custom binary room protocol (msgs `0x01`–`0x09`); returns `{ connected, send, createWorld, updateSectors, joinWorld, leaveWorld }` |
+| `src/hooks/useCRDT.ts` | Hook — connects to sync-service using the custom binary room protocol (msgs `0x01`–`0x0b`; `0x05` create-world is retired, worlds are planted via `POST /api/player/world`); returns `{ connected, send, updateSectors, joinWorld, leaveWorld }` |
 | `src/hooks/usePresence.ts` | Player presence: BroadcastChannel (same browser) + WebSocket relay (cross-browser); `playerId` in sessionStorage |
 | `src/stores/universeStore.ts` / `worldStore.ts` | Stores backed by the Universe CRDT / active World CRDT |
 | `src/systems/` | InputManager, FlightController, CameraController, GravitySystem, WarpSystem, Touch/Gamepad adapters, StarModSlots |
@@ -350,7 +350,7 @@ A server built from `infra/cloudformation-vps.yml` joins the Tailnet **by itself
 
 **Why persistent, not ephemeral:** an ephemeral node is deleted once it's been offline a while. After a long outage the server couldn't rejoin, because the secret is scrubbed from the box, and CI deploys + backups would be locked out. Persistent nodes also keep their name and Tailnet IP. Test nodes (`infra/test-tailscale-join.sh`) *are* ephemeral, so they clean themselves up.
 
-**Nothing on the disk is relied on** (by design, no disk snapshots). The world DB is copied off-box **hourly** (`backup.yml`, :37), so losing the box costs at most ~1h of world edits. Every key comes from `~/keys` (see CONFIG.md); LLM calls go through `OPENROUTER_API_KEY`.
+**Nothing on the disk is relied on** (by design, no disk snapshots). The world DB is copied off-box by `backup.yml` (scheduled hourly at :37, but GitHub's scheduler really runs it every ~3–5 h, measured 2026-10-21), so losing the box can cost **up to ~5 h** of world edits until that's fixed (README → Open Design Questions). Every key comes from `~/keys` (see CONFIG.md); LLM calls go through `OPENROUTER_API_KEY`.
 
 ### If the VPS is unhealthy
 1. Lightsail console → `aweborn-vps` → **Reboot**; if that doesn't help, **Stop** then **Start** (moves it to new hardware; disk and static IP stay). Tailscale, k3s and the pods all come back by themselves.
