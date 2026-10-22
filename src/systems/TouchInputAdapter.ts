@@ -37,7 +37,6 @@
 
 import { inputManager, shapeAxis, type ActionState } from './InputManager'
 import { flightController } from './FlightController'
-import { cameraController } from './CameraController'
 import { useUniverseStore } from '../stores/universeStore'
 import { TURN_RATE, LOOK_RATE } from '@aweborn/shared/sim/interior'
 import { warpSystem } from './WarpSystem'
@@ -114,9 +113,6 @@ export class TouchInputAdapter {
   private _smoothPitch = 0
   private _smoothLookYaw = 0
   private _smoothLookPitch = 0
-  private _rightStickDownAt = 0
-  private _rightStickMaxDist = 0
-  private _lastRightTapAt = 0
   private _rafId: number | null = null
   private _lastTick = 0
   private _lastUiPoll = 0
@@ -226,12 +222,10 @@ export class TouchInputAdapter {
       return
     }
 
-    // Right stick (camera look / rotate)
-    const rc = this._stickCenter(this._rightStickBase)
+    // Right stick (world interior only: camera look / rotate)
+    const rc = this._inWorld ? this._stickCenter(this._rightStickBase) : null
     if (this._rightStick === null && rc && Math.hypot(e.clientX - rc.x, e.clientY - rc.y) <= rc.r * STICK_GRAB) {
       this._rightStick = { id: e.pointerId, originX: rc.x, originY: rc.y, radius: rc.r, targetYaw: 0, targetPitch: 0 }
-      this._rightStickDownAt = performance.now()
-      this._rightStickMaxDist = 0
       this._showRightStick()
       this._moveRightStick(e.clientX, e.clientY)
       return
@@ -279,15 +273,6 @@ export class TouchInputAdapter {
       this._hideStick()
     }
     if (this._rightStick && e.pointerId === this._rightStick.id) {
-      const now = performance.now()
-      if (!this._inWorld && e.type === 'pointerup' && now - this._rightStickDownAt <= TAP_MAX_MS && this._rightStickMaxDist <= TAP_MAX_MOVE_PX) {
-        if (now - this._lastRightTapAt <= 350) {
-          cameraController.resetOrbit()
-          this._lastRightTapAt = 0
-        } else {
-          this._lastRightTapAt = now
-        }
-      }
       this._rightStick = null
       this._smoothLookYaw = 0
       this._smoothLookPitch = 0
@@ -409,7 +394,6 @@ export class TouchInputAdapter {
     let dx = x - s.originX
     let dy = y - s.originY
     let dist = Math.hypot(dx, dy)
-    if (dist > this._rightStickMaxDist) this._rightStickMaxDist = dist
 
     if (dist > s.radius) {
       dx = (dx / dist) * s.radius

@@ -1,4 +1,4 @@
-// Right joystick (LOOK) + surrounding action arc check (2026-10-22).
+// Right joystick (LOOK, world interior only) + surrounding action arc check (2026-10-22).
 // usage: W=390 H=844 OUT=<dir> node scripts/loadtest/right-stick-touch.mjs [url]
 import puppeteer from 'puppeteer-core'
 
@@ -49,98 +49,15 @@ if (DESKTOP) {
   process.exit(0)
 }
 
-// Park near a world while locked on so all 4 space buttons (THRUST, DRIVE, WARP, ENTER) are visible at once
-await page.evaluate(async () => {
-  const { useUniverseStore } = await window.__imp('/src/stores/universeStore.ts')
-  const { flightController } = await window.__imp('/src/systems/FlightController.ts')
-  const { warpSystem } = await window.__imp('/src/systems/WarpSystem.ts')
-  const worlds = [...useUniverseStore.getState().worlds.values()]
-  const near = worlds[0]
-  const lockTarget = worlds[1] ?? worlds[0]
-  if (near) {
-    flightController.position.set(near.resolvedPosition.x + 1.6, near.resolvedPosition.y, near.resolvedPosition.z)
-    flightController.velocity.set(0, 0, 0)
-  }
-  if (lockTarget) warpSystem.lockOnto(lockTarget.id)
-})
-await sleep(600)
-
-r.leftStick = await rect('#touch-stick-left')
-r.rightStick = await rect('#touch-stick-right')
-r.labels = await page.evaluate(() => ({
-  left: document.querySelector('#touch-stick-left .touch-joystick-label')?.textContent?.trim(),
-  right: document.querySelector('#touch-stick-right .touch-joystick-label')?.textContent?.trim(),
-}))
+// ── Space: left STEER stick + THRUST cluster, NO right stick ──
+r.leftStickSpace = await rect('#touch-stick-left')
+r.rightStickSpace = await rect('#touch-stick-right')
 r.thrust = await rect('#touch-btn-thrust')
 r.mode = await rect('#touch-btn-mode')
-r.warp = await rect('#touch-btn-warp')
-r.enter = await rect('#touch-btn-enter')
 r.dock = await rect('.touch-dock')
-r.pill = await rect('#mana-pill')
+await shot('0-space')
 
-r.spaceOverlaps = {
-  rightVsThrust: overlap(r.rightStick, r.thrust),
-  rightVsMode: overlap(r.rightStick, r.mode),
-  rightVsWarp: overlap(r.rightStick, r.warp),
-  rightVsEnter: overlap(r.rightStick, r.enter),
-  rightVsDock: overlap(r.rightStick, r.dock),
-  leftVsWarp: overlap(r.leftStick, r.warp),
-  leftVsEnter: overlap(r.leftStick, r.enter),
-  warpVsEnter: overlap(r.warp, r.enter),
-  warpVsDock: overlap(r.warp, r.dock),
-  thrustVsMode: overlap(r.thrust, r.mode),
-  thrustVsPill: overlap(r.thrust, r.pill),
-  modeVsPill: overlap(r.mode, r.pill),
-}
-await shot('0-space-all-buttons')
-
-// Drag right stick up-right in space: camera orbit changes while flight heading stays put
-const rs = r.rightStick
-const rcx = (rs.l + rs.r) / 2, rcy = (rs.t + rs.b) / 2
-const beforeSpace = await page.evaluate(async () => {
-  const { cameraController } = await window.__imp('/src/systems/CameraController.ts')
-  const { flightController } = await window.__imp('/src/systems/FlightController.ts')
-  return {
-    orbit: cameraController.getOrbit(),
-    shipQ: flightController.quaternion.toArray().map((v) => +v.toFixed(4)),
-  }
-})
-await touch('touchStart', [[rcx + 4, rcy - 4, 3]])
-for (let i = 1; i <= 12; i++) {
-  await touch('touchMove', [[rcx + i * 7, rcy - i * 5, 3]])
-  await sleep(25)
-}
-await sleep(200)
-r.rightStickDragged = await rect('#touch-stick-right')
-r.rightKnobDragged = await rect('#touch-stick-right .touch-joystick-knob')
-await shot('1-space-looking')
-await touch('touchEnd', [])
-await sleep(100)
-const afterSpace = await page.evaluate(async () => {
-  const { cameraController } = await window.__imp('/src/systems/CameraController.ts')
-  const { flightController } = await window.__imp('/src/systems/FlightController.ts')
-  return {
-    orbit: cameraController.getOrbit(),
-    shipQ: flightController.quaternion.toArray().map((v) => +v.toFixed(4)),
-  }
-})
-r.spaceLook = { before: beforeSpace, after: afterSpace }
-
-// Double-tap right stick in space → resets camera orbit
-await touch('touchStart', [[rcx, rcy, 4]])
-await sleep(40)
-await touch('touchEnd', [])
-await sleep(80)
-await touch('touchStart', [[rcx, rcy, 5]])
-await sleep(40)
-await touch('touchEnd', [])
-await sleep(120)
-r.afterDoubleTapOrbit = await page.evaluate(async () => {
-  const { cameraController } = await window.__imp('/src/systems/CameraController.ts')
-  return cameraController.getOrbit()
-})
-
-// ── Enter a world ──
+// ── Enter a world: right LOOK stick appears with JUMP + KICK surrounding it ──
 await page.evaluate(async () => {
   const { useUniverseStore } = await window.__imp('/src/stores/universeStore.ts')
   const s = useUniverseStore.getState()
@@ -162,12 +79,15 @@ r.leftStickWorld = await rect('#touch-stick-left')
 r.worldOverlaps = {
   rightVsJump: overlap(r.rightStickWorld, r.jump),
   rightVsKick: overlap(r.rightStickWorld, r.kick),
+  rightVsDock: overlap(r.rightStickWorld, r.dock),
   leftVsKick: overlap(r.leftStickWorld, r.kick),
   jumpVsKick: overlap(r.jump, r.kick),
 }
-await shot('2-world')
+await shot('1-world')
 
-// Drag right stick in world → turns & looks
+// Drag right stick in world → turns & looks without moving the stick base
+const rs = r.rightStickWorld
+const rcx = (rs.l + rs.r) / 2, rcy = (rs.t + rs.b) / 2
 const beforeWorld = await page.evaluate(async () => {
   const { interiorController } = await window.__imp('/src/systems/InteriorController.ts')
   const s = interiorController.state
@@ -179,7 +99,9 @@ for (let i = 1; i <= 12; i++) {
   await sleep(25)
 }
 await sleep(200)
-await shot('3-world-looking')
+r.rightStickDragged = await rect('#touch-stick-right')
+r.rightKnobDragged = await rect('#touch-stick-right .touch-joystick-knob')
+await shot('2-world-looking')
 await touch('touchEnd', [])
 await sleep(100)
 const afterWorld = await page.evaluate(async () => {
