@@ -43,6 +43,7 @@ import { useUniverseStore } from '../stores/universeStore'
 import { TURN_RATE, LOOK_RATE } from '@aweborn/shared/sim/interior'
 import { warpSystem } from './WarpSystem'
 import { pickWorldAt, sceneHints } from './tapTargeting'
+import { triggerCarryToggle, triggerPlaceHeld } from '../stores/heldItemStore'
 
 // ── Tuning ───────────────────────────────────────────────────────────
 
@@ -133,8 +134,12 @@ export class TouchInputAdapter {
   /** Contextual buttons' last shown state (null = not rendered yet). */
   private _warpShown: boolean | null = null
   private _enterShown: boolean | null = null
+  private _placeShown: boolean | null = null
+  private _grabCarrying: boolean | null = null
   private _warpBtn: HTMLButtonElement | null = null
   private _enterBtn: HTMLButtonElement | null = null
+  private _grabBtn: HTMLButtonElement | null = null
+  private _placeBtn: HTMLButtonElement | null = null
 
   private _overlay: HTMLDivElement | null = null
   private _stickBase: HTMLDivElement | null = null
@@ -517,6 +522,10 @@ export class TouchInputAdapter {
       const phase = warpSystem.getState().phase
       this._showContextual('warp', phase === 'locked' || phase === 'charging')
       this._showContextual('enter', sceneHints.canEnter)
+      this._showPlace(false)
+    } else {
+      this._showPlace(sceneHints.hasHeldItem && !sceneHints.isCarryingObject)
+      this._syncGrabButton(sceneHints.isCarryingObject)
     }
 
     if (now - this._lastUiPoll > UI_POLL_MS) {
@@ -539,6 +548,24 @@ export class TouchInputAdapter {
     btn.tabIndex = on ? 0 : -1
   }
 
+  /** World: PLACE appears around the right stick when an item is equipped in hand. */
+  private _showPlace(on: boolean): void {
+    if (!this._placeBtn || on === this._placeShown) return
+    this._placeShown = on
+    this._placeBtn.classList.toggle('touch-btn--off', !on)
+    this._placeBtn.setAttribute('aria-hidden', String(!on))
+    this._placeBtn.tabIndex = on ? 0 : -1
+  }
+
+  /** World: GRAB switches to DROP while carrying an object. */
+  private _syncGrabButton(carrying: boolean): void {
+    if (!this._grabBtn || carrying === this._grabCarrying) return
+    this._grabCarrying = carrying
+    this._grabBtn.textContent = carrying ? 'DROP' : 'GRAB'
+    this._grabBtn.classList.toggle('touch-btn--carrying', carrying)
+    this._grabBtn.setAttribute('aria-label', carrying ? 'Set down the carried object' : 'Grab and carry the object in front of you')
+  }
+
   /** Inside worlds: walking layout (JUMP big under the thumb, KICK above it); hide behind modals. */
   private _syncVisibility(): void {
     if (!this._overlay) return
@@ -554,6 +581,8 @@ export class TouchInputAdapter {
       this._enterBtn?.removeAttribute('aria-hidden')
       this._enterShown = null
       this._warpShown = null
+      this._placeShown = null
+      this._grabCarrying = null
       const enter = this._overlay.querySelector<HTMLButtonElement>('#touch-btn-enter')
       if (enter) {
         enter.textContent = inWorld ? 'KICK' : 'ENTER'
@@ -658,6 +687,33 @@ export class TouchInputAdapter {
     return el
   }
 
+  /** Wire a one-shot callback button (GRAB, PLACE) with pointer capture so it works alongside sticks. */
+  private _bindTapButton(el: HTMLButtonElement, onTap: () => void): void {
+    let pressId: number | null = null
+    const release = () => {
+      if (pressId === null) return
+      pressId = null
+      el.classList.remove('touch-btn--pressed')
+    }
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (pressId !== null) return
+      pressId = e.pointerId
+      try { el.setPointerCapture(e.pointerId) } catch { /* already gone */ }
+      el.classList.add('touch-btn--pressed')
+      onTap()
+    })
+    el.addEventListener('pointerup', (e) => { if (e.pointerId === pressId) release() })
+    el.addEventListener('pointercancel', (e) => { if (e.pointerId === pressId) release() })
+    el.addEventListener('lostpointercapture', (e) => { if (e.pointerId === pressId) release() })
+    el.addEventListener('click', (e) => {
+      if (e.detail !== 0) return
+      onTap()
+    })
+    el.addEventListener('contextmenu', (e) => e.preventDefault())
+  }
+
   private _renderMode(neutral: boolean): void {
     this._modeIsNeutral = neutral
     if (!this._modeButton) return
@@ -699,6 +755,28 @@ export class TouchInputAdapter {
     const cluster = document.createElement('div')
     cluster.className = 'touch-actions'
     for (const spec of BUTTONS) cluster.appendChild(this._makeButton(spec))
+
+    // World: GRAB / DROP button next to KICK
+    const grab = document.createElement('button')
+    grab.type = 'button'
+    grab.id = 'touch-btn-grab'
+    grab.className = 'touch-btn touch-btn--grab'
+    grab.textContent = 'GRAB'
+    grab.setAttribute('aria-label', 'Grab and carry the object in front of you')
+    this._bindTapButton(grab, triggerCarryToggle)
+    cluster.appendChild(grab)
+
+    // World: PLACE button (appears when a Library item is in hand)
+    const place = document.createElement('button')
+    place.type = 'button'
+    place.id = 'touch-btn-place'
+    place.className = 'touch-btn touch-btn--place touch-btn--off'
+    place.textContent = 'PLACE'
+    place.setAttribute('aria-label', 'Place the item in your hand')
+    place.setAttribute('aria-hidden', 'true')
+    place.tabIndex = -1
+    this._bindTapButton(place, triggerPlaceHeld)
+    cluster.appendChild(place)
 
     // THRUST (space): the big right-thumb button; slide down on it to brake
     const thrust = document.createElement('button')
@@ -742,8 +820,12 @@ export class TouchInputAdapter {
     this._thrustBtn = thrust
     this._warpBtn = cluster.querySelector<HTMLButtonElement>('#touch-btn-warp')
     this._enterBtn = cluster.querySelector<HTMLButtonElement>('#touch-btn-enter')
+    this._grabBtn = grab
+    this._placeBtn = place
     this._warpShown = null
     this._enterShown = null
+    this._placeShown = null
+    this._grabCarrying = null
     this._modeButton = mode
     this._modeIsNeutral = null
     this._renderMode(flightController.isGravityEnabled())
@@ -802,6 +884,8 @@ export class TouchInputAdapter {
     this._thrustBtn = null
     this._warpBtn = null
     this._enterBtn = null
+    this._grabBtn = null
+    this._placeBtn = null
     this._modeButton = null
   }
 

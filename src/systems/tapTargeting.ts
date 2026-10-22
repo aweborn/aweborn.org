@@ -14,10 +14,16 @@ const PICK_RADIUS_PX = 56
 let pickCamera: THREE.Camera | null = null
 const _v = new THREE.Vector3()
 
-/** Per-frame facts the touch UI needs (written by Scene's flight loop). */
+/** Per-frame facts the touch UI needs (written by Scene's flight / interior loops). */
 export const sceneHints = {
   /** Space: a world is close enough that ENTER (N) would go in. */
   canEnter: false,
+  /** World: an object is in front of the player within reach of KICK (N) / GRAB (G). */
+  hasTargetObject: false,
+  /** World: the player is currently carrying a grabbed object (GRAB becomes DROP). */
+  isCarryingObject: false,
+  /** World: the player has a Library item equipped in hand (PLACE button active). */
+  hasHeldItem: false,
 }
 
 export function setPickCamera(camera: THREE.Camera): void {

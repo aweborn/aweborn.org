@@ -39,6 +39,14 @@ import { TouchInputAdapter } from '../systems/TouchInputAdapter'
 import { SolidificationWave } from '../effects/SolidificationWave'
 import { useQualityStore, useQualityTier } from '../stores/qualityStore'
 import { matchesBinding } from '../stores/keybindingStore'
+import {
+  useHeldItemStore,
+  placeEquippedItem,
+  CARRY_TOGGLE_EVENT,
+  PLACE_HELD_EVENT,
+  HELD_ADJUST_EVENT,
+  type HeldAdjustKind,
+} from '../stores/heldItemStore'
 
 // ── Module-level slingshot visual state ──
 // Shared between FlightSystem (writer) and SlingshotArc/UniverseView (reader)
@@ -126,6 +134,11 @@ function FlightSystem() {
     // ── Star mod slots (always process, even in world) ──
     starModSlots.update()
 
+    if (!isInWorld) {
+      sceneHints.hasTargetObject = false
+      sceneHints.isCarryingObject = false
+      sceneHints.hasHeldItem = false
+    }
     if (isInWorld) {
       sceneHints.canEnter = false
       return // Flight is disabled inside worlds
@@ -413,15 +426,9 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
-      return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')
+      return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
     }
-    const down = (e: KeyboardEvent) => {
-      if (typing(e)) return
-      if (matchesBinding(e, 'heldRotateLeft')) turnKeys.current.z = true
-      if (matchesBinding(e, 'heldRotateRight')) turnKeys.current.x = true
-      if (matchesBinding(e, 'heldGrow')) turnKeys.current.r = true
-      if (matchesBinding(e, 'heldShrink')) turnKeys.current.f = true
-      if (!matchesBinding(e, 'carry') || e.repeat) return
+    const toggleCarry = () => {
       const doc = useUniverseStore.getState().activeWorldDoc
       const s = interiorController.state
       if (held.current) {
@@ -433,6 +440,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         }
         held.current = null
         setHeldId(null)
+        useHeldItemStore.getState().setCarryingId(null)
         return
       }
       const all = Array.from(useWorldStore.getState().objects.values()).filter((o) => !o.kick)
@@ -441,6 +449,47 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       const half = 0.5 * Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleZ || 1))
       held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: target.y - s.y, lastWrite: 0, k: Math.min(1, 30 / Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleY || 1), Math.abs(target.scaleZ || 1))), base: { x: target.scaleX || 1, y: target.scaleY || 1, z: target.scaleZ || 1 } }
       setHeldId(target.id)
+      useHeldItemStore.getState().setCarryingId(target.id)
+    }
+    const doPlaceHeld = () => {
+      if (playerId) placeEquippedItem(playerId)
+    }
+    const onAdjust = (ev: Event) => {
+      const kind = (ev as CustomEvent<HeldAdjustKind>).detail
+      const doc = useUniverseStore.getState().activeWorldDoc
+      if (held.current && doc) {
+        const h = held.current
+        if (kind === 'rotLeft') h.rotY -= Math.PI / 8
+        else if (kind === 'rotRight') h.rotY += Math.PI / 8
+        else if (kind === 'grow' || kind === 'shrink') {
+          const big = Math.max(h.base.x, h.base.y, h.base.z)
+          const factor = kind === 'grow' ? 1.15 : 1 / 1.15
+          h.k = Math.min(30 / big, Math.max(0.3 / big, h.k * factor))
+          h.dist = 0.5 * Math.max(h.base.x, h.base.z) * h.k + 1.2
+        }
+        const sc = scaleOf(h)
+        moveObject(doc, h.id, carryPosition(interiorController.state, h, { scaleY: sc.y }), h.rotY, sc)
+        return
+      }
+      const store = useHeldItemStore.getState()
+      if (kind === 'rotLeft') store.rotateItem(-Math.PI / 8)
+      else if (kind === 'rotRight') store.rotateItem(Math.PI / 8)
+      else if (kind === 'grow') store.scaleItem(1.15)
+      else if (kind === 'shrink') store.scaleItem(1 / 1.15)
+    }
+    const down = (e: KeyboardEvent) => {
+      if (typing(e)) return
+      if (matchesBinding(e, 'heldRotateLeft')) turnKeys.current.z = true
+      if (matchesBinding(e, 'heldRotateRight')) turnKeys.current.x = true
+      if (matchesBinding(e, 'heldGrow')) turnKeys.current.r = true
+      if (matchesBinding(e, 'heldShrink')) turnKeys.current.f = true
+      if (matchesBinding(e, 'placeHeld') && !e.repeat) {
+        e.preventDefault()
+        doPlaceHeld()
+        return
+      }
+      if (!matchesBinding(e, 'carry') || e.repeat) return
+      toggleCarry()
     }
     const up = (e: KeyboardEvent) => {
       if (matchesBinding(e, 'heldRotateLeft')) turnKeys.current.z = false
@@ -450,11 +499,18 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
+    window.addEventListener(CARRY_TOGGLE_EVENT, toggleCarry)
+    window.addEventListener(PLACE_HELD_EVENT, doPlaceHeld)
+    window.addEventListener(HELD_ADJUST_EVENT, onAdjust)
     return () => {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
+      window.removeEventListener(CARRY_TOGGLE_EVENT, toggleCarry)
+      window.removeEventListener(PLACE_HELD_EVENT, doPlaceHeld)
+      window.removeEventListener(HELD_ADJUST_EVENT, onAdjust)
+      useHeldItemStore.getState().setCarryingId(null)
     }
-  }, [])
+  }, [playerId])
   const camTarget = useRef(new THREE.Vector3())
   const camPos = useRef(new THREE.Vector3())
   const camDist = useRef<number>(CAM_DISTANCES[2])
@@ -527,6 +583,21 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
 
     // Kick (N): the object in front of you; 2 CRDT writes per kick
     const doc = useUniverseStore.getState().activeWorldDoc
+    const nonKicked = Array.from(objects.values()).filter((o) => !o.kick)
+    const targetObj = kickTarget(s, nonKicked)
+    const heldStore = useHeldItemStore.getState()
+    sceneHints.hasTargetObject = targetObj !== null
+    sceneHints.isCarryingObject = held.current !== null
+    sceneHints.hasHeldItem = heldStore.item !== null
+
+    // If not carrying an existing world object, Z/X/=/− rotate/scale the equipped item in hand
+    if (!held.current && heldStore.item && heldStore.item.kind !== 'block') {
+      const rotDelta = ((turnKeys.current.x ? 1 : 0) - (turnKeys.current.z ? 1 : 0)) * 1.8 * delta
+      if (rotDelta !== 0) heldStore.rotateItem(rotDelta)
+      const scaleExp = ((turnKeys.current.r ? 1 : 0) - (turnKeys.current.f ? 1 : 0)) * 1.0 * delta
+      if (scaleExp !== 0) heldStore.scaleItem(Math.exp(scaleExp))
+    }
+
     // Carrying: the object follows in front of you; everyone sees it move (≤ 10 writes/s)
     if (doc && held.current) {
       const h = held.current
@@ -534,6 +605,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       if (!o) {
         held.current = null
         setHeldId(null)
+        heldStore.setCarryingId(null)
       } else {
         h.rotY += ((turnKeys.current.x ? 1 : 0) - (turnKeys.current.z ? 1 : 0)) * 1.8 * delta
         const big = Math.max(h.base.x, h.base.y, h.base.z)

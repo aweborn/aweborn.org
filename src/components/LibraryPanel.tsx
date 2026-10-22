@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
-import { placeModel, placeBlock, placeShape, useWorldStore } from '../stores/worldStore'
-import { placeOnTerrain } from '../stores/worldVoxels'
+import { useWorldStore } from '../stores/worldStore'
 import { usePresence } from '../hooks/usePresence'
-import { interiorController } from '../systems/InteriorController'
 import { libraryThumb } from '../lib/libraryThumbs'
 import { matchesBinding } from '../stores/keybindingStore'
 import { useSheet } from '../stores/sheetStore'
+import { useHeldItemStore } from '../stores/heldItemStore'
 import { MakeTabs } from './MakeTabs'
 import {
-  STANDARD_BLOCKS, SHAPES, SHAPE_COLORS, SHAPE_SIZE, cleanColor, snapToCell, stackedY,
+  STANDARD_BLOCKS, SHAPES, SHAPE_COLORS, SHAPE_SIZE, cleanColor,
   type LibraryBlock,
 } from '@aweborn/shared/library'
 
@@ -211,62 +210,41 @@ export function LibraryPanel() {
     if (open && tab === 'made') setTimeout(() => inputRef.current?.focus(), 0)
   }, [open, tab])
 
-  const place = useCallback(
+  const equip = useHeldItemStore((s) => s.equip)
+  const heldItem = useHeldItemStore((s) => s.item)
+
+  // Clear equipped item when leaving a world
+  useEffect(() => {
+    if (!activeWorldId) useHeldItemStore.getState().clear()
+  }, [activeWorldId])
+
+  const selectModel = useCallback(
     (a: Asset) => {
-      const doc = useUniverseStore.getState().activeWorldDoc
-      if (!doc) return
-      const s = interiorController.state
-      const dist = STARTING_SIZE / 2 + 2
-      placeModel(doc, a.file, a.prompt, { x: s.x + s.fx * dist, y: s.y + STARTING_SIZE / 2, z: s.z + s.fz * dist }, playerId, {
-        scale: STARTING_SIZE,
-      })
+      equip({ kind: 'model', sha: a.sha, file: a.file, prompt: a.prompt, size: STARTING_SIZE, rotY: 0 })
       setPlaced(a.sha)
-      setTimeout(() => setPlaced((p) => (p === a.sha ? null : p)), 1600)
+      setOpen(false)
     },
-    [playerId],
+    [equip, setOpen],
   )
 
-  const flash = useCallback((key: string) => {
-    setPlaced(key)
-    setTimeout(() => setPlaced((p) => (p === key ? null : p)), 1200)
-  }, [])
-
-  // A block goes on the grid cell in front of you, at your feet's height, stacking on blocks already there
-  const placeBlockAhead = useCallback(
+  const selectBlock = useCallback(
     (b: LibraryBlock) => {
-      const doc = useUniverseStore.getState().activeWorldDoc
-      if (!doc) return
-      const s = interiorController.state
-      const t = useWorldStore.getState().voxelTerrain
-      const wx = t?.size[0] ?? 40
-      const wz = t?.size[2] ?? 40
-      const x = snapToCell(s.x + s.fx * 2, wx)
-      const z = snapToCell(s.z + s.fz * 2, wz)
-      let y = Math.floor(s.y + 0.01) + 0.5
-      if (t) {
-        // Never inside the ground: lift to the terrain surface of that cell
-        const surface = placeOnTerrain(t, [Math.floor(x + wx / 2), 0, Math.floor(z + wz / 2)]).y
-        y = Math.max(y, surface + 0.5)
-      }
-      y = stackedY(y, x, z, useWorldStore.getState().objects.values())
-      placeBlock(doc, b, { x, y, z }, playerId)
-      flash(`block:${b.id}`)
+      equip({ kind: 'block', block: b })
+      setPlaced(`block:${b.id}`)
+      setOpen(false)
     },
-    [playerId, flash],
+    [equip, setOpen],
   )
 
-  // A shape stands in front of you, resting at your feet's height
-  const placeShapeAhead = useCallback(
+  const selectShape = useCallback(
     (shapeId: string) => {
-      const doc = useUniverseStore.getState().activeWorldDoc
       const shape = SHAPES.find((x) => x.id === shapeId)
-      if (!doc || !shape) return
-      const s = interiorController.state
-      const dist = size / 2 + 1.5
-      placeShape(doc, shape, { color, size }, { x: s.x + s.fx * dist, y: s.y + size / 2, z: s.z + s.fz * dist }, playerId)
-      flash(`shape:${shapeId}`)
+      if (!shape) return
+      equip({ kind: 'shape', shape, color, size, rotY: 0 })
+      setPlaced(`shape:${shapeId}`)
+      setOpen(false)
     },
-    [playerId, color, size, flash],
+    [equip, color, size, setOpen],
   )
 
   if (!activeWorldId) return null
@@ -310,29 +288,35 @@ export function LibraryPanel() {
             <>
               <h3 className="library-shelf-title">This world</h3>
               <ul className="library-blocks">
-                {worldBlocks.map((b) => (
-                  <li key={`w-${b.id}`}>
-                    <button type="button" className="library-block" onClick={() => placeBlockAhead(b)} title={`Place ${b.name}`}>
-                      <span className="library-swatch" style={{ background: b.color }} />
-                      <span>{placed === `block:${b.id}` ? 'Placed ✓' : b.name}</span>
-                    </button>
-                  </li>
-                ))}
+                {worldBlocks.map((b) => {
+                  const isHeld = heldItem?.kind === 'block' && heldItem.block.id === b.id
+                  return (
+                    <li key={`w-${b.id}`}>
+                      <button type="button" className={`library-block${isHeld ? ' is-on' : ''}`} onClick={() => selectBlock(b)} title={`Hold ${b.name} to place`}>
+                        <span className="library-swatch" style={{ background: b.color }} />
+                        <span>{isHeld || placed === `block:${b.id}` ? `${b.name} ✓` : b.name}</span>
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             </>
           )}
           <h3 className="library-shelf-title">Standard</h3>
           <ul className="library-blocks">
-            {standardBlocks.map((b) => (
-              <li key={b.id}>
-                <button type="button" className="library-block" onClick={() => placeBlockAhead(b)} title={`Place ${b.name}`}>
-                  <span className="library-swatch" style={{ background: b.color }} />
-                  <span>{placed === `block:${b.id}` ? 'Placed ✓' : b.name}</span>
-                </button>
-              </li>
-            ))}
+            {standardBlocks.map((b) => {
+              const isHeld = heldItem?.kind === 'block' && heldItem.block.id === b.id
+              return (
+                <li key={b.id}>
+                  <button type="button" className={`library-block${isHeld ? ' is-on' : ''}`} onClick={() => selectBlock(b)} title={`Hold ${b.name} to place`}>
+                    <span className="library-swatch" style={{ background: b.color }} />
+                    <span>{isHeld || placed === `block:${b.id}` ? `${b.name} ✓` : b.name}</span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
-          <p className="library-hint">Blocks snap to the grid and stack. Free, and they work offline.</p>
+          <p className="library-hint">Tap a block to hold it in your hand, then walk and tap PLACE as many times as you want.</p>
         </div>
       )}
 
@@ -378,16 +362,19 @@ export function LibraryPanel() {
             <b>{size} m</b>
           </label>
           <ul className="library-shapes">
-            {SHAPES.map((s) => (
-              <li key={s.id}>
-                <button type="button" className="library-shape" onClick={() => placeShapeAhead(s.id)} title={`Place ${s.name}`}>
-                  <ShapeIcon id={s.id} color={color} />
-                  <span>{placed === `shape:${s.id}` ? 'Placed ✓' : s.name}</span>
-                </button>
-              </li>
-            ))}
+            {SHAPES.map((s) => {
+              const isHeld = heldItem?.kind === 'shape' && heldItem.shape.id === s.id
+              return (
+                <li key={s.id}>
+                  <button type="button" className={`library-shape${isHeld ? ' is-on' : ''}`} onClick={() => selectShape(s.id)} title={`Hold ${s.name} to place`}>
+                    <ShapeIcon id={s.id} color={color} />
+                    <span>{isHeld || placed === `shape:${s.id}` ? `${s.name} ✓` : s.name}</span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
-          <p className="library-hint">Pick a color and size, then tap a shape. Free, and they work offline.</p>
+          <p className="library-hint">Pick a color and size, then tap a shape to hold it in your hand and place it anywhere.</p>
         </div>
       )}
 
@@ -407,15 +394,17 @@ export function LibraryPanel() {
       {tab === 'made' && error && <p className="planner-error">{error}</p>}
       {tab === 'made' && (
       <ul className="library-list">
-        {assets.map((a) => (
+        {assets.map((a) => {
+          const isHeld = heldItem?.kind === 'model' && heldItem.sha === a.sha
+          return (
           <li key={a.sha} className="library-item">
             <AssetThumb a={a} />
             <p className="library-prompt">{a.prompt}</p>
             <span className="library-meta">
               {a.creator ? `by maker ${a.creator} · ` : ''}{(a.bytes / 1_048_576).toFixed(1)} MB · {new Date(a.created_at).toLocaleDateString()}
             </span>
-            <button type="button" className="planner-chip library-place" onClick={() => place(a)}>
-              {placed === a.sha ? 'Placed ✓' : 'Place'}
+            <button type="button" className="planner-chip library-place" onClick={() => selectModel(a)}>
+              {isHeld || placed === a.sha ? 'In hand ✓' : 'Hold'}
             </button>
             {myMaker && a.creator === myMaker &&
               (confirming === a.sha ? (
@@ -428,7 +417,8 @@ export function LibraryPanel() {
                 </button>
               ))}
           </li>
-        ))}
+          )
+        })}
         {!loading && !assets.length && !error && <li className="planner-empty">Nothing here yet. Make something, and it lands here for everyone.</li>}
       </ul>
       )}

@@ -12,6 +12,8 @@ import { AUTH_URL } from '../lib/player'
 import { registerModelShape } from '../stores/modelShapes'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import type { BlueprintSky } from '@aweborn/shared/blueprint'
+import { useHeldItemStore, computePlacementTarget } from '../stores/heldItemStore'
+import { interiorController } from '../systems/InteriorController'
 
 /** A model that fails to load must not take the whole scene down: show a wireframe stand-in instead. */
 class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -167,6 +169,68 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
   )
 }
 
+// ── Held Item Ghost Preview (Minecraft-style placement spot) ─────────
+
+function HeldItemPreview() {
+  const item = useHeldItemStore((s) => s.item)
+  const carryingId = useHeldItemStore((s) => s.carryingId)
+  const groupRef = useRef<THREE.Group>(null!)
+
+  const geo = useMemo(() => {
+    if (!item) return GEOMETRIES.cube
+    if (item.kind === 'block') return GEOMETRIES.cube
+    if (item.kind === 'shape') return getGeometry(item.shape.id)
+    return GEOMETRIES.cube
+  }, [item])
+
+  const color = useMemo(() => {
+    if (!item) return new THREE.Color('#ffffff')
+    if (item.kind === 'block') return new THREE.Color(item.block.color)
+    if (item.kind === 'shape') return new THREE.Color(item.color)
+    return new THREE.Color('#9fe8ff')
+  }, [item])
+
+  useFrame((state) => {
+    if (!groupRef.current || !item || carryingId) return
+    const target = computePlacementTarget(item, interiorController.state)
+    groupRef.current.position.set(target.x, target.y, target.z)
+    groupRef.current.rotation.set(0, target.rotY, 0)
+    const pulse = 1 + Math.sin(state.clock.elapsedTime * 4) * 0.015
+    const s = target.scale * pulse
+    groupRef.current.scale.set(s, s, s)
+  })
+
+  if (!item || carryingId) return null
+
+  return (
+    <group ref={groupRef}>
+      {item.kind === 'model' ? (
+        <ModelBoundary fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color="#9fe8ff" wireframe transparent opacity={0.6} /></mesh>}>
+          <Suspense fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color="#9fe8ff" wireframe transparent opacity={0.6} /></mesh>}>
+            <GeneratedModel asset={item.file} />
+          </Suspense>
+        </ModelBoundary>
+      ) : (
+        <mesh geometry={geo}>
+          <meshStandardMaterial
+            color={color}
+            roughness={0.5}
+            metalness={0.1}
+            emissive={color}
+            emissiveIntensity={0.25}
+            transparent
+            opacity={0.52}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+      <mesh geometry={geo} scale={[1.02, 1.02, 1.02]}>
+        <meshBasicMaterial color={color} wireframe transparent opacity={0.65} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
+
 // ── Ground Grid ──────────────────────────────────────────────────────
 
 function GroundGrid({ worldColor }: { worldColor: string }) {
@@ -286,6 +350,9 @@ export function WorldInterior() {
       {objectList.map((obj) => (
         <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} />
       ))}
+
+      {/* Live ghost preview of the item held in hand */}
+      <HeldItemPreview />
 
       {/* Lighting: the blueprint's sun + ambient in voxel worlds, world-palette tint in the old rooms */}
       {atmo ? (

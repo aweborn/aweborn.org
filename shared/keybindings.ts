@@ -81,6 +81,7 @@ export const BINDING_DEFS: readonly BindingDef[] = [
   { id: 'modEmote', group: 'mods', label: 'Emote', contexts: UNI, default: 'KeyP' },
 
   // Building (inside a world)
+  { id: 'placeHeld', group: 'build', label: 'Place item in hand', contexts: WORLD, default: 'KeyV' },
   { id: 'carry', group: 'build', label: 'Pick up / set down', contexts: WORLD, default: 'KeyG' },
   { id: 'heldRotateLeft', group: 'build', label: 'Rotate held item left', contexts: WORLD, default: 'KeyZ' },
   { id: 'heldRotateRight', group: 'build', label: 'Rotate held item right', contexts: WORLD, default: 'KeyX' },

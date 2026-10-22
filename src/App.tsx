@@ -2,6 +2,7 @@ import { CreatePanel } from './components/CreatePanel'
 import { PlannerPanel } from './components/PlannerPanel'
 import { ManaTracker } from './components/ManaTracker'
 import { LibraryPanel } from './components/LibraryPanel'
+import { HeldItemBar } from './components/HeldItemBar'
 import { ChatPanel } from './components/ChatPanel'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Scene } from './components/Scene'
@@ -132,6 +133,7 @@ export default function App() {
           <PlannerPanel />
           <ManaTracker />
           <LibraryPanel />
+          <HeldItemBar />
           <ChatPanel />
           <PlantWorldPanel />
           <TouchDock />

@@ -113,7 +113,8 @@ export function MoreSheet() {
               <li><b>Left stick</b> walk · push to the rim to sprint</li>
               <li><b>Right stick</b> look around (or drag the sky)</li>
               <li><b>Pinch</b> zoom camera in or out</li>
-              <li><b>JUMP</b> jump · <b>KICK</b> kick a block</li>
+              <li><b>JUMP</b> jump · <b>KICK</b> kick · <b>GRAB</b> pick up / carry</li>
+              <li><b>🧱 Make → Library</b> pick a block or shape to hold in hand, then tap <b>PLACE</b></li>
               <li><b>Hold the world name</b> (top right) to return to space</li>
             </>
           ) : (
