@@ -1,4 +1,4 @@
-// Phone fps profile (Card Event Readiness step 2). Needs: npm i --no-save puppeteer-core
+// Phone fps profile (Card Event Readiness step 2). Uses the puppeteer-core dev dependency + system Chrome.
 // Local only: run the Vite dev server + local sync-service; add bots with bots.mjs for a crowd.
 //   node scripts/loadtest/phone-fps.mjs 4 12 0,1,2,3 label   (throttle, seconds, tiers, label)
 // Phone-ish fps profile: system Chrome, 390x844 touch, CPU throttle, per tier.

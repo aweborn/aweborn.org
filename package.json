@@ -37,6 +37,7 @@
     "jsqr": "^1.4.0",
     "markdown-toc": "^1.2.0",
     "oxlint": "^1.75.0",
+    "puppeteer-core": "^25.15.0",
     "qrcode": "^1.5.4",
     "sharp": "^0.35.4",
     "typescript": "~6.0.2",

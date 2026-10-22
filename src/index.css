@@ -938,12 +938,54 @@ html.touch-ui .hud-mod-slots {
   display: block;
 }
 
-/* Inside a world: walking controls stay (stick turns/looks, right thumb walks,
-   JUMP + SPRINT, ENTER = KICK); flight-only controls go. */
+/* Inside a world (docs/mobile-ui/SPEC.md): left stick walks (rim = sprint),
+   right-side drag looks, JUMP is the big right-thumb button with KICK above it.
+   Flight-only controls go. */
 .touch-overlay--in-world .touch-btn--lock,
+.touch-overlay--in-world .touch-btn--warp,
 .touch-overlay--in-world .touch-mode-toggle,
 .touch-overlay--in-world .touch-hint {
   display: none;
+}
+
+.touch-overlay--in-world .touch-actions {
+  right: calc(var(--touch-safe-right) + 18px);
+  bottom: calc(var(--touch-safe-bottom) + 28px);
+  grid-template-columns: 88px;
+  grid-template-areas:
+    'enter'
+    'brake';
+  justify-items: center;
+  gap: 14px;
+}
+
+.touch-overlay--in-world .touch-btn--brake {
+  width: 88px;
+  height: 88px;
+  font-size: 0.85rem;
+  color: rgba(140, 230, 255, 0.95);
+  border: 2px solid rgba(110, 220, 255, 0.75);
+  box-shadow: 0 0 22px rgba(110, 220, 255, 0.35), inset 0 0 16px rgba(110, 220, 255, 0.15);
+}
+
+.touch-overlay--in-world .touch-btn--brake.touch-btn--pressed {
+  background: rgba(40, 110, 150, 0.6);
+  box-shadow: 0 0 28px rgba(110, 220, 255, 0.6);
+}
+
+.touch-overlay--in-world .touch-btn--enter {
+  width: auto;
+  min-width: 88px;
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 999px;
+  color: var(--touch-gold);
+  border-color: rgba(232, 185, 74, 0.55);
+}
+
+.touch-joystick-base--sprint {
+  border-color: rgba(110, 220, 255, 0.85);
+  box-shadow: 0 0 24px rgba(110, 220, 255, 0.5);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3666,7 +3708,8 @@ html.touch-ui .hud-mod-slots {
   background: linear-gradient(90deg, #ffd27a, #ff9f5a);
   transition: width 0.6s ease;
 }
-html.touch-ui .create-panel { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+/* Touch: clear the right-thumb cluster (JUMP 88 + KICK 48 above it, bottom ~180 px). Interim until the dock + Make sheet (docs/mobile-ui/SPEC.md). */
+html.touch-ui .create-panel { bottom: calc(196px + env(safe-area-inset-bottom, 0px)); }
 
 /* ── World Planner (Phase 07) ───────────────────────────────────────── */
 .planner-open {
@@ -3755,7 +3798,7 @@ html.touch-ui .create-panel { bottom: calc(150px + env(safe-area-inset-bottom, 0
 }
 .planner-send:disabled { opacity: 0.4; cursor: default; }
 .planner-error { margin: 0; font-size: var(--text-xs); color: #ffb4a0; }
-html.touch-ui .planner-open { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+html.touch-ui .planner-open { bottom: calc(196px + env(safe-area-inset-bottom, 0px)); }
 html.touch-ui .planner { top: 60px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); right: 16px; }
 .planner-ghost { background: none; border: 1px solid var(--glass-border); border-radius: 8px; color: var(--color-text-secondary); cursor: pointer; padding: 2px 7px; font-size: 13px; }
 .planner-ghost.is-on { color: #cfc4ff; border-color: rgba(180, 160, 255, 0.5); background: rgba(150, 125, 255, 0.15); }

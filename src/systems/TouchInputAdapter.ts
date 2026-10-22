@@ -7,12 +7,16 @@
  *
  * Touch zones (only touches that land on the 3D canvas; UI buttons
  * keep working because their touches never reach these handlers):
- *  - Left half:  floating analog stick → yaw / pitch axes
- *  - Right half: hold → thrust; pull the thumb back (down) → brake
+ *  - Space, left half:  floating analog stick → yaw / pitch axes
+ *  - Space, right half: hold → thrust; pull the thumb back (down) → brake
+ *  - World, left half:  floating analog stick → walk / strafe (moveX / moveY);
+ *                       push it to the rim → sprint
+ *  - World, right half: drag → look (turn / look up-down)
  *
  * On-screen buttons:
- *  - BRAKE (hold, Space) · LOCK (J) · WARP (hold, K) · ENTER (N)
- *  - DRIVE / NEUTRAL (G) · EXIT (Escape, inside a world)
+ *  - Space: BRAKE (hold, Space) · LOCK (J) · WARP (hold, K) · ENTER (N) · DRIVE / NEUTRAL (G)
+ *  - World: JUMP (big, right thumb; hold in the air = jetpack) · KICK (N) · EXIT (Escape)
+ *  Layout spec: docs/mobile-ui/SPEC.md (grill 2026-10-21).
  *
  * Uses Pointer Events so every finger is tracked on its own by
  * `pointerId` — steer, thrust and press a button all at once.
@@ -29,6 +33,7 @@
 import { inputManager, shapeAxis, type ActionState } from './InputManager'
 import { flightController } from './FlightController'
 import { useUniverseStore } from '../stores/universeStore'
+import { TURN_RATE, LOOK_RATE } from '@aweborn/shared/sim/interior'
 
 // ── Tuning ───────────────────────────────────────────────────────────
 
@@ -52,6 +57,10 @@ const BRAKE_RELEASE_PX = 24
 const BRAKE_TINT_START_PX = 6
 /** How often to check for open modals / world state (ms). */
 const UI_POLL_MS = 200
+/** World: stick past this fraction of its radius = sprint. */
+const SPRINT_AT = 0.92
+/** World: drag-to-look sensitivity (radians of view per CSS px of finger travel). */
+const LOOK_RAD_PER_PX = 0.0055
 
 const svgIcon = (d: string) =>
   `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`
@@ -99,6 +108,12 @@ export class TouchInputAdapter {
   private _lastUiPoll = 0
   private _inWorld = false
   private _releaseTimers = new Map<keyof ActionState, number>()
+  /** World: the finger dragging the view, and travel since the last frame. */
+  private _look: { id: number; x: number; y: number } | null = null
+  private _lookDX = 0
+  private _lookDY = 0
+  /** World: the stick (not the keyboard) is holding sprint. */
+  private _stickSprint = false
 
   private _overlay: HTMLDivElement | null = null
   private _stickBase: HTMLDivElement | null = null
@@ -191,7 +206,12 @@ export class TouchInputAdapter {
       return
     }
 
-    if (!leftHalf && this._thrustId === null) {
+    if (!leftHalf && this._inWorld && this._look === null) {
+      this._look = { id: e.pointerId, x: e.clientX, y: e.clientY }
+      return
+    }
+
+    if (!leftHalf && !this._inWorld && this._thrustId === null) {
       this._thrustId = e.pointerId
       this._thrustAnchorY = e.clientY
       this._thrustBraking = false
@@ -203,6 +223,11 @@ export class TouchInputAdapter {
   private _onPointerMove = (e: PointerEvent): void => {
     if (this._stick && e.pointerId === this._stick.id) {
       this._moveStick(e.clientX, e.clientY)
+    } else if (this._look && e.pointerId === this._look.id) {
+      this._lookDX += e.clientX - this._look.x
+      this._lookDY += e.clientY - this._look.y
+      this._look.x = e.clientX
+      this._look.y = e.clientY
     } else if (e.pointerId === this._thrustId) {
       this._updateThrustPull(e.clientY)
       this._showThrust(e.clientX, e.clientY)
@@ -215,9 +240,16 @@ export class TouchInputAdapter {
       // Instant stop on release, same as letting go of a key
       this._smoothYaw = 0
       this._smoothPitch = 0
+      this._zeroStickAxes()
+      this._setStickSprint(false)
+      this._hideStick()
+    }
+    if (this._look && e.pointerId === this._look.id) {
+      this._look = null
+      this._lookDX = 0
+      this._lookDY = 0
       inputManager.setAxis('yaw', 0, 'touch')
       inputManager.setAxis('pitch', 0, 'touch')
-      this._hideStick()
     }
     if (e.pointerId === this._thrustId) {
       this._thrustId = null
@@ -225,6 +257,21 @@ export class TouchInputAdapter {
       this._endThrustBrake()
       this._hideThrust()
     }
+  }
+
+  private _zeroStickAxes(): void {
+    inputManager.setAxis('yaw', 0, 'touch')
+    inputManager.setAxis('pitch', 0, 'touch')
+    inputManager.setAxis('moveX', 0, 'touch')
+    inputManager.setAxis('moveY', 0, 'touch')
+  }
+
+  /** World: sprint while the stick is pushed to its rim (never cancels a held K key). */
+  private _setStickSprint(on: boolean): void {
+    if (on === this._stickSprint) return
+    this._stickSprint = on
+    inputManager.setAction('warp', on)
+    this._stickBase?.classList.toggle('touch-joystick-base--sprint', on)
   }
 
   /**
@@ -277,11 +324,12 @@ export class TouchInputAdapter {
     const shaped = shapeAxis(dist / s.radius, STICK_DEADZONE, STICK_EXPONENT)
     if (dist > 0 && shaped > 0) {
       s.targetYaw = (dx / dist) * shaped
-      s.targetPitch = -(dy / dist) * shaped // screen up = nose up
+      s.targetPitch = -(dy / dist) * shaped // screen up = nose up (world: forward)
     } else {
       s.targetYaw = 0
       s.targetPitch = 0
     }
+    if (this._inWorld) this._setStickSprint(dist >= s.radius * SPRINT_AT)
 
     if (this._stickBase && this._stickKnob) {
       this._stickBase.style.transform = `translate(${s.originX - s.radius}px, ${s.originY - s.radius}px)`
@@ -305,8 +353,20 @@ export class TouchInputAdapter {
       const k = 1 - Math.exp(-dt / STICK_SMOOTHING_TAU)
       this._smoothYaw += (this._stick.targetYaw - this._smoothYaw) * k
       this._smoothPitch += (this._stick.targetPitch - this._smoothPitch) * k
-      inputManager.setAxis('yaw', this._smoothYaw, 'touch')
-      inputManager.setAxis('pitch', this._smoothPitch, 'touch')
+      // World: the stick walks (x = strafe, y = forward); space: it steers
+      inputManager.setAxis(this._inWorld ? 'moveX' : 'yaw', this._smoothYaw, 'touch')
+      inputManager.setAxis(this._inWorld ? 'moveY' : 'pitch', this._smoothPitch, 'touch')
+    }
+
+    // World drag-look: turn this frame's finger travel into the sim's turn/look rate
+    // (the interior sim takes rates, so a frame's rotation = rate × RATE × dt).
+    if (this._look && dt > 0) {
+      const turn = (this._lookDX * LOOK_RAD_PER_PX) / (TURN_RATE * dt)
+      const look = (-this._lookDY * LOOK_RAD_PER_PX) / (LOOK_RATE * dt) // drag up = look up
+      inputManager.setAxis('yaw', turn, 'touch')
+      inputManager.setAxis('pitch', look, 'touch')
+      this._lookDX = 0
+      this._lookDY = 0
     }
 
     // DRIVE/NEUTRAL label follows the real state (the G key can flip it too)
@@ -321,12 +381,14 @@ export class TouchInputAdapter {
     this._rafId = requestAnimationFrame(this._tick)
   }
 
-  /** Inside worlds: relabel for walking (BRAKE→JUMP, WARP→SPRINT); hide behind modals. */
+  /** Inside worlds: walking layout (JUMP big under the thumb, KICK above it); hide behind modals. */
   private _syncVisibility(): void {
     if (!this._overlay) return
     const inWorld = useUniverseStore.getState().activeWorldId !== null
     const modalOpen = document.querySelector('dialog[open], .modal-backdrop') !== null
     if (inWorld !== this._inWorld) {
+      // The thumbs mean different things now: drop whatever they were holding
+      this._releaseAll()
       this._inWorld = inWorld
       const label = (id: string, text: string, aria: string) => {
         const el = this._overlay?.querySelector<HTMLButtonElement>(`#${id}`)
@@ -334,11 +396,9 @@ export class TouchInputAdapter {
       }
       if (inWorld) {
         label('touch-btn-brake', 'JUMP', 'Jump (hold in the air for jetpack)')
-        label('touch-btn-warp', 'SPRINT', 'Sprint (hold)')
         label('touch-btn-enter', 'KICK', 'Kick the object in front of you')
       } else {
         label('touch-btn-brake', 'BRAKE', 'Brake (hold)')
-        label('touch-btn-warp', 'WARP', 'Warp (hold to charge, release to leap)')
         label('touch-btn-enter', 'ENTER', 'Enter the nearby world')
       }
     }
@@ -348,6 +408,11 @@ export class TouchInputAdapter {
 
   private _releaseAll = (): void => {
     this._stick = null
+    this._look = null
+    this._lookDX = 0
+    this._lookDY = 0
+    this._stickSprint = false
+    this._stickBase?.classList.remove('touch-joystick-base--sprint')
     this._thrustId = null
     this._thrustBraking = false
     this._thrustRing?.classList.remove('touch-thrust-ring--braking')

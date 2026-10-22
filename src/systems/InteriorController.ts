@@ -12,7 +12,8 @@
  *   Space   jump; hold in the air = jetpack; in water = swim up
  *   K       sprint
  *
- * Touch/gamepad: the yaw/pitch sticks turn and look; the thrust button walks.
+ * Touch: left stick walks (rim = sprint), right-side drag looks, JUMP button.
+ * Gamepad: the yaw/pitch sticks turn and look.
  */
 import type { PhysicsParams } from '@aweborn/shared/crdt-schema'
 import {
