@@ -7,9 +7,17 @@ import type { ChatMessage } from '@aweborn/shared/crdt-schema'
 
 /** How long a speech bubble stays up after the line arrives. */
 const BUBBLE_MS = 7000
+/** Cap simultaneous speech bubbles so a 60-player Origin crowd doesn't wall-of-text the screen. */
+const MAX_ACTIVE_BUBBLES = 4
 
 function latestFrom(chat: ChatMessage[], playerId: string): ChatMessage | null {
-  for (let i = chat.length - 1; i >= 0; i--) if (chat[i].sender === playerId) return chat[i]
+  const seenSenders = new Set<string>()
+  for (let i = chat.length - 1; i >= 0; i--) {
+    const msg = chat[i]
+    seenSenders.add(msg.sender)
+    if (seenSenders.size > MAX_ACTIVE_BUBBLES) return null
+    if (msg.sender === playerId) return msg
+  }
   return null
 }
 

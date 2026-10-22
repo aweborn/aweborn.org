@@ -42,7 +42,15 @@ class InteriorController {
 
   /** Put the player at the spawn point (call on world entry). */
   reset(): void {
-    this.state = { ...spawnInterior(), ...(this._restore ?? {}) }
+    const base = spawnInterior()
+    if (this._restore) {
+      this.state = { ...base, ...this._restore }
+    } else {
+      // Gentle scatter around (0, 0, 10) so crowds entering at once don't overlap on one spot
+      const dx = (Math.random() - 0.5) * 4.5
+      const dz = (Math.random() - 0.5) * 3.0
+      this.state = { ...base, x: base.x + dx, z: base.z + dz }
+    }
     this._restore = null
     this.prev = this.state
     this.camDistGoal = 4.5

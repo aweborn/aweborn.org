@@ -378,13 +378,33 @@ export class RoomManager {
         }
         case "world-update": {
           // Client sent a CRDT update for a specific world
-          const room = message.worldId ? this.worldRooms.get(message.worldId) : null;
+          if (!message.worldId || message.worldId === ORIGIN_WORLD_ID) break;
+          const room = this.worldRooms.get(message.worldId);
           if (room) {
             if (touchesChat(room.doc, message.data)) {
               console.warn("[rooms] refused client write to chat log");
               break;
             }
             Y.applyUpdate(room.doc, message.data, ws);
+          } else {
+            // Offline edit flushed after reconnect when no one is currently in the room
+            const entry = this.getWorldEntry(message.worldId);
+            if (!entry) break;
+            const doc = new Y.Doc();
+            const saved = loadDoc(message.worldId);
+            if (saved) Y.applyUpdate(doc, saved);
+            else {
+              const fresh = createWorldDoc(entry);
+              Y.applyUpdate(doc, Y.encodeStateAsUpdate(fresh));
+              fresh.destroy();
+            }
+            if (!touchesChat(doc, message.data)) {
+              Y.applyUpdate(doc, message.data);
+              saveDoc(message.worldId, Y.encodeStateAsUpdate(doc), "world", entry.sector);
+            } else {
+              console.warn("[rooms] refused offline client write to chat log");
+            }
+            doc.destroy();
           }
           break;
         }

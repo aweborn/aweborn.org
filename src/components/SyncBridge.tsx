@@ -4,6 +4,7 @@ import { handleWebSocketPresence, setPresenceSender } from "../hooks/usePresence
 import { useUniverseStore } from "../stores/universeStore";
 import { useWorldStore } from "../stores/worldStore";
 import { useChatStore, onChatNotice } from "../stores/chatStore";
+import { drainPendingWorldUpdates } from "../lib/offlineCache";
 import { adjacentSectorKeys } from "@aweborn/shared/crdt-schema";
 
 /** Don't flash "reconnecting" for blips (boot, a deploy restart, a Wi-Fi hop). */
@@ -60,6 +61,11 @@ export function SyncBridge() {
     return () => setWorldDocUpdateHandler(null);
   }, [send, setWorldDocUpdateHandler]);
 
+  // Keep universeStore.connected in sync and flush any offline world edits on reconnect
+  useEffect(() => {
+    useUniverseStore.getState().setConnected(connected);
+  }, [connected]);
+
   // Keep the server-side world room in sync with activeWorldId, however the
   // player got there: entering, Escape, a teleport link / card tap.
   const joinedWorldRef = useRef<string | null>(null);
@@ -69,14 +75,19 @@ export function SyncBridge() {
       return;
     }
     const prev = joinedWorldRef.current;
-    if (prev === activeWorldId) return;
-    if (prev) {
-      leaveWorld(prev);
-      resetWorld();
+    if (prev !== activeWorldId) {
+      if (prev) {
+        leaveWorld(prev);
+        if (!activeWorldId) resetWorld();
+      }
+      if (activeWorldId) joinWorld(activeWorldId);
+      joinedWorldRef.current = activeWorldId;
     }
-    if (activeWorldId) joinWorld(activeWorldId);
-    joinedWorldRef.current = activeWorldId;
-  }, [connected, activeWorldId, joinWorld, leaveWorld, resetWorld]);
+    // Flush any world CRDT edits made while offline (after join-world so the room is open)
+    for (const item of drainPendingWorldUpdates()) {
+      send("world-update", item.update, item.worldId);
+    }
+  }, [connected, activeWorldId, joinWorld, leaveWorld, resetWorld, send]);
 
   // Presence goes out over the same socket
   useEffect(() => {

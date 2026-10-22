@@ -1,5 +1,5 @@
 import { GhostPreview, WorldTerrain } from './GhostPreview'
-import { useRef, useMemo, useEffect, Component, type ReactNode } from 'react'
+import { useRef, useMemo, useState, useEffect, Component, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useWorldStore } from '../stores/worldStore'
@@ -9,8 +9,9 @@ import { kickedPosition } from '@aweborn/shared/sim/interior'
 import { Suspense } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { AUTH_URL } from '../lib/player'
-import { registerModelShape } from '../stores/modelShapes'
+import { registerModelShape, useModelShapes } from '../stores/modelShapes'
 import { useAtmosphere } from '../hooks/useAtmosphere'
+import { useQualityTier } from '../stores/qualityStore'
 import type { BlueprintSky } from '@aweborn/shared/blueprint'
 import { useHeldItemStore, computePlacementTarget } from '../stores/heldItemStore'
 import { interiorController } from '../systems/InteriorController'
@@ -77,13 +78,19 @@ function getGeometry(type: string): THREE.BufferGeometry {
 
 // ── Placed Object Mesh ───────────────────────────────────────────────
 
-function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: string }) {
+function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worldColor: string; fogFar: number }) {
   const ref = useRef<THREE.Mesh>(null!)
   const groupRef = useRef<THREE.Group>(null!)
+  const hiGroupRef = useRef<THREE.Group>(null!)
+  const loMeshRef = useRef<THREE.Mesh>(null!)
+  const [shouldLoad, setShouldLoad] = useState(false)
+  const tier = useQualityTier()
+  const proxyGeo = useModelShapes((s) => (obj.asset ? s.proxies[obj.asset] : undefined))
   const geo = useMemo(() => getGeometry(obj.type), [obj.type])
 
   // Library items (blocks, shapes) keep the exact color they were placed with and stand still
   const placedLook = !!obj.color
+  const objRadius = Math.max(Math.abs(obj.scaleX || 1), Math.abs(obj.scaleY || 1), Math.abs(obj.scaleZ || 1)) * 0.75
 
   // Material color: derive from world color + object type (legacy objects)
   const color = useMemo(() => {
@@ -102,27 +109,55 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
     return new THREE.Color().setHSL(hsl.h, hsl.s, hsl.l)
   }, [worldColor, obj.type, obj.color])
 
-  // Subtle float animation; a kicked object follows the shared flight sim
+  // Subtle float animation; a kicked object follows the shared flight sim;
+  // distant objects cull past the fog and models swap to their client silhouette proxy.
   useFrame((state) => {
     const target = (ref.current ?? groupRef.current) as THREE.Object3D | null
-    if (target) {
-      if (obj.kick) {
-        const p = kickedPosition(obj, useWorldStore.getState().physics, (Date.now() - obj.kick.t) / 1000)
-        target.position.set(p.x, p.y, p.z)
-        target.rotation.x += 0.08
-        return
-      }
-      if (obj.type === 'model') {
-        // Generated models stand still where they were placed
-        target.position.set(obj.x, obj.y, obj.z)
-        target.rotation.set(0, obj.rotY, 0)
-        return
-      }
-      if (placedLook) {
-        target.position.set(obj.x, obj.y, obj.z)
-        target.rotation.set(obj.rotX, obj.rotY, obj.rotZ)
-        return
-      }
+    if (!target) return
+
+    let px = obj.x
+    let py = obj.y
+    let pz = obj.z
+    if (obj.kick) {
+      const p = kickedPosition(obj, useWorldStore.getState().physics, (Date.now() - obj.kick.t) / 1000)
+      px = p.x
+      py = p.y
+      pz = p.z
+    }
+
+    const dx = state.camera.position.x - px
+    const dy = state.camera.position.y - py
+    const dz = state.camera.position.z - pz
+    const dist = Math.hypot(dx, dy, dz)
+    const cullDist = fogFar + objRadius + 8
+
+    if (obj.type === 'model' && !shouldLoad && dist <= cullDist + 24) {
+      setShouldLoad(true)
+    }
+
+    if (dist > cullDist) {
+      target.visible = false
+      return
+    }
+    target.visible = true
+
+    if (obj.kick) {
+      target.position.set(px, py, pz)
+      target.rotation.x += 0.08
+    } else if (obj.type === 'model') {
+      // Generated models stand still where they were placed
+      target.position.set(obj.x, obj.y, obj.z)
+      target.rotation.set(0, obj.rotY, 0)
+      const detailDist = tier.modelDetailDist + objRadius * 1.5
+      const useProxy = Boolean(proxyGeo) && dist > detailDist
+      if (hiGroupRef.current) hiGroupRef.current.visible = !useProxy
+      if (loMeshRef.current) loMeshRef.current.visible = useProxy
+      return
+    } else if (placedLook) {
+      target.position.set(obj.x, obj.y, obj.z)
+      target.rotation.set(obj.rotX, obj.rotY, obj.rotZ)
+      return
+    } else {
       target.position.set(obj.x, obj.y + Math.sin(state.clock.elapsedTime * 0.5 + obj.x * 0.1) * 0.05, obj.z)
       target.rotation.y += 0.003
     }
@@ -131,11 +166,22 @@ function PlacedObjectMesh({ obj, worldColor }: { obj: PlacedObject; worldColor: 
   if (obj.type === 'model' && obj.asset) {
     return (
       <group ref={groupRef as never} position={[obj.x, obj.y, obj.z]} scale={[obj.scaleX, obj.scaleY, obj.scaleZ]}>
-        <ModelBoundary fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color="#ff6a5a" wireframe /></mesh>}>
-          <Suspense fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color={color} wireframe /></mesh>}>
-            <GeneratedModel asset={obj.asset} />
-          </Suspense>
-        </ModelBoundary>
+        <group ref={hiGroupRef}>
+          {shouldLoad ? (
+            <ModelBoundary fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color="#ff6a5a" wireframe /></mesh>}>
+              <Suspense fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color={color} wireframe /></mesh>}>
+                <GeneratedModel asset={obj.asset} />
+              </Suspense>
+            </ModelBoundary>
+          ) : (
+            <mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color={color} wireframe /></mesh>
+          )}
+        </group>
+        {proxyGeo && (
+          <mesh ref={loMeshRef} geometry={proxyGeo} visible={false}>
+            <meshLambertMaterial vertexColors />
+          </mesh>
+        )}
       </group>
     )
   }
@@ -348,7 +394,7 @@ export function WorldInterior() {
 
       {/* Placed objects from CRDT */}
       {objectList.map((obj) => (
-        <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} />
+        <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} fogFar={atmo?.fogFar ?? 200} />
       ))}
 
       {/* Live ghost preview of the item held in hand */}

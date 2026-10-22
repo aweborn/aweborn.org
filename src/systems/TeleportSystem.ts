@@ -18,13 +18,14 @@
 import * as THREE from 'three'
 import { create } from 'zustand'
 import {
+  ORIGIN_WORLD_ID,
   parseTeleportLink,
   type Vec3,
 } from '@aweborn/shared/crdt-schema'
 import { flightController } from './FlightController'
 import { warpSystem } from './WarpSystem'
 import { useUniverseStore } from '../stores/universeStore'
-import { recordArrival } from '../stores/worldIndexStore'
+import { recordArrival, useWorldIndexStore } from '../stores/worldIndexStore'
 
 // ── Config ───────────────────────────────────────────────────────────
 
@@ -94,17 +95,86 @@ type LookupResult =
   | { ok: true; world: WorldLookup }
   | { ok: false; reason: 'not_found' | 'unreachable' }
 
+function offlineFallbackWorld(worldId: string): WorldLookup | null {
+  if (worldId === ORIGIN_WORLD_ID) {
+    return {
+      id: ORIGIN_WORLD_ID,
+      name: 'Origin',
+      color: '#ffd700',
+      creator: 'system',
+      solidified: true,
+      sector: '0:0:0',
+      position: { x: 0, y: 0, z: 0 },
+      isOrigin: true,
+    }
+  }
+  const uWorld = useUniverseStore.getState().worlds.get(worldId)
+  if (uWorld) {
+    return {
+      id: uWorld.id,
+      name: uWorld.name,
+      color: uWorld.color,
+      creator: uWorld.creator,
+      solidified: uWorld.solidified,
+      sector: uWorld.sector,
+      position: uWorld.resolvedPosition,
+      isOrigin: false,
+    }
+  }
+  const idxEntry = useWorldIndexStore.getState().entries.get(worldId)
+  const idxWorld = idxEntry?.world
+  if (idxWorld) {
+    return {
+      id: worldId,
+      name: idxWorld.name,
+      color: idxWorld.color,
+      creator: idxWorld.creator,
+      solidified: idxWorld.solidified ?? false,
+      sector: idxWorld.sector,
+      position: idxWorld.position,
+      isOrigin: worldId === ORIGIN_WORLD_ID,
+    }
+  }
+  return null
+}
+
 async function lookupWorld(worldId: string): Promise<LookupResult> {
   try {
     const res = await fetch(`${SYNC_HTTP_URL}/worlds/${encodeURIComponent(worldId)}`, {
       signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     })
     if (res.status === 404 || res.status === 400) return { ok: false, reason: 'not_found' }
-    if (!res.ok) return { ok: false, reason: 'unreachable' }
+    if (!res.ok) {
+      const fallback = offlineFallbackWorld(worldId)
+      return fallback ? { ok: true, world: fallback } : { ok: false, reason: 'unreachable' }
+    }
     return { ok: true, world: (await res.json()) as WorldLookup }
   } catch {
-    return { ok: false, reason: 'unreachable' }
+    const fallback = offlineFallbackWorld(worldId)
+    return fallback ? { ok: true, world: fallback } : { ok: false, reason: 'unreachable' }
   }
+}
+
+/**
+ * Scatter arrivals around a ring facing the world/portal so an event crowd of
+ * 60 card tappers forms a halo looking inward instead of stacking at (0, 0, 6).
+ */
+function computeArrivalPose(world: WorldLookup): { pos: THREE.Vector3; quat: THREE.Quaternion } {
+  const baseDist = world.isOrigin ? PORTAL_ARRIVAL_DISTANCE : ORBIT_ARRIVAL_DISTANCE
+  const angleSpread = world.isOrigin ? Math.PI * 1.6 : Math.PI * 0.9
+  const theta = (Math.random() - 0.5) * angleSpread
+  const radius = baseDist + (world.isOrigin ? Math.random() * 2.2 : (Math.random() - 0.5) * 0.3)
+  const yOffset = (Math.random() - 0.5) * (world.isOrigin ? 1.8 : 0.4)
+
+  const target = new THREE.Vector3(world.position.x, world.position.y, world.position.z)
+  const pos = new THREE.Vector3(
+    target.x + Math.sin(theta) * radius,
+    target.y + yOffset,
+    target.z + Math.cos(theta) * radius,
+  )
+  const lookMat = new THREE.Matrix4().lookAt(pos, target, new THREE.Vector3(0, 1, 0))
+  const quat = new THREE.Quaternion().setFromRotationMatrix(lookMat)
+  return { pos, quat }
 }
 
 // ── Teleport System ──────────────────────────────────────────────────
@@ -168,10 +238,9 @@ class TeleportSystem {
     warpSystem.cancel()
     warpSystem.skipFirstSpawnLock() // auto-lock the world we arrive at, not the portal
 
-    // Arrive on the world's +Z side. Identity rotation faces −Z, i.e. the world.
-    const distance = world.isOrigin ? PORTAL_ARRIVAL_DISTANCE : ORBIT_ARRIVAL_DISTANCE
-    const arrivalPos = new THREE.Vector3(world.position.x, world.position.y, world.position.z + distance)
-    flightController.reset(arrivalPos, new THREE.Quaternion())
+    // Arrive on a scattered halo facing the world/portal so crowds don't stack on one spot.
+    const { pos: arrivalPos, quat: arrivalQuat } = computeArrivalPose(world)
+    flightController.reset(arrivalPos, arrivalQuat)
     this._snapRequested = true
     warpSystem.requestArrivalEffect()
     recordArrival(world) // sighted by link (a card tap is a link)

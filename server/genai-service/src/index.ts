@@ -74,7 +74,10 @@ export function archive(entry: Record<string, unknown>): void {
 initLibrary(db);
 void backfill(db, ASSET_DIR, DATA_DIR).catch((err) => console.error("[library] backfill failed:", (err as Error).message));
 
-// ── Runner ───────────────────────────────────────────────────────────
+// ── Runner (bounded concurrency for event-day crowds) ────────────────
+const MAX_CONCURRENT_JOBS = 4;
+const activeJobs = new Set<string>();
+
 async function run(id: string): Promise<void> {
   const row = db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as unknown as JobRow | undefined;
   if (!row || row.status === "complete" || row.status === "failed") return;
@@ -101,10 +104,23 @@ async function run(id: string): Promise<void> {
   }
 }
 
-// Resume unfinished jobs after a restart
-for (const r of db.prepare("SELECT id FROM jobs WHERE status IN ('queued','processing')").all() as { id: string }[]) {
-  void run(r.id);
+function pumpJobs(): void {
+  while (activeJobs.size < MAX_CONCURRENT_JOBS) {
+    const rows = db
+      .prepare("SELECT id FROM jobs WHERE status IN ('queued','processing') ORDER BY created_at ASC LIMIT 20")
+      .all() as { id: string }[];
+    const next = rows.find((r) => !activeJobs.has(r.id));
+    if (!next) break;
+    activeJobs.add(next.id);
+    void run(next.id).finally(() => {
+      activeJobs.delete(next.id);
+      pumpJobs();
+    });
+  }
 }
+
+// Resume unfinished jobs after a restart
+pumpJobs();
 
 // ── HTTP ─────────────────────────────────────────────────────────────
 const app = express();
@@ -161,7 +177,7 @@ app.post("/jobs", (req, res) => {
   db.prepare(
     "INSERT INTO jobs (id, ref, kind, prompt, provider, creator, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
   ).run(id, ref, kind, clean, providerFor(kind).name, typeof creator === "string" ? creator.slice(0, 80) : null, now, now);
-  void run(id);
+  pumpJobs();
   res.json({ jobId: id });
 });
 

@@ -21,6 +21,13 @@ import {
   ORIGIN_WORLD_ID,
 } from "@aweborn/shared/crdt-schema";
 import { useWorldStore } from "./worldStore";
+import {
+  loadUniverseDoc,
+  saveUniverseDoc,
+  loadWorldDoc,
+  saveWorldDoc,
+  queueOfflineWorldUpdate,
+} from "../lib/offlineCache";
 
 interface UniverseState {
   /** All known worlds (from Universe CRDT) */
@@ -149,117 +156,165 @@ function readMana(doc: Y.Doc): ManaState | null {
   return m.toJSON() as ManaState;
 }
 
-export const useUniverseStore = create<UniverseState>((set, get) => ({
-  worlds: new Map(),
-  mana: null,
-  cameraPosition: { x: 0, y: 0, z: 0 },
-  currentSector: { sx: 0, sy: 0, sz: 0 },
-  subscribedSectors: adjacentSectorKeys({ sx: 0, sy: 0, sz: 0 }),
-  universeDoc: null,
-  activeWorldId: null,
-  activeWorldDoc: null,
-  playerPosition: { x: 0, y: 2, z: 10 },
-  playerVelocity: { x: 0, y: 0, z: 0 },
-  playerRotation: { x: 0, y: 0, z: 0, w: 1 },
-  playerSpeed: 0,
-  connected: false,
-  _worldDocUpdateHandler: null,
+function createUniverseDoc(onChange: (doc: Y.Doc) => void): Y.Doc {
+  const doc = new Y.Doc();
+  doc.getMap("worlds").observeDeep(() => onChange(doc));
+  doc.getMap("mana").observe(() => onChange(doc));
+  return doc;
+}
 
-  applyUniverseUpdate: (update, _isFullSync) => {
-    let doc = get().universeDoc;
-    if (!doc) {
-      doc = new Y.Doc();
-      // Observe changes to the worlds map
-      const worldsMap = doc.getMap("worlds");
-      worldsMap.observeDeep(() => {
-        const currentDoc = get().universeDoc;
-        if (currentDoc) {
-          set({ worlds: refreshWorlds(currentDoc) });
-        }
-      });
-      // Mana: the server is the only writer (Phase 05)
-      doc.getMap("mana").observe(() => {
-        const currentDoc = get().universeDoc;
-        if (currentDoc) set({ mana: readMana(currentDoc) });
-      });
+function wireWorldDoc(
+  worldId: string,
+  doc: Y.Doc,
+  getState: () => UniverseState,
+): void {
+  doc.on("update", (delta: Uint8Array, origin: unknown) => {
+    saveWorldDoc(worldId, doc);
+    if (origin !== "remote") {
+      const s = getState();
+      if (s.connected && s._worldDocUpdateHandler) {
+        s._worldDocUpdateHandler(worldId, delta);
+      } else {
+        queueOfflineWorldUpdate(worldId, delta);
+      }
     }
+  });
+}
 
-    Y.applyUpdate(doc, update);
+export const useUniverseStore = create<UniverseState>((set, get) => {
+  // Cold-start offline: hydrate the Universe CRDT from localStorage immediately if cached
+  let initialUniverseDoc: Y.Doc | null = null;
+  let initialWorlds = new Map<string, WorldEntry>();
+  let initialMana: ManaState | null = null;
+  const cachedUniverse = loadUniverseDoc();
+  if (cachedUniverse) {
+    initialUniverseDoc = createUniverseDoc((d) =>
+      set({ worlds: refreshWorlds(d), mana: readMana(d) }),
+    );
+    Y.applyUpdate(initialUniverseDoc, cachedUniverse, "remote");
+    initialWorlds = refreshWorlds(initialUniverseDoc);
+    initialMana = readMana(initialUniverseDoc);
+  }
 
-    set({
-      universeDoc: doc,
-      worlds: refreshWorlds(doc),
-      mana: readMana(doc),
-    });
-  },
+  return {
+    worlds: initialWorlds,
+    mana: initialMana,
+    cameraPosition: { x: 0, y: 0, z: 0 },
+    currentSector: { sx: 0, sy: 0, sz: 0 },
+    subscribedSectors: adjacentSectorKeys({ sx: 0, sy: 0, sz: 0 }),
+    universeDoc: initialUniverseDoc,
+    activeWorldId: null,
+    activeWorldDoc: null,
+    playerPosition: { x: 0, y: 2, z: 10 },
+    playerVelocity: { x: 0, y: 0, z: 0 },
+    playerRotation: { x: 0, y: 0, z: 0, w: 1 },
+    playerSpeed: 0,
+    connected: false,
+    _worldDocUpdateHandler: null,
 
-  applyWorldUpdate: (worldId, update, isFullSync) => {
-    const state = get();
+    applyUniverseUpdate: (update, _isFullSync) => {
+      let doc = get().universeDoc;
+      if (!doc) {
+        doc = createUniverseDoc((d) =>
+          set({ worlds: refreshWorlds(d), mana: readMana(d) }),
+        );
+      }
 
-    // Only apply if this is the active world
-    if (state.activeWorldId !== worldId) return;
+      Y.applyUpdate(doc, update);
+      saveUniverseDoc(doc);
 
-    let doc = state.activeWorldDoc;
-    const isNewDoc = !doc || isFullSync;
-    if (isNewDoc) {
-      doc?.destroy();
-      doc = new Y.Doc();
-
-      // Wire outgoing updates: when the local doc changes, send delta to server
-      doc.on("update", (delta: Uint8Array, origin: unknown) => {
-        // Only send locally-originated changes (not updates from the server)
-        if (origin !== "remote") {
-          const handler = get()._worldDocUpdateHandler;
-          handler?.(worldId, delta);
-        }
-      });
-    }
-
-    // Apply the incoming update, tagged as "remote" so we don't echo it back
-    Y.applyUpdate(doc!, update, "remote");
-    set({ activeWorldDoc: doc });
-
-    // If this is a new doc (full sync), load it into the world store for reactive UI
-    if (isNewDoc) {
-      useWorldStore.getState().loadFromDoc(doc!);
-    }
-  },
-
-  updatePlayerState: (pos, vel, rot, speed) => {
-    set({ playerPosition: pos, playerVelocity: vel, playerRotation: rot, playerSpeed: speed });
-  },
-
-  setCameraPosition: (pos) => {
-    const newSector = positionToSector(pos);
-    const current = get().currentSector;
-
-    // Only update subscriptions if sector actually changed
-    if (
-      newSector.sx !== current.sx ||
-      newSector.sy !== current.sy ||
-      newSector.sz !== current.sz
-    ) {
       set({
-        cameraPosition: pos,
-        currentSector: newSector,
-        subscribedSectors: adjacentSectorKeys(newSector),
+        universeDoc: doc,
+        worlds: refreshWorlds(doc),
+        mana: readMana(doc),
       });
-    } else {
-      set({ cameraPosition: pos });
-    }
-  },
+    },
 
-  enterWorld: (worldId) => {
-    set({ activeWorldId: worldId, activeWorldDoc: null });
-  },
+    applyWorldUpdate: (worldId, update, _isFullSync) => {
+      const state = get();
 
-  exitWorld: () => {
-    const doc = get().activeWorldDoc;
-    doc?.destroy();
-    set({ activeWorldId: null, activeWorldDoc: null });
-  },
+      // Only apply if this is the active world
+      if (state.activeWorldId !== worldId) return;
 
-  setConnected: (connected) => set({ connected }),
+      let doc = state.activeWorldDoc;
+      const isNewDoc = !doc;
+      if (!doc) {
+        doc = new Y.Doc();
+        wireWorldDoc(worldId, doc, get);
+      }
 
-  setWorldDocUpdateHandler: (handler) => set({ _worldDocUpdateHandler: handler }),
-}));
+      // Apply the incoming update, tagged as "remote" so we don't echo it back.
+      // Keeping the existing doc (created in enterWorld) preserves any offline edits!
+      Y.applyUpdate(doc, update, "remote");
+      saveWorldDoc(worldId, doc);
+      set({ activeWorldDoc: doc });
+
+      if (isNewDoc) {
+        useWorldStore.getState().loadFromDoc(doc);
+      }
+    },
+
+    updatePlayerState: (pos, vel, rot, speed) => {
+      set({ playerPosition: pos, playerVelocity: vel, playerRotation: rot, playerSpeed: speed });
+    },
+
+    setCameraPosition: (pos) => {
+      const newSector = positionToSector(pos);
+      const current = get().currentSector;
+
+      // Only update subscriptions if sector actually changed
+      if (
+        newSector.sx !== current.sx ||
+        newSector.sy !== current.sy ||
+        newSector.sz !== current.sz
+      ) {
+        set({
+          cameraPosition: pos,
+          currentSector: newSector,
+          subscribedSectors: adjacentSectorKeys(newSector),
+        });
+      } else {
+        set({ cameraPosition: pos });
+      }
+    },
+
+    enterWorld: (worldId) => {
+      const prevDoc = get().activeWorldDoc;
+      prevDoc?.destroy();
+
+      const doc = new Y.Doc();
+      const cached = loadWorldDoc(worldId);
+      if (cached) {
+        Y.applyUpdate(doc, cached, "remote");
+      }
+      // Ensure meta is populated from the Universe entry if this world hasn't synced yet (cold offline entry)
+      const meta = doc.getMap("meta");
+      if (!meta.get("name")) {
+        const entry = get().worlds.get(worldId);
+        if (entry) {
+          doc.transact(() => {
+            meta.set("name", entry.name);
+            meta.set("creator", entry.creator);
+            meta.set("createdAt", entry.createdAt);
+            meta.set("color", entry.color);
+            meta.set("solidified", entry.solidified);
+          }, "remote");
+        }
+      }
+      wireWorldDoc(worldId, doc, get);
+      set({ activeWorldId: worldId, activeWorldDoc: doc });
+      useWorldStore.getState().loadFromDoc(doc);
+    },
+
+    exitWorld: () => {
+      const doc = get().activeWorldDoc;
+      doc?.destroy();
+      useWorldStore.getState().reset();
+      set({ activeWorldId: null, activeWorldDoc: null });
+    },
+
+    setConnected: (connected) => set({ connected }),
+
+    setWorldDocUpdateHandler: (handler) => set({ _worldDocUpdateHandler: handler }),
+  };
+});

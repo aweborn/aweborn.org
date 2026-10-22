@@ -15,6 +15,7 @@ import { SyncBridge } from './components/SyncBridge'
 import { PlantWorldPanel } from './components/PlantWorldPanel'
 import { TouchDock } from './components/TouchDock'
 import { TeleportToast } from './components/TeleportToast'
+import { OnboardingHint } from './components/OnboardingHint'
 import { teleportSystem } from './systems/TeleportSystem'
 import { WorldIndex } from './components/WorldIndex'
 import { CardReveal } from './components/CardReveal'
@@ -124,6 +125,9 @@ export default function App() {
 
       {/* Teleport link arrival / error notice */}
       {isLoaded && <TeleportToast />}
+
+      {/* 3-step controls onboarding hint */}
+      {isLoaded && webglSupported && <OnboardingHint />}
 
       {/* World Index (M) + first-visit card reveal */}
       {isLoaded && webglSupported && <WorldIndex />}

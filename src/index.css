@@ -4739,3 +4739,144 @@ html.touch-ui .chat-panel.is-open.is-space { bottom: calc(336px + env(safe-area-
   .mana-seal-ring, .mana-seal-core,
   .create-open.is-sealed::after, .planner-open.is-sealed::after, .mana-tracker.is-sealed .mana-pill::after { animation: none; }
 }
+
+/* ── 3-Step Controls Onboarding Hint (Card Event Step 5) ────────────── */
+.onboarding-hint {
+  position: fixed;
+  left: 50%;
+  top: 68px;
+  transform: translateX(-50%);
+  width: min(344px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(11, 13, 26, 0.88);
+  border: 1px solid rgba(135, 195, 255, 0.28);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55), 0 0 24px rgba(90, 170, 255, 0.14);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--color-text-primary);
+  z-index: 26;
+  pointer-events: auto;
+}
+
+html.touch-ui .onboarding-hint {
+  top: calc(114px + env(safe-area-inset-top, 0px));
+}
+
+@media (orientation: landscape) and (max-height: 540px) {
+  html.touch-ui .onboarding-hint {
+    top: calc(14px + env(safe-area-inset-top, 0px));
+    width: min(300px, calc(100vw - 380px));
+    padding: 10px 12px;
+  }
+}
+
+.onboarding-hint__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.onboarding-hint__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #8fd2ff;
+  background: rgba(90, 175, 255, 0.16);
+  border: 1px solid rgba(120, 195, 255, 0.28);
+}
+
+.onboarding-hint__title {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: #f4f7ff;
+}
+
+.onboarding-hint__dismiss {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  margin: -4px -4px -4px 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+html.touch-ui .onboarding-hint__dismiss {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.onboarding-hint__body {
+  margin: 8px 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.onboarding-hint__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.onboarding-hint__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.onboarding-hint__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.onboarding-hint__dot.is-done {
+  background: rgba(130, 210, 255, 0.55);
+}
+
+.onboarding-hint__dot.is-active {
+  background: #8fd2ff;
+  transform: scale(1.25);
+}
+
+.onboarding-hint__next {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(130, 205, 255, 0.45);
+  background: rgba(75, 165, 245, 0.22);
+  color: #e9f6ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+html.touch-ui .onboarding-hint__next {
+  height: 44px;
+  min-height: 44px;
+  padding: 0 16px;
+}

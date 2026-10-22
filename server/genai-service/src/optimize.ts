@@ -57,24 +57,33 @@ export async function ensureOptimized(assetDir: string, file: string): Promise<s
 }
 
 /**
- * Same as ensureOptimized, but in a child process. Decoding + simplifying a 20+ MB model
- * is seconds of synchronous JS; in-process it froze the event loop, so status polls
- * failed (503) while the job finished, and the client gave up at 99%.
+ * Same as ensureOptimized, but in a child process and serialized one at a time.
+ * Decoding + simplifying a 20+ MB model is seconds of synchronous JS and several
+ * hundred MB of heap; running multiple child processes at once during an event
+ * crowd manifest would OOM the VPS.
  */
+let optChain: Promise<unknown> = Promise.resolve();
+
 export function ensureOptimizedIsolated(assetDir: string, file: string): Promise<string | null> {
   const out = optPath(assetDir, file);
   if (existsSync(out)) return Promise.resolve(out);
-  return new Promise((resolve) => {
-    const child = fork(fileURLToPath(import.meta.url), ["--optimize-child", assetDir, file], {
-      execArgv: process.execArgv,
-      execPath: process.execPath,
-    });
-    child.on("error", (err) => {
-      console.error(`[optimize] ${file} child failed:`, err.message);
-      resolve(null);
-    });
-    child.on("exit", () => resolve(existsSync(out) ? out : null));
-  });
+  const next = optChain.then(
+    () =>
+      new Promise<string | null>((resolve) => {
+        if (existsSync(out)) return resolve(out);
+        const child = fork(fileURLToPath(import.meta.url), ["--optimize-child", assetDir, file], {
+          execArgv: process.execArgv,
+          execPath: process.execPath,
+        });
+        child.on("error", (err) => {
+          console.error(`[optimize] ${file} child failed:`, err.message);
+          resolve(null);
+        });
+        child.on("exit", () => resolve(existsSync(out) ? out : null));
+      }),
+  );
+  optChain = next.catch(() => null);
+  return next;
 }
 
 // Child-process entry point (see ensureOptimizedIsolated)
