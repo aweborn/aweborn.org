@@ -1,7 +1,7 @@
 // World touch-controls check: 390x844 touch emulation, enter a world, drive the
 // stick / drag-look / JUMP with real CDP touch events, read the interior state.
 // usage: node scripts/loadtest/world-touch.mjs [url]   (needs the Vite dev server; Chrome installed)
-// With no /w/ link (local DB has no Origin), it enters the first world from the dev panel.
+// With no /w/ link, it enters the first world in the universe (scripts/dev/pull-prod-worlds.sh fills a local DB).
 import puppeteer from 'puppeteer-core'
 
 const url = process.argv[2] ?? 'http://localhost:5173/'
@@ -22,11 +22,14 @@ await page.goto(url, { waitUntil: 'domcontentloaded' })
 await sleep(12000)
 const inWorld = () => page.evaluate(async () => (await import('/src/stores/universeStore.ts')).useUniverseStore.getState().activeWorldId)
 if (!(await inWorld())) {
-  // Dev panel "Enter →" (the real entry path), then close the panel
-  await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Enter →'))?.click())
+  // Enter the first world the client knows (the dev panel that used to do this was retired 2026-10-21)
+  await page.evaluate(async () => {
+    const { useUniverseStore } = await import('/src/stores/universeStore.ts')
+    const s = useUniverseStore.getState()
+    const first = [...s.worlds.keys()][0]
+    if (first) s.enterWorld(first)
+  })
   await sleep(7000)
-  await page.evaluate(() => document.querySelector('button[title^="Close"]')?.click())
-  await sleep(800)
 }
 
 const state = () => page.evaluate(async () => {

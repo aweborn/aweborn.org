@@ -8,7 +8,8 @@ import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
 import { HUD } from './components/HUD'
 import { DonationModal } from './components/DonationModal'
-import { CRDTDevOverlay } from './components/CRDTDevOverlay'
+import { SyncBridge } from './components/SyncBridge'
+import { PlantWorldPanel } from './components/PlantWorldPanel'
 import { TeleportToast } from './components/TeleportToast'
 import { teleportSystem } from './systems/TeleportSystem'
 import { WorldIndex } from './components/WorldIndex'
@@ -123,6 +124,7 @@ export default function App() {
           <ManaTracker />
           <LibraryPanel />
           <ChatPanel />
+          <PlantWorldPanel />
         </>
       )}
       {isLoaded && webglSupported && <CardReveal />}
@@ -136,8 +138,9 @@ export default function App() {
         onClose={handleCloseDonation}
       />
 
-      {/* Sync connection + dev panel (` toggles; hidden by default in production) */}
-      <CRDTDevOverlay />
+      {/* Sync connection (universe/world rooms, presence, chat) + offline chip.
+          Replaced the backtick dev panel on 2026-10-21. */}
+      <SyncBridge />
     </>
   )
 }

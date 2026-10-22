@@ -67,7 +67,8 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `src/systems/` | InputManager, FlightController, CameraController, GravitySystem, WarpSystem, Touch/Gamepad adapters, StarModSlots |
 | `src/components/UniverseWorlds.tsx` | LOD world rendering + Aweborn Portal |
 | `src/components/RadarMinimap.tsx` / `PortalBeacon.tsx` | 3D radar, home indicator |
-| `src/components/CRDTDevOverlay.tsx` | Dev panel / temporary world list (shown in production until the World Index, Phase 08) |
+| `src/components/SyncBridge.tsx` | Sync connection wiring (rooms, presence, chat) + "Reconnecting…" chip. Replaced the backtick dev panel (`CRDTDevOverlay`) on 2026-10-21 |
+| `src/components/PlantWorldPanel.tsx` / `server/sync-service/src/world-create.ts` | Create World ("Plant a world", space only, Y): `POST /api/player/world`, signed-in only, 3 per player per rolling 24 h |
 | `shared/crdt-schema.ts` | Shared CRDT types + spatial helpers (client + server) |
 | `server/sync-service/src/rooms.ts` | Room manager: sector rooms, world rooms, world creation, spatial resolver, presence relay |
 | `src/index.css` | Full design system — tokens, glass effects, animations, payment form styles, success animation |

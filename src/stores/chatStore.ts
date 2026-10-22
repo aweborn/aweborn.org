@@ -1,6 +1,6 @@
 /**
  * Chat state that isn't part of a world document: how to send (the sync
- * connection lives in CRDTDevOverlay), whether the box is open, the last
+ * connection lives in SyncBridge), whether the box is open, the last
  * notice from the server ("slow down"), and the **space** log. Inside a
  * world, messages are the world's own chat log (worldStore.chat), written
  * only by the server. Out in space (Origin included) there is no world doc,

@@ -1,7 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import type {
-  Vec3,
-} from "@aweborn/shared/crdt-schema";
 import { playerReady } from "../lib/player";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
@@ -21,7 +18,7 @@ const MSG_TYPES: Record<string, number> = {
   "universe-update": 0x02,
   "world-sync": 0x03,
   "world-update": 0x04,
-  "create-world": 0x05,
+  "create-world": 0x05, // retired 2026-10-21 (server refuses it): POST /api/player/world
   "update-sectors": 0x06,
   "join-world": 0x07,
   "leave-world": 0x08,
@@ -78,8 +75,6 @@ export interface SyncConnection {
   connected: boolean;
   /** Send a raw message to the server */
   send: (type: string, data: Uint8Array, worldId?: string) => void;
-  /** Create a world on the server */
-  createWorld: (name: string, creator: string, position: Vec3, color: string) => void;
   /** Update sector subscriptions */
   updateSectors: (sectors: string[]) => void;
   /** Join a world room (start receiving world CRDT updates) */
@@ -132,14 +127,6 @@ export function useSyncConnection(
     []
   );
 
-  const createWorld = useCallback(
-    (name: string, creator: string, position: Vec3, color: string) => {
-      const payload = JSON.stringify({ name, creator, position, color });
-      send("create-world", new TextEncoder().encode(payload));
-    },
-    [send]
-  );
-
   const updateSectors = useCallback(
     (sectors: string[]) => {
       send("update-sectors", new TextEncoder().encode(JSON.stringify(sectors)));
@@ -176,7 +163,7 @@ export function useSyncConnection(
     // other for the rest of the session. Now: reconnect with backoff, and on
     // coming back (visible again, back online, restored from bfcache) open a
     // fresh socket, because iOS often keeps a dead one that still says OPEN.
-    // On reconnect the server resends universe-sync, CRDTDevOverlay rejoins
+    // On reconnect the server resends universe-sync, SyncBridge rejoins
     // the active world room, and presence resumes on the next 50 ms tick.
     let cancelled = false;
     let ws: WebSocket | null = null;
@@ -323,5 +310,5 @@ export function useSyncConnection(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sectorKeys.join(",")]);
 
-  return { connected, send, createWorld, updateSectors, joinWorld, leaveWorld };
+  return { connected, send, updateSectors, joinWorld, leaveWorld };
 }

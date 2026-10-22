@@ -13,6 +13,7 @@ import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus 
 import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
 import { removeOwnAsset, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
+import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
@@ -117,6 +118,9 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
  *   POST /api/player/world-index/arrived  { worldId } → result
  *        Landed next to it by link or card tap = sighted (entering then visits).
  *        Each result: { worldId, isNew, firstVisit }.
+ *   POST /api/player/world  { name, color, position } → { world: { id, name, color, position }, leftToday }
+ *        Plant a world (signed-in only; WORLDS_PER_DAY per rolling 24 h).
+ *        403 sign_in_required · 429 daily_limit · 400 bad_name | bad_color | bad_position
  */
 
 /** Sightings per account per minute (a busy flight past a cluster stays well under). */
@@ -229,6 +233,24 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   // Mana tracker: this player's allowance, usage and averages
   if (path === "/api/player/mana" && req.method === "GET") return manaStatus(rooms, session.playerId, json, session.isAnonymous);
+  // Create World: plant one where you stand (Alex, 2026-10-21)
+  if (path === "/api/player/world" && req.method === "POST") {
+    if (session.isAnonymous) {
+      return json(403, { error: "sign_in_required", message: "Worlds are forever. Sign in to plant one." });
+    }
+    const reqd = parseWorldRequest(await readJson(req).catch(() => null));
+    if ("error" in reqd) return json(400, reqd);
+    const left = worldsLeftToday(rooms.allWorlds(), session.playerId);
+    if (left <= 0) {
+      return json(429, { error: "daily_limit", message: `You can plant ${WORLDS_PER_DAY} worlds a day. Come back tomorrow.` });
+    }
+    const w = rooms.createWorld(reqd.name, session.playerId, reqd.position, reqd.color);
+    recordDiscovery(accountId, w.id, session.playerId, "sighted", "flight");
+    return json(200, {
+      world: { id: w.id, name: w.name, color: w.color, position: w.resolvedPosition, solidified: w.solidified },
+      leftToday: left - 1,
+    });
+  }
   // Creations (Phase 07): reserve → generate → settle. Signed-in players only.
   if (session.isAnonymous && req.method === "POST" && path && GENAI_POST_PATHS.has(path)) {
     return json(403, { error: "sign_in_required", message: SIGN_IN_MESSAGE });

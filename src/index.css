@@ -3711,6 +3711,156 @@ html.touch-ui .hud-mod-slots {
 /* Touch: Library / Create / Plan sit up top, under the top bar: the bottom belongs to the thumbs (stick left, JUMP + KICK right; a bottom row blocked the stick). Interim until the dock + Make sheet (docs/mobile-ui/SPEC.md). */
 html.touch-ui .create-panel { top: calc(124px + env(safe-area-inset-top, 0px)); bottom: auto; }
 
+/* ── Plant a world (Create World, 2026-10-21): space only, same slot Create
+   takes inside worlds (bottom centre on desktop, under the top bar on touch).
+   The sheet reuses the mana seal's sheet (.mana-seal), only its insides are new. */
+.plant-panel {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-xl) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 40;
+}
+/* Touch: top centre in space is the target label ("◇ Origin  42 u"), so the pill
+   joins the right-hand column under the gear + fullscreen buttons (seen at 390×844). */
+html.touch-ui .plant-panel { top: calc(196px + env(safe-area-inset-top, 0px)); bottom: auto; left: auto; right: 24px; transform: none; }
+.plant-open {
+  position: relative;
+  overflow: hidden;
+  min-height: 44px;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: #0c1a10;
+  background: linear-gradient(135deg, #c8ffb0, #7fe0a0 55%, #5ac8c8);
+  border: none;
+  border-radius: var(--radius-full);
+  padding: 10px 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 6px 24px rgba(110, 230, 160, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.plant-open:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(110, 230, 160, 0.5); }
+.plant-open:focus-visible { outline: 2px solid #c8ffb0; outline-offset: 3px; }
+.plant-open kbd { margin-left: 8px; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: rgba(0, 0, 0, 0.15); }
+html.touch-ui .plant-open kbd { display: none; }
+.plant-open.is-sealed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
+  transform: translateX(-120%);
+  animation: seal-shimmer 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.plant-sheet form { margin: 0; }
+.plant-orb {
+  width: 96px;
+  height: 96px;
+  margin: 4px auto 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0%, var(--orb) 32%, color-mix(in oklab, var(--orb), #000 55%) 100%);
+  box-shadow: 0 0 36px var(--orb), 0 0 90px color-mix(in oklab, var(--orb), transparent 50%);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+  animation: seal-breathe 3.2s ease-in-out infinite;
+}
+.plant-orb.is-planted { animation: plant-bloom 0.9s var(--ease-out-expo) both, seal-breathe 3.2s ease-in-out 0.9s infinite; }
+@keyframes plant-bloom { from { transform: scale(0.2); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } }
+.plant-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 6px 6px 6px 16px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+}
+.plant-field:focus-within { border-color: rgba(255, 210, 122, 0.6); }
+.plant-field > span { flex: none; width: 56px; font-size: 13px; color: var(--color-text-tertiary); }
+.plant-field input:not([type='color']) {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  font: inherit;
+  font-size: 16px; /* 16px: iOS doesn't zoom the page on focus */
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+.plant-field input[type='color'] {
+  width: 56px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+}
+.plant-field input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
+.plant-field input[type='color']::-webkit-color-swatch { border: none; border-radius: 10px; }
+.plant-field input[type='color']::-moz-color-swatch { border: none; border-radius: 10px; }
+.plant-field--color code { font-size: 13px; color: var(--color-text-secondary); }
+.plant-error { margin: 0 0 12px; font-size: 14px; color: #ffb3a8; }
+.plant-sheet .mana-seal-cta:disabled { opacity: 0.5; cursor: default; transform: none; }
+.plant-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 6px 6px 6px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-full);
+}
+.plant-link code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--color-text-secondary); text-align: left; }
+.plant-link-btn {
+  flex: none;
+  min-height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-full);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+.plant-link-btn:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* ── Connection chip (SyncBridge): only while the socket has been down a few seconds ── */
+.sync-status {
+  position: fixed;
+  left: 50%;
+  top: calc(64px + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: rgba(40, 20, 30, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 150, 130, 0.35);
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  animation: fade-in 0.3s ease both;
+}
+.sync-status-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #ff9f8a; animation: seal-breathe 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .plant-open.is-sealed::after, .plant-orb, .plant-orb.is-planted, .sync-status-dot { animation: none; }
+}
+
 /* ── World Planner (Phase 07) ───────────────────────────────────────── */
 .planner-open {
   position: fixed;

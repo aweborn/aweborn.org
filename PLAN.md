@@ -96,7 +96,8 @@ aweborn.org/
 │   │   ├── RadarMinimap.tsx       # 3D-aware radar (bottom-left)
 │   │   ├── PortalBeacon.tsx       # "Where is home" indicator
 │   │   ├── GravityFieldLines.tsx / SlingshotArc.tsx / WarpEffect.tsx / WorldTransition.tsx
-│   │   ├── CRDTDevOverlay.tsx     # Dev panel / temporary world list (in prod until World Index, Phase 08)
+│   │   ├── SyncBridge.tsx         # Sync connection wiring + offline chip (replaced the dev panel, 2026-10-21)
+│   │   ├── PlantWorldPanel.tsx    # Create World: "Plant a world" (space only)
 │   │   ├── DonationPortal.tsx / DonationModal.tsx   # Stripe donation flow
 │   │   ├── HUD.tsx                # Keymap (lights on press), speed, lock/warp, FPS
 │   │   └── LoadingScreen.tsx / FallbackScene.tsx / CanvasErrorBoundary.tsx

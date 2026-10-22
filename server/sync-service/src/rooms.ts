@@ -39,8 +39,7 @@ import { touchesChat } from "./chat-guard.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
-/** `creator` for worlds made by sockets with no session. */
-const GUEST_CREATOR = "guest";
+// (Worlds planted by guests before 2026-10-21 have creator "guest"; new ones need sign-in.)
 
 // ── Presence (Card Event Readiness, 2026-10-20) ───────────────────────────
 // Relaying every presence message to every client was O(n²) sends and pegged
@@ -394,16 +393,9 @@ export class RoomManager {
           break;
         }
         case "create-world": {
-          // Client wants to create a world. The creator is always decided by
-          // the server: the socket's player, or "guest" if it has no session.
-          // (The client-sent `creator` is ignored; it could impersonate anyone.)
-          const payload = JSON.parse(new TextDecoder().decode(message.data)) as {
-            name: string;
-            position: Vec3;
-            color: string;
-          };
-          const creator = this.playerIds.get(ws) ?? GUEST_CREATOR;
-          this.createWorld(payload.name, creator, payload.position, payload.color);
+          // Retired 2026-10-21: it let guests plant unlimited worlds. Worlds are
+          // made via POST /api/player/world (signed-in, daily limit; world-create.ts).
+          console.warn("[rooms] refused socket create-world (use POST /api/player/world)");
           break;
         }
         case "update-sectors": {
@@ -529,6 +521,11 @@ export class RoomManager {
   /** Public lookup by ID (used by `GET /worlds/:id`). */
   lookupWorld(worldId: string): WorldEntry | null {
     return this.getWorldEntry(worldId);
+  }
+
+  /** Every world in the universe (Create World's daily limit counts from these). */
+  allWorlds(): WorldEntry[] {
+    return getAllWorldEntries(this.universeDoc);
   }
 
   private getWorldEntry(worldId: string): WorldEntry | null {
@@ -792,7 +789,7 @@ export class RoomManager {
   //   0x02 = universe-update  (bidirectional: CRDT delta)
   //   0x03 = world-sync       (server → client: full state)
   //   0x04 = world-update     (bidirectional: CRDT delta)
-  //   0x05 = create-world     (client → server: JSON payload)
+  //   0x05 = create-world     (retired 2026-10-21: refused; use POST /api/player/world)
   //   0x06 = update-sectors   (client → server: JSON payload)
   //   0x07 = join-world       (client → server: worldId in header)
   //   0x08 = leave-world      (client → server: worldId in header)

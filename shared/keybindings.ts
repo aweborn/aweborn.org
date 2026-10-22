@@ -92,6 +92,7 @@ export const BINDING_DEFS: readonly BindingDef[] = [
   { id: 'library', group: 'panels', label: 'Library', contexts: WORLD, default: 'KeyB' },
   { id: 'createPanel', group: 'panels', label: 'Create (text to 3D)', contexts: WORLD, default: 'KeyC' },
   { id: 'plannerPanel', group: 'panels', label: 'World Planner', contexts: WORLD, default: 'KeyP' },
+  { id: 'plantWorld', group: 'panels', label: 'Plant a world', contexts: UNI, default: 'KeyY' },
   { id: 'keybindings', group: 'panels', label: 'Keys & controls', contexts: BOTH, default: 'KeyH' },
 ]
 

@@ -30,13 +30,32 @@ export function useCanChannel(): { canChannel: boolean; authReachable: boolean; 
 
 interface SealProps {
   /** Which power the player reached for. */
-  kind: 'create' | 'plan'
+  kind: 'create' | 'plan' | 'world'
   onClose: () => void
 }
 
+const MANA_BODY = (
+  <>
+    Creating out of nothing but thought is the most powerful thing in Aweborn. Every creation is woven from{' '}
+    <strong>mana</strong>: one pool, given by players, shared by everyone. To draw on it, sign in.
+  </>
+)
+
 const COPY = {
-  create: { title: 'Make from thought', verb: 'Speak a thing into being' },
-  plan: { title: 'Dream a world', verb: 'Shape whole lands from a sentence' },
+  create: { title: 'Make from thought', verb: 'Speak a thing into being', body: MANA_BODY, cta: 'Sign in to channel mana' },
+  plan: { title: 'Dream a world', verb: 'Shape whole lands from a sentence', body: MANA_BODY, cta: 'Sign in to channel mana' },
+  // Create World (2026-10-21): free, but a world is forever, so it needs a name behind it.
+  world: {
+    title: 'Plant a world',
+    verb: 'Leave your mark on the universe',
+    body: (
+      <>
+        A world you plant stays in the universe <strong>forever</strong>, right where you stood, for everyone to find.
+        So every world needs a player behind it: sign in to plant one.
+      </>
+    ),
+    cta: 'Sign in to plant a world',
+  },
 } as const
 
 /**
@@ -74,10 +93,7 @@ export function ManaSeal({ kind, onClose }: SealProps) {
         </div>
         <p className="mana-seal-eyebrow">{copy.verb}</p>
         <h2 id="mana-seal-title" className="mana-seal-title">{copy.title}</h2>
-        <p className="mana-seal-body">
-          Creating out of nothing but thought is the most powerful thing in Aweborn. Every creation is woven from{' '}
-          <strong>mana</strong>: one pool, given by players, shared by everyone. To draw on it, sign in.
-        </p>
+        <p className="mana-seal-body">{copy.body}</p>
         {authReachable ? (
           <button
             id="mana-seal-signin"
@@ -89,7 +105,7 @@ export function ManaSeal({ kind, onClose }: SealProps) {
               openAccount()
             }}
           >
-            Sign in to channel mana
+            {copy.cta}
           </button>
         ) : (
           <p className="mana-seal-offline">Sign-in can’t be reached right now. Try again in a moment.</p>
