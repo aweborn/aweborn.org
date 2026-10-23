@@ -9,7 +9,7 @@ import { kickedPosition } from '@aweborn/shared/sim/interior'
 import { Suspense } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { AUTH_URL } from '../lib/player'
-import { registerModelShape, useModelShapes } from '../stores/modelShapes'
+import { prepareModelAsset, useModelShapes } from '../stores/modelShapes'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import { useQualityTier } from '../stores/qualityStore'
 import type { BlueprintSky } from '@aweborn/shared/blueprint'
@@ -30,23 +30,41 @@ class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode
   }
 }
 
-/** Generated GLB, fitted into a unit box centred on the object (matches its collider). */
-function GeneratedModel({ asset }: { asset: string }) {
+/**
+ * Loads the GLTF from S3/API and hands it to `prepareModelAsset` (which registers
+ * the 8×8 collider + proxy synchronously, then decimates the mesh & bakes a
+ * single-texture Lambert material off-thread/per-frame). Never mounts the raw
+ * 120k-triangle PBR scene into WebGL.
+ */
+function GeneratedModelLoader({ asset, maxTris }: { asset: string; maxTris: number }) {
   const { scene } = useGLTF(`${AUTH_URL}/assets/${asset}?v=2`)
-  const fitted = useMemo(() => {
-    const root = scene.clone(true)
-    const box = new THREE.Box3().setFromObject(root)
-    const size = box.getSize(new THREE.Vector3())
-    const centre = box.getCenter(new THREE.Vector3())
-    const s = 1 / Math.max(size.x, size.y, size.z, 1e-6)
-    root.position.sub(centre).multiplyScalar(s)
-    root.scale.setScalar(s)
-    const g = new THREE.Group()
-    g.add(root)
-    registerModelShape(asset, g)
-    return g
-  }, [scene, asset])
-  return <primitive object={fitted} />
+  useEffect(() => {
+    prepareModelAsset(asset, scene, maxTris)
+  }, [asset, scene, maxTris])
+  return null
+}
+
+/** Simplified generated model for previews (such as HeldItemPreview). */
+function GeneratedModel({ asset }: { asset: string }) {
+  const tier = useQualityTier()
+  const parts = useModelShapes((s) => s.models[asset])
+  const proxyGeo = useModelShapes((s) => s.proxies[asset])
+  return (
+    <group>
+      {!parts && <GeneratedModelLoader asset={asset} maxTris={tier.modelMaxTris} />}
+      {parts ? (
+        parts.map((part, i) => <mesh key={i} geometry={part.lod1} material={part.material} />)
+      ) : proxyGeo ? (
+        <mesh geometry={proxyGeo}>
+          <meshLambertMaterial vertexColors />
+        </mesh>
+      ) : (
+        <mesh geometry={GEOMETRIES.cube}>
+          <meshBasicMaterial color="#9fe8ff" wireframe transparent opacity={0.6} />
+        </mesh>
+      )}
+    </group>
+  )
 }
 
 /**
@@ -81,10 +99,11 @@ function getGeometry(type: string): THREE.BufferGeometry {
 function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worldColor: string; fogFar: number }) {
   const ref = useRef<THREE.Mesh>(null!)
   const groupRef = useRef<THREE.Group>(null!)
-  const hiGroupRef = useRef<THREE.Group>(null!)
-  const loMeshRef = useRef<THREE.Mesh>(null!)
+  const partMeshRefs = useRef<(THREE.Mesh | null)[]>([])
+  const activeLodRef = useRef<0 | 1 | 2>(0)
   const [shouldLoad, setShouldLoad] = useState(false)
   const tier = useQualityTier()
+  const preparedParts = useModelShapes((s) => (obj.asset ? s.models[obj.asset] : undefined))
   const proxyGeo = useModelShapes((s) => (obj.asset ? s.proxies[obj.asset] : undefined))
   const geo = useMemo(() => getGeometry(obj.type), [obj.type])
 
@@ -110,7 +129,7 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
   }, [worldColor, obj.type, obj.color])
 
   // Subtle float animation; a kicked object follows the shared flight sim;
-  // distant objects cull past the fog and models swap to their client silhouette proxy.
+  // distant objects cull past the fog and models step smoothly across 3 decimated LODs.
   useFrame((state) => {
     const target = (ref.current ?? groupRef.current) as THREE.Object3D | null
     if (!target) return
@@ -131,7 +150,7 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
     const dist = Math.hypot(dx, dy, dz)
     const cullDist = fogFar + objRadius + 8
 
-    if (obj.type === 'model' && !shouldLoad && dist <= cullDist + 24) {
+    if (obj.type === 'model' && !shouldLoad && !preparedParts && dist <= cullDist + 24) {
       setShouldLoad(true)
     }
 
@@ -141,6 +160,20 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
     }
     target.visible = true
 
+    if (preparedParts) {
+      const nearDist = tier.modelDetailDist * 0.45 + objRadius
+      const midDist = tier.modelDetailDist + objRadius * 1.5
+      const desiredLod: 0 | 1 | 2 = dist <= nearDist ? 0 : dist <= midDist ? 1 : 2
+      if (desiredLod !== activeLodRef.current) {
+        activeLodRef.current = desiredLod
+        for (let i = 0; i < preparedParts.length; i++) {
+          const m = partMeshRefs.current[i]
+          const p = preparedParts[i]
+          if (m && p) m.geometry = desiredLod === 0 ? p.lod0 : desiredLod === 1 ? p.lod1 : p.lod2
+        }
+      }
+    }
+
     if (obj.kick) {
       target.position.set(px, py, pz)
       target.rotation.x += 0.08
@@ -148,10 +181,6 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
       // Generated models stand still where they were placed
       target.position.set(obj.x, obj.y, obj.z)
       target.rotation.set(0, obj.rotY, 0)
-      const detailDist = tier.modelDetailDist + objRadius * 1.5
-      const useProxy = Boolean(proxyGeo) && dist > detailDist
-      if (hiGroupRef.current) hiGroupRef.current.visible = !useProxy
-      if (loMeshRef.current) loMeshRef.current.visible = useProxy
       return
     } else if (placedLook) {
       target.position.set(obj.x, obj.y, obj.z)
@@ -166,20 +195,31 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
   if (obj.type === 'model' && obj.asset) {
     return (
       <group ref={groupRef as never} position={[obj.x, obj.y, obj.z]} scale={[obj.scaleX, obj.scaleY, obj.scaleZ]}>
-        <group ref={hiGroupRef}>
-          {shouldLoad ? (
-            <ModelBoundary fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color="#ff6a5a" wireframe /></mesh>}>
-              <Suspense fallback={<mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color={color} wireframe /></mesh>}>
-                <GeneratedModel asset={obj.asset} />
-              </Suspense>
-            </ModelBoundary>
-          ) : (
-            <mesh geometry={GEOMETRIES.cube}><meshBasicMaterial color={color} wireframe /></mesh>
-          )}
-        </group>
-        {proxyGeo && (
-          <mesh ref={loMeshRef} geometry={proxyGeo} visible={false}>
+        {!preparedParts && shouldLoad && (
+          <ModelBoundary fallback={null}>
+            <Suspense fallback={null}>
+              <GeneratedModelLoader asset={obj.asset} maxTris={tier.modelMaxTris} />
+            </Suspense>
+          </ModelBoundary>
+        )}
+        {preparedParts ? (
+          preparedParts.map((part, i) => (
+            <mesh
+              key={i}
+              ref={(el) => {
+                partMeshRefs.current[i] = el
+              }}
+              geometry={activeLodRef.current === 0 ? part.lod0 : activeLodRef.current === 1 ? part.lod1 : part.lod2}
+              material={part.material}
+            />
+          ))
+        ) : proxyGeo ? (
+          <mesh geometry={proxyGeo}>
             <meshLambertMaterial vertexColors />
+          </mesh>
+        ) : (
+          <mesh geometry={GEOMETRIES.cube}>
+            <meshBasicMaterial color={color} wireframe />
           </mesh>
         )}
       </group>

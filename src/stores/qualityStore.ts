@@ -29,10 +29,16 @@ export interface QualityTier {
   worldChunks: number
   /**
    * In-world distance (meters) out to which generated 3D models render their
-   * full high-poly GLB mesh. Beyond this (up to the fog edge), they swap to a
-   * lightweight client-generated silhouette proxy; past the fog they are culled.
+   * close/mid simplified meshes. Beyond this (up to the fog edge), they swap
+   * to an ultra-low-poly (~200-tri) mesh; past the fog they are culled.
    */
   modelDetailDist: number
+  /**
+   * Maximum total triangles per generated 3D model at close range on the client.
+   * Full 120k-triangle models stay archived in S3; the client decimates them on
+   * load and bakes normal/roughness relief into a single lightweight texture.
+   */
+  modelMaxTris: number
   /**
    * Real point lights shared by the nearest planets (a fixed pool that moves).
    * Fixed per tier on purpose: in three.js a change in light count recompiles
@@ -42,10 +48,10 @@ export interface QualityTier {
 }
 
 export const QUALITY_TIERS: readonly QualityTier[] = [
-  { name: 'Low', dpr: 1, fogNear: 30, fogFar: 200, cameraFar: 400, mediumDist: 150, bloom: false, stars: 1500, worldChunks: 3, modelDetailDist: 28, planetLights: 0 },
-  { name: 'Medium', dpr: 1.25, fogNear: 30, fogFar: 250, cameraFar: 500, mediumDist: 200, bloom: true, stars: 3000, worldChunks: 4, modelDetailDist: 45, planetLights: 2 },
-  { name: 'High', dpr: 1.5, fogNear: 60, fogFar: 600, cameraFar: 1000, mediumDist: 400, bloom: true, stars: 5000, worldChunks: 5, modelDetailDist: 80, planetLights: 4 },
-  { name: 'Ultra', dpr: 2, fogNear: 120, fogFar: 1500, cameraFar: 2500, mediumDist: 800, bloom: true, stars: 8000, worldChunks: 6, modelDetailDist: 160, planetLights: 8 },
+  { name: 'Low', dpr: 1, fogNear: 30, fogFar: 200, cameraFar: 400, mediumDist: 150, bloom: false, stars: 1500, worldChunks: 3, modelDetailDist: 20, modelMaxTris: 900, planetLights: 0 },
+  { name: 'Medium', dpr: 1.25, fogNear: 30, fogFar: 250, cameraFar: 500, mediumDist: 200, bloom: true, stars: 3000, worldChunks: 4, modelDetailDist: 32, modelMaxTris: 1600, planetLights: 2 },
+  { name: 'High', dpr: 1.5, fogNear: 60, fogFar: 600, cameraFar: 1000, mediumDist: 400, bloom: true, stars: 5000, worldChunks: 5, modelDetailDist: 55, modelMaxTris: 3200, planetLights: 4 },
+  { name: 'Ultra', dpr: 2, fogNear: 120, fogFar: 1500, cameraFar: 2500, mediumDist: 800, bloom: true, stars: 8000, worldChunks: 6, modelDetailDist: 100, modelMaxTris: 6500, planetLights: 8 },
 ]
 
 export type QualitySetting = 'auto' | 0 | 1 | 2 | 3
