@@ -14,6 +14,7 @@ import { SlingshotArc } from './SlingshotArc'
 import { PortalBeacon } from './PortalBeacon'
 import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
+import { RETURN_PORTAL_XZ } from '@aweborn/shared/crdt-schema'
 import { useWorldStore, kickObject, settleObject, moveObject, duplicateObject, recolorObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
@@ -651,11 +652,13 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         }
       }
     }
-    // Check if player is standing next to a nested child world portal inside this world
+    // Check if player is standing next to a nested child world portal or the Return Portal inside this world
     let nearestChildWorldId: string | null = null
     let nearestChildDist = 3.2
+    let nearReturnPortal = false
     if (activeWorldId) {
-      for (const w of useUniverseStore.getState().worlds.values()) {
+      const uState = useUniverseStore.getState()
+      for (const w of uState.worlds.values()) {
         if (w.parentWorldId !== activeWorldId) continue
         const d = Math.hypot(w.resolvedPosition.x - x, w.resolvedPosition.z - z)
         if (d < nearestChildDist) {
@@ -663,11 +666,25 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
           nearestChildWorldId = w.id
         }
       }
+      const hasParent = Boolean(
+        uState.worlds.get(activeWorldId)?.parentWorldId ?? useWorldStore.getState().meta?.parentWorldId,
+      )
+      if (hasParent) {
+        const returnDist = Math.hypot(RETURN_PORTAL_XZ.x - x, RETURN_PORTAL_XZ.z - z)
+        if (returnDist < nearestChildDist) {
+          nearReturnPortal = true
+          nearestChildWorldId = null
+        }
+      }
     }
-    sceneHints.canEnter = nearestChildWorldId !== null
+    sceneHints.canEnter = nearestChildWorldId !== null || nearReturnPortal
 
     if (doc) {
       if (inputManager.getEvents().justPressed.has('interact')) {
+        if (nearReturnPortal) {
+          useUniverseStore.getState().exitWorld()
+          return
+        }
         if (nearestChildWorldId) {
           useUniverseStore.getState().enterWorld(nearestChildWorldId)
           return

@@ -108,7 +108,13 @@ export interface WorldEntry {
 
   /** If planted inside another world (recursive CRDTs): the enclosing world's ID. Absent = outer space. */
   parentWorldId?: string;
+
+  /** Whether any signed-in player may plant child portals inside this world (`true` by default; `false` = creator only). */
+  allowPortals?: boolean;
 }
+
+/** Fixed interior XZ coordinates of the Return Portal inside any nested child world (right behind the `(0, 10)` spawn). */
+export const RETURN_PORTAL_XZ = { x: 0, z: 14 } as const;
 
 /**
  * Universe-level mana state (Phase 05, formula v3: the pool is the treasury).
@@ -221,6 +227,7 @@ export interface WorldMeta {
   color: string;
   solidified: boolean;
   parentWorldId?: string;
+  allowPortals?: boolean;
 }
 
 /**

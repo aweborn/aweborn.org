@@ -14,7 +14,7 @@ import { placeOnTerrain } from '../stores/worldVoxels'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import { useQualityTier } from '../stores/qualityStore'
 import type { BlueprintSky } from '@aweborn/shared/blueprint'
-import type { WorldEntry } from '@aweborn/shared/crdt-schema'
+import { RETURN_PORTAL_XZ, type WorldEntry } from '@aweborn/shared/crdt-schema'
 import { useHeldItemStore, computePlacementTarget } from '../stores/heldItemStore'
 import { interiorController } from '../systems/InteriorController'
 
@@ -401,17 +401,99 @@ function ChildWorldPortal({ world }: { world: WorldEntry }) {
 
 function ChildWorldPortals({ parentWorldId }: { parentWorldId: string }) {
   const worlds = useUniverseStore((s) => s.worlds)
+  const meta = useWorldStore((s) => s.meta)
+  const parentOfCurrentId = worlds.get(parentWorldId)?.parentWorldId ?? meta?.parentWorldId
+  const parentOfCurrent = parentOfCurrentId ? worlds.get(parentOfCurrentId) : undefined
   const children = useMemo(
     () => Array.from(worlds.values()).filter((w) => w.parentWorldId === parentWorldId),
     [worlds, parentWorldId],
   )
-  if (children.length === 0) return null
   return (
     <>
+      {parentOfCurrentId && (
+        <ParentWorldPortal
+          parentName={parentOfCurrent?.name ?? 'Parent World'}
+          parentColor={parentOfCurrent?.color ?? '#9fe8ff'}
+        />
+      )}
       {children.map((w) => (
         <ChildWorldPortal key={w.id} world={w} />
       ))}
     </>
+  )
+}
+
+function ParentWorldPortal({ parentName, parentColor }: { parentName: string; parentColor: string }) {
+  const groupRef = useRef<THREE.Group>(null!)
+  const ringRef = useRef<THREE.Mesh>(null!)
+  const voxelTerrain = useWorldStore((s) => s.voxelTerrain)
+  const color = useMemo(() => new THREE.Color(parentColor), [parentColor])
+
+  const basePos = useMemo(() => {
+    const x = RETURN_PORTAL_XZ.x
+    const z = RETURN_PORTAL_XZ.z
+    let y = 0
+    if (voxelTerrain) {
+      y = placeOnTerrain(voxelTerrain, [x + voxelTerrain.size[0] / 2, 0, z + voxelTerrain.size[2] / 2]).y
+    }
+    return { x, y: y + 1.35, z }
+  }, [voxelTerrain])
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime
+    if (groupRef.current) {
+      groupRef.current.position.y = basePos.y + Math.sin(t * 1.4) * 0.12
+    }
+    if (ringRef.current) {
+      ringRef.current.rotation.z = -t * 0.55
+    }
+  })
+
+  return (
+    <group ref={groupRef} position={[basePos.x, basePos.y, basePos.z]}>
+      <mesh>
+        <octahedronGeometry args={[0.58, 1]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.95}
+          roughness={0.2}
+          metalness={0.15}
+        />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[1.05, 16, 16]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.18}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh ref={ringRef} rotation={[Math.PI * 0.5, 0, 0]}>
+        <torusGeometry args={[1.3, 0.035, 8, 48]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.75}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <Html
+        position={[0, 1.35, 0]}
+        center
+        distanceFactor={9}
+        zIndexRange={[10, 0]}
+        style={{ pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap' }}
+      >
+        <div className="child-world-portal-label child-world-portal-label--return">
+          <div className="child-world-portal-label__name">↑ Return to {parentName}</div>
+          <div className="child-world-portal-label__hint">Step close &amp; press N / Enter</div>
+        </div>
+      </Html>
+    </group>
   )
 }
 

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
 import { placeOnTerrain } from '../stores/worldVoxels'
 import { interiorController } from '../systems/InteriorController'
 import { matchesBinding } from '../stores/keybindingStore'
-import { AUTH_URL } from '../lib/player'
+import { AUTH_URL, getPlayerSnapshot, subscribePlayer } from '../lib/player'
 import { markMeaningfulMoment } from '../lib/onramp'
 import { ManaSeal, useCanChannel } from './ManaSeal'
 import { MakeTabs } from './MakeTabs'
@@ -100,6 +100,40 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
   const [copied, setCopied] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const inWorld = Boolean(parentWorldId)
+  const player = useSyncExternalStore(subscribePlayer, getPlayerSnapshot, getPlayerSnapshot)
+  const parentEntry = useUniverseStore((s) => (parentWorldId ? s.worlds.get(parentWorldId) : undefined))
+  const worldMeta = useWorldStore((s) => s.meta)
+  const myChars = player?.characters ?? (player?.playerId ? [player.playerId] : [])
+  const worldCreator = parentEntry?.creator ?? worldMeta?.creator ?? ''
+  const isCreator = Boolean(inWorld && worldCreator && myChars.includes(worldCreator))
+  const allowPortals = (parentEntry?.allowPortals ?? worldMeta?.allowPortals) !== false
+
+  const updatePolicy = async (nextAllow: boolean) => {
+    if (!parentWorldId) return
+    const doc = useUniverseStore.getState().activeWorldDoc
+    if (doc) {
+      doc.transact(() => {
+        doc.getMap('meta').set('allowPortals', nextAllow)
+      })
+    }
+    const uDoc = useUniverseStore.getState().universeDoc
+    const wMap = uDoc?.getMap('worlds').get(parentWorldId) as { set?: (k: string, v: unknown) => void } | undefined
+    if (uDoc && wMap?.set) {
+      uDoc.transact(() => {
+        wMap.set!('allowPortals', nextAllow)
+      })
+    }
+    try {
+      await fetch(`${AUTH_URL}/api/player/world/policy`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worldId: parentWorldId, allowPortals: nextAllow }),
+      })
+    } catch {
+      /* offline or transient: local CRDT update still holds */
+    }
+  }
 
   useEffect(() => {
     // Focus after the sheet's rise so iOS scrolls it above the keyboard.
@@ -222,6 +256,17 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
                 : 'That’s your last world for today.'}
             </p>
           </>
+        ) : inWorld && !allowPortals && !isCreator ? (
+          <>
+            <p className="mana-seal-eyebrow">Curated world</p>
+            <h2 id="plant-title" className="mana-seal-title">Portals are creator-only</h2>
+            <p className="mana-seal-body">
+              Only this world’s creator can plant new portals here. You can still step through any portals already in this world.
+            </p>
+            <button id="plant-done" type="button" className="mana-seal-secondary" onClick={onClose}>
+              Keep exploring
+            </button>
+          </>
         ) : (
           <form onSubmit={submit}>
             <p className="mana-seal-eyebrow">{inWorld ? 'Worlds within worlds' : 'Plant where you stand'}</p>
@@ -231,6 +276,31 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
                 ? 'Plants a glowing portal just ahead of you that leads into a nested world of its own.'
                 : 'It appears just ahead of you and stays in the universe forever.'}
             </p>
+            {isCreator && (
+              <div className="plant-policy" role="group" aria-label="Who can plant portals in this world">
+                <span className="plant-policy__label">Who can plant portals here</span>
+                <div className="plant-policy__btns">
+                  <button
+                    id="plant-policy-anyone"
+                    type="button"
+                    className={`plant-policy__btn${allowPortals ? ' is-on' : ''}`}
+                    aria-pressed={allowPortals}
+                    onClick={() => void updatePolicy(true)}
+                  >
+                    Anyone
+                  </button>
+                  <button
+                    id="plant-policy-creator"
+                    type="button"
+                    className={`plant-policy__btn${!allowPortals ? ' is-on' : ''}`}
+                    aria-pressed={!allowPortals}
+                    onClick={() => void updatePolicy(false)}
+                  >
+                    Only me
+                  </button>
+                </div>
+              </div>
+            )}
             <label className="plant-field" htmlFor="plant-name">
               <span>Name</span>
               <input

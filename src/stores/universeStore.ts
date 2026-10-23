@@ -21,6 +21,7 @@ import {
   ORIGIN_WORLD_ID,
 } from "@aweborn/shared/crdt-schema";
 import { useWorldStore } from "./worldStore";
+import { interiorController } from "../systems/InteriorController";
 import {
   loadUniverseDoc,
   saveUniverseDoc,
@@ -107,6 +108,7 @@ interface UniverseState {
  */
 function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
   const parentWorldId = m.get("parentWorldId") as string | undefined;
+  const allowPortals = m.get("allowPortals") as boolean | undefined;
   return {
     id: (m.get("id") as string) ?? "",
     name: (m.get("name") as string) ?? "Unknown",
@@ -130,6 +132,7 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     lastActive: (m.get("lastActive") as number) ?? 0,
     createdAt: (m.get("createdAt") as number) ?? 0,
     ...(parentWorldId ? { parentWorldId } : {}),
+    ...(allowPortals !== undefined ? { allowPortals } : {}),
   };
 }
 
@@ -301,6 +304,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
             meta.set("color", entry.color);
             meta.set("solidified", entry.solidified);
             if (entry.parentWorldId) meta.set("parentWorldId", entry.parentWorldId);
+            if (entry.allowPortals !== undefined) meta.set("allowPortals", entry.allowPortals);
           }, "remote");
         }
       }
@@ -311,11 +315,26 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
 
     exitWorld: (toSpace = false) => {
       const curId = get().activeWorldId;
+      const curWorld = curId ? get().worlds.get(curId) : undefined;
       const parentId =
         !toSpace && curId
-          ? (get().worlds.get(curId)?.parentWorldId ?? useWorldStore.getState().meta?.parentWorldId)
+          ? (curWorld?.parentWorldId ?? useWorldStore.getState().meta?.parentWorldId)
           : undefined;
       if (parentId) {
+        // Physically linked portal: emerge in the parent world right in front of this child world's portal
+        if (curWorld) {
+          interiorController.restoreOnNextReset({
+            x: curWorld.resolvedPosition.x,
+            y: Math.max(0, curWorld.resolvedPosition.y),
+            z: curWorld.resolvedPosition.z + 2.6,
+            fx: 0,
+            fz: -1,
+            pitch: 0,
+            vx: 0,
+            vy: 0,
+            vz: 0,
+          });
+        }
         get().enterWorld(parentId);
         return;
       }

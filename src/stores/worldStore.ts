@@ -75,6 +75,7 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
   const name = meta.get("name") as string | undefined;
   if (!name) return null;
   const parentWorldId = meta.get("parentWorldId") as string | undefined;
+  const allowPortals = meta.get("allowPortals") as boolean | undefined;
   return {
     name,
     creator: (meta.get("creator") as string) ?? "",
@@ -82,6 +83,7 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
     color: (meta.get("color") as string) ?? "#ffffff",
     solidified: (meta.get("solidified") as boolean) ?? false,
     ...(parentWorldId ? { parentWorldId } : {}),
+    ...(allowPortals !== undefined ? { allowPortals } : {}),
   };
 }
 

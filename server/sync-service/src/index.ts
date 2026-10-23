@@ -258,6 +258,15 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (reqd.parentWorldId) {
       const parent = rooms.lookupWorld(reqd.parentWorldId);
       if (!parent) return json(404, { error: "parent_not_found", message: "Parent world not found." });
+      if (parent.allowPortals === false) {
+        const myChars = listCharacters(accountId);
+        if (!myChars.some((c) => c.id === parent.creator)) {
+          return json(403, {
+            error: "portals_locked",
+            message: "Only this world’s creator can plant portals here.",
+          });
+        }
+      }
     }
     const left = worldsLeftToday(rooms.allWorlds(), session.playerId);
     if (left <= 0) {
@@ -276,6 +285,24 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
       },
       leftToday: left - 1,
     });
+  }
+  if (path === "/api/player/world/policy" && req.method === "POST") {
+    if (session.isAnonymous) {
+      return json(403, { error: "sign_in_required", message: SIGN_IN_MESSAGE });
+    }
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; allowPortals?: unknown } | null;
+    const worldId = knownWorld(body?.worldId);
+    if (!worldId || typeof body?.allowPortals !== "boolean") {
+      return json(400, { error: "bad_request" });
+    }
+    const w = rooms.lookupWorld(worldId);
+    if (!w) return json(404, { error: "not_found" });
+    const myChars = listCharacters(accountId);
+    if (!myChars.some((c) => c.id === w.creator)) {
+      return json(403, { error: "not_creator", message: "Only this world’s creator can change portal permissions." });
+    }
+    rooms.setWorldPortalPolicy(worldId, body.allowPortals);
+    return json(200, { worldId, allowPortals: body.allowPortals });
   }
   // Creations (Phase 07): reserve → generate → settle. Signed-in players only.
   if (session.isAnonymous && req.method === "POST" && path && GENAI_POST_PATHS.has(path)) {

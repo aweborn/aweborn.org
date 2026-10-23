@@ -165,6 +165,7 @@ export function updatePlayerCount(doc: Y.Doc, worldId: string, count: number): v
  */
 function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
   const parentWorldId = m.get("parentWorldId") as string | undefined;
+  const allowPortals = m.get("allowPortals") as boolean | undefined;
   return {
     id: m.get("id") as string,
     name: m.get("name") as string,
@@ -188,5 +189,6 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     lastActive: m.get("lastActive") as number,
     createdAt: m.get("createdAt") as number,
     ...(parentWorldId ? { parentWorldId } : {}),
+    ...(allowPortals !== undefined ? { allowPortals } : {}),
   };
 }

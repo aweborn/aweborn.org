@@ -19,6 +19,7 @@ import {
   positionToSector,
   sectorKey,
   ORIGIN_WORLD_ID,
+  RETURN_PORTAL_XZ,
 } from "../../../shared/crdt-schema.js";
 import {
   initUniverseDoc,
@@ -338,21 +339,27 @@ export class RoomManager {
     let frontierCheckPos: Vec3;
 
     if (parentWorldId) {
-      // Nested world inside a parent world: nudge away from sibling portals in the same parent world
-      const siblings = existingWorlds.filter((w) => w.parentWorldId === parentWorldId);
+      // Nested world inside a parent world: nudge away from sibling portals (and the parent's own Return Portal)
+      const parentEntry = this.getWorldEntry(parentWorldId);
+      const obstacles: { x: number; z: number }[] = existingWorlds
+        .filter((w) => w.parentWorldId === parentWorldId)
+        .map((w) => w.resolvedPosition);
+      if (parentEntry?.parentWorldId) {
+        obstacles.push(RETURN_PORTAL_XZ);
+      }
       const pos = { ...intendedPosition };
       const MIN_PORTAL_DIST = 4;
       for (let pass = 0; pass < 8; pass++) {
         let moved = false;
-        for (const sib of siblings) {
-          const dx = pos.x - sib.resolvedPosition.x;
-          const dz = pos.z - sib.resolvedPosition.z;
+        for (const sib of obstacles) {
+          const dx = pos.x - sib.x;
+          const dz = pos.z - sib.z;
           const d = Math.hypot(dx, dz);
           if (d < MIN_PORTAL_DIST) {
             const nx = d > 1e-4 ? dx / d : 1;
             const nz = d > 1e-4 ? dz / d : 0;
-            pos.x = sib.resolvedPosition.x + nx * MIN_PORTAL_DIST;
-            pos.z = sib.resolvedPosition.z + nz * MIN_PORTAL_DIST;
+            pos.x = sib.x + nx * MIN_PORTAL_DIST;
+            pos.z = sib.z + nz * MIN_PORTAL_DIST;
             moved = true;
           }
         }
@@ -605,11 +612,39 @@ export class RoomManager {
     return cur;
   }
 
+  /** Update whether other players may plant child portals inside `worldId`. */
+  setWorldPortalPolicy(worldId: string, allowPortals: boolean): boolean {
+    if (worldId === ORIGIN_WORLD_ID) return false;
+    const worlds = this.universeDoc.getMap("worlds");
+    const worldMap = worlds.get(worldId) as Y.Map<unknown> | undefined;
+    if (!worldMap) return false;
+    this.universeDoc.transact(() => {
+      worldMap.set("allowPortals", allowPortals);
+    }, "server");
+    const room = this.worldRooms.get(worldId);
+    if (room) {
+      room.doc.transact(() => {
+        room.doc.getMap("meta").set("allowPortals", allowPortals);
+      }, "server");
+    } else {
+      const saved = loadDoc(worldId);
+      if (saved) {
+        const doc = new Y.Doc();
+        Y.applyUpdate(doc, saved);
+        doc.getMap("meta").set("allowPortals", allowPortals);
+        saveDoc(worldId, Y.encodeStateAsUpdate(doc), "world", this.getWorldEntry(worldId)?.sector);
+        doc.destroy();
+      }
+    }
+    return true;
+  }
+
   private getWorldEntry(worldId: string): WorldEntry | null {
     const worlds = this.universeDoc.getMap("worlds");
     const worldMap = worlds.get(worldId) as Y.Map<unknown> | undefined;
     if (!worldMap) return null;
     const parentWorldId = worldMap.get("parentWorldId") as string | undefined;
+    const allowPortals = worldMap.get("allowPortals") as boolean | undefined;
     // Reconstruct from flat map (same logic as universe.ts)
     return {
       id: worldMap.get("id") as string,
@@ -634,6 +669,7 @@ export class RoomManager {
       lastActive: worldMap.get("lastActive") as number,
       createdAt: worldMap.get("createdAt") as number,
       ...(parentWorldId ? { parentWorldId } : {}),
+      ...(allowPortals !== undefined ? { allowPortals } : {}),
     };
   }
 

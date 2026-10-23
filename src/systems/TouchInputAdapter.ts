@@ -526,6 +526,7 @@ export class TouchInputAdapter {
     } else {
       this._showPlace(sceneHints.hasHeldItem && !sceneHints.isCarryingObject)
       this._syncGrabButton(sceneHints.isCarryingObject)
+      this._syncWorldInteractButton(sceneHints.canEnter)
     }
 
     if (now - this._lastUiPoll > UI_POLL_MS) {
@@ -564,6 +565,17 @@ export class TouchInputAdapter {
     this._grabBtn.textContent = carrying ? 'DROP' : 'GRAB'
     this._grabBtn.classList.toggle('touch-btn--carrying', carrying)
     this._grabBtn.setAttribute('aria-label', carrying ? 'Set down the carried object' : 'Grab and carry the object in front of you')
+  }
+
+  /** World: KICK switches to ENTER when standing next to a portal. */
+  private _syncWorldInteractButton(canEnterPortal: boolean): void {
+    if (!this._enterBtn || canEnterPortal === this._enterShown) return
+    this._enterShown = canEnterPortal
+    this._enterBtn.textContent = canEnterPortal ? 'ENTER' : 'KICK'
+    this._enterBtn.setAttribute(
+      'aria-label',
+      canEnterPortal ? 'Enter the nearby portal' : 'Kick the object in front of you',
+    )
   }
 
   /** Inside worlds: walking layout (JUMP big under the thumb, KICK above it); hide behind modals. */
