@@ -42,3 +42,18 @@ test("solidifies ghosts inside, leaves the Deep Dark alone, never reverses", () 
 
   assert.deepEqual(solidifyWithinFrontier(doc, 500), ["far"]);
 });
+
+test("nested child worlds solidify when their outer-space root world enters the Frontier", () => {
+  const doc = new Y.Doc();
+  addWorld(doc, "root-far", 300, false);
+  addWorld(doc, "child", 5, false); // interior coordinate x=5 inside root-far (at 300 in space)
+  (doc.getMap("worlds").get("child") as Y.Map<unknown>).set("parentWorldId", "root-far");
+
+  // Radius 100 does NOT reach root-far at 300, so child at interior x=5 must NOT falsely solidify
+  assert.deepEqual(solidifyWithinFrontier(doc, 100), []);
+  assert.equal(flag(doc, "child"), false);
+
+  // Radius 350 reaches root-far, so both root-far and child solidify together
+  assert.deepEqual(solidifyWithinFrontier(doc, 350).sort(), ["child", "root-far"]);
+  assert.equal(flag(doc, "child"), true);
+});

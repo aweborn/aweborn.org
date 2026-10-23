@@ -92,8 +92,8 @@ interface UniverseState {
   /** Enter a world */
   enterWorld: (worldId: string) => void;
 
-  /** Exit the current world */
-  exitWorld: () => void;
+  /** Exit the current world (steps back up to parentWorldId if nested, or all the way to space if `toSpace` is true) */
+  exitWorld: (toSpace?: boolean) => void;
 
   /** Set connection status */
   setConnected: (connected: boolean) => void;
@@ -106,6 +106,7 @@ interface UniverseState {
  * Parse a Y.Map world entry into a WorldEntry object.
  */
 function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
+  const parentWorldId = m.get("parentWorldId") as string | undefined;
   return {
     id: (m.get("id") as string) ?? "",
     name: (m.get("name") as string) ?? "Unknown",
@@ -128,6 +129,7 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     playerCount: (m.get("playerCount") as number) ?? 0,
     lastActive: (m.get("lastActive") as number) ?? 0,
     createdAt: (m.get("createdAt") as number) ?? 0,
+    ...(parentWorldId ? { parentWorldId } : {}),
   };
 }
 
@@ -306,7 +308,13 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
       useWorldStore.getState().loadFromDoc(doc);
     },
 
-    exitWorld: () => {
+    exitWorld: (toSpace = false) => {
+      const curId = get().activeWorldId;
+      const parentId = !toSpace && curId ? get().worlds.get(curId)?.parentWorldId : undefined;
+      if (parentId && get().worlds.has(parentId)) {
+        get().enterWorld(parentId);
+        return;
+      }
       const doc = get().activeWorldDoc;
       doc?.destroy();
       useWorldStore.getState().reset();

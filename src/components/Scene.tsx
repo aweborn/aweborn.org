@@ -12,10 +12,9 @@ import { WarpEffect } from './WarpEffect'
 import { GravityFieldLines } from './GravityFieldLines'
 import { SlingshotArc } from './SlingshotArc'
 import { PortalBeacon } from './PortalBeacon'
-import { WorldTransition } from './WorldTransition'
 import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
-import { useWorldStore, kickObject, settleObject, moveObject } from '../stores/worldStore'
+import { useWorldStore, kickObject, settleObject, moveObject, duplicateObject, recolorObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
@@ -45,6 +44,7 @@ import {
   CARRY_TOGGLE_EVENT,
   PLACE_HELD_EVENT,
   HELD_ADJUST_EVENT,
+  HELD_RECOLOR_EVENT,
   type HeldAdjustKind,
 } from '../stores/heldItemStore'
 
@@ -140,8 +140,7 @@ function FlightSystem() {
       sceneHints.hasHeldItem = false
     }
     if (isInWorld) {
-      sceneHints.canEnter = false
-      return // Flight is disabled inside worlds
+      return // Flight is disabled inside worlds (InteriorSystem updates sceneHints.canEnter)
     }
     setPickCamera(state.camera) // touch: tap a planet to lock on
 
@@ -459,6 +458,19 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       const doc = useUniverseStore.getState().activeWorldDoc
       if (held.current && doc) {
         const h = held.current
+        if (kind === 'delete') {
+          useWorldStore.getState().removeObject(doc, h.id)
+          held.current = null
+          setHeldId(null)
+          useHeldItemStore.getState().setCarryingId(null)
+          return
+        }
+        if (kind === 'duplicate') {
+          const sc = scaleOf(h)
+          const p = carryPosition(interiorController.state, h, { scaleY: sc.y })
+          duplicateObject(doc, h.id, p, h.rotY, sc, playerId ?? '')
+          return
+        }
         if (kind === 'rotLeft') h.rotY -= Math.PI / 8
         else if (kind === 'rotRight') h.rotY += Math.PI / 8
         else if (kind === 'grow' || kind === 'shrink') {
@@ -477,8 +489,26 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       else if (kind === 'grow') store.scaleItem(1.15)
       else if (kind === 'shrink') store.scaleItem(1 / 1.15)
     }
+    const onRecolor = (ev: Event) => {
+      const color = (ev as CustomEvent<string>).detail
+      const doc = useUniverseStore.getState().activeWorldDoc
+      if (held.current && doc) {
+        recolorObject(doc, held.current.id, color)
+        return
+      }
+      useHeldItemStore.getState().colorItem(color)
+    }
     const down = (e: KeyboardEvent) => {
       if (typing(e)) return
+      if (held.current && (e.code === 'Backspace' || e.code === 'Delete') && !e.repeat) {
+        e.preventDefault()
+        const doc = useUniverseStore.getState().activeWorldDoc
+        if (doc) useWorldStore.getState().removeObject(doc, held.current.id)
+        held.current = null
+        setHeldId(null)
+        useHeldItemStore.getState().setCarryingId(null)
+        return
+      }
       if (matchesBinding(e, 'heldRotateLeft')) turnKeys.current.z = true
       if (matchesBinding(e, 'heldRotateRight')) turnKeys.current.x = true
       if (matchesBinding(e, 'heldGrow')) turnKeys.current.r = true
@@ -502,12 +532,14 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     window.addEventListener(CARRY_TOGGLE_EVENT, toggleCarry)
     window.addEventListener(PLACE_HELD_EVENT, doPlaceHeld)
     window.addEventListener(HELD_ADJUST_EVENT, onAdjust)
+    window.addEventListener(HELD_RECOLOR_EVENT, onRecolor)
     return () => {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
       window.removeEventListener(CARRY_TOGGLE_EVENT, toggleCarry)
       window.removeEventListener(PLACE_HELD_EVENT, doPlaceHeld)
       window.removeEventListener(HELD_ADJUST_EVENT, onAdjust)
+      window.removeEventListener(HELD_RECOLOR_EVENT, onRecolor)
       useHeldItemStore.getState().setCarryingId(null)
     }
   }, [playerId])
@@ -619,8 +651,27 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         }
       }
     }
+    // Check if player is standing next to a nested child world portal inside this world
+    let nearestChildWorldId: string | null = null
+    let nearestChildDist = 3.2
+    if (activeWorldId) {
+      for (const w of useUniverseStore.getState().worlds.values()) {
+        if (w.parentWorldId !== activeWorldId) continue
+        const d = Math.hypot(w.resolvedPosition.x - x, w.resolvedPosition.z - z)
+        if (d < nearestChildDist) {
+          nearestChildDist = d
+          nearestChildWorldId = w.id
+        }
+      }
+    }
+    sceneHints.canEnter = nearestChildWorldId !== null
+
     if (doc) {
       if (inputManager.getEvents().justPressed.has('interact')) {
+        if (nearestChildWorldId) {
+          useUniverseStore.getState().enterWorld(nearestChildWorldId)
+          return
+        }
         const target = kickTarget(s, Array.from(objects.values()).filter((o) => !o.kick))
         if (target) kickObject(doc, target.id, kickVelocity(s.fx, s.fz))
       }
@@ -816,9 +867,6 @@ export function Scene({ onPortalActivate, onProgress }: SceneProps) {
           <SceneContent onPortalActivate={onPortalActivate} />
         </Suspense>
       </Canvas>
-
-      {/* World transition overlay (CSS-based, outside Canvas) */}
-      <WorldTransition />
     </div>
   )
 }

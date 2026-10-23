@@ -17,12 +17,12 @@
  */
 import express from "express";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, createReadStream, existsSync, appendFileSync } from "node:fs";
+import { mkdirSync, createReadStream, existsSync, appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { providerFor, type ProviderJob } from "./providers.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
-import { initLibrary, addToLibrary, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
+import { initLibrary, addToLibrary, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -196,8 +196,36 @@ app.get("/library", (req, res) => {
   res.json({ assets: listLibrary(db, q, limit), cdn: CDN_URL || null });
 });
 
-// Trash (sync-service checks who may call these). Removal never deletes; only purge does.
+// Trash + shared thumbnails (sync-service checks who may call these). Removal never deletes; only purge does.
 const SHA = /^[a-f0-9]{64}$/;
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+app.post("/library/:sha/thumb", async (req, res) => {
+  const sha = req.params.sha;
+  const pngBase64 = req.body?.pngBase64;
+  if (!SHA.test(sha) || typeof pngBase64 !== "string" || pngBase64.length === 0 || pngBase64.length > 220_000) {
+    return res.status(400).json({ error: "bad_request" });
+  }
+  const row = db.prepare("SELECT file, thumb FROM library WHERE sha = ? AND removed_at IS NULL").get(sha) as { file: string; thumb: number } | undefined;
+  if (!row) return res.status(404).json({ error: "not_found" });
+  if (row.thumb) return res.json({ ok: true, already: true });
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(pngBase64, "base64");
+  } catch {
+    return res.status(400).json({ error: "bad_png" });
+  }
+  if (buf.length < 64 || buf.length > 160_000 || !buf.subarray(0, 8).equals(PNG_MAGIC)) {
+    return res.status(400).json({ error: "bad_png" });
+  }
+  try {
+    writeFileSync(join(ASSET_DIR, `${sha}.png`), buf);
+    await uploadThumb(db, ASSET_DIR, row.file);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[library] thumb save failed:", (err as Error).message);
+    res.status(500).json({ error: "save_failed" });
+  }
+});
 app.post("/library/:sha/remove", (req, res) => {
   const { by, onlyCreator } = req.body ?? {};
   if (!SHA.test(req.params.sha) || typeof by !== "string" || (onlyCreator !== undefined && typeof onlyCreator !== "string")) {

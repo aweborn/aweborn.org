@@ -7,12 +7,14 @@ import { useUniverseStore } from '../stores/universeStore'
 import type { PlacedObject } from '@aweborn/shared/crdt-schema'
 import { kickedPosition } from '@aweborn/shared/sim/interior'
 import { Suspense } from 'react'
-import { useGLTF } from '@react-three/drei'
+import { Html, useGLTF } from '@react-three/drei'
 import { AUTH_URL } from '../lib/player'
 import { prepareModelAsset, useModelShapes } from '../stores/modelShapes'
+import { placeOnTerrain } from '../stores/worldVoxels'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import { useQualityTier } from '../stores/qualityStore'
 import type { BlueprintSky } from '@aweborn/shared/blueprint'
+import type { WorldEntry } from '@aweborn/shared/crdt-schema'
 import { useHeldItemStore, computePlacementTarget } from '../stores/heldItemStore'
 import { interiorController } from '../systems/InteriorController'
 
@@ -317,6 +319,102 @@ function HeldItemPreview() {
   )
 }
 
+// ── Child World Portals (Worlds within Worlds — Recursive CRDTs) ─────
+
+function ChildWorldPortal({ world }: { world: WorldEntry }) {
+  const groupRef = useRef<THREE.Group>(null!)
+  const ringRef = useRef<THREE.Mesh>(null!)
+  const voxelTerrain = useWorldStore((s) => s.voxelTerrain)
+  const color = useMemo(() => new THREE.Color(world.color), [world.color])
+
+  const basePos = useMemo(() => {
+    const x = world.resolvedPosition.x
+    const z = world.resolvedPosition.z
+    let y = Math.max(0, world.resolvedPosition.y)
+    if (voxelTerrain) {
+      y = placeOnTerrain(voxelTerrain, [x + voxelTerrain.size[0] / 2, 0, z + voxelTerrain.size[2] / 2]).y
+    }
+    return { x, y: y + 1.35, z }
+  }, [world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z, voxelTerrain])
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime
+    if (groupRef.current) {
+      groupRef.current.position.y = basePos.y + Math.sin(t * 1.6 + basePos.x) * 0.14
+    }
+    if (ringRef.current) {
+      ringRef.current.rotation.z = t * 0.65
+    }
+  })
+
+  return (
+    <group ref={groupRef} position={[basePos.x, basePos.y, basePos.z]}>
+      {/* Inner portal core */}
+      <mesh>
+        <sphereGeometry args={[0.62, 24, 24]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={world.solidified ? 1.1 : 0.55}
+          roughness={0.2}
+          metalness={0.1}
+          wireframe={!world.solidified}
+        />
+      </mesh>
+      {/* Translucent outer aura */}
+      <mesh>
+        <sphereGeometry args={[1.05, 16, 16]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.2}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* Spinning orbital ring */}
+      <mesh ref={ringRef} rotation={[Math.PI * 0.38, 0, 0]}>
+        <torusGeometry args={[1.25, 0.03, 8, 48]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.7}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <Html
+        position={[0, 1.3, 0]}
+        center
+        distanceFactor={9}
+        zIndexRange={[10, 0]}
+        style={{ pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap' }}
+      >
+        <div className="child-world-portal-label">
+          <div className="child-world-portal-label__name">🌀 {world.name}</div>
+          <div className="child-world-portal-label__hint">Step close &amp; press N / Enter</div>
+        </div>
+      </Html>
+    </group>
+  )
+}
+
+function ChildWorldPortals({ parentWorldId }: { parentWorldId: string }) {
+  const worlds = useUniverseStore((s) => s.worlds)
+  const children = useMemo(
+    () => Array.from(worlds.values()).filter((w) => w.parentWorldId === parentWorldId),
+    [worlds, parentWorldId],
+  )
+  if (children.length === 0) return null
+  return (
+    <>
+      {children.map((w) => (
+        <ChildWorldPortal key={w.id} world={w} />
+      ))}
+    </>
+  )
+}
+
 // ── Ground Grid ──────────────────────────────────────────────────────
 
 function GroundGrid({ worldColor }: { worldColor: string }) {
@@ -436,6 +534,9 @@ export function WorldInterior() {
       {objectList.map((obj) => (
         <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} fogFar={atmo?.fogFar ?? 200} />
       ))}
+
+      {/* Nested child worlds planted inside this world */}
+      <ChildWorldPortals parentWorldId={activeWorldId} />
 
       {/* Live ghost preview of the item held in hand */}
       <HeldItemPreview />

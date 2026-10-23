@@ -242,7 +242,10 @@ export class RoomManager {
     if (accountId) {
       try {
         const characterId = this.playerIds.get(ws) ?? null;
-        if (recordDiscovery(accountId, worldId, characterId).firstVisit) {
+        const entry = this.getWorldEntry(worldId);
+        const edition = entry?.solidified === false ? "dreamt" : "solid";
+        const now = Date.now();
+        if (recordDiscovery(accountId, worldId, characterId, "visited", "flight", now, edition).firstVisit) {
           // Shared awe counts other *players*: guests count, your own other tabs don't.
           const others = new Set<string>();
           for (const c of room.clients) {
@@ -255,7 +258,7 @@ export class RoomManager {
             worldId,
             characterId,
             companions: others.size,
-            at: Date.now(),
+            at: now,
           });
         }
       } catch (err) {
@@ -301,12 +304,14 @@ export class RoomManager {
   /**
    * Create a new world at the given position.
    * Runs the spatial resolver and adds to the Universe CRDT.
+   * If `parentWorldId` is set, this world is planted as a portal inside that world.
    */
   createWorld(
     name: string,
     creator: string,
     intendedPosition: Vec3,
-    color: string
+    color: string,
+    parentWorldId?: string,
   ): WorldEntry {
     const id = generateWorldId();
     const now = Date.now();
@@ -326,19 +331,55 @@ export class RoomManager {
       playerCount: 0,
       lastActive: now,
       createdAt: now,
+      ...(parentWorldId ? { parentWorldId } : {}),
     };
 
-    // Run spatial resolver
     const existingWorlds = getAllWorldEntries(this.universeDoc);
-    const resolvedPos = resolveNewWorld(existingWorlds, entry);
-    entry.resolvedPosition = resolvedPos;
-    entry.resolvedAt = now;
-    entry.sector = sectorKey(positionToSector(resolvedPos));
+    let frontierCheckPos: Vec3;
+
+    if (parentWorldId) {
+      // Nested world inside a parent world: nudge away from sibling portals in the same parent world
+      const siblings = existingWorlds.filter((w) => w.parentWorldId === parentWorldId);
+      const pos = { ...intendedPosition };
+      const MIN_PORTAL_DIST = 4;
+      for (let pass = 0; pass < 8; pass++) {
+        let moved = false;
+        for (const sib of siblings) {
+          const dx = pos.x - sib.resolvedPosition.x;
+          const dz = pos.z - sib.resolvedPosition.z;
+          const d = Math.hypot(dx, dz);
+          if (d < MIN_PORTAL_DIST) {
+            const nx = d > 1e-4 ? dx / d : 1;
+            const nz = d > 1e-4 ? dz / d : 0;
+            pos.x = sib.resolvedPosition.x + nx * MIN_PORTAL_DIST;
+            pos.z = sib.resolvedPosition.z + nz * MIN_PORTAL_DIST;
+            moved = true;
+          }
+        }
+        if (!moved) break;
+      }
+      pos.x = Math.max(-155, Math.min(155, pos.x));
+      pos.z = Math.max(-155, Math.min(155, pos.z));
+      entry.resolvedPosition = pos;
+      entry.resolvedAt = now;
+
+      const root = this.rootWorld(parentWorldId);
+      entry.sector = root?.sector ?? "0:0:0";
+      frontierCheckPos = root?.resolvedPosition ?? pos;
+    } else {
+      // Outer-space world: run spatial resolver against outer-space worlds only
+      const spaceWorlds = existingWorlds.filter((w) => !w.parentWorldId);
+      const resolvedPos = resolveNewWorld(spaceWorlds, entry);
+      entry.resolvedPosition = resolvedPos;
+      entry.resolvedAt = now;
+      entry.sector = sectorKey(positionToSector(resolvedPos));
+      frontierCheckPos = resolvedPos;
+    }
 
     // Inside the Living Frontier, worlds are solid (ROADMAP). Outside they stay
     // Ghosts on the universe map until the Frontier reaches them. Same rule
     // for offline creations once synced.
-    if (insideFrontier(resolvedPos, this.mana.state().frontierRadius)) {
+    if (insideFrontier(frontierCheckPos, this.mana.state().frontierRadius)) {
       entry.solidified = true;
       entry.solidifiedAt = now;
     }
@@ -352,7 +393,9 @@ export class RoomManager {
     saveDoc(id, state, "world", entry.sector);
     worldDoc.destroy();
 
-    console.log(`[rooms] created world "${name}" (${id}) by ${creator} at resolved position (${resolvedPos.x.toFixed(1)}, ${resolvedPos.y.toFixed(1)}, ${resolvedPos.z.toFixed(1)})`);
+    console.log(
+      `[rooms] created world "${name}" (${id}) by ${creator}${parentWorldId ? ` inside ${parentWorldId}` : ""} at (${entry.resolvedPosition.x.toFixed(1)}, ${entry.resolvedPosition.y.toFixed(1)}, ${entry.resolvedPosition.z.toFixed(1)})`
+    );
     return entry;
   }
 
@@ -548,10 +591,35 @@ export class RoomManager {
     return getAllWorldEntries(this.universeDoc);
   }
 
+  /** Nesting depth of a world (0 = outer space, 1 = inside an outer-space world, etc.). */
+  worldDepth(worldId: string): number {
+    let depth = 0;
+    let cur = this.getWorldEntry(worldId);
+    while (cur?.parentWorldId && depth < 16) {
+      depth++;
+      cur = this.getWorldEntry(cur.parentWorldId);
+    }
+    return depth;
+  }
+
+  /** Follow `parentWorldId` up to the outer-space ancestor world. */
+  rootWorld(worldId: string): WorldEntry | null {
+    let cur = this.getWorldEntry(worldId);
+    let hops = 0;
+    while (cur?.parentWorldId && hops < 16) {
+      const parent = this.getWorldEntry(cur.parentWorldId);
+      if (!parent) break;
+      cur = parent;
+      hops++;
+    }
+    return cur;
+  }
+
   private getWorldEntry(worldId: string): WorldEntry | null {
     const worlds = this.universeDoc.getMap("worlds");
     const worldMap = worlds.get(worldId) as Y.Map<unknown> | undefined;
     if (!worldMap) return null;
+    const parentWorldId = worldMap.get("parentWorldId") as string | undefined;
     // Reconstruct from flat map (same logic as universe.ts)
     return {
       id: worldMap.get("id") as string,
@@ -575,6 +643,7 @@ export class RoomManager {
       playerCount: worldMap.get("playerCount") as number,
       lastActive: worldMap.get("lastActive") as number,
       createdAt: worldMap.get("createdAt") as number,
+      ...(parentWorldId ? { parentWorldId } : {}),
     };
   }
 

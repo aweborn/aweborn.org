@@ -32,6 +32,8 @@ interface HeldItemState {
   rotateItem: (deltaRad: number) => void
   /** Scale the equipped shape/model in hand by factor. */
   scaleItem: (factor: number) => void
+  /** Recolor the equipped shape in hand. */
+  colorItem: (color: string) => void
   /** Update the carried world object ID. */
   setCarryingId: (id: string | null) => void
 }
@@ -51,6 +53,11 @@ export const useHeldItemStore = create<HeldItemState>((set) => ({
       if (!s.item || s.item.kind === 'block') return s
       const next = Math.min(30, Math.max(0.5, +(s.item.size * factor).toFixed(2)))
       return { item: { ...s.item, size: next } }
+    }),
+  colorItem: (color) =>
+    set((s) => {
+      if (!s.item || s.item.kind !== 'shape') return s
+      return { item: { ...s.item, color } }
     }),
   setCarryingId: (carryingId) => set({ carryingId }),
 }))
@@ -133,8 +140,9 @@ export function placeEquippedItem(playerId: string): string | null {
 export const CARRY_TOGGLE_EVENT = 'aweborn:carry-toggle'
 export const PLACE_HELD_EVENT = 'aweborn:place-held'
 export const HELD_ADJUST_EVENT = 'aweborn:held-adjust'
+export const HELD_RECOLOR_EVENT = 'aweborn:held-recolor'
 
-export type HeldAdjustKind = 'rotLeft' | 'rotRight' | 'grow' | 'shrink'
+export type HeldAdjustKind = 'rotLeft' | 'rotRight' | 'grow' | 'shrink' | 'duplicate' | 'delete'
 
 export function triggerCarryToggle(): void {
   window.dispatchEvent(new CustomEvent(CARRY_TOGGLE_EVENT))
@@ -146,4 +154,8 @@ export function triggerPlaceHeld(): void {
 
 export function triggerHeldAdjust(kind: HeldAdjustKind): void {
   window.dispatchEvent(new CustomEvent<HeldAdjustKind>(HELD_ADJUST_EVENT, { detail: kind }))
+}
+
+export function triggerHeldRecolor(color: string): void {
+  window.dispatchEvent(new CustomEvent<string>(HELD_RECOLOR_EVENT, { detail: color }))
 }

@@ -460,6 +460,7 @@ export function UniverseWorlds() {
     const mediumDist = QUALITY_TIERS[activeTierIndex(useQualityStore.getState())].mediumDist
 
     for (const entry of worlds.values()) {
+      if (entry.parentWorldId) continue // Nested worlds live inside their parent world, not in outer space
       const sp = new THREE.Vector3(entry.resolvedPosition.x, entry.resolvedPosition.y, entry.resolvedPosition.z)
       const dist = sp.distanceTo(camera.position)
       // Solidification wave: still a Ghost until the golden front reaches it.

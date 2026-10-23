@@ -4,6 +4,7 @@ import { ORIGIN_WORLD_ID } from '@aweborn/shared/crdt-schema'
 import {
   creatorLabel,
   formatCoords,
+  isDreamtEdition,
   isFaceUp,
   refresh,
   useWorldIndexStore,
@@ -288,6 +289,9 @@ function WorldDetail({
   }
 
   const found = entry.method === 'link' ? 'Arrived by link' : 'Spotted in flight'
+  const dreamt = isDreamtEdition(entry)
+  const parentId = target?.parentWorldId ?? w?.parentWorldId
+  const parentWorld = parentId ? useUniverseStore.getState().worlds.get(parentId) : undefined
 
   return (
     <div className="wi-detail">
@@ -299,9 +303,16 @@ function WorldDetail({
           <WorldCard entry={entry} myCharacters={characters} tilt live />
         </div>
         <div className="wi-detail-info">
-          <span className={`wi-state wi-state--${isFaceUp(entry) ? 'visited' : 'sighted'}`}>
-            {isOrigin ? 'The Aweborn Portal' : entry.state === 'visited' ? 'Visited' : 'Sighted'}
-          </span>
+          <div className="wi-badges">
+            <span className={`wi-state wi-state--${isFaceUp(entry) ? 'visited' : 'sighted'}`}>
+              {isOrigin ? 'The Aweborn Portal' : entry.state === 'visited' ? 'Visited' : 'Sighted'}
+            </span>
+            {!isOrigin && (
+              <span className={`wi-edition wi-edition--${dreamt ? 'dreamt' : 'solid'}`}>
+                {dreamt ? '◇ Dreamt Edition' : '✦ Solid Edition'}
+              </span>
+            )}
+          </div>
           <h3 className="wi-detail-name" style={{ '--wc-color': w?.color ?? '#8b8fa8' } as CSSProperties}>
             {w?.name ?? 'A faded world'}
           </h3>
@@ -316,6 +327,16 @@ function WorldDetail({
             </div>
             {!isOrigin && (
               <div>
+                <dt>Edition</dt>
+                <dd>
+                  {dreamt
+                    ? 'Dreamt — discovered outside the Living Frontier'
+                    : 'Solid — discovered inside the Living Frontier'}
+                </dd>
+              </div>
+            )}
+            {!isOrigin && (
+              <div>
                 <dt>Visits</dt>
                 <dd>
                   {entry.visitCount === 0
@@ -328,8 +349,10 @@ function WorldDetail({
               <div>
                 <dt>Where</dt>
                 <dd className="wi-mono">
-                  {formatCoords(w.position)} · sector {w.sector}
-                  {distance !== null && !here && <span className="wi-dist"> · {Math.round(distance).toLocaleString()} u away</span>}
+                  {parentId
+                    ? `Portal inside ${parentWorld?.name ?? 'another world'} ${formatCoords(w.position)}`
+                    : `${formatCoords(w.position)} · sector ${w.sector}`}
+                  {!parentId && distance !== null && !here && <span className="wi-dist"> · {Math.round(distance).toLocaleString()} u away</span>}
                 </dd>
               </div>
             )}

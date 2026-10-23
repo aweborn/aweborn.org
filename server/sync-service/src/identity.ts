@@ -15,7 +15,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type { DiscoveryMethod, WorldIndexEntry, WorldIndexState } from "../../../shared/crdt-schema.js";
+import type { CardEdition, DiscoveryMethod, WorldIndexEntry, WorldIndexState } from "../../../shared/crdt-schema.js";
 
 let db: Database.Database;
 
@@ -57,6 +57,7 @@ export function initIdentity(database: Database.Database): void {
   };
   add("state", "TEXT NOT NULL DEFAULT 'visited'");
   add("method", "TEXT NOT NULL DEFAULT 'flight'");
+  add("edition", "TEXT NOT NULL DEFAULT 'solid'");
   add("visitCount", "INTEGER NOT NULL DEFAULT 1");
   add("visitedAt", "INTEGER");
   add("lastVisitedAt", "INTEGER");
@@ -132,8 +133,8 @@ export function absorbAnonymous(anonUserId: string, anonPlayerId: string, intoUs
     ensureCharacter(anonPlayerId, anonUserId);
     db.prepare(`UPDATE character SET accountId = ? WHERE accountId = ?`).run(intoUserId, anonUserId);
     db.prepare(
-      `INSERT INTO world_index (accountId, worldId, characterId, discoveredAt, state, method, visitCount, visitedAt, lastVisitedAt)
-         SELECT ?, worldId, characterId, discoveredAt, state, method, visitCount, visitedAt, lastVisitedAt
+      `INSERT INTO world_index (accountId, worldId, characterId, discoveredAt, state, method, edition, visitCount, visitedAt, lastVisitedAt)
+         SELECT ?, worldId, characterId, discoveredAt, state, method, edition, visitCount, visitedAt, lastVisitedAt
            FROM world_index WHERE accountId = ?
        ON CONFLICT(accountId, worldId) DO UPDATE SET
          characterId = CASE WHEN excluded.discoveredAt < world_index.discoveredAt
@@ -141,6 +142,9 @@ export function absorbAnonymous(anonUserId: string, anonPlayerId: string, intoUs
          method = CASE
                        WHEN excluded.discoveredAt < world_index.discoveredAt THEN excluded.method
                        ELSE world_index.method END,
+         edition = CASE
+                       WHEN excluded.discoveredAt < world_index.discoveredAt THEN excluded.edition
+                       ELSE world_index.edition END,
          discoveredAt = MIN(world_index.discoveredAt, excluded.discoveredAt),
          state = CASE WHEN 'visited' IN (excluded.state, world_index.state) THEN 'visited' ELSE 'sighted' END,
          visitCount = world_index.visitCount + excluded.visitCount,
@@ -218,6 +222,7 @@ export function recordDiscovery(
   state: WorldIndexState = "visited",
   method: DiscoveryMethod = "flight",
   now: number = Date.now(),
+  edition: CardEdition = "solid",
 ): DiscoveryResult {
   return db.transaction((): DiscoveryResult => {
     const row = db
@@ -228,8 +233,8 @@ export function recordDiscovery(
     const visited = state === "visited";
     if (!row) {
       db.prepare(
-        `INSERT INTO world_index (accountId, worldId, characterId, discoveredAt, state, method, visitCount, visitedAt, lastVisitedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO world_index (accountId, worldId, characterId, discoveredAt, state, method, edition, visitCount, visitedAt, lastVisitedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         accountId,
         worldId,
@@ -237,6 +242,7 @@ export function recordDiscovery(
         now,
         state,
         method,
+        edition,
         visited ? 1 : 0,
         visited ? now : null,
         visited ? now : null,
@@ -245,8 +251,8 @@ export function recordDiscovery(
     }
     if (now < row.discoveredAt) {
       db.prepare(
-        `UPDATE world_index SET discoveredAt = ?, characterId = ?, method = ? WHERE accountId = ? AND worldId = ?`,
-      ).run(now, characterId, method, accountId, worldId);
+        `UPDATE world_index SET discoveredAt = ?, characterId = ?, method = ?, edition = ? WHERE accountId = ? AND worldId = ?`,
+      ).run(now, characterId, method, edition, accountId, worldId);
     }
     if (!visited) return { isNew: false, firstVisit: false };
     const firstVisit = row.state === "sighted";
@@ -266,7 +272,7 @@ export function recordDiscovery(
 export function worldIndex(accountId: string): WorldIndexEntry[] {
   return db
     .prepare(
-      `SELECT worldId, state, method, characterId, discoveredAt, visitedAt, visitCount, lastVisitedAt
+      `SELECT worldId, state, method, edition, characterId, discoveredAt, visitedAt, visitCount, lastVisitedAt
          FROM world_index WHERE accountId = ? ORDER BY discoveredAt`,
     )
     .all(accountId) as WorldIndexEntry[];

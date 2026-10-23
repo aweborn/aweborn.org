@@ -1,33 +1,43 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useUniverseStore } from '../stores/universeStore'
+import { useWorldStore } from '../stores/worldStore'
+import { placeOnTerrain } from '../stores/worldVoxels'
+import { interiorController } from '../systems/InteriorController'
 import { matchesBinding } from '../stores/keybindingStore'
 import { AUTH_URL } from '../lib/player'
 import { markMeaningfulMoment } from '../lib/onramp'
 import { ManaSeal, useCanChannel } from './ManaSeal'
+import { MakeTabs } from './MakeTabs'
 import { useSheet } from '../stores/sheetStore'
 
 /**
- * Create World (Alex, 2026-10-21): "plant where you stand". Out in space, tap
- * 🌱 Plant a world (or press Y), name it, pick its colour, and it appears just
- * ahead of you, forever. It was the last feature only the dev panel had.
- *
- * - Signed-in players only; guests get the seal (the server enforces it too).
- * - Free, a few per day (server: world-create.ts). The sheet says how many are left.
- * - Afterwards: it's in your World Index (the server records it), with its
- *   share link (/w/<id>) and an Enter button.
- *
- * Portrait phone first: a bottom sheet (shares the mana seal's sheet styles);
- * desktop gets the centred card.
+ * Create World (Alex, 2026-10-21; recursive worlds-within-worlds 2026-10-23):
+ * "plant where you stand". Out in space, tap 🌱 Plant a world (or press Y).
+ * Inside a world, open 🌱 Portal from the Make tabs (or press Y) to plant a
+ * nested child world portal right on the terrain ahead of you!
  */
 
-/** Distance ahead of the player the new world is planted (THREE forward is -Z). */
+/** Distance ahead of the player the new world is planted in space (THREE forward is -Z). */
 const AHEAD = 10
+/** Distance ahead of the player a nested portal is planted inside a world (meters). */
+const INTERIOR_AHEAD = 4
 const NAME_MAX = 40
 
 type Planted = { id: string; name: string; color: string; leftToday: number }
 
-function plantPosition() {
+function plantPosition(inWorld: boolean) {
+  if (inWorld) {
+    const s = interiorController.state
+    const x = Math.max(-150, Math.min(150, s.x + s.fx * INTERIOR_AHEAD))
+    const z = Math.max(-150, Math.min(150, s.z + s.fz * INTERIOR_AHEAD))
+    let y = Math.max(0, s.y)
+    const t = useWorldStore.getState().voxelTerrain
+    if (t) {
+      y = placeOnTerrain(t, [x + t.size[0] / 2, 0, z + t.size[2] / 2]).y
+    }
+    return { x, y, z }
+  }
   const { playerPosition: p, playerRotation: q } = useUniverseStore.getState()
   // v' = q * (0,0,-1) * q⁻¹, expanded for v = (0,0,-1)
   const fx = -2 * (q.x * q.z + q.w * q.y)
@@ -41,14 +51,13 @@ export function PlantWorldPanel() {
   const { canChannel } = useCanChannel()
   const [open, setOpen] = useSheet('plant')
 
-  // Worlds are planted in space; entering one closes the sheet.
+  // Switching worlds closes the sheet.
   useEffect(() => {
-    if (activeWorldId) setOpen(false)
+    setOpen(false)
   }, [activeWorldId, setOpen])
 
-  // Y toggles it in space (not while typing)
+  // Y toggles it in space or inside a world (not while typing)
   useEffect(() => {
-    if (activeWorldId) return
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
@@ -59,30 +68,30 @@ export function PlantWorldPanel() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeWorldId, setOpen])
+  }, [setOpen])
 
   const close = useCallback(() => setOpen(false), [setOpen])
 
-  if (activeWorldId) return null
-
   return (
     <div className="plant-panel">
-      <button
-        id="plant-open"
-        className={`plant-open${canChannel ? '' : ' is-sealed'}`}
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Plant a world here (Y)"
-      >
-        <span aria-hidden="true">🌱</span> Plant a world <kbd>Y</kbd>
-      </button>
+      {!activeWorldId && (
+        <button
+          id="plant-open"
+          className={`plant-open${canChannel ? '' : ' is-sealed'}`}
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Plant a world here (Y)"
+        >
+          <span aria-hidden="true">🌱</span> Plant a world <kbd>Y</kbd>
+        </button>
+      )}
       {open && !canChannel && <ManaSeal kind="world" onClose={close} />}
-      {open && canChannel && <PlantSheet onClose={close} />}
+      {open && canChannel && <PlantSheet parentWorldId={activeWorldId} onClose={close} />}
     </div>
   )
 }
 
-function PlantSheet({ onClose }: { onClose: () => void }) {
+function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; onClose: () => void }) {
   const [name, setName] = useState('')
   const [color, setColor] = useState('#ff7b54')
   const [busy, setBusy] = useState(false)
@@ -90,6 +99,7 @@ function PlantSheet({ onClose }: { onClose: () => void }) {
   const [planted, setPlanted] = useState<Planted | null>(null)
   const [copied, setCopied] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const inWorld = Boolean(parentWorldId)
 
   useEffect(() => {
     // Focus after the sheet's rise so iOS scrolls it above the keyboard.
@@ -118,7 +128,12 @@ function PlantSheet({ onClose }: { onClose: () => void }) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: clean, color, position: plantPosition() }),
+        body: JSON.stringify({
+          name: clean,
+          color,
+          position: plantPosition(inWorld),
+          ...(parentWorldId ? { parentWorldId } : {}),
+        }),
       })
       const j = (await res.json().catch(() => ({}))) as {
         world?: { id: string; name: string; color: string }
@@ -163,6 +178,7 @@ function PlantSheet({ onClose }: { onClose: () => void }) {
   return createPortal(
     <div className="mana-seal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <section className="mana-seal plant-sheet" role="dialog" aria-modal="true" aria-labelledby="plant-title">
+        {inWorld && <MakeTabs current="plant" />}
         <button id="plant-close" className="mana-seal-close" type="button" onClick={onClose} aria-label="Close">
           ×
         </button>
@@ -173,10 +189,12 @@ function PlantSheet({ onClose }: { onClose: () => void }) {
         />
         {planted ? (
           <>
-            <p className="mana-seal-eyebrow">A new world takes root</p>
+            <p className="mana-seal-eyebrow">{inWorld ? 'A portal opens inside this world' : 'A new world takes root'}</p>
             <h2 id="plant-title" className="mana-seal-title">{planted.name}</h2>
             <p className="mana-seal-body">
-              It’s just ahead of you, and in your World Index. Share the link and anyone can fly straight to it.
+              {inWorld
+                ? 'Its portal is glowing just ahead of you, and in your World Index. Anyone can step inside or use the link.'
+                : 'It’s just ahead of you, and in your World Index. Share the link and anyone can fly straight to it.'}
             </p>
             <div className="plant-link">
               <code id="plant-link-url">{link.replace(/^https?:\/\//, '')}</code>
@@ -196,7 +214,7 @@ function PlantSheet({ onClose }: { onClose: () => void }) {
               Enter {planted.name}
             </button>
             <button id="plant-done" type="button" className="mana-seal-secondary" onClick={onClose}>
-              Keep flying
+              {inWorld ? 'Stay in this world' : 'Keep flying'}
             </button>
             <p className="mana-seal-note">
               {planted.leftToday > 0
@@ -206,9 +224,13 @@ function PlantSheet({ onClose }: { onClose: () => void }) {
           </>
         ) : (
           <form onSubmit={submit}>
-            <p className="mana-seal-eyebrow">Plant where you stand</p>
-            <h2 id="plant-title" className="mana-seal-title">Plant a world</h2>
-            <p className="mana-seal-body">It appears just ahead of you and stays in the universe forever.</p>
+            <p className="mana-seal-eyebrow">{inWorld ? 'Worlds within worlds' : 'Plant where you stand'}</p>
+            <h2 id="plant-title" className="mana-seal-title">{inWorld ? 'Plant a world portal' : 'Plant a world'}</h2>
+            <p className="mana-seal-body">
+              {inWorld
+                ? 'Plants a glowing portal just ahead of you that leads into a nested world of its own.'
+                : 'It appears just ahead of you and stays in the universe forever.'}
+            </p>
             <label className="plant-field" htmlFor="plant-name">
               <span>Name</span>
               <input

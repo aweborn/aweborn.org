@@ -366,6 +366,7 @@ class WarpSystem {
     }
 
     for (const world of worlds.values()) {
+      if (world.parentWorldId) continue
       const scenePos = new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
       const distance = scenePos.distanceTo(playerPos)
       if (distance < LOCK_ON_RANGE) {

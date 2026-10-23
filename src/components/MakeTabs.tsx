@@ -4,6 +4,7 @@ const TABS: [SheetName, string][] = [
   ['library', '▦ Library'],
   ['create', '✦ Create'],
   ['plan', '✧ Plan'],
+  ['plant', '🌱 Portal'],
 ]
 
 /**

@@ -215,6 +215,7 @@ export const RadarMinimap = memo(function RadarMinimap() {
 
     // Worlds
     for (const world of worlds.values()) {
+      if (world.parentWorldId) continue
       const scenePos = _scenePos.set(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
       const dist = scenePos.distanceTo(pos)
       const local = toLocalFrame(scenePos, pos, quat)

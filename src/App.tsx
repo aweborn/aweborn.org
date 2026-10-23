@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
 import { HUD } from './components/HUD'
+import { WorldTransition } from './components/WorldTransition'
 import { DonationModal } from './components/DonationModal'
 import { MoreSheet } from './components/MoreSheet'
 import { OPEN_GIVE_EVENT } from './stores/hudPrefsStore'
@@ -122,6 +123,7 @@ export default function App() {
 
       {/* HUD overlay — shows after loading */}
       {isLoaded && <HUD />}
+      {isLoaded && <WorldTransition />}
 
       {/* Teleport link arrival / error notice */}
       {isLoaded && <TeleportToast />}

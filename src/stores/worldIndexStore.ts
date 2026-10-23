@@ -26,6 +26,9 @@ import type {
 } from '@aweborn/shared/crdt-schema'
 import { ORIGIN_WORLD_ENTRY, ORIGIN_WORLD_ID } from '@aweborn/shared/crdt-schema'
 import { useUniverseStore } from './universeStore'
+import { placeOnTerrain } from './worldVoxels'
+import { useWorldStore } from './worldStore'
+import { interiorController } from '../systems/InteriorController'
 import { AUTH_URL, getPlayerSnapshot, playerReady, subscribePlayer, type Player } from '../lib/player'
 import type { WorldLookup } from '../systems/TeleportSystem'
 
@@ -33,6 +36,8 @@ import type { WorldLookup } from '../systems/TeleportSystem'
 
 /** A world counts as sighted within this distance. Also the full-detail LOD (UniverseWorlds). */
 export const SIGHT_DISTANCE = 100
+/** Inside a parent world, a nested child world portal counts as sighted within this distance (meters). */
+export const SIGHT_PORTAL_DISTANCE = 35
 
 const SCAN_MS = 500
 const FLUSH_MS = 5_000
@@ -96,6 +101,16 @@ export function formatCoords(p: { x: number; y: number; z: number }): string {
   return `(${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)})`
 }
 
+/**
+ * Whether this card is a Dreamt edition (found while the world was a Ghost
+ * outside the Living Frontier). Stays Dreamt even after the world solidifies.
+ */
+export function isDreamtEdition(e: WorldIndexEntry): boolean {
+  if (e.worldId === ORIGIN_WORLD_ID) return false
+  if (e.edition) return e.edition === 'dreamt'
+  return (worldEntryFor(e)?.solidified ?? e.world?.solidified ?? true) === false
+}
+
 function metaOf(w: WorldEntry): WorldIndexWorld {
   return {
     name: w.name,
@@ -104,6 +119,7 @@ function metaOf(w: WorldEntry): WorldIndexWorld {
     position: { ...w.resolvedPosition },
     sector: w.sector,
     solidified: w.solidified,
+    ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
   }
 }
 
@@ -128,6 +144,7 @@ export function worldEntryFor(e: WorldIndexEntry): WorldEntry | null {
     playerCount: 0,
     lastActive: 0,
     createdAt: 0,
+    ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
   }
 }
 
@@ -142,6 +159,7 @@ function newEntry(
     worldId,
     state: 'sighted',
     method,
+    edition: world?.solidified === false ? 'dreamt' : 'solid',
     characterId,
     discoveredAt: now,
     visitedAt: null,
@@ -265,6 +283,7 @@ export async function refresh(force = false): Promise<void> {
     const aheadOfServer = l?.state === 'visited' && s.state === 'sighted'
     merged.set(s.worldId, {
       ...s,
+      edition: s.edition ?? l?.edition ?? (s.world?.solidified === false ? 'dreamt' : 'solid'),
       state: aheadOfServer ? 'visited' : s.state,
       visitedAt: s.visitedAt ?? l?.visitedAt ?? null,
       visitCount: Math.max(s.visitCount, l?.visitCount ?? 0),
@@ -328,21 +347,40 @@ async function flush(): Promise<void> {
 function scan(): void {
   if (!owner) return
   const universe = useUniverseStore.getState()
-  if (universe.activeWorldId) return
-  const p = universe.playerPosition
   const entries = get().entries
   const now = Date.now()
   const found: WorldIndexEntry[] = []
-  const check = (w: WorldEntry) => {
-    if (entries.has(w.id)) return
-    const dx = w.resolvedPosition.x - p.x
-    const dy = w.resolvedPosition.y - p.y
-    const dz = w.resolvedPosition.z - p.z
-    if (dx * dx + dy * dy + dz * dz > SIGHT_DISTANCE * SIGHT_DISTANCE) return
-    found.push(newEntry(w.id, metaOf(w), 'flight', player?.playerId ?? null, now))
+
+  if (universe.activeWorldId) {
+    // Inside a world: sight nested child world portals within SIGHT_PORTAL_DISTANCE
+    const ip = interiorController.state
+    const t = useWorldStore.getState().voxelTerrain
+    for (const w of universe.worlds.values()) {
+      if (w.parentWorldId !== universe.activeWorldId || entries.has(w.id)) continue
+      const dx = w.resolvedPosition.x - ip.x
+      const dz = w.resolvedPosition.z - ip.z
+      let py = w.resolvedPosition.y
+      if (t) {
+        py = placeOnTerrain(t, [w.resolvedPosition.x + t.size[0] / 2, 0, w.resolvedPosition.z + t.size[2] / 2]).y + 1.3
+      }
+      const dy = py - ip.y
+      if (dx * dx + dy * dy + dz * dz > SIGHT_PORTAL_DISTANCE * SIGHT_PORTAL_DISTANCE) continue
+      found.push(newEntry(w.id, metaOf(w), 'flight', player?.playerId ?? null, now))
+    }
+  } else {
+    const p = universe.playerPosition
+    const check = (w: WorldEntry) => {
+      if (w.parentWorldId || entries.has(w.id)) return
+      const dx = w.resolvedPosition.x - p.x
+      const dy = w.resolvedPosition.y - p.y
+      const dz = w.resolvedPosition.z - p.z
+      if (dx * dx + dy * dy + dz * dz > SIGHT_DISTANCE * SIGHT_DISTANCE) return
+      found.push(newEntry(w.id, metaOf(w), 'flight', player?.playerId ?? null, now))
+    }
+    check(ORIGIN_WORLD_ENTRY)
+    for (const w of universe.worlds.values()) check(w)
   }
-  check(ORIGIN_WORLD_ENTRY)
-  for (const w of universe.worlds.values()) check(w)
+
   if (found.length === 0) return
   upsert(found)
   for (const e of found) enqueue(e.worldId, now)
@@ -398,6 +436,7 @@ export function recordArrival(world: WorldLookup): void {
       position: { ...world.position },
       sector: world.sector,
       solidified: world.solidified,
+      ...(world.parentWorldId ? { parentWorldId: world.parentWorldId } : {}),
     }
     upsert([newEntry(world.id, meta, 'link', player?.playerId ?? null, now)])
     if (world.isOrigin) playReveal(world.id)

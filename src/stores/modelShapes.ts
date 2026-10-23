@@ -41,7 +41,8 @@ export const useModelShapes = create<{
   shapes: Record<string, Cell[]>
   proxies: Record<string, THREE.BufferGeometry>
   models: Record<string, PreparedModelPart[]>
-}>(() => ({ shapes: {}, proxies: {}, models: {} }))
+  pendingCount: number
+}>(() => ({ shapes: {}, proxies: {}, models: {}, pendingCount: 0 }))
 
 const TEX_GRID = 16
 let sampleCanvas: HTMLCanvasElement | null = null
@@ -487,26 +488,30 @@ function nextFrame(): Promise<void> {
 
 /**
  * Fit a loaded GLTF scene into the unit box `[-0.5, 0.5]^3`, register its 8×8
- * collider + proxy synchronously, and asynchronously decimate its meshes + bake
- * its single-texture Lambert material (one model per frame).
+ * collider + proxy, and asynchronously decimate its meshes + bake its
+ * single-texture Lambert material with frame yields between heavy stages so
+ * world entry never freezes touch or keyboard input.
  */
 export function prepareModelAsset(asset: string, rawScene: THREE.Object3D, maxTris = 1600): void {
   if (useModelShapes.getState().models[asset] || pendingAssets.has(asset)) return
   pendingAssets.add(asset)
-
-  const root = rawScene.clone(true)
-  const box = new THREE.Box3().setFromObject(root)
-  const size = box.getSize(new THREE.Vector3())
-  const centre = box.getCenter(new THREE.Vector3())
-  const s = 1 / Math.max(size.x, size.y, size.z, 1e-6)
-  root.position.sub(centre).multiplyScalar(s)
-  root.scale.setScalar(s)
-  const fitted = new THREE.Group()
-  fitted.add(root)
-  registerModelShape(asset, fitted)
+  useModelShapes.setState((st) => ({ pendingCount: st.pendingCount + 1 }))
 
   prepChain = prepChain
     .then(async () => {
+      await nextFrame()
+
+      const root = rawScene.clone(true)
+      const box = new THREE.Box3().setFromObject(root)
+      const size = box.getSize(new THREE.Vector3())
+      const centre = box.getCenter(new THREE.Vector3())
+      const s = 1 / Math.max(size.x, size.y, size.z, 1e-6)
+      root.position.sub(centre).multiplyScalar(s)
+      root.scale.setScalar(s)
+      const fitted = new THREE.Group()
+      fitted.add(root)
+      registerModelShape(asset, fitted)
+
       await MeshoptSimplifier.ready
       await nextFrame()
 
@@ -589,6 +594,8 @@ export function prepareModelAsset(asset: string, rawScene: THREE.Object3D, maxTr
           for (let i = 0; i < vCount; i++) srcIndices[i] = i
         }
 
+        await nextFrame()
+
         const meshTris = Math.floor(srcIndices.length / 3)
         const share = meshTris / Math.max(1, totalTris)
         const targetLod0 = Math.max(96, Math.round(share * maxTris))
@@ -602,6 +609,8 @@ export function prepareModelAsset(asset: string, rawScene: THREE.Object3D, maxTr
         const lod0 = buildCompactedGeometry(idx0, posWorld, normWorld, uvSource, colBake)
         const lod1 = buildCompactedGeometry(idx1, posWorld, normWorld, uvSource, colBake)
         const lod2 = buildCompactedGeometry(idx2, posWorld, normWorld, uvSource, colBake)
+
+        await nextFrame()
 
         const rawMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
         const material = bakeLiteMaterial(rawMat, Boolean(uvSource), matCache)
@@ -620,6 +629,9 @@ export function prepareModelAsset(asset: string, rawScene: THREE.Object3D, maxTr
     })
     .catch((err) => {
       console.warn(`[model] simplification failed for ${asset}:`, err)
+    })
+    .finally(() => {
+      useModelShapes.setState((st) => ({ pendingCount: Math.max(0, st.pendingCount - 1) }))
     })
 }
 

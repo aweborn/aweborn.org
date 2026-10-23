@@ -73,6 +73,7 @@ export function addWorldToUniverse(doc: Y.Doc, entry: WorldEntry): void {
     const worldMap = new Y.Map();
     // Set all fields on the nested map
     for (const [key, value] of Object.entries(entry)) {
+      if (value === undefined) continue;
       if (typeof value === "object" && value !== null) {
         // Vec3 fields — flatten into the map
         const obj = value as Record<string, number>;
@@ -163,6 +164,7 @@ export function updatePlayerCount(doc: Y.Doc, worldId: string, count: number): v
  * Convert a Y.Map (flat key structure with dotted Vec3 keys) back to a WorldEntry.
  */
 function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
+  const parentWorldId = m.get("parentWorldId") as string | undefined;
   return {
     id: m.get("id") as string,
     name: m.get("name") as string,
@@ -185,5 +187,6 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     playerCount: m.get("playerCount") as number,
     lastActive: m.get("lastActive") as number,
     createdAt: m.get("createdAt") as number,
+    ...(parentWorldId ? { parentWorldId } : {}),
   };
 }

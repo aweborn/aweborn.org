@@ -142,8 +142,8 @@ export { optPath };
 export async function uploadThumb(db: DatabaseSync, assetDir: string, file: string): Promise<void> {
   const png = file.replace(/\.glb$/, ".png");
   const path = join(assetDir, png);
-  if (!s3 || !existsSync(path)) return;
-  if (!(await exists(`models/${png}`))) {
+  if (!existsSync(path)) return;
+  if (s3 && !(await exists(`models/${png}`))) {
     await s3.send(new PutObjectCommand({
       Bucket: BUCKET, Key: `models/${png}`, Body: createReadStream(path), ContentLength: statSync(path).size,
       ContentType: "image/png", CacheControl: "public, max-age=31536000, immutable",

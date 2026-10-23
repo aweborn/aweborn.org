@@ -384,6 +384,48 @@ export function moveObject(doc: Y.Doc, objectId: string, pos: { x: number; y: nu
   });
 }
 
+/** Recolor a placed shape or block in the world CRDT. */
+export function recolorObject(doc: Y.Doc, objectId: string, color: string): void {
+  const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
+  if (!m) return;
+  doc.transact(() => {
+    m.set("color", cleanColor(color));
+  });
+}
+
+/** Duplicate a placed object at the given position/rotation/scale (keeps the original held). */
+export function duplicateObject(
+  doc: Y.Doc,
+  sourceId: string,
+  pos: { x: number; y: number; z: number },
+  rotY: number,
+  scale: { x: number; y: number; z: number },
+  placedBy: string,
+): string | null {
+  const src = doc.getMap("objects").get(sourceId) as Y.Map<unknown> | undefined;
+  if (!src) return null;
+  const id = `obj-${Math.random().toString(36).slice(2, 8)}`;
+  doc.transact(() => {
+    const m = new Y.Map();
+    src.forEach((v, k) => {
+      if (k === "kick" || k === "planKey") return;
+      m.set(k, v);
+    });
+    m.set("id", id);
+    m.set("x", pos.x);
+    m.set("y", pos.y);
+    m.set("z", pos.z);
+    m.set("rotY", rotY);
+    m.set("scaleX", scale.x);
+    m.set("scaleY", scale.y);
+    m.set("scaleZ", scale.z);
+    if (placedBy) m.set("placedBy", placedBy);
+    m.set("placedAt", Date.now());
+    doc.getMap("objects").set(id, m);
+  });
+  return id;
+}
+
 /** Replace a placed model's file in place (redo an item): keeps where it stands and how it's turned. */
 export function replaceModelAsset(doc: Y.Doc, objectId: string, asset: string, prompt: string): void {
   const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;

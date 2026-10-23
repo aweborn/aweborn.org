@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { usePlannerStore } from '../stores/plannerStore'
 import { useWorldStore } from '../stores/worldStore'
-import { chunksAround, getChunk, placeOnTerrain, sameTerrain, type Chunk } from '../stores/worldVoxels'
+import { chunkCoordsAround, getChunk, placeOnTerrain, sameTerrain, useWorldLoadProgress, type Chunk } from '../stores/worldVoxels'
 import { useUniverseStore } from '../stores/universeStore'
 import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
@@ -28,6 +28,46 @@ const LIQUID_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, transpar
 const GHOST_SOLID_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.45, roughness: 0.6, emissive: '#8f7bff', emissiveIntensity: 0.35 })
 const GHOST_LIQUID_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.3, roughness: 0.6, emissive: '#8f7bff', emissiveIntensity: 0.35 })
 
+/** Cache built chunk geometries so walking across chunk boundaries reuses GPU buffers instead of rebuilding meshes. */
+const MAX_GEO_CACHE = 400
+const chunkGeoCache = new Map<string, THREE.BufferGeometry | null>()
+
+function getChunkGeometry(chunk: Chunk, terrain: BlueprintDraft['terrain'], liquid: boolean): THREE.BufferGeometry | null {
+  const key = `${chunk.id}:${liquid ? 'L' : 'S'}`
+  if (chunkGeoCache.has(key)) return chunkGeoCache.get(key) ?? null
+
+  const g = chunk.grid
+  const [sx, , sz] = g.size
+  // Faces on the chunk edge ask the neighbouring chunk (generated once, cached).
+  const outside: OutsideLookup = (i, j, k) => {
+    const dx = i < 0 ? -1 : i >= sx ? 1 : 0
+    const dz = k < 0 ? -1 : k >= sz ? 1 : 0
+    const n = getChunk(terrain, chunk.cx + dx, chunk.cz + dz)
+    if (!n) return AIR // the world's edge
+    const [nx, , nz] = n.grid.size
+    return kindOf(n.grid, cellAt(n.grid, dx < 0 ? nx - 1 : dx > 0 ? 0 : i, j, dz < 0 ? nz - 1 : dz > 0 ? 0 : k))
+  }
+  const m = buildChunkMesh(g, liquid, outside, (v, gi, j, gk) => cellColor(g.blocks[v - 1].color, gi, j, gk))
+  let geo: THREE.BufferGeometry | null = null
+  if (m.faces) {
+    geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(m.positions, 3))
+    geo.setAttribute('normal', new THREE.BufferAttribute(m.normals, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(m.colors, 3))
+    geo.setIndex(new THREE.BufferAttribute(m.indices, 1))
+    geo.computeBoundingSphere()
+  }
+  chunkGeoCache.set(key, geo)
+  if (chunkGeoCache.size > MAX_GEO_CACHE) {
+    const oldest = chunkGeoCache.keys().next().value
+    if (oldest !== undefined) {
+      chunkGeoCache.get(oldest)?.dispose()
+      chunkGeoCache.delete(oldest)
+    }
+  }
+  return geo
+}
+
 /** Linear RGB with a slight per-cell shade so flat areas still read as blocks. */
 function cellColor(hex: string, gi: number, j: number, gk: number): [number, number, number] {
   const shade = 0.78 + 0.22 * (((gi * 7 + gk * 13 + j * 5) % 5) / 4) * (0.85 + 0.15 * ((gi + gk) % 2))
@@ -42,42 +82,51 @@ function cellColor(hex: string, gi: number, j: number, gk: number): [number, num
  * big terrain (a volcano) or with the camera inside the ground.
  */
 export function ChunkLayer({ chunk, terrain, liquid, ghost }: { chunk: Chunk; terrain: BlueprintDraft['terrain']; liquid: boolean; ghost?: boolean }) {
-  const geometry = useMemo(() => {
-    const g = chunk.grid
-    const [sx, , sz] = g.size
-    // Faces on the chunk edge ask the neighbouring chunk (generated once, cached).
-    const outside: OutsideLookup = (i, j, k) => {
-      const dx = i < 0 ? -1 : i >= sx ? 1 : 0
-      const dz = k < 0 ? -1 : k >= sz ? 1 : 0
-      const n = getChunk(terrain, chunk.cx + dx, chunk.cz + dz)
-      if (!n) return AIR // the world's edge
-      const [nx, , nz] = n.grid.size
-      return kindOf(n.grid, cellAt(n.grid, dx < 0 ? nx - 1 : dx > 0 ? 0 : i, j, dz < 0 ? nz - 1 : dz > 0 ? 0 : k))
-    }
-    const m = buildChunkMesh(g, liquid, outside, (v, gi, j, gk) => cellColor(g.blocks[v - 1].color, gi, j, gk))
-    if (!m.faces) return null
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(m.positions, 3))
-    geo.setAttribute('normal', new THREE.BufferAttribute(m.normals, 3))
-    geo.setAttribute('color', new THREE.BufferAttribute(m.colors, 3))
-    geo.setIndex(new THREE.BufferAttribute(m.indices, 1))
-    geo.computeBoundingSphere()
-    return geo
-  }, [chunk, terrain, liquid])
-
-  useEffect(() => () => geometry?.dispose(), [geometry])
+  const geometry = useMemo(() => getChunkGeometry(chunk, terrain, liquid), [chunk, terrain, liquid])
 
   if (!geometry) return null
   const material = ghost ? (liquid ? GHOST_LIQUID_MAT : GHOST_SOLID_MAT) : liquid ? LIQUID_MAT : SOLID_MAT
   return <mesh geometry={geometry} material={material} />
 }
 
-/** The chunks around the player, drawn solid + liquid. Past this radius it's beyond the fog. */
+/**
+ * The chunks around the player, drawn solid + liquid. Past this radius it's beyond the fog.
+ * Builds the inner 3×3 chunks immediately so the player stands on solid ground on frame 1,
+ * then streams outer ring chunks across animation frames so world entry never freezes input.
+ */
 function TerrainChunks({ terrain, ghost }: { terrain: BlueprintDraft['terrain']; ghost?: boolean }) {
   const atmosphere = useAtmosphere()
   const radius = atmosphere?.radius ?? 3
   const [cx, cz] = usePlayerChunk(terrain)
-  const chunks = useMemo(() => chunksAround(terrain, cx, cz, radius), [terrain, cx, cz, radius])
+  const coords = useMemo(() => chunkCoordsAround(terrain, cx, cz, radius), [terrain, cx, cz, radius])
+  const initialBatch = Math.min(9, coords.length)
+  const [visibleCount, setVisibleCount] = useState(initialBatch)
+
+  useEffect(() => {
+    setVisibleCount(Math.min(9, coords.length))
+  }, [terrain, coords.length])
+
+  useEffect(() => {
+    if (!ghost) {
+      useWorldLoadProgress.getState().setChunkProgress(Math.min(visibleCount, coords.length), coords.length)
+    }
+    if (visibleCount >= coords.length) return
+    const raf = requestAnimationFrame(() => {
+      setVisibleCount((n) => Math.min(coords.length, n + 3))
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [visibleCount, coords.length, ghost])
+
+  const chunks = useMemo(() => {
+    const slice = coords.slice(0, visibleCount)
+    const out: Chunk[] = []
+    for (const [x, z] of slice) {
+      const c = getChunk(terrain, x, z)
+      if (c) out.push(c)
+    }
+    return out
+  }, [terrain, coords, visibleCount])
+
   return (
     <>
       {chunks.map((c) => (

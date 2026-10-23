@@ -42,6 +42,29 @@ export async function removeOwnAsset(playerId: string, sha: string, json: Json):
   return json(r.status === 200 ? 200 : 503, r.status === 200 ? { ok: true } : { error: "genai_unavailable" });
 }
 
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * Any player whose browser rendered a missing Library thumbnail can share the PNG back
+ * once so future visitors load `<sha>.png` directly instead of downloading the GLB.
+ */
+export async function uploadAssetThumb(sha: string, dataUrl: unknown, json: Json): Promise<void> {
+  if (!SHA.test(sha) || typeof dataUrl !== "string") return json(400, { error: "bad_request" });
+  const b64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+  if (!b64 || b64.length > 220_000) return json(400, { error: "bad_png" });
+  let head: Buffer;
+  try {
+    head = Buffer.from(b64.slice(0, 24), "base64");
+  } catch {
+    return json(400, { error: "bad_png" });
+  }
+  if (head.length < 8 || !head.subarray(0, 8).equals(PNG_MAGIC)) return json(400, { error: "bad_png" });
+  const r = await genai(`/library/${sha}/thumb`, "POST", { pngBase64: b64 });
+  if (r.status === 404) return json(404, { error: "not_found" });
+  if (r.status === 400) return json(400, r.data);
+  return json(r.status === 200 ? 200 : 503, r.status === 200 ? { ok: true } : { error: "genai_unavailable" });
+}
+
 /** Admin routes. Returns false if the path isn't ours. */
 export function handleTrashAdmin(req: IncomingMessage, res: ServerResponse, path: string, token: string, cors: Record<string, string>): boolean {
   if (!path.startsWith("/api/admin/trash") && !path.startsWith("/api/admin/library/")) return false;

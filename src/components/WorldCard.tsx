@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import type { WorldIndexEntry } from '@aweborn/shared/crdt-schema'
 import { ORIGIN_WORLD_ID } from '@aweborn/shared/crdt-schema'
-import { creatorLabel, formatCoords, isFaceUp, worldEntryFor } from '../stores/worldIndexStore'
+import { creatorLabel, formatCoords, isDreamtEdition, isFaceUp } from '../stores/worldIndexStore'
 import {
   ART_H,
   ART_W,
@@ -66,11 +66,12 @@ function CardArt({ entry, live }: { entry: WorldIndexEntry; live: boolean }) {
     )
   }
   const id = entry.worldId
+  const dreamt = isDreamtEdition(entry)
   if (cardArtAvailable()) {
     const look: CardLook = {
       id,
       color: entry.world?.color ?? '#8b8fa8',
-      solidified: worldEntryFor(entry)?.solidified ?? entry.world?.solidified ?? true,
+      solidified: !dreamt,
     }
     return (
       <div className="wc-art" aria-hidden="true">
@@ -125,6 +126,7 @@ export function WorldCard({ entry, myCharacters, tilt = false, face, live = fals
   const showFront = face ? face === 'front' : isFaceUp(entry)
   const w = entry.world
   const color = w?.color ?? '#8b8fa8'
+  const dreamt = isDreamtEdition(entry)
 
   const onMove = useCallback((e: PointerEvent<HTMLDivElement>) => {
     const el = ref.current
@@ -151,7 +153,7 @@ export function WorldCard({ entry, myCharacters, tilt = false, face, live = fals
   return (
     <div
       ref={ref}
-      className={`wc${tilt ? ' wc--tilt' : ''}${className ? ` ${className}` : ''}`}
+      className={`wc${tilt ? ' wc--tilt' : ''}${dreamt ? ' wc--dreamt' : ''}${className ? ` ${className}` : ''}`}
       style={{ '--wc-color': color } as CSSProperties}
       onPointerMove={tilt ? onMove : undefined}
       onPointerEnter={tilt ? onEnter : undefined}
@@ -160,6 +162,11 @@ export function WorldCard({ entry, myCharacters, tilt = false, face, live = fals
       {showFront ? (
         <div className="wc-face wc-front">
           <span className="wc-name">{w?.name ?? 'A faded world'}</span>
+          {dreamt && (
+            <span className="wc-edition" title="Dreamt Edition — discovered while still a Ghost outside the Living Frontier">
+              ◇ Dreamt
+            </span>
+          )}
           <CardArt entry={entry} live={live || hovered} />
           <span className="wc-by">
             by <strong>{creatorLabel(w?.creator, myCharacters)}</strong>

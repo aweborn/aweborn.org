@@ -11,9 +11,9 @@ import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus } from "./creations.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
-import { removeOwnAsset, handleTrashAdmin } from "./trash.js";
+import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
-import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
+import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY, MAX_WORLD_DEPTH } from "./world-create.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
@@ -81,6 +81,7 @@ function handleWorldLookup(req: IncomingMessage, res: ServerResponse, id: string
       sector: w.sector,
       position: w.resolvedPosition,
       isOrigin: w.id === ORIGIN_WORLD_ID,
+      ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
     })
   );
 }
@@ -177,7 +178,15 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
         return {
           ...e,
           world: w
-            ? { name: w.name, color: w.color, creator: w.creator, position: w.resolvedPosition, sector: w.sector, solidified: w.solidified }
+            ? {
+                name: w.name,
+                color: w.color,
+                creator: w.creator,
+                position: w.resolvedPosition,
+                sector: w.sector,
+                solidified: w.solidified,
+                ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
+              }
             : null,
         };
       }),
@@ -210,17 +219,23 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
       seen.set(worldId, Math.min(at, seen.get(worldId) ?? at));
     }
     if (!takeSightings(accountId, seen.size)) return json(429, { error: "slow_down" });
-    const results = [...seen].map(([worldId, at]) => ({
-      worldId,
-      ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "flight", at),
-    }));
+    const results = [...seen].map(([worldId, at]) => {
+      const w = rooms.lookupWorld(worldId);
+      const edition = w?.solidified === false ? "dreamt" : "solid";
+      return {
+        worldId,
+        ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "flight", at, edition),
+      };
+    });
     return json(200, { results });
   }
   if (path === "/api/player/world-index/arrived" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { worldId?: unknown } | null;
     const worldId = knownWorld(body?.worldId);
     if (!worldId) return json(404, { error: "not_found" });
-    return json(200, { worldId, ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "link") });
+    const w = rooms.lookupWorld(worldId);
+    const edition = w?.solidified === false ? "dreamt" : "solid";
+    return json(200, { worldId, ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "link", Date.now(), edition) });
   }
   // Where this character stands (saved as they move; restored on any device)
   if (path === "/api/player/location" && req.method === "GET") {
@@ -240,14 +255,28 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     }
     const reqd = parseWorldRequest(await readJson(req).catch(() => null));
     if ("error" in reqd) return json(400, reqd);
+    if (reqd.parentWorldId) {
+      const parent = rooms.lookupWorld(reqd.parentWorldId);
+      if (!parent) return json(404, { error: "parent_not_found", message: "Parent world not found." });
+      if (rooms.worldDepth(reqd.parentWorldId) >= MAX_WORLD_DEPTH) {
+        return json(400, { error: "max_depth", message: `Worlds can nest at most ${MAX_WORLD_DEPTH} layers deep.` });
+      }
+    }
     const left = worldsLeftToday(rooms.allWorlds(), session.playerId);
     if (left <= 0) {
       return json(429, { error: "daily_limit", message: `You can plant ${WORLDS_PER_DAY} worlds a day. Come back tomorrow.` });
     }
-    const w = rooms.createWorld(reqd.name, session.playerId, reqd.position, reqd.color);
-    recordDiscovery(accountId, w.id, session.playerId, "sighted", "flight");
+    const w = rooms.createWorld(reqd.name, session.playerId, reqd.position, reqd.color, reqd.parentWorldId);
+    recordDiscovery(accountId, w.id, session.playerId, "sighted", "flight", Date.now(), w.solidified ? "solid" : "dreamt");
     return json(200, {
-      world: { id: w.id, name: w.name, color: w.color, position: w.resolvedPosition, solidified: w.solidified },
+      world: {
+        id: w.id,
+        name: w.name,
+        color: w.color,
+        position: w.resolvedPosition,
+        solidified: w.solidified,
+        ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
+      },
       leftToday: left - 1,
     });
   }
@@ -278,6 +307,12 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   // Library: a maker removes their own asset → the admin trash (never deleted)
   const rm = /^\/api\/player\/library\/([a-f0-9]{64})\/remove$/.exec(path ?? "");
   if (rm && req.method === "POST") return removeOwnAsset(session.playerId, rm[1], json);
+  // Library: share a client-rendered thumbnail PNG so future visitors don't have to download the GLB
+  const th = /^\/api\/player\/library\/([a-f0-9]{64})\/thumb$/.exec(path ?? "");
+  if (th && req.method === "POST") {
+    const body = (await readJson(req, 262_144).catch(() => null)) as { dataUrl?: unknown } | null;
+    return uploadAssetThumb(th[1], body?.dataUrl, json);
+  }
   return json(404, { error: "not_found" });
 }
 

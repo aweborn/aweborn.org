@@ -154,6 +154,7 @@ class GravitySystem {
       { id: ORIGIN_WORLD_ID, position: PORTAL_POSITION, mass: PORTAL_MASS, world: null },
     ]
     for (const world of worlds.values()) {
+      if (world.parentWorldId) continue
       const pos = new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
       bodies.push({ id: world.id, position: pos, mass: calculateWorldMass(world), world })
     }

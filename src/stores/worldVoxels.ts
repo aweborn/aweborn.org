@@ -1,8 +1,20 @@
+import { create } from 'zustand'
 import { generateVoxels, voxelColliders, cellToWorld, CHUNK, type VoxelGrid } from '@aweborn/shared/voxel'
 import type { Box } from '@aweborn/shared/sim/interior'
 import type { BlueprintDraft } from '@aweborn/shared/blueprint'
 
 type Terrain = BlueprintDraft['terrain']
+
+/** Progress of terrain chunk streaming for the active world (used by WorldTransition's loading bar). */
+export const useWorldLoadProgress = create<{
+  chunksReady: number
+  chunksTotal: number
+  setChunkProgress: (chunksReady: number, chunksTotal: number) => void
+}>((set) => ({
+  chunksReady: 0,
+  chunksTotal: 0,
+  setChunkProgress: (chunksReady, chunksTotal) => set({ chunksReady, chunksTotal }),
+}))
 
 /**
  * Chunked terrain. A blueprint's terrain is parameters (seed, blocks, features),
@@ -53,11 +65,34 @@ export function getChunk(t: Terrain, cx: number, cz: number): Chunk | null {
   if (!c) {
     const x0 = cx * CHUNK, z0 = cz * CHUNK
     const grid = generateVoxels(t, { x0, z0, w: Math.min(CHUNK, t.size[0] - x0), d: Math.min(CHUNK, t.size[2] - z0) })
-    c = { id: `${s.serial}:${id}`, cx, cz, grid, colliders: voxelColliders(grid) }
+    let lazyColliders: Box[] | null = null
+    c = {
+      id: `${s.serial}:${id}`,
+      cx,
+      cz,
+      grid,
+      get colliders() {
+        return (lazyColliders ??= voxelColliders(grid))
+      },
+    }
     s.chunks.set(id, c)
     if (s.chunks.size > MAX_CHUNKS) for (const k of [...s.chunks.keys()].slice(0, MAX_CHUNKS / 3)) s.chunks.delete(k)
   }
   return c
+}
+
+/** Valid chunk coordinates within `r` chunks of (cx, cz), sorted nearest-first without generating chunks yet. */
+export function chunkCoordsAround(t: Terrain, cx: number, cz: number, r: number): Array<[number, number]> {
+  const [nx, nz] = chunkCounts(t)
+  const out: Array<[number, number]> = []
+  for (let dz = -r; dz <= r; dz++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const x = cx + dx
+      const z = cz + dz
+      if (x >= 0 && z >= 0 && x < nx && z < nz) out.push([x, z])
+    }
+  }
+  return out.sort((a, b) => Math.hypot(a[0] - cx, a[1] - cz) - Math.hypot(b[0] - cx, b[1] - cz))
 }
 
 /** Chunks within `r` chunks of (cx, cz), nearest first. */

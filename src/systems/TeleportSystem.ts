@@ -60,6 +60,8 @@ export interface WorldLookup {
   sector: string
   position: Vec3
   isOrigin: boolean
+  /** Enclosing world ID if this world is nested inside another world. */
+  parentWorldId?: string
 }
 
 export interface TeleportNotice {
@@ -119,6 +121,7 @@ function offlineFallbackWorld(worldId: string): WorldLookup | null {
       sector: uWorld.sector,
       position: uWorld.resolvedPosition,
       isOrigin: false,
+      ...(uWorld.parentWorldId ? { parentWorldId: uWorld.parentWorldId } : {}),
     }
   }
   const idxEntry = useWorldIndexStore.getState().entries.get(worldId)
@@ -133,6 +136,7 @@ function offlineFallbackWorld(worldId: string): WorldLookup | null {
       sector: idxWorld.sector,
       position: idxWorld.position,
       isOrigin: worldId === ORIGIN_WORLD_ID,
+      ...(idxWorld.parentWorldId ? { parentWorldId: idxWorld.parentWorldId } : {}),
     }
   }
   return null
@@ -234,7 +238,7 @@ class TeleportSystem {
   teleportTo(world: WorldLookup): void {
     const store = useUniverseStore.getState()
     if (this._enterTimer) clearTimeout(this._enterTimer)
-    if (store.activeWorldId) store.exitWorld()
+    if (store.activeWorldId) store.exitWorld(true)
     warpSystem.cancel()
     warpSystem.skipFirstSpawnLock() // auto-lock the world we arrive at, not the portal
 

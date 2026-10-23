@@ -80,7 +80,7 @@ async function render(file: string): Promise<string> {
     camera.updateProjectionMatrix()
     camera.lookAt(0, 0, 0)
     renderer.render(scene, camera)
-    return renderer.domElement.toDataURL('image/webp', 0.85)
+    return renderer.domElement.toDataURL('image/png')
   } finally {
     scene.remove(model)
     disposeTree(model)
@@ -119,6 +119,13 @@ export function libraryThumb(sha: string, file: string): Promise<string | null> 
           const url = await render(file)
           memory.set(sha, url)
           writeCache(sha, url)
+          // Upload the rendered PNG once to the server so future visitors don't have to download the GLB for a preview
+          void fetch(`${AUTH_URL}/api/player/library/${sha}/thumb`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dataUrl: url }),
+          }).catch(() => {})
           resolve(url)
         } catch (err) {
           console.warn('[library] thumbnail failed:', file, err)

@@ -105,6 +105,9 @@ export interface WorldEntry {
 
   /** Unix timestamp (ms) of creation. */
   createdAt: number;
+
+  /** If planted inside another world (recursive CRDTs): the enclosing world's ID. Absent = outer space. */
+  parentWorldId?: string;
 }
 
 /**
@@ -334,10 +337,20 @@ export type WorldIndexState = "sighted" | "visited";
  */
 export type DiscoveryMethod = "flight" | "link";
 
+/**
+ * Card edition fixed at first discovery (Phase 08).
+ * - `dreamt`: discovered while the world was a Ghost outside the Living Frontier.
+ *   Stays Dreamt forever even after the Frontier solidifies the world.
+ * - `solid`: discovered after the world was already solid.
+ */
+export type CardEdition = "dreamt" | "solid";
+
 export interface WorldIndexEntry {
   worldId: string;
   state: WorldIndexState;
   method: DiscoveryMethod;
+  /** Fixed at first discovery: 'dreamt' if found while still a Ghost, else 'solid'. */
+  edition?: CardEdition;
   /** The character that found it first. */
   characterId: string | null;
   /** First found (sighted or visited). */
@@ -360,8 +373,10 @@ export interface WorldIndexWorld {
   creator: string;
   position: Vec3;
   sector: string;
-  /** Ghost or solid (card art). Absent on entries cached before 2026-10-13. Planned: `edition` ('dreamt' | 'solid'), fixed at first discovery (Phase 08). */
+  /** Ghost or solid (live world state). Card appearance uses `WorldIndexEntry.edition` when present. */
   solidified?: boolean;
+  /** Enclosing world ID if this is a nested world inside another world. */
+  parentWorldId?: string;
 }
 
 // ── WebSocket Protocol ───────────────────────────────────────────────

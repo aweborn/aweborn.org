@@ -28,6 +28,29 @@ export function insideFrontier(p: Vec3, radius: number): boolean {
 }
 
 /**
+ * Resolve the outer-space universe position of a world (following `parentWorldId`
+ * up to the root world in space when a world is nested inside another world).
+ */
+export function rootUniversePosition(worlds: Y.Map<unknown>, m: Y.Map<unknown>): Vec3 {
+  let cur: Y.Map<unknown> | undefined = m;
+  let hops = 0;
+  while (cur && hops < 10) {
+    const parentId = cur.get("parentWorldId") as string | undefined;
+    if (!parentId) break;
+    const parentMap = worlds.get(parentId) as Y.Map<unknown> | undefined;
+    if (!parentMap) break;
+    cur = parentMap;
+    hops++;
+  }
+  const target = cur ?? m;
+  return {
+    x: (target.get("resolvedPosition.x") as number) ?? 0,
+    y: (target.get("resolvedPosition.y") as number) ?? 0,
+    z: (target.get("resolvedPosition.z") as number) ?? 0,
+  };
+}
+
+/**
  * Solidify every Ghost world inside the Frontier. Idempotent; never
  * un-solidifies. Returns the ids it changed, so the caller can update the
  * worlds' own docs too.
@@ -41,11 +64,7 @@ export function solidifyWithinFrontier(doc: Y.Doc, radius: number, at: number = 
       if (id === ORIGIN_WORLD_ID) return;
       const m = value as Y.Map<unknown>;
       if (m.get("solidified") === true) return;
-      const p = {
-        x: (m.get("resolvedPosition.x") as number) ?? 0,
-        y: (m.get("resolvedPosition.y") as number) ?? 0,
-        z: (m.get("resolvedPosition.z") as number) ?? 0,
-      };
+      const p = rootUniversePosition(worlds, m);
       if (!insideFrontier(p, radius)) return;
       m.set("solidified", true);
       m.set("solidifiedAt", at);
