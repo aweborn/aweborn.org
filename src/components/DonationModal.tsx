@@ -8,9 +8,14 @@ import {
 } from '@stripe/react-stripe-js'
 import { usePaymentIntent } from '../hooks/usePaymentIntent'
 
-// --- Stripe setup ---
+// --- Stripe setup (lazy-loaded only when the modal opens so Stripe's payment iframe isn't mounted during play) ---
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || ''
-const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null
+let cachedStripePromise: ReturnType<typeof loadStripe> | null = null
+function getStripePromise() {
+  if (!stripePublishableKey) return null
+  if (!cachedStripePromise) cachedStripePromise = loadStripe(stripePublishableKey)
+  return cachedStripePromise
+}
 
 // --- Stripe appearance (cosmic theme) ---
 const stripeAppearance = {
@@ -342,9 +347,9 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
         )}
 
         {/* ---- Step 2: Payment ---- */}
-        {effectiveStep === 'payment' && clientSecret && stripePromise && elementsOptions && (
+        {effectiveStep === 'payment' && clientSecret && getStripePromise() && elementsOptions && (
           <div className="modal-step modal-step-payment">
-            <Elements stripe={stripePromise} options={elementsOptions}>
+            <Elements stripe={getStripePromise()} options={elementsOptions}>
               <PaymentForm
                 amountInCents={amountInCents}
                 onSuccess={() => setStep('success')}

@@ -53,6 +53,33 @@ export function MoreSheet() {
   }
   const saved = player ? !player.isAnonymous && !player.isGuest : false
 
+  const capturePhoto = () => {
+    const srcCanvas = document.querySelector<HTMLCanvasElement>('.canvas-container canvas')
+    if (!srcCanvas) return
+    setOpen(false)
+    requestAnimationFrame(() => {
+      srcCanvas.toBlob((blob) => {
+        if (!blob) return
+        const filename = `aweborn-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`
+        const file = new File([blob], filename, { type: 'image/png' })
+        if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
+          void navigator.share({ files: [file], title: 'Aweborn' }).catch(() => {
+            /* user dismissed share sheet */
+          })
+          return
+        }
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 5000)
+      }, 'image/png')
+    })
+  }
+
   return (
     <section id="more-sheet" className={`more-sheet${inWorld ? '' : ' is-space'}`} aria-labelledby="more-title">
       <header className="more-head">
@@ -105,6 +132,13 @@ export function MoreSheet() {
           <span className="more-row-text"><span className="more-row-title">Show FPS</span></span>
           <input id="more-fps" type="checkbox" role="switch" checked={showFps} onChange={(e) => setShowFps(e.target.checked)} />
         </label>
+        <button id="more-photo" type="button" className="more-row" onClick={capturePhoto}>
+          <span className="more-icon" aria-hidden="true">📸</span>
+          <span className="more-row-text">
+            <span className="more-row-title">Share or save photo</span>
+            <span className="more-row-sub">Clean snapshot without controls</span>
+          </span>
+        </button>
 
         <h3 className="more-section">Controls</h3>
         <ul className="more-legend">

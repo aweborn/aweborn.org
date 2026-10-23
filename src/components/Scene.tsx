@@ -806,6 +806,7 @@ export function Scene({ onPortalActivate, onProgress }: SceneProps) {
         dpr={dpr}
         gl={{
           antialias: true,
+          preserveDrawingBuffer: true,
           toneMapping: 3, // ACESFilmicToneMapping
           toneMappingExposure: 1.0,
         }}
