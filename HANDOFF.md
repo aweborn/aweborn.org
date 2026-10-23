@@ -16,7 +16,6 @@
 - [CI server deploys](#ci-server-deploys)
 - [Backups](#backups)
 - [Player identity](#player-identity)
-  * [Saving a player (sign-in methods)](#saving-a-player-sign-in-methods)
 - [Infrastructure stacks](#infrastructure-stacks)
 - [Rebuilding the VPS / Tailnet auto-join](#rebuilding-the-vps--tailnet-auto-join)
   * [If the VPS is unhealthy](#if-the-vps-is-unhealthy)
