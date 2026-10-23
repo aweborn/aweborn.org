@@ -74,12 +74,14 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
   const meta = doc.getMap("meta");
   const name = meta.get("name") as string | undefined;
   if (!name) return null;
+  const parentWorldId = meta.get("parentWorldId") as string | undefined;
   return {
     name,
     creator: (meta.get("creator") as string) ?? "",
     createdAt: (meta.get("createdAt") as number) ?? 0,
     color: (meta.get("color") as string) ?? "#ffffff",
     solidified: (meta.get("solidified") as boolean) ?? false,
+    ...(parentWorldId ? { parentWorldId } : {}),
   };
 }
 

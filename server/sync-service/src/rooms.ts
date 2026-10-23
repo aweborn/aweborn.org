@@ -591,26 +591,16 @@ export class RoomManager {
     return getAllWorldEntries(this.universeDoc);
   }
 
-  /** Nesting depth of a world (0 = outer space, 1 = inside an outer-space world, etc.). */
-  worldDepth(worldId: string): number {
-    let depth = 0;
-    let cur = this.getWorldEntry(worldId);
-    while (cur?.parentWorldId && depth < 16) {
-      depth++;
-      cur = this.getWorldEntry(cur.parentWorldId);
-    }
-    return depth;
-  }
-
-  /** Follow `parentWorldId` up to the outer-space ancestor world. */
+  /** Follow `parentWorldId` up to the outer-space ancestor world (with cycle guard, no depth limit). */
   rootWorld(worldId: string): WorldEntry | null {
     let cur = this.getWorldEntry(worldId);
-    let hops = 0;
-    while (cur?.parentWorldId && hops < 16) {
+    const seen = new Set<string>();
+    while (cur?.parentWorldId) {
+      if (seen.has(cur.id) || seen.has(cur.parentWorldId)) break;
+      seen.add(cur.id);
       const parent = this.getWorldEntry(cur.parentWorldId);
       if (!parent) break;
       cur = parent;
-      hops++;
     }
     return cur;
   }

@@ -13,7 +13,7 @@ import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus 
 import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
-import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY, MAX_WORLD_DEPTH } from "./world-create.js";
+import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
@@ -258,9 +258,6 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (reqd.parentWorldId) {
       const parent = rooms.lookupWorld(reqd.parentWorldId);
       if (!parent) return json(404, { error: "parent_not_found", message: "Parent world not found." });
-      if (rooms.worldDepth(reqd.parentWorldId) >= MAX_WORLD_DEPTH) {
-        return json(400, { error: "max_depth", message: `Worlds can nest at most ${MAX_WORLD_DEPTH} layers deep.` });
-      }
     }
     const left = worldsLeftToday(rooms.allWorlds(), session.playerId);
     if (left <= 0) {

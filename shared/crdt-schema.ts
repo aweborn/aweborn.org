@@ -220,6 +220,7 @@ export interface WorldMeta {
   createdAt: number;
   color: string;
   solidified: boolean;
+  parentWorldId?: string;
 }
 
 /**

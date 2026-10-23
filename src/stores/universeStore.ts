@@ -300,6 +300,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
             meta.set("createdAt", entry.createdAt);
             meta.set("color", entry.color);
             meta.set("solidified", entry.solidified);
+            if (entry.parentWorldId) meta.set("parentWorldId", entry.parentWorldId);
           }, "remote");
         }
       }
@@ -310,8 +311,11 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
 
     exitWorld: (toSpace = false) => {
       const curId = get().activeWorldId;
-      const parentId = !toSpace && curId ? get().worlds.get(curId)?.parentWorldId : undefined;
-      if (parentId && get().worlds.has(parentId)) {
+      const parentId =
+        !toSpace && curId
+          ? (get().worlds.get(curId)?.parentWorldId ?? useWorldStore.getState().meta?.parentWorldId)
+          : undefined;
+      if (parentId) {
         get().enterWorld(parentId);
         return;
       }

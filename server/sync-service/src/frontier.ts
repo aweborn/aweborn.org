@@ -29,18 +29,23 @@ export function insideFrontier(p: Vec3, radius: number): boolean {
 
 /**
  * Resolve the outer-space universe position of a world (following `parentWorldId`
- * up to the root world in space when a world is nested inside another world).
+ * up to the root world in space when a world is nested inside another world,
+ * with a cycle guard and no depth limit).
  */
 export function rootUniversePosition(worlds: Y.Map<unknown>, m: Y.Map<unknown>): Vec3 {
   let cur: Y.Map<unknown> | undefined = m;
-  let hops = 0;
-  while (cur && hops < 10) {
+  const seen = new Set<string>();
+  while (cur) {
+    const id = cur.get("id") as string | undefined;
+    if (id) {
+      if (seen.has(id)) break;
+      seen.add(id);
+    }
     const parentId = cur.get("parentWorldId") as string | undefined;
-    if (!parentId) break;
+    if (!parentId || seen.has(parentId)) break;
     const parentMap = worlds.get(parentId) as Y.Map<unknown> | undefined;
     if (!parentMap) break;
     cur = parentMap;
-    hops++;
   }
   const target = cur ?? m;
   return {

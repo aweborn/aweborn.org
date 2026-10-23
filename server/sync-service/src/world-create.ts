@@ -18,8 +18,6 @@ import { prepareChat } from "../../../shared/chat.js";
 
 export const WORLDS_PER_DAY = 3;
 export const WORLD_NAME_MAX = 40;
-/** Maximum nesting depth for worlds within worlds (root = 0, child = 1, ...). */
-export const MAX_WORLD_DEPTH = 5;
 const DAY_MS = 24 * 3600_000;
 /** Far beyond anything reachable; only stops absurd numbers reaching the resolver. */
 const MAX_COORD = 1e7;

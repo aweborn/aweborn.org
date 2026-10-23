@@ -24,6 +24,9 @@ export function createWorldDoc(entry: WorldEntry): Y.Doc {
     meta.set("createdAt", entry.createdAt);
     meta.set("color", entry.color);
     meta.set("solidified", entry.solidified);
+    if (entry.parentWorldId) {
+      meta.set("parentWorldId", entry.parentWorldId);
+    }
 
     // ── Physics (Earth-like defaults) ──
     const physics = doc.getMap("physics");
