@@ -9,6 +9,7 @@
  */
 
 import * as Y from "yjs";
+import { coCreatorsField } from "../../../shared/world-policy.js";
 import type {
   WorldEntry,
   Vec3,
@@ -190,5 +191,6 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     createdAt: m.get("createdAt") as number,
     ...(parentWorldId ? { parentWorldId } : {}),
     ...(allowPortals !== undefined ? { allowPortals } : {}),
+    ...coCreatorsField(m.get("coCreators")),
   };
 }

@@ -111,6 +111,9 @@ export interface WorldEntry {
 
   /** Whether any signed-in player may plant child portals inside this world (`true` by default; `false` = creator only). */
   allowPortals?: boolean;
+
+  /** Players the creator named as co-creators: they may change anything in the world (Rough Draft M1). Server-written. */
+  coCreators?: string[];
 }
 
 /** Fixed interior XZ coordinates of the Return Portal inside any nested child world (right behind the `(0, 10)` spawn). */
@@ -228,6 +231,7 @@ export interface WorldMeta {
   solidified: boolean;
   parentWorldId?: string;
   allowPortals?: boolean;
+  coCreators?: string[];
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   ORIGIN_WORLD_ID,
 } from "@aweborn/shared/crdt-schema";
 import { useWorldStore } from "./worldStore";
+import { coCreatorsField } from "@aweborn/shared/world-policy";
 import { interiorController } from "../systems/InteriorController";
 import {
   loadUniverseDoc,
@@ -133,6 +134,7 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     createdAt: (m.get("createdAt") as number) ?? 0,
     ...(parentWorldId ? { parentWorldId } : {}),
     ...(allowPortals !== undefined ? { allowPortals } : {}),
+    ...coCreatorsField(m.get("coCreators")),
   };
 }
 

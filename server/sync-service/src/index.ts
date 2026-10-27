@@ -7,6 +7,7 @@ import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, set
 import { listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex, cleanLocation, saveLocation, loadLocation } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
+import { cleanCoCreators } from "../../../shared/world-policy.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus } from "./creations.js";
@@ -290,19 +291,28 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (session.isAnonymous) {
       return json(403, { error: "sign_in_required", message: SIGN_IN_MESSAGE });
     }
-    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; allowPortals?: unknown } | null;
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; allowPortals?: unknown; coCreators?: unknown } | null;
     const worldId = knownWorld(body?.worldId);
-    if (!worldId || typeof body?.allowPortals !== "boolean") {
+    const hasPortals = typeof body?.allowPortals === "boolean";
+    const hasCo = body?.coCreators !== undefined;
+    if (!worldId || (!hasPortals && !hasCo)) {
       return json(400, { error: "bad_request" });
     }
     const w = rooms.lookupWorld(worldId);
     if (!w) return json(404, { error: "not_found" });
     const myChars = listCharacters(accountId);
     if (!myChars.some((c) => c.id === w.creator)) {
-      return json(403, { error: "not_creator", message: "Only this world’s creator can change portal permissions." });
+      return json(403, { error: "not_creator", message: "Only this world’s creator can change who may build here." });
     }
-    rooms.setWorldPortalPolicy(worldId, body.allowPortals);
-    return json(200, { worldId, allowPortals: body.allowPortals });
+    let coCreators: string[] | undefined;
+    if (hasCo) {
+      const cleaned = cleanCoCreators(body!.coCreators, w.creator);
+      if (!cleaned) return json(400, { error: "bad_request" });
+      coCreators = cleaned.filter((id) => !myChars.some((c) => c.id === id));
+      rooms.setWorldCoCreators(worldId, coCreators);
+    }
+    if (hasPortals) rooms.setWorldPortalPolicy(worldId, body!.allowPortals as boolean);
+    return json(200, { worldId, ...(hasPortals ? { allowPortals: body!.allowPortals } : {}), ...(coCreators ? { coCreators } : {}) });
   }
   // Creations (Phase 07): reserve → generate → settle. Signed-in players only.
   if (session.isAnonymous && req.method === "POST" && path && GENAI_POST_PATHS.has(path)) {

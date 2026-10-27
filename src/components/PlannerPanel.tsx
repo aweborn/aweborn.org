@@ -12,6 +12,7 @@ import { matchesBinding } from '../stores/keybindingStore'
 import { useSheet } from '../stores/sheetStore'
 import { MakeTabs } from './MakeTabs'
 import { ManaSeal, useCanChannel } from './ManaSeal'
+import { useOwnsCurrentWorld } from '../lib/worldActor'
 
 /**
  * World Planner panel (Phase 07): talk a world into a blueprint before
@@ -209,11 +210,13 @@ export function PlannerPanel() {
   }, [turns, busy])
 
   // Terrain is its own step: instant, no server call (the planner turn already paid for it). Everyone in the world sees it.
+  // Only the world's creator / co-creators may reshape it (the server reverts anyone else).
+  const ownsWorld = useOwnsCurrentWorld()
   const shapeTerrain = useCallback(() => {
-    if (!blueprint) return
+    if (!blueprint || !ownsWorld) return
     const doc = useUniverseStore.getState().activeWorldDoc
     if (doc) setVoxelTerrain(doc, blueprint.terrain, blueprint.sky ?? null)
-  }, [blueprint])
+  }, [blueprint, ownsWorld])
 
   // The button is only live while the previewed blueprint differs from what the world already has
   const terrainShaped = !!blueprint && !!worldTerrain &&
@@ -438,8 +441,15 @@ export function PlannerPanel() {
 
       {blueprint && (
         <div className="planner-actions">
-          <button id="planner-terrain" className="planner-manifest" type="button" onClick={shapeTerrain} disabled={busy || terrainShaped}>
-            {terrainShaped ? 'Terrain shaped ✓' : worldTerrain ? 'Reshape terrain' : 'Shape terrain'}
+          <button
+            id="planner-terrain"
+            className="planner-manifest"
+            type="button"
+            onClick={shapeTerrain}
+            disabled={busy || terrainShaped || !ownsWorld}
+            title={ownsWorld ? undefined : 'Only this world’s creator (or a co-creator) can shape its terrain'}
+          >
+            {!ownsWorld ? 'Terrain: creator only' : terrainShaped ? 'Terrain shaped ✓' : worldTerrain ? 'Reshape terrain' : 'Shape terrain'}
           </button>
           <button id="planner-manifest" className="planner-manifest" type="button" onClick={() => void manifest()} disabled={manifesting || busy}>
             {manifesting ? 'Manifesting…' : `Make models ✦ ≈${blueprint.estimate.items.reduce((s, i) => s + i.mana, 0)} mana`}

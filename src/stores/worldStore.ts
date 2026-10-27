@@ -19,6 +19,7 @@ import type {
 } from "@aweborn/shared/crdt-schema";
 import { DEFAULT_PHYSICS } from "@aweborn/shared/crdt-schema";
 import { cleanColor } from "@aweborn/shared/library";
+import { coCreatorsField } from "@aweborn/shared/world-policy";
 
 interface WorldState {
   /** World metadata */
@@ -84,6 +85,7 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
     solidified: (meta.get("solidified") as boolean) ?? false,
     ...(parentWorldId ? { parentWorldId } : {}),
     ...(allowPortals !== undefined ? { allowPortals } : {}),
+    ...coCreatorsField(meta.get("coCreators")),
   };
 }
 

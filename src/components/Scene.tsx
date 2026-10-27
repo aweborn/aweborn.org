@@ -15,6 +15,8 @@ import { PortalBeacon } from './PortalBeacon'
 import { WorldInterior } from './WorldInterior'
 import { useUniverseStore } from '../stores/universeStore'
 import { RETURN_PORTAL_XZ } from '@aweborn/shared/crdt-schema'
+import { canEditHere } from '../lib/worldActor'
+import { useChatStore } from '../stores/chatStore'
 import { useWorldStore, kickObject, settleObject, moveObject, duplicateObject, recolorObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
@@ -444,8 +446,12 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         return
       }
       const all = Array.from(useWorldStore.getState().objects.values()).filter((o) => !o.kick)
-      const target = kickTarget(s, all)
-      if (!target) return
+      // Only what you may edit (yours, or anything in a world you own): the server reverts the rest
+      const target = kickTarget(s, all.filter((o) => canEditHere(o)))
+      if (!target) {
+        if (kickTarget(s, all)) useChatStore.getState().showNotice('That belongs to someone else. You can still kick it.')
+        return
+      }
       const half = 0.5 * Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleZ || 1))
       held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: target.y - s.y, lastWrite: 0, k: Math.min(1, 30 / Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleY || 1), Math.abs(target.scaleZ || 1))), base: { x: target.scaleX || 1, y: target.scaleY || 1, z: target.scaleZ || 1 } }
       setHeldId(target.id)

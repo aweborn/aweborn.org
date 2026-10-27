@@ -37,6 +37,9 @@ import { createWorldDoc } from "./world-factory.js";
 import { resolveNewWorld } from "./resolver.js";
 import { prepareChat, cleanChatText, ChatLimiter, CHAT_HISTORY, CHAT_MAX_BYTES } from "../../../shared/chat.js";
 import { touchesChat } from "./chat-guard.js";
+import { WorldAuthority, CreateLimiter } from "./world-authority.js";
+import { listCharacters } from "./identity.js";
+import { isWorldOwnerId, type WorldActor } from "../../../shared/world-policy.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -75,6 +78,8 @@ interface WorldRoom {
   doc: Y.Doc;
   clients: Set<WebSocket>;
   lastFlush: number;
+  /** Reverts client edits the sender wasn't allowed to make (Rough Draft M1). */
+  authority: WorldAuthority;
 }
 
 interface UniverseClient {
@@ -102,6 +107,8 @@ export class RoomManager {
   private accountIds = new WeakMap<WebSocket, string>();
   /** Chat send limits, per player. */
   private chatLimiter = new ChatLimiter();
+  /** New objects per socket: 60 per 30 s (steady building is ~2/s; stops spam walls). */
+  private createLimiter = new CreateLimiter<WebSocket>(60, 30_000);
   /** Space chat: last CHAT_HISTORY lines, in memory (the archive keeps them all). */
   private spaceChat: Array<{ sender: string; text: string; t: number }> = [];
   /** Latest presence per socket, sent out in batches. */
@@ -227,6 +234,7 @@ export class RoomManager {
         doc,
         clients: new Set(),
         lastFlush: Date.now(),
+        authority: new WorldAuthority(doc),
       };
       this.worldRooms.set(worldId, room);
 
@@ -435,7 +443,7 @@ export class RoomManager {
               console.warn("[rooms] refused client write to chat log");
               break;
             }
-            Y.applyUpdate(room.doc, message.data, ws);
+            this.applyWorldUpdate(room.authority, message.data, ws, message.worldId);
           } else {
             // Offline edit flushed after reconnect when no one is currently in the room
             const entry = this.getWorldEntry(message.worldId);
@@ -449,7 +457,9 @@ export class RoomManager {
               fresh.destroy();
             }
             if (!touchesChat(doc, message.data)) {
-              Y.applyUpdate(doc, message.data);
+              const authority = new WorldAuthority(doc);
+              this.applyWorldUpdate(authority, message.data, ws, message.worldId);
+              authority.destroy();
               saveDoc(message.worldId, Y.encodeStateAsUpdate(doc), "world", entry.sector);
             } else {
               console.warn("[rooms] refused offline client write to chat log");
@@ -614,29 +624,71 @@ export class RoomManager {
 
   /** Update whether other players may plant child portals inside `worldId`. */
   setWorldPortalPolicy(worldId: string, allowPortals: boolean): boolean {
+    return this.setWorldPolicyKey(worldId, "allowPortals", allowPortals);
+  }
+
+  /** Replace the world's co-creators (already cleaned; creator-only, checked by the caller). */
+  setWorldCoCreators(worldId: string, coCreators: string[]): boolean {
+    return this.setWorldPolicyKey(worldId, "coCreators", coCreators);
+  }
+
+  /** Server-only write of a policy key to the universe entry and the world's meta. */
+  private setWorldPolicyKey(worldId: string, key: "allowPortals" | "coCreators", value: unknown): boolean {
     if (worldId === ORIGIN_WORLD_ID) return false;
     const worlds = this.universeDoc.getMap("worlds");
     const worldMap = worlds.get(worldId) as Y.Map<unknown> | undefined;
     if (!worldMap) return false;
     this.universeDoc.transact(() => {
-      worldMap.set("allowPortals", allowPortals);
+      worldMap.set(key, value);
     }, "server");
     const room = this.worldRooms.get(worldId);
     if (room) {
       room.doc.transact(() => {
-        room.doc.getMap("meta").set("allowPortals", allowPortals);
+        room.doc.getMap("meta").set(key, value);
       }, "server");
     } else {
       const saved = loadDoc(worldId);
       if (saved) {
         const doc = new Y.Doc();
         Y.applyUpdate(doc, saved);
-        doc.getMap("meta").set("allowPortals", allowPortals);
+        doc.getMap("meta").set(key, value);
         saveDoc(worldId, Y.encodeStateAsUpdate(doc), "world", this.getWorldEntry(worldId)?.sector);
         doc.destroy();
       }
     }
     return true;
+  }
+
+  /**
+   * Who is writing to this world, and do they own it (creator or co-creator)?
+   * Ownership is checked against every character on the socket's account, and
+   * only computed if a judgement actually needs it.
+   */
+  private actorFor(ws: WebSocket, worldId: string): WorldActor {
+    const id = this.playerIds.get(ws) ?? null;
+    const accountId = this.accountIds.get(ws);
+    let owner: boolean | undefined;
+    const entry = () => this.getWorldEntry(worldId);
+    return {
+      id,
+      get owner() {
+        if (owner !== undefined) return owner;
+        const w = entry();
+        if (!w || !id) return (owner = false);
+        const roles = { creator: w.creator, coCreators: w.coCreators };
+        owner = isWorldOwnerId(id, roles) || (accountId ? listCharacters(accountId).some((c) => isWorldOwnerId(c.id, roles)) : false);
+        return owner;
+      },
+    };
+  }
+
+  /** Apply a client's world update through the authority (reverting what they may not change). */
+  private applyWorldUpdate(authority: WorldAuthority, update: Uint8Array, ws: WebSocket, worldId: string): void {
+    const actor = this.actorFor(ws, worldId);
+    const { reverted, details } = authority.apply(update, ws, actor, () => this.createLimiter.take(ws));
+    if (reverted) {
+      console.warn(`[rooms] reverted ${reverted} change(s) in ${worldId} by ${actor.id ?? "guest"}: ${details.slice(0, 6).join(", ")}`);
+    }
   }
 
   private getWorldEntry(worldId: string): WorldEntry | null {
