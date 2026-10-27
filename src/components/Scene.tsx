@@ -27,6 +27,7 @@ import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
 import { ChatBubble } from './ChatBubble'
+import { NameTag } from './NameTag'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
 import { cameraController } from '../systems/CameraController'
@@ -770,6 +771,7 @@ function InteriorPlayers({ worldId }: { worldId: string }) {
           }}
         >
           <CapsuleAvatar color={p.color} />
+          <NameTag playerId={p.id} />
           <ChatBubble playerId={p.id} />
         </group>
       ))}

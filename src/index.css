@@ -2266,6 +2266,63 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
   background: var(--glass-border);
 }
 
+/* Character name (Rough Draft M1, 2026-10-27): a pill in the hero → inline editor */
+.pa-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.6rem;
+  width: 100%;
+  max-width: 21rem;
+  margin-top: 0.2rem;
+  padding: 0.45rem 0.8rem;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  background: rgba(238, 240, 246, 0.04);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full, 999px);
+  animation: pa-name-in var(--duration-normal) var(--ease-spring) both;
+}
+.pa-name-label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.pa-name-value {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.pa-name-value.is-unset {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+.pa-name--editing {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  text-align: left;
+  border-radius: var(--radius-md);
+}
+.pa-name-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.pa-name-actions .pa-btn {
+  flex: 1;
+  min-height: 2.75rem;
+}
+.pa-name-error { color: #f2a7a7; }
+@keyframes pa-name-in {
+  from { opacity: 0; transform: translateY(3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pa-name { animation: none; }
+}
+
 /* Characters in this account (I5): one orb each; the played one glows. */
 .pa-characters {
   margin: 0 0 0.5rem;
@@ -4560,6 +4617,25 @@ html.touch-ui .held-clear-btn {
 @keyframes chat-pop { from { opacity: 0; transform: scale(0.85); } }
 /* Out in space the bubble keeps a fixed screen size over a tiny orb */
 .chat-bubble--space { max-width: 180px; font-size: 13px; padding: 5px 10px; transform: translateY(-14px); }
+/* Over-head names (Rough Draft M1, 2026-10-27) */
+.name-tag {
+  width: max-content;
+  max-width: 180px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(10, 8, 24, 0.55);
+  border: 1px solid rgba(238, 240, 246, 0.14);
+  color: rgba(238, 240, 246, 0.92);
+  font: 600 12px/1.3 var(--font-body);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: chat-in 0.25s ease-out;
+}
 /* Touch: the last lines float above the stick (narrow, clear of the right-thumb
    cluster); open, the box takes the full width. Landscape: between the stick and
    the cluster, above the dock. (The radar moved to the top-left on 2026-10-22.) */

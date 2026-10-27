@@ -4,10 +4,11 @@ import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
 import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword } from "./auth.js";
-import { listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex, cleanLocation, saveLocation, loadLocation } from "./identity.js";
+import { listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex, cleanLocation, saveLocation, loadLocation, setCharacterName, characterNameAt, characterNames } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 import { cleanCoCreators } from "../../../shared/world-policy.js";
+import { cleanPlayerName } from "../../../shared/names.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus } from "./creations.js";
@@ -87,6 +88,26 @@ function handleWorldLookup(req: IncomingMessage, res: ServerResponse, id: string
   );
 }
 
+/** Ids per `/players/names` request, and the id shape we look up. */
+const NAMES_MAX_IDS = 50;
+const PLAYER_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * `GET /players/names?ids=a,b,c`: public names for characters (≤ 50 per call).
+ * Unnamed or unknown ids are simply left out, so the client falls back to
+ * "Wanderer 4K2Q". Rough Draft M1 (2026-10-27).
+ *  200 { names: { [id]: name } }
+ */
+function handleNames(req: IncomingMessage, res: ServerResponse): void {
+  const url = new URL(req.url ?? "/", "http://x");
+  const ids = [...new Set((url.searchParams.get("ids") ?? "").split(",").filter((id) => PLAYER_ID.test(id)))].slice(0, NAMES_MAX_IDS);
+  res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "public, max-age=60", ...corsHeaders(req) });
+  res.end(JSON.stringify({ names: characterNames(ids) }));
+}
+
+/** One rename per character per this long. */
+const RENAME_EVERY_MS = 10_000;
+
 function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -112,6 +133,7 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
  * `/api/player/*`: the signed-in account (session cookie, trusted origins only).
  *   GET  /api/player/me         { playerId, characters, methods, worldIndex }
  *   POST /api/player/character  { id } → this device now plays that character
+ *   POST /api/player/character/name  { name } → { playerId, name }  (400 bad_name · 429 slow_down)
  *   POST /api/player/password   { password } → add or change this player's password
  *   POST /api/player/world-index/sighted  { sightings: { worldId, at? }[] (≤ 20) } → { results }
  *        Came close enough to see them. The client reports these (it may have
@@ -198,6 +220,18 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     const id = typeof body?.id === "string" ? body.id : "";
     if (!switchCharacter(accountId, session.sessionId, id)) return json(404, { error: "not_your_character" });
     return json(200, { playerId: id });
+  }
+  // Name the character you're playing (Rough Draft M1, 2026-10-27)
+  if (path === "/api/player/character/name" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { name?: unknown } | null;
+    const r = cleanPlayerName(body?.name);
+    if (!r.ok) return json(400, { error: "bad_name", message: r.message });
+    const last = characterNameAt(session.playerId);
+    if (last && Date.now() - last < RENAME_EVERY_MS) {
+      return json(429, { error: "slow_down", message: "Give it a few seconds before renaming again." });
+    }
+    if (!setCharacterName(accountId, session.playerId, r.name)) return json(404, { error: "not_your_character" });
+    return json(200, { playerId: session.playerId, name: r.name });
   }
   if (path === "/api/player/password" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { password?: unknown } | null;
@@ -527,6 +561,10 @@ const server = createServer((req, res) => {
   }
 
   const worldMatch = req.url?.match(/^\/worlds\/([^/?#]+)\/?(?:\?.*)?$/);
+  if (req.url?.startsWith("/players/names") && req.method === "GET") {
+    handleNames(req, res);
+    return;
+  }
   if (worldMatch && (req.method === "GET" || req.method === "HEAD")) {
     handleWorldLookup(req, res, worldMatch[1]);
     return;

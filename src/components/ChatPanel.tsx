@@ -5,6 +5,7 @@ import { useChatStore, SPACE_CHAT } from '../stores/chatStore'
 import { usePresence } from '../hooks/usePresence'
 import { matchesBinding, keyCapLabel, useKeybindingStore } from '../stores/keybindingStore'
 import { CHAT_MAX_CHARS, prepareChat } from '@aweborn/shared/chat'
+import { useNameStore, requestNames, displayName } from '../stores/nameStore'
 
 /** Lines older than this fade out of the corner while you're not typing. */
 const FADE_MS = 14_000
@@ -16,10 +17,6 @@ function hash(id: string): number {
   let h = 2166136261
   for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619)
   return h >>> 0
-}
-/** A short, stable handle: players have no names yet, so "Wanderer 4K2Q". */
-function tagOf(id: string): string {
-  return hash(id).toString(36).toUpperCase().padStart(4, '0').slice(-4)
 }
 function colorOf(id: string): string {
   return `hsl(${hash(id) % 360}, 70%, 72%)`
@@ -57,6 +54,10 @@ export function ChatPanel() {
     () => chat.map((m, i) => ({ key: `${m.t}-${i}`, sender: m.sender, t: m.t, text: prepareChat(m.text) })).filter((m) => m.text),
     [chat],
   )
+  const names = useNameStore((s) => s.names)
+  useEffect(() => {
+    requestNames(new Set(lines.slice(-OPEN_LINES).map((m) => m.sender)))
+  }, [lines])
 
   // Open with Enter from the world (never while typing somewhere else)
   useEffect(() => {
@@ -115,7 +116,7 @@ export function ChatPanel() {
           return (
             <p key={m.key} className="chat-line">
               <span className="chat-name" style={{ color: colorOf(m.sender) }}>
-                {mine ? 'You' : `Wanderer ${tagOf(m.sender)}`}
+                {mine ? 'You' : displayName(m.sender, names)}
               </span>
               <span className="chat-text">{m.text}</span>
             </p>

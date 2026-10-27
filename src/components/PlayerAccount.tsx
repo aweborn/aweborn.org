@@ -43,6 +43,8 @@ import { canPromptNow, onMeaningfulMoment, recordPrompted, trackPlaytime } from 
 import { EmailSignIn } from './EmailSignIn'
 import { SetPassword } from './SetPassword'
 import { OPEN_ACCOUNT_EVENT } from './ManaSeal'
+import { NameField } from './NameField'
+import { useNameStore, displayName, requestNames } from '../stores/nameStore'
 
 type Busy = null | 'passkey-save' | 'passkey-signin' | 'google' | 'signout' | 'switch' | 'confirm' | `remove-${string}`
 type Tab = 'signin' | 'save'
@@ -101,6 +103,10 @@ export function PlayerAccount() {
   /** The panel is open (passkey autofill only runs while it is). */
   const [shown, setShown] = useState(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const names = useNameStore((s) => s.names)
+  useEffect(() => {
+    if (shown && player) requestNames(player.characters)
+  }, [shown, player])
 
   const isAnonymous = player?.isAnonymous ?? false
   const canSave = Boolean(methods?.enabled && (methods.passkey || methods.google || methods.email))
@@ -392,6 +398,7 @@ export function PlayerAccount() {
                     : 'Already saved on another device? Sign in and pick up where you left off. What you did here comes along.'
                   : 'Keep your worlds and cards on every device. No password needed. You can keep playing either way.'}
             </p>
+            {shown && (!isAnonymous || tab === 'save') && <NameField playerId={player.playerId} />}
           </div>
 
           {isAnonymous && tab === 'signin' ? (
@@ -482,7 +489,7 @@ export function PlayerAccount() {
                             onClick={() => run('switch', () => switchCharacter(id))}
                           >
                             <span className="pa-orb" style={{ '--pa-color': colorForPlayer(id) } as CSSProperties} aria-hidden="true" />
-                            <span className="pa-character-label">{playing ? 'Playing' : 'Play'}</span>
+                            <span className="pa-character-label">{playing ? 'Playing' : 'Play'} · {displayName(id, names)}</span>
                           </button>
                         </li>
                       )

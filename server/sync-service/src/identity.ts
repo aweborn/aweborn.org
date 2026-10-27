@@ -65,6 +65,31 @@ export function initIdentity(database: Database.Database): void {
     `UPDATE world_index SET visitedAt = discoveredAt, lastVisitedAt = discoveredAt
        WHERE state = 'visited' AND visitedAt IS NULL`,
   );
+  // Rough Draft M1 (2026-10-27): character names (null = "Wanderer 4K2Q")
+  const charCols = new Set((db.prepare(`PRAGMA table_info(character)`).all() as { name: string }[]).map((c) => c.name));
+  if (!charCols.has("name")) db.exec(`ALTER TABLE character ADD COLUMN name TEXT`);
+  if (!charCols.has("nameAt")) db.exec(`ALTER TABLE character ADD COLUMN nameAt INTEGER`);
+}
+
+/** Name a character (already cleaned with `cleanPlayerName`). The account must own it. */
+export function setCharacterName(accountId: string, characterId: string, name: string, at = Date.now()): boolean {
+  const r = db.prepare(`UPDATE character SET name = ?, nameAt = ? WHERE id = ? AND accountId = ?`).run(name, at, characterId, accountId);
+  return r.changes > 0;
+}
+
+/** When this character was last renamed (ms), or null. */
+export function characterNameAt(characterId: string): number | null {
+  const row = db.prepare(`SELECT nameAt FROM character WHERE id = ?`).get(characterId) as { nameAt: number | null } | undefined;
+  return row?.nameAt ?? null;
+}
+
+/** Names for many characters at once (unnamed or unknown ids are left out). */
+export function characterNames(ids: readonly string[]): Record<string, string> {
+  if (ids.length === 0) return {};
+  const rows = db
+    .prepare(`SELECT id, name FROM character WHERE name IS NOT NULL AND id IN (${ids.map(() => "?").join(",")})`)
+    .all(...ids) as { id: string; name: string }[];
+  return Object.fromEntries(rows.map((r) => [r.id, r.name]));
 }
 
 /** Make sure a character row exists. Never steals one owned by another account. */
@@ -117,10 +142,10 @@ export function switchCharacter(accountId: string, sessionId: string, characterI
   return true;
 }
 
-export function listCharacters(accountId: string): { id: string; createdAt: number }[] {
+export function listCharacters(accountId: string): { id: string; createdAt: number; name: string | null }[] {
   return db
-    .prepare(`SELECT id, createdAt FROM character WHERE accountId = ? ORDER BY createdAt`)
-    .all(accountId) as { id: string; createdAt: number }[];
+    .prepare(`SELECT id, createdAt, name FROM character WHERE accountId = ? ORDER BY createdAt`)
+    .all(accountId) as { id: string; createdAt: number; name: string | null }[];
 }
 
 /**
