@@ -90,14 +90,24 @@ Quake, Source (CS, Valorant), Overwatch, Rocket League, Fortnite: **server-autho
 - `[ ]` Optional later: peers record hashes of each other's states as witnesses (cross-check on reconnect)
 
 ### Interior movement (lands with Phase 07)
-- `[ ]` `InteriorController` is written inside `shared/sim` from day one (same prediction/authority/replay)
-- `[ ]` If Phase 07 picks Rapier: enable its cross-platform determinism build and run it on the server too; if a custom kinematic controller: same rules as flight
+- `[x]` `shared/sim/interior.ts` pure deterministic step function (`stepInterior`, `kickedPosition`, AABB colliders) already shared between client (`InteriorController.ts`) and tests; wire into server authority + replay in 9B/9C
+
+### 9F: Enumerated Action Catalog & Unified Intent Authority (added 2026-10-27)
+> **Finding (2026-10-23/27 audit):** `Universe` (`0x02 universe-update` refused) and `chat` (`0x0a chat` intent) are already server-written only, but `World` CRDTs (`0x04 world-update`) still accept raw binary Yjs deltas from clients (`meta`, `physics`, `terrain`, and `objects` are open; only `chat` is blocked via Yjs internal struct inspection in `chat-guard.ts`, and `PlannerPanel` "Shape terrain" writes raw JSON directly to `doc.getMap("terrain")` over Yjs). Extending `chat-guard.ts` to dissect Yjs internals (`_start`, `_map`, `origin` chains) was explicitly rejected: binary CRDT deltas are for state replication, not intent/ACL enforcement, and lose actor identity (`placedBy` can be forged; world policies can't be checked).
+
+- `[ ]` **Server is the sole writer to canonical Y.Docs (`Universe` and `World`):** keep Yjs as the server → client sync & local prediction/cache layer (`universe-sync`, `world-sync`, `world-update`), retire client → server raw `0x04 world-update` binary deltas, and delete `chat-guard.ts`
+- `[ ]` **Declarative Action & Authority Catalog (`shared/actions.ts` + server policy enforcer):** enumerate every state-mutating intent in one typed table enforced centrally across HTTP and WebSocket handlers:
+  - **Actor tiers:** `any_session` (anonymous or saved) → `saved` (signed-in explorer) → `asset_maker` (`asset.maker ∈ account.characters`) → `world_creator` (`world.creator ∈ account.characters`, + future co-creators) → `admin_inflow` / `admin`
+  - **Offline-capable world intents (replaces client `0x04 world-update`):** `object.place`, `object.transform`, `object.recolor`, `object.duplicate`, `object.kick`, `object.settle`, `object.replace_asset`, `object.remove`, `terrain.shape`. Client applies optimistically to local `Y.Doc` (0 ms feedback) and appends typed intents to an IndexedDB **Offline Intent Queue** when offline; on live send or reconnect replay, server validates schema/bounds, stamps `placedBy: session.playerId`, checks world policy, and writes to canonical `worldDoc`. *(Policy baseline decided 2026-10-23: all object actions stay open to everyone in the world for now; Architect / `terrain.shape` defaults to any signed-in explorer, with room for a creator policy toggle later like `allowPortals`.)*
+  - **Online authenticated intents:** `world.plant` (enforces parent `allowPortals`), `world.set_portal_policy` (`world_creator`), `chat.send` (`saved`), `library.create_model` (`saved` + mana), `library.remove_asset` (`asset_maker`), `library.upload_thumb` (`any_session`), `architect.turn` / `architect.manifest` / `architect.redo` (`saved` + mana), `account.switch_character`, `account.set_password`
+  - **Admin intents:** `mana.inflow` (`admin_inflow`), `mana.draw` (`admin`), `trash.list` / `trash.restore` / `trash.purge` (`admin`)
+  - **Continuous simulation intents (9A–9C):** `sim.flight_input`, `sim.interior_input`, `sim.warp` *(Note: wire opcodes `0x0a` `chat` and `0x0b` `presence-batch` are now taken in `rooms.ts`; start 9B opcodes at `0x0c`+)*
 
 ## Ties to other phases
 
 | Phase | What changes |
 |-------|--------------|
-| 02 Multiplayer | Presence `0x09` (client positions) is replaced by server snapshots. CRDT layer unchanged |
+| 02 Multiplayer | Presence `0x09` (client positions) is replaced by server snapshots; client → server `0x04 world-update` is replaced by typed world intents (server becomes sole writer to canonical `World` Y.Docs, matching `Universe`) |
 | 04 Navigation | `FlightController`/`GravitySystem`/`WarpSystem` become adapters over `shared/sim` |
 | 05 Economy | Awe/mana rewards for discovery trust server-derived visits; Event-Sourced Physics kick validation can reuse the sim |
 | 06 Offline & Mesh | PWA + IndexedDB host the input log; mesh carries inputs; reconnect = 9C replay. Tiered connectivity UI shows the same game in all tiers |
@@ -128,12 +138,16 @@ Quake, Source (CS, Valorant), Overwatch, Rocket League, Fortnite: **server-autho
 
 | File | Action | Notes |
 |------|--------|-------|
-| `shared/sim/*.ts` | NEW | `step`, state/input types, gravity, dmath, sightings |
+| `shared/sim/*.ts` | NEW / EXPAND | `step`, state/input types, gravity, dmath, sightings (`interior.ts` already started) |
+| `shared/actions.ts` | NEW | Enumerated Action & Authority Catalog (actor tiers, offline capability, mana & world policy flags) |
 | `src/systems/FlightController.ts`, `GravitySystem.ts`, `WarpSystem.ts`, `TeleportSystem.ts` | MODIFY | Adapters over `shared/sim` |
 | `src/systems/InputManager.ts` | MODIFY | Emits quantized `InputFrame`s |
 | `src/hooks/usePresence.ts` | MODIFY | Server snapshots + interpolation |
+| `src/lib/offlineCache.ts`, `src/stores/worldStore.ts` | MODIFY | Typed world intent dispatch + IndexedDB Offline Intent Queue (replaces raw binary `world-update` queue) |
+| `server/sync-service/src/authority.ts` | NEW | Central HTTP + WS intent policy enforcer + world CRDT mutator |
+| `server/sync-service/src/chat-guard.ts` | DELETE | Retired once client → server `0x04 world-update` is replaced by typed world intents |
 | `server/sync-service/src/sim-host.ts` | NEW | Per-player authority + replay worker |
-| `server/sync-service/src/rooms.ts` | MODIFY | `0x0A`–`0x0C` messages, interest management |
+| `server/sync-service/src/rooms.ts` | MODIFY | `0x0C`+ sim/intent messages, interest management, refuse client `0x04 world-update` |
 | `server/sync-service/src/telemetry.ts` | NEW | Trace storage + retention |
 | `scripts/sim-determinism/*` | NEW | Cross-engine harness (Playwright) |
 
@@ -142,3 +156,4 @@ Quake, Source (CS, Valorant), Overwatch, Rocket League, Fortnite: **server-autho
 | Date | What was done | Next step |
 |------|--------------|-----------|
 | 2026-10-12 | **Planned.** Came out of the World Index anti-cheat question. Alex: the server should have flight traces of every player (telemetry + online anti-cheat); offline must be checked by the same code; no "unverified" tier, online and offline should feel the same; the "perfect honest flier" bound is the guarantee. Chose server-authoritative movement with client prediction (how the big titles do it), with offline = replay of recorded inputs. Audit: flight is our own code (~670 lines, three.js math, boolean actions); determinism risks are `Date.now()` in gravity, `Math.pow`, and `sin/cos` inside `setFromAxisAngle`/`slerp`. | After 8B ships: Alex to confirm open questions, then 9A |
+| 2026-10-27 | **Expanded scope (Milestone 9F): Enumerated Action Catalog & Unified Intent Authority.** Audited every state-mutating surface in the codebase after shipping `world.set_portal_policy`. Found that while `Universe` (`0x02` refused) and `chat` (`0x0a`) are server-written only, `World` CRDTs (`0x04 world-update`) still accept raw binary Yjs deltas (`meta`, `physics`, `terrain`, `objects` unguarded except `chat-guard.ts`, and `PlannerPanel` "Shape terrain" writes directly to `terrain` over Yjs). Rejected extending `chat-guard.ts` into a Yjs binary-struct inspector (`crdt-guard.ts`): binary CRDT deltas are for replication, not intent/permission checks, and lose actor identity. **Decided:** Phase 09 will unify discrete actions and world building under the same architecture as flight (`ROADMAP.md` line 917): **the server becomes the sole writer to canonical `Universe` and `World` Y.Docs**, and every client → server mutation becomes an enumerated, typed **Intent Action** (`shared/actions.ts`), predicted locally on the client's `Y.Doc` and queued as typed intents while offline for ordered replay on reconnect (retiring client `0x04 world-update` and `chat-guard.ts`). Policy baselines set by Alex: keep object actions open to everyone in a world for now; Architect / `terrain.shape` defaults to any signed-in explorer (with room for a creator toggle later like `allowPortals`). | Design & flesh out 9F alongside 9A–9C when Phase 09 kicks off |
