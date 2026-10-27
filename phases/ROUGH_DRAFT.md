@@ -25,6 +25,7 @@
 - 📱 Two-phone test for mesh (M7)
 - 🧑 Studio design session (`/grill-me`) before M5's Studio part. Until then: build the generators + planner edits
 - 🔑 **Backup cadence** (from M0): GitHub runs the hourly off-box backup only every ~3–5 h. Real fix = upload to S3 from inside the cluster, which needs a put-only IAM key as a k3s secret on the VPS (`AGENTS.md`: secrets → ask). OK to add one?
+- 📱 **30-second look on your phone** (M1): in one of your worlds, open 🧱 Make → 🌱 Portal and check the new **Builders** card (with your wife in the world, tap *Make builder*). The API is verified; my test browser couldn't keep a signed-in session locally, so I couldn't screenshot the card itself.
 
 ## Checks before shipping (copy-paste)
 
@@ -41,7 +42,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ shipped
 | # | Milestone | Status |
 |---|---|---|
 | M0 | Housekeeping: phase checkboxes match code, chat key hint, drop `y-websocket`, MANA_COSTS caps, backup cadence | ✅ (backup cadence queued) |
-| M1 | Event trust & safety: **world write authority** (placer / creator / co-creators; terrain+sky creator-only; guests can't delete others'), character names, chat mute/block/report, planner + Make safety check | 🟨 authority ✅ (verified live) · names ✅ · builders UI, mute/report, safety check next |
+| M1 | Event trust & safety: **world write authority** (placer / creator / co-creators; terrain+sky creator-only; guests can't delete others'), character names, chat mute/block/report, planner + Make safety check | 🟨 authority ✅ (verified live) · names ✅ · builders UI ✅ · mute/report, safety check next |
 | M2 | Audio engine (procedural): pool-level ambience, wave sweep + hum, creation exhale, discovery chime, UI ticks, mute in More | ⬜ |
 | M3 | Awe = XP: awe events → XP, levels (curve + skill breadth), `base(level)` caps, chapter ladder, warp gate at ch. 7 (cards/links never gated), beginner cradle, levels UI, Privacy | ⬜ |
 | M4 | Living sky: solar cycle (visual + ±10% caps), pool-level visuals, shooting stars (Form 990 fields), opt-in donor name, shortfall + runway email, refunds as labeled draws | ⬜ |
@@ -61,3 +62,4 @@ Full audit + per-milestone detail: written in the 2026-10-27 session (summarised
 | 2026-10-27 | **M0 shipped.** Phase 06/07 checkboxes reconciled with code; chat button tooltip reads the real chat binding; unused `y-websocket` removed (client + sync-service + its `.d.ts`); MANA_COSTS caps were already current. Backup cadence queued (needs a VPS secret). tsc clean, 58 shared + 40 sync tests, lint 0 errors. | M1 world write authority |
 | 2026-10-27 | **M1 authority shipped** (`103c0ef`): server reverts forbidden world edits (revert, don't refuse; one `"authority"` transaction). Co-creators via `POST /api/player/world/policy {coCreators}`. Grab only picks up what you may edit; Shape terrain is creator-only. Terms updated. **Verified on prod** with `scripts/verify/world-authority.mjs` (guest rename + delete both reverted). | Character names |
 | 2026-10-27 | **M1 names shipped.** `shared/names.ts` (2–20 chars, letters/numbers/space `_-.'`, profanity + reserved words refused); `character.name/nameAt`; `POST /api/player/character/name` (1 rename / 10 s); public `GET /players/names?ids=` (≤ 50, cached 60 s). Client: batched `nameStore`, chat shows names, name row in the account panel (New player tab + saved players), name tags over named avatars. Privacy updated. Checked 390×844, 360×740, 844×390, 1440×900; API checked with curl (the local test browser had no session cookie, so the in-browser save showed the new "session ended" message). 63 shared + 53 sync tests. | Builders UI (co-creator toggles), then mute/block/report |
+| 2026-10-27 | **M1 builders UI.** Creator-only *Builders* card in the 🌱 Portal sheet (desktop Y, touch Make → Portal): players here now + existing builders ("· away"), by name, toggle → `POST /api/player/world/policy {coCreators}`; the list syncs back through the world. Anonymous refusal now says "Sign in to change who may build in your world." API checked locally with curl (guest ids stripped, anonymous refused). Card not screenshotted (local browser session), queued for a phone look. | Chat mute/block/report |

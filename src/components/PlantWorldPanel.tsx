@@ -10,6 +10,7 @@ import { markMeaningfulMoment } from '../lib/onramp'
 import { ManaSeal, useCanChannel } from './ManaSeal'
 import { MakeTabs } from './MakeTabs'
 import { useSheet } from '../stores/sheetStore'
+import { BuildersPanel } from './BuildersPanel'
 
 /**
  * Create World (Alex, 2026-10-21; recursive worlds-within-worlds 2026-10-23):
@@ -301,6 +302,7 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
                 </div>
               </div>
             )}
+            {isCreator && parentWorldId && <BuildersPanel worldId={parentWorldId} creatorIds={myChars} />}
             <label className="plant-field" htmlFor="plant-name">
               <span>Name</span>
               <input

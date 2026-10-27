@@ -323,7 +323,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   if (path === "/api/player/world/policy" && req.method === "POST") {
     if (session.isAnonymous) {
-      return json(403, { error: "sign_in_required", message: SIGN_IN_MESSAGE });
+      return json(403, { error: "sign_in_required", message: "Sign in to change who may build in your world." });
     }
     const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; allowPortals?: unknown; coCreators?: unknown } | null;
     const worldId = knownWorld(body?.worldId);

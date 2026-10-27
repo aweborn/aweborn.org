@@ -5221,3 +5221,59 @@ html.touch-ui .held-color-btn {
   color: #ffe2a8;
   box-shadow: 0 0 0 1px rgba(255, 210, 122, 0.35);
 }
+
+/* Builders (Rough Draft M1, 2026-10-27): creator picks co-creators */
+.builders {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  text-align: left;
+}
+.builders-hint,
+.builders-empty {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+}
+.builders-empty { margin-bottom: 0; }
+.builders-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 11rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.builders-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+}
+.builders-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.builders-away {
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+.builders-toggle {
+  flex-shrink: 0;
+  min-height: 40px;
+  background: rgba(0, 0, 0, 0.35);
+  transition: background var(--duration-fast), color var(--duration-fast), box-shadow var(--duration-fast);
+}
+.builders-toggle:disabled { opacity: 0.6; cursor: progress; }
