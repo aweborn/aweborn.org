@@ -16,6 +16,7 @@ import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./p
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
 import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
+import { listMutes, setMute, fileReport, handleReportsAdmin, isPlayerId } from "./moderation.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
@@ -220,6 +221,19 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     const id = typeof body?.id === "string" ? body.id : "";
     if (!switchCharacter(accountId, session.sessionId, id)) return json(404, { error: "not_your_character" });
     return json(200, { playerId: id });
+  }
+  // Mute + report (Rough Draft M1, 2026-10-27)
+  if (path === "/api/player/mutes" && req.method === "GET") return json(200, { mutes: listMutes(accountId) });
+  if (path === "/api/player/mute" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { targetId?: unknown; muted?: unknown } | null;
+    if (!isPlayerId(body?.targetId) || typeof body?.muted !== "boolean") return json(400, { error: "bad_request" });
+    if (!setMute(accountId, body.targetId, body.muted)) return json(409, { error: "too_many", message: "Your mute list is full." });
+    return json(200, { targetId: body.targetId, muted: body.muted });
+  }
+  if (path === "/api/player/report" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
+    const r = fileReport(accountId, session.playerId, body ?? {});
+    return r.ok ? json(200, { id: r.id }) : json(r.status, { error: r.error, message: r.message });
   }
   // Name the character you're playing (Rough Draft M1, 2026-10-27)
   if (path === "/api/player/character/name" && req.method === "POST") {
@@ -505,6 +519,7 @@ const server = createServer((req, res) => {
   if (handleAssets(req, res)) return;
   if (handleLibrary(req, res)) return;
   if (req.url?.startsWith("/api/admin/") && handleTrashAdmin(req, res, req.url.split("?")[0], MANA_ADMIN_TOKEN, corsHeaders(req))) return;
+  if (req.url?.startsWith("/api/admin/") && handleReportsAdmin(req, res, req.url.split("?")[0], MANA_ADMIN_TOKEN, corsHeaders(req), readJson)) return;
   if (req.url?.startsWith("/api/player/")) {
     const origin = req.headers.origin;
     if (isTrustedOrigin(origin)) {

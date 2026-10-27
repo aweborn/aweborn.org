@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Html } from '@react-three/drei'
 import { useWorldStore } from '../stores/worldStore'
 import { useChatStore } from '../stores/chatStore'
+import { useMuteStore } from '../stores/muteStore'
 import { prepareChat } from '@aweborn/shared/chat'
 import type { ChatMessage } from '@aweborn/shared/crdt-schema'
 
@@ -54,7 +55,8 @@ export function ChatBubble({
     return () => clearTimeout(timer)
   }, [line])
 
-  if (!shown) return null
+  const isMuted = useMuteStore((s) => s.muted.has(playerId))
+  if (!shown || isMuted) return null
   return (
     <Html
       position={[0, height, 0]}

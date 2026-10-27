@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Reports (admin) | Aweborn</title>
+    <meta name="description" content="Admin only: player reports waiting for review." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root { color-scheme: dark; --bg: #050510; --glass: rgba(10, 10, 46, 0.6); --border: rgba(238, 240, 246, 0.12); --text: #eef0f6; --dim: rgba(238, 240, 246, 0.55); --accent: #e8b94a; --danger: #ff9a86; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: radial-gradient(1200px 600px at 20% -10%, #12124a 0%, var(--bg) 60%); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+      main { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+      h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+      .sub { color: var(--dim); margin: 0 0 24px; }
+      .bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+      input { flex: 1; min-width: 12rem; font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; outline: none; }
+      input:focus { border-color: var(--accent); }
+      button { font: inherit; font-size: 13px; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; cursor: pointer; transition: background 0.15s, transform 0.15s; }
+      button:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+      button.primary { color: #1a1206; border: none; font-weight: 600; background: linear-gradient(135deg, #ffd27a, #ff9f5a); }
+      button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+      ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+      li { padding: 14px 16px; background: var(--glass); border: 1px solid var(--border); border-radius: 14px; backdrop-filter: blur(8px); }
+      .head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; margin-bottom: 6px; }
+      .reason { font-weight: 600; color: var(--danger); text-transform: capitalize; }
+      .meta { font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+      .note { margin: 6px 0; font-style: italic; }
+      .lines { margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.3); font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 14rem; overflow: auto; }
+      .lines p { margin: 0 0 2px; overflow-wrap: anywhere; }
+      .lines time { color: var(--dim); margin-right: 8px; }
+      .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+      .msg { min-height: 1.4em; color: var(--dim); margin: 0 0 12px; }
+      .msg.err { color: var(--danger); }
+      .empty { color: var(--dim); text-align: center; padding: 40px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Reports</h1>
+      <p class="sub">What players reported. The lines shown are the server's own copy of what the reported player said in that place during the hour before the report, as typed (unmasked).</p>
+      <form class="bar" id="rep-login" autocomplete="off">
+        <input id="rep-token" type="password" placeholder="Admin token" aria-label="Admin token" autocomplete="off" />
+        <button class="primary" type="submit" id="rep-load">Load</button>
+      </form>
+      <div class="bar" role="group" aria-label="Which reports">
+        <button type="button" id="rep-open" aria-pressed="true">Open</button>
+        <button type="button" id="rep-resolved" aria-pressed="false">Resolved</button>
+      </div>
+      <p class="msg" id="rep-msg" role="status"></p>
+      <ul id="rep-list"></ul>
+    </main>
+    <script>
+      const API = location.hostname === 'localhost' ? 'http://localhost:1234' : 'https://sync.aweborn.org'
+      const $ = (id) => document.getElementById(id)
+      const tokenEl = $('rep-token'), msg = $('rep-msg'), list = $('rep-list')
+      let status = 'open'
+      tokenEl.value = sessionStorage.getItem('aweborn-admin') || ''
+
+      function say(text, err) { msg.textContent = text; msg.className = 'msg' + (err ? ' err' : '') }
+      function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+
+      async function call(path, method, body) {
+        const res = await fetch(API + path, {
+          method,
+          headers: { Authorization: 'Bearer ' + tokenEl.value.trim(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+          body: body ? JSON.stringify(body) : undefined,
+        })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(res.status === 401 ? 'Wrong token.' : j.message || j.error || 'Failed (' + res.status + ')')
+        return j
+      }
+
+      function row(r) {
+        const li = el('li')
+        const head = el('div', 'head')
+        head.append(el('span', 'reason', r.reason.replace('_', ' ')))
+        head.append(el('span', 'meta', new Date(r.at).toLocaleString() + ' \u00B7 in ' + (r.place === 'space' ? 'space' : 'world ' + r.place)))
+        li.append(head)
+        li.append(el('div', 'meta', 'reported: ' + r.targetId + (r.openAgainstTarget > 1 ? '  (' + r.openAgainstTarget + ' open reports)' : '') + ' \u00B7 by: ' + r.reporterId))
+        if (r.note) li.append(el('p', 'note', '\u201C' + r.note + '\u201D'))
+        const lines = el('div', 'lines')
+        if (!r.evidence.length) lines.append(el('p', null, '(no chat from them in that place in the hour before)'))
+        r.evidence.forEach((l) => { const p = el('p'); p.append(el('time', null, new Date(l.at).toLocaleTimeString()), document.createTextNode(l.text)); lines.append(p) })
+        li.append(lines)
+        if (r.status === 'open') {
+          const actions = el('div', 'actions')
+          for (const [label, resolution] of [['No action', 'no_action'], ['Warned', 'warned'], ['Actioned', 'actioned']]) {
+            const b = el('button', resolution === 'actioned' ? 'primary' : null, label)
+            b.onclick = async () => {
+              b.disabled = true
+              try { await call('/api/admin/reports/' + r.id + '/resolve', 'POST', { resolution }); li.remove(); say('Resolved: ' + label + '.') } catch (e) { b.disabled = false; say(e.message, true) }
+            }
+            actions.append(b)
+          }
+          li.append(actions)
+        } else {
+          li.append(el('div', 'meta', 'resolved ' + new Date(r.resolvedAt).toLocaleString() + ' \u00B7 ' + r.resolution))
+        }
+        return li
+      }
+
+      async function load() {
+        say('Loading\u2026'); list.replaceChildren()
+        try {
+          const j = await call('/api/admin/reports?status=' + status, 'GET')
+          sessionStorage.setItem('aweborn-admin', tokenEl.value.trim())
+          if (!j.reports.length) { list.append(el('li', 'empty', status === 'open' ? 'Nothing waiting. \u2728' : 'No resolved reports yet.')); say(''); return }
+          j.reports.forEach((r) => list.append(row(r)))
+          say(j.reports.length + ' ' + status + '.')
+        } catch (e) { say(e.message, true) }
+      }
+
+      for (const s of ['open', 'resolved']) {
+        $('rep-' + s).addEventListener('click', () => {
+          status = s
+          $('rep-open').setAttribute('aria-pressed', String(s === 'open'))
+          $('rep-resolved').setAttribute('aria-pressed', String(s === 'resolved'))
+          load()
+        })
+      }
+      $('rep-login').addEventListener('submit', (e) => { e.preventDefault(); load() })
+      if (tokenEl.value) load()
+    </script>
+  </body>
+</html>

@@ -4,6 +4,7 @@ import { ManaTracker } from './components/ManaTracker'
 import { LibraryPanel } from './components/LibraryPanel'
 import { HeldItemBar } from './components/HeldItemBar'
 import { ChatPanel } from './components/ChatPanel'
+import { PlayerActions } from './components/PlayerActions'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Scene } from './components/Scene'
 import { LoadingScreen } from './components/LoadingScreen'
@@ -141,6 +142,7 @@ export default function App() {
           <LibraryPanel />
           <HeldItemBar />
           <ChatPanel />
+          <PlayerActions />
           <PlantWorldPanel />
           <TouchDock />
           <MoreSheet />

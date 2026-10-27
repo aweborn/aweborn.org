@@ -6,6 +6,7 @@ import { usePresence } from '../hooks/usePresence'
 import { matchesBinding, keyCapLabel, useKeybindingStore } from '../stores/keybindingStore'
 import { CHAT_MAX_CHARS, prepareChat } from '@aweborn/shared/chat'
 import { useNameStore, requestNames, displayName } from '../stores/nameStore'
+import { useMuteStore } from '../stores/muteStore'
 
 /** Lines older than this fade out of the corner while you're not typing. */
 const FADE_MS = 14_000
@@ -50,9 +51,13 @@ export function ChatPanel() {
   const chat = activeWorldId ? worldChat : spaceChat
 
   // Cleaned once per change (the server already did; this covers older lines)
+  const muted = useMuteStore((s) => s.muted)
   const lines = useMemo(
-    () => chat.map((m, i) => ({ key: `${m.t}-${i}`, sender: m.sender, t: m.t, text: prepareChat(m.text) })).filter((m) => m.text),
-    [chat],
+    () =>
+      chat
+        .map((m, i) => ({ key: `${m.t}-${i}`, sender: m.sender, t: m.t, text: prepareChat(m.text) }))
+        .filter((m) => m.text && !muted.has(m.sender)),
+    [chat, muted],
   )
   const names = useNameStore((s) => s.names)
   useEffect(() => {
@@ -115,9 +120,22 @@ export function ChatPanel() {
           const mine = m.sender === playerId
           return (
             <p key={m.key} className="chat-line">
-              <span className="chat-name" style={{ color: colorOf(m.sender) }}>
-                {mine ? 'You' : displayName(m.sender, names)}
-              </span>
+              {mine || !open ? (
+                <span className="chat-name" style={{ color: colorOf(m.sender) }}>
+                  {mine ? 'You' : displayName(m.sender, names)}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="chat-name chat-name--btn"
+                  style={{ color: colorOf(m.sender) }}
+                  title="Mute or report"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => useMuteStore.getState().openActions(m.sender, target)}
+                >
+                  {displayName(m.sender, names)}
+                </button>
+              )}
               <span className="chat-text">{m.text}</span>
             </p>
           )
