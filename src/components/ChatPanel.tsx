@@ -3,7 +3,7 @@ import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
 import { useChatStore, SPACE_CHAT } from '../stores/chatStore'
 import { usePresence } from '../hooks/usePresence'
-import { matchesBinding } from '../stores/keybindingStore'
+import { matchesBinding, keyCapLabel, useKeybindingStore } from '../stores/keybindingStore'
 import { CHAT_MAX_CHARS, prepareChat } from '@aweborn/shared/chat'
 
 /** Lines older than this fade out of the corner while you're not typing. */
@@ -46,6 +46,7 @@ export function ChatPanel() {
   const [text, setText] = useState('')
   const [now, setNow] = useState(() => Date.now())
   const inputRef = useRef<HTMLInputElement>(null)
+  const chatKey = useKeybindingStore((s) => keyCapLabel(s.bindings.chat ?? null, s.layout))
   const logRef = useRef<HTMLDivElement>(null)
   const target = activeWorldId ?? SPACE_CHAT
   const visible = activeWorldId ? loaded : true
@@ -154,8 +155,8 @@ export function ChatPanel() {
           id="chat-open"
           type="button"
           className="chat-open"
-          aria-label="Open chat (Enter)"
-          title="Chat (Enter)"
+          aria-label={`Open chat (${chatKey})`}
+          title={`Chat (${chatKey})`}
           onClick={() => useChatStore.getState().setOpen(true)}
         >
           💬

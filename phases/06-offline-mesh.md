@@ -1,6 +1,6 @@
 # Phase 06: Offline & Mesh Networking
 
-**Status:** `[ ]` Not Started
+**Status:** `[~]` PWA + cold-start offline shipped (2026-10-22); mesh not started (Rough Draft M7)
 **Depends on:** [Phase 02: Multiplayer Core](./02-multiplayer-core.md)
 **ROADMAP reference:** [Offline & Off-Grid Networking](../ROADMAP.md#offline--off-grid-networking)
 **Estimated sessions:** 3-4
@@ -24,12 +24,12 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 ## Tasks
 
 ### Service Worker & PWA
-- `[ ]` Create `public/sw.js` — Service Worker for offline caching
-- `[ ]` Cache strategy: cache-first for static assets, network-first for API calls
-- `[ ]` Add `manifest.json` for PWA (installable on mobile) — *icons already exist from the Sep 2026 logo work: `public/icon-192.png`, `icon-512.png`, `apple-touch-icon.png`*
-- `[ ]` Offline detection: `navigator.onLine` + `online`/`offline` events
-- `[ ]` IndexedDB: persist Yjs Y.Doc state locally for offline access
-- `[ ]` Test: load aweborn.org → go offline → app still works
+- `[x]` Create `public/sw.js` — Service Worker for offline caching *(2026-10-22, registered + warmed in `src/main.tsx`)*
+- `[x]` Cache strategy: cache-first for static assets, network-first for API calls *(network-first navigation → cached `/index.html`; cache-first hashed bundles + `<sha256>.glb`)*
+- `[x]` Add `manifest.json` for PWA (installable on mobile) — *shipped as `public/site.webmanifest`*
+- `[~]` Offline detection: `navigator.onLine` + `online`/`offline` events *(only `worldIndexStore` + socket state today; HUD tier indicator is M7)*
+- `[~]` IndexedDB: persist Yjs Y.Doc state locally for offline access *(shipped on **localStorage** in `src/lib/offlineCache.ts`; move to IndexedDB in M7)*
+- `[x]` Test: load aweborn.org → go offline → app still works *(2026-10-22)*
 
 ### WebRTC P2P (y-webrtc)
 - `[ ]` Install `y-webrtc` and configure alongside the existing WebSocket room protocol (`useCRDT.ts`)

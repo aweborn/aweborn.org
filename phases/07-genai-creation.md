@@ -1,6 +1,6 @@
 # Phase 07: World Creation & Gen AI
 
-**Status:** `[ ]` Not Started
+**Status:** `[~]` In Progress: planner, Meshy, Library, editing, interiors shipped; image/music/voice/text, Studio, smooth voxels open (Rough Draft M5)
 **Depends on:** [Phase 01: Foundation & Infra](./01-foundation.md) (genai-service container), [Phase 05: Mana Economy](./05-mana-economy.md) (mana cost validation), [Phase 04: Navigation & Controls](./04-navigation-controls.md) (interior control mapping)
 **ROADMAP reference:** [Open Design Questions — World Interiors](../ROADMAP.md#open-design-questions)
 **Estimated sessions:** 5-7
@@ -275,24 +275,25 @@ interface Blueprint {
 - `[ ]` **Privacy page updated before launch** (prompts and creation history are kept for research)
 
 ### genai-service: Core Framework
-- `[ ]` Implement the consistent request/response interface above
-- `[ ]` Request validation middleware
-- `[ ]` Mana admission: ask sync-service `requestDraw(player, estimate)` (pool − reserved, global cap, personal cap, priority queue) before proxying to the AI API; denial = "The world must be replenished…"
-- `[ ]` Reserve → settle: reserve the estimate → generate → draw the actual cost
-- `[ ]` Task queue: track in-progress generations (in-memory or Redis)
-- `[ ]` Status polling endpoint (`GET /generate/status/:id`)
-- `[ ]` Asset storage: upload completed assets to S3 or Lightsail object storage
-- `[ ]` Cost table endpoint (`GET /generate/cost`) — returns current mana prices
-- `[ ]` Rate limiting per player = Phase 05 personal caps (one mechanism, not two)
-- `[ ]` Error handling: failed generations draw nothing (release the reservation)
+> *Reconciled 2026-10-27 against code: the shape differs from the plan (sync-service fronts every paid call; genai is cluster-internal with `/jobs`, `/llm`, `/library`), but the jobs are done.*
+- `[~]` Implement the consistent request/response interface above *(per-kind routes `/jobs` (Meshy) + `/llm`; image/music/voice join in M5)*
+- `[x]` Request validation middleware *(per route; sync-service validates player input first)*
+- `[x]` Mana admission: ask sync-service `requestDraw(player, estimate)` (pool − reserved, global cap, personal cap, priority queue) before proxying to the AI API; denial = "The world must be replenished…" *(`creations.ts` → `ManaAdmission`)*
+- `[x]` Reserve → settle: reserve the estimate → generate → draw the actual cost
+- `[x]` Task queue: track in-progress generations (in-memory or Redis) *(SQLite jobs + `MAX_CONCURRENT_JOBS = 4`; holds persisted in `creations`)*
+- `[x]` Status polling endpoint (`GET /generate/status/:id`) *(`GET /jobs/:id`)*
+- `[x]` Asset storage: upload completed assets to S3 or Lightsail object storage *(`aweborn-assets` + CloudFront, content-addressed)*
+- `[ ]` Cost table endpoint (`GET /generate/cost`) — returns current mana prices *(M5)*
+- `[x]` Rate limiting per player = Phase 05 personal caps (one mechanism, not two)
+- `[~]` Error handling: failed generations draw nothing (release the reservation) *(built; verify a failed Meshy job releases its hold)*
 
 ### genai-service: 3D Model Generation (Meshy AI)
-- `[ ]` Migrate Meshy AI integration from `tokbot-backend/functions/src/avatars/`
-- `[ ]` Text-to-3D API call → receive GLB model
-- `[ ]` Status polling / webhook for completion
-- `[ ]` Thumbnail generation from 3D model
-- `[ ]` Upload GLB + thumbnail to object storage
-- `[ ]` Return asset URLs in GenerateResult
+- `[-]` ~~Migrate Meshy AI integration from `tokbot-backend/functions/src/avatars/`~~ written fresh in `providers.ts`
+- `[x]` Text-to-3D API call → receive GLB model *(preview → refine with PBR)*
+- `[x]` Status polling / webhook for completion *(polling, resumable)*
+- `[x]` Thumbnail generation from 3D model *(client-rendered, uploaded once, 2026-10-23)*
+- `[x]` Upload GLB + thumbnail to object storage
+- `[x]` Return asset URLs in GenerateResult *(`PlacedObject.asset`)*
 
 ### genai-service: Image Generation
 - `[ ]` **[SEAM]** Evaluate providers: Stability AI, DALL-E, Flux, etc.
