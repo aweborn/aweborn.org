@@ -3553,6 +3553,12 @@ body.photo-mode .canvas-container > div > :not(:has(> canvas)) {
   border-radius: 4px;
   color: var(--color-text-secondary);
 }
+.display-settings-photo + .display-settings-photo { margin-top: var(--space-sm, 0.5rem); }
+.display-settings-price {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: #ffd27a;
+}
 /* Landscape phone: the frame takes the full height; label, controls and hint stack in a side column */
 @media (orientation: landscape) and (max-height: 32rem) {
   .pm {

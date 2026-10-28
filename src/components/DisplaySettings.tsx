@@ -9,6 +9,9 @@ import { SIGHT_DISTANCE } from '../stores/worldIndexStore'
 import { SoundControl } from './SoundControl'
 import { usePhotoStore } from '../stores/photoStore'
 import { keyCapLabel, useKeybindingStore } from '../stores/keybindingStore'
+import { openCardCheckout, useCardableWorld } from '../hooks/useCardableWorld'
+import { CARD_PRICE_CENTS } from '@aweborn/shared/cards'
+import { formatCardPrice } from '../lib/cardCheckout'
 
 /**
  * Display settings: a gear under the FPS counter that opens a small glass
@@ -33,6 +36,7 @@ export function DisplaySettings() {
   const rootRef = useRef<HTMLDivElement>(null)
   const photoKey = useKeybindingStore((s) => s.bindings.photoMode)
   const layout = useKeybindingStore((s) => s.layout)
+  const cardWorld = useCardableWorld()
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -93,6 +97,19 @@ export function DisplaySettings() {
           >
             Photo mode{photoKey && <kbd>{keyCapLabel(photoKey, layout)}</kbd>}
           </button>
+          {cardWorld && (
+            <button
+              id="display-get-card"
+              type="button"
+              className="display-settings-photo"
+              onClick={() => {
+                setOpen(false)
+                openCardCheckout(cardWorld)
+              }}
+            >
+              Get this world&rsquo;s card<span className="display-settings-price">{formatCardPrice(CARD_PRICE_CENTS)}</span>
+            </button>
+          )}
         </div>
       )}
     </div>

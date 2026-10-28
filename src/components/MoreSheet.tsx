@@ -10,6 +10,9 @@ import { SoundControl } from './SoundControl'
 import { openAccount } from './ManaSeal'
 import { JourneyRow } from './Journey'
 import { usePhotoStore } from '../stores/photoStore'
+import { openCardCheckout, useCardableWorld } from '../hooks/useCardableWorld'
+import { CARD_PRICE_CENTS } from '@aweborn/shared/cards'
+import { formatCardPrice } from '../lib/cardCheckout'
 
 /**
  * ••• More (touch, 2026-10-22): everything a phone needs that isn't a thumb
@@ -32,6 +35,7 @@ export function MoreSheet() {
   const setShowFps = useHudPrefsStore((s) => s.setShowFps)
   const [mods, setMods] = useState(() => ({ ...starModSlots.getState() }))
   const [full, setFull] = useState(isFullscreen)
+  const cardWorld = useCardableWorld()
 
   useEffect(() => {
     if (!open) return
@@ -126,6 +130,16 @@ export function MoreSheet() {
           </span>
           <span className="more-chev" aria-hidden="true">›</span>
         </button>
+        {cardWorld && (
+          <button id="more-get-card" type="button" className="more-row" onClick={() => { setOpen(false); openCardCheckout(cardWorld) }}>
+            <span className="more-icon" aria-hidden="true">🎴</span>
+            <span className="more-row-text">
+              <span className="more-row-title">Get this world&rsquo;s card</span>
+              <span className="more-row-sub">{formatCardPrice(CARD_PRICE_CENTS)} · a real card · a tap brings anyone here</span>
+            </span>
+            <span className="more-chev" aria-hidden="true">›</span>
+          </button>
+        )}
 
         <h3 className="more-section">Controls</h3>
         <ul className="more-legend">
