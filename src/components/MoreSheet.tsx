@@ -6,6 +6,7 @@ import { getPlayerSnapshot, subscribePlayer } from '../lib/player'
 import { starModSlots, MOD_LABELS } from '../systems/StarModSlots'
 import { touchInputAdapter, isFullscreen, isStandalone } from '../systems/TouchInputAdapter'
 import { QualityControl } from './DisplaySettings'
+import { SoundControl } from './SoundControl'
 import { openAccount } from './ManaSeal'
 
 /**
@@ -15,7 +16,7 @@ import { openAccount } from './ManaSeal'
  * crowded a portrait screen (docs/mobile-ui/SPEC.md → ••• More).
  *
  *   Me        your player (save / sign in) + your star's look (U/I/O/P on keys)
- *   Settings  quality, full screen, FPS counter
+ *   Settings  quality, sound, full screen, FPS counter
  *   Controls  the touch legend (the keyboard panel has nothing to show on a phone)
  *   Give      the gift modal
  *
@@ -118,6 +119,9 @@ export function MoreSheet() {
         <h3 className="more-section">Settings</h3>
         <div className="more-card">
           <QualityControl />
+        </div>
+        <div className="more-card">
+          <SoundControl idPrefix="more" />
         </div>
         {!isStandalone() && (
           <button id="more-fullscreen" type="button" className="more-row" onClick={() => void touchInputAdapter.toggleFullscreen()}>

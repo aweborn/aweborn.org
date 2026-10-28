@@ -3694,6 +3694,37 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
   .display-settings-toggle { transition: none; }
 }
 
+/* ── Sound (Rough Draft M2): mute + volume, shared by the gear panel and ••• More ── */
+.display-settings-title--sub {
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--glass-border);
+}
+.sound-row { display: flex; align-items: center; gap: 10px; }
+.sound-mute {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease, transform 0.1s ease;
+}
+.sound-mute:hover { background: rgba(255, 255, 255, 0.12); }
+.sound-mute:active { transform: scale(0.92); }
+.sound-mute[aria-pressed='true'] { color: var(--color-text-tertiary); background: rgba(255, 255, 255, 0.03); }
+.sound-mute:focus-visible { outline: 2px solid var(--color-accent-primary); outline-offset: 2px; }
+.sound-volume { flex: 1; min-width: 0; }
+@media (pointer: coarse) {
+  .sound-mute { width: 44px; height: 44px; }
+  .sound-volume { height: 44px; }
+}
+
 
 /* ── Create panel (Phase 07: gen AI inside worlds) ── */
 .create-panel {

@@ -13,6 +13,7 @@ import { useSheet } from '../stores/sheetStore'
 import { MakeTabs } from './MakeTabs'
 import { ManaSeal, useCanChannel } from './ManaSeal'
 import { useOwnsCurrentWorld } from '../lib/worldActor'
+import { audio } from '../audio/engine'
 
 /**
  * World Planner panel (Phase 07): talk a world into a blueprint before
@@ -127,6 +128,7 @@ export function PlannerPanel() {
                 scale, rotY: m.asset.rotationY, planKey,
               })
             }
+            audio.creationDone()
           }
           setMakings((all) => all.map((x) => (x.jobId === m.jobId ? { ...x, status: j.status, progress: j.progress, message: j.error } : x)))
         } catch {
@@ -215,7 +217,10 @@ export function PlannerPanel() {
   const shapeTerrain = useCallback(() => {
     if (!blueprint || !ownsWorld) return
     const doc = useUniverseStore.getState().activeWorldDoc
-    if (doc) setVoxelTerrain(doc, blueprint.terrain, blueprint.sky ?? null)
+    if (doc) {
+      setVoxelTerrain(doc, blueprint.terrain, blueprint.sky ?? null)
+      audio.creationDone()
+    }
   }, [blueprint, ownsWorld])
 
   // The button is only live while the previewed blueprint differs from what the world already has
@@ -258,6 +263,7 @@ export function PlannerPanel() {
           terrain: j.terrain!,
         })),
       ])
+      if (j.items.some((it) => it.jobId)) audio.creationStart()
     } catch {
       setError('Creation is resting right now. Try again soon.')
     } finally {

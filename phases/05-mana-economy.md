@@ -193,7 +193,7 @@ Frontier
 - `[~]` Golden, translucent shockwave shader: fresnel rim + crawling ripples, additive + bloom. **Refraction of the stars behind it: not yet**
 - `[x]` Ripples outward from Aweborn Portal at origin; **same size for every gift** (`WAVE_MAX_RADIUS = 320 u` over 10 s, smoothstep: players near Origin see it grow, then it sweeps past them with a gold flash). The Frontier edge (faint lattice sphere, shows when you're near it) tweens to the new radius over the same 10 s
 - `[x]` As wave hits Ghost worlds: freshly solidified worlds are held as Ghosts until the front reaches them, then burst into golden sparks that fall back in and reform solid
-- `[ ]` Audio: deep bass sweep → warm orchestral hum (no audio system yet)
+- `[x]` Audio: deep bass sweep → warm orchestral hum (2026-10-27, Rough Draft M2: procedural WebAudio, [`src/audio/engine.ts`](../src/audio/engine.ts) `wave()`)
 - `[x]` Preview: `awebornWave()` in the console (visual only, nothing solidifies). The `?wave` URL trigger was removed 2026-10-17 (Alex)
 
 ### Awe → Experience + Reach
@@ -251,10 +251,10 @@ Frontier
   - Medium (30-80%): baseline
   - Low (<30%): dim, sparse, desaturated
   - Critical (<5%): near-dark, aurora near Portal
-  - *(open: "%" of what? e.g. pool relative to 30 days of typical draw)*
+  - *(open: "%" of what? e.g. pool relative to 30 days of typical draw)* **Shipped 2026-10-27 (M2):** `mana.level` = **creative share** ÷ max(3,000 mana, last 30 days of creation draw), so it measures "can everyone create right now?" (the 2026-10-16 flag below), with a floor so a quiet early universe doesn't read as full off a tiny share ([`shared/mana-level.ts`](../shared/mana-level.ts))
   - **Flag (2026-10-16):** same trap as the runway warning: early on the pool is small, so this would make the universe look dim most of the time. Proposal: drive ambience from the **creative flow vs recent demand** ("can everyone create right now?"), never the raw treasury
-- `[ ]` Audio ambience scales with pool level
-- `[ ]` Drawing mana → satisfying sound (universe breathing through you)
+- `[x]` Audio ambience scales with pool level (2026-10-27, M2: warm full hum / gentle hum / near-silence + distant tones / silence)
+- `[x]` Drawing mana → satisfying sound (universe breathing through you) (2026-10-27, M2: inhale on submit, exhale on arrival; thinner when low, strained whisper when critical)
 
 ### Shooting Stars: Every Draw Is Visible (Alex, 2026-10-14 evening)
 > "Categorize every output, like shooting stars leaving the universe to compute." Radical transparency made beautiful: **every mana that leaves the pool leaves as a shooting star**, colored by its category. Money coming in swells the universe; money going out streaks away.
@@ -354,3 +354,4 @@ Frontier
 | 2026-10-20 | **Guests get no gen AI (Alex, reverses the 2026-10-19 row).** Making from thought is "an extremely powerful entity" and draws on a shared resource, so it needs a signed-in (saved) player. Guests still enter worlds, place blocks and Library models. `MANA_CAPS.guest = 0`; `ManaAdmission.requestDraw` refuses guests first with `sign_in_required` (`SIGN_IN_MESSAGE`); `index.ts` returns 403 `sign_in_required` for anonymous POSTs to create / plan / plan/redo / plan/manifest before any provider call. Client: `ManaSeal.tsx` (sealed invitation on C / P, opens the account dialog via `aweborn:open-account`), tracker pill shows *Sign in* for guests. Terms (Oct 20), giving.html, MANA_COSTS.md updated; admission test rewritten (36/36 pass). Uncommitted. | Alex reviews seal copy; rebuild sync-service + deploy |
 | 2026-10-20 (grill) | **Phase 05 closed as Complete† (Alex).** Goal for the next ~4 weeks is **Card Event Readiness** (see phases/README → Active Phase): strangers must trust the game. The rest of 05 (awe → XP, levels, cradle, warp gate, shooting stars, ambience, solar, donor names) waits until after the first community event; saved players keep the flat caps. Acceptance criteria ticked against what shipped; one `[~]`: verify a failed Meshy job releases its hold. Docs only, no code. | Card Event Readiness step 1: bot load test |
 | 2026-10-27 | **Rough Draft GOAL reopens the rest of 05 (Alex; see [ROUGH_DRAFT.md](./ROUGH_DRAFT.md)).** Decisions: **awe = the character's experience (XP); awe is NOT linked to the high-water line / Frontier reach** (only gifts move it). *Deviation from ROADMAP (Awe section + System Rules "awe generation"), ROADMAP not edited.* Default numbers approved (agent proposes, tune after playtests). Universe audio = procedural WebAudio. Refunds/disputes = labeled draws for now. Card price $9. | M2 audio, M3 awe/levels, M4 living sky |
+| 2026-10-27 | **M2 audio shipped.** Server: `mana.level` (creative ÷ max(3,000, 30-day creation draw); 30-day spend cached 60 s). Client: procedural WebAudio engine ([`src/audio/`](../src/audio/)): band-driven ambience, wave sweep + hum, creation inhale/exhale by band, sighting bell + reveal arpeggio, warp charge + crack, approach hum, UI ticks; mute + volume in ••• More and the gear panel. Verified with real taps at 4 sizes (meters, not ears). Details in the ROUGH_DRAFT log. M4 reuses `poolBand` for the sky. | Alex listens; M3 |

@@ -19,6 +19,7 @@ import { inputManager } from './InputManager'
 import { flightController } from './FlightController'
 import type { WorldEntry } from '@aweborn/shared/crdt-schema'
 import { ORIGIN_POSITION, ORIGIN_WORLD_ENTRY } from '@aweborn/shared/crdt-schema'
+import { audio } from '../audio/engine'
 
 // ── Tuning Constants ─────────────────────────────────────────────────
 
@@ -262,6 +263,9 @@ class WarpSystem {
         flightController.setEnabled(true)
         break
     }
+
+    // Sound: rising charge, the crack on release, a hum near worlds (Rough Draft M2).
+    audio.warp(this._phase, this._chargeProgress, this._candidates[0]?.distance ?? Infinity)
   }
 
   /** Get current warp state (for HUD/visuals). */

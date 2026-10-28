@@ -31,6 +31,7 @@ import { useWorldStore } from './worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { AUTH_URL, getPlayerSnapshot, playerReady, subscribePlayer, type Player } from '../lib/player'
 import type { WorldLookup } from '../systems/TeleportSystem'
+import { audio } from '../audio/engine'
 
 // ── Tuning ───────────────────────────────────────────────────────────
 
@@ -247,6 +248,7 @@ function enqueue(worldId: string, at: number): void {
 
 function playReveal(worldId: string): void {
   set((s) => ({ reveal: { worldId, seq: (s.reveal?.seq ?? 0) + 1 } }))
+  audio.reveal()
 }
 
 /** Switch to this player's index: cached copy first, then the server. */
@@ -386,6 +388,7 @@ function scan(): void {
   for (const e of found) enqueue(e.worldId, now)
   // Origin is face-up from the start: it gets the reveal on sighting (everyone's first card).
   if (found.some((e) => e.worldId === ORIGIN_WORLD_ID)) playReveal(ORIGIN_WORLD_ID)
+  else audio.sighting()
 }
 
 /** Entered a world: the server records the visit; mirror it (and reveal a first visit). */

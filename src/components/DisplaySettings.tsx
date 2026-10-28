@@ -6,10 +6,12 @@ import {
   type QualitySetting,
 } from '../stores/qualityStore'
 import { SIGHT_DISTANCE } from '../stores/worldIndexStore'
+import { SoundControl } from './SoundControl'
 
 /**
  * Display settings: a gear under the FPS counter that opens a small glass
- * panel with one quality slider (Auto · Low · Medium · High · Ultra).
+ * panel with one quality slider (Auto · Low · Medium · High · Ultra) and
+ * sound (mute + volume, Rough Draft M2).
  *
  * Slider position 0 = Auto, 1..4 = fixed tiers 0..3.
  */
@@ -74,6 +76,8 @@ export function DisplaySettings() {
         <div id="display-settings-panel" className="display-settings-panel" role="group" aria-label="Display settings">
           <div className="display-settings-title">Display</div>
           <QualityControl />
+          <div className="display-settings-title display-settings-title--sub">Sound</div>
+          <SoundControl idPrefix="display" label="Volume" />
         </div>
       )}
     </div>

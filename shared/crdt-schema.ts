@@ -147,6 +147,12 @@ export interface ManaState {
   params: { K: number; alpha: number; tauDays: number; c: number };
   /** Unix ms of the last gift (0 = none yet). */
   lastDonationAt: number;
+  /**
+   * How full the pool feels, 0…1: creative ÷ 30 days of creation draw
+   * (`shared/mana-level.ts`). Drives ambience (M2) and the sky (M4).
+   * Optional: older servers and cached docs don't have it.
+   */
+  level?: number;
 }
 
 export type ManaFunction = "program" | "management" | "fundraising";

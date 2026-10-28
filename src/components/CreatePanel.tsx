@@ -8,6 +8,7 @@ import { matchesBinding } from '../stores/keybindingStore'
 import { ManaSeal, useCanChannel } from './ManaSeal'
 import { useSheet } from '../stores/sheetStore'
 import { MakeTabs } from './MakeTabs'
+import { audio } from '../audio/engine'
 
 /**
  * Create panel (Phase 07, first gen-AI slice): inside a world, type what you
@@ -77,6 +78,7 @@ export function CreatePanel() {
             const doc = useUniverseStore.getState().activeWorldDoc
             const s = interiorController.state
             if (doc) placeModel(doc, j.asset, m.prompt, { x: s.x + s.fx * 2.5, y: 0.5, z: s.z + s.fz * 2.5 }, playerId)
+            audio.creationDone()
           }
           setMakings((all) => all.map((x) => (x.jobId === m.jobId ? { ...x, status: j.status, progress: j.progress, message: j.error } : x)))
         } catch {
@@ -117,6 +119,7 @@ export function CreatePanel() {
           return
         }
         setMakings((all) => [...all, { jobId: j.jobId!, prompt: text, progress: 0, status: 'queued' }])
+        audio.creationStart()
         setPrompt('')
         setOpen(false)
       } catch {

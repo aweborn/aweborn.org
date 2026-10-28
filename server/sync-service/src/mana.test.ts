@@ -32,6 +32,22 @@ test("founding gift: $1,000 → 100,000 pool, 50,000 creative, Frontier 100 u", 
   assert.equal(s.lastDonationAt, 0, "only gifts count as donations for the wave timestamp");
 });
 
+test("level: creative over max(floor, 30 days of creation draw), clamped to 1", () => {
+  const { mana } = fresh();
+  assert.equal(mana.state().level, 0, "empty pool is silent");
+  mana.recordInflow({ source: "gift", netDollars: 12 }); // 600 creative
+  assert.equal(mana.state().level, 0.2, "600 / 3,000 floor");
+  mana.recordInflow({ source: "founding", netDollars: 1000 }); // 50,600 creative
+  assert.equal(mana.state().level, 1);
+
+  const busy = fresh().mana;
+  busy.recordInflow({ source: "gift", netDollars: 200 }); // 10,000 creative
+  const r = busy.reserve("job1", 8000, "p1");
+  assert.ok(r.ok);
+  busy.settle("job1", 8000); // creative 2,000; spend 8,000
+  assert.equal(busy.state().level, 0.25, "2,000 / 8,000 drawn this month");
+});
+
 test("restricted grants add nothing creative; card sales count after their costs", () => {
   const { mana } = fresh();
   mana.recordInflow({ source: "grant", netDollars: 100, restricted: true, creativeBaseDollars: 100 });

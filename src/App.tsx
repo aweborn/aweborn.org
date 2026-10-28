@@ -25,6 +25,7 @@ import { startWorldIndex } from './stores/worldIndexStore'
 import { startLocationPersistence } from './stores/locationStore'
 import { startWaveWatcher } from './stores/waveStore'
 import { WaveBanner } from './components/WaveBanner'
+import { startAudio } from './audio/startAudio'
 
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
 import { FallbackScene } from './components/FallbackScene'
@@ -74,6 +75,11 @@ export default function App() {
   // Solidification wave: every client online celebrates each new gift.
   useEffect(() => {
     if (webglSupported) startWaveWatcher()
+  }, [webglSupported])
+
+  // Procedural sound (ambience follows the pool; wave, creation, discovery, warp).
+  useEffect(() => {
+    if (webglSupported) startAudio()
   }, [webglSupported])
 
   const handlePortalActivate = useCallback(() => {

@@ -26,6 +26,10 @@ import {
   type ManaPurpose,
   type ManaState,
 } from "../../../shared/crdt-schema.js";
+import { LEVEL_WINDOW_DAYS, poolLevel } from "../../../shared/mana-level.js";
+
+/** How long the 30-day spend total behind `level` is reused before re-querying. */
+const LEVEL_SPEND_TTL_MS = 60_000;
 
 /** 1 mana = 1,000 milli-mana (stored unit). */
 const MM = 1000;
@@ -138,6 +142,7 @@ export class ManaLedger {
   /** Open reservations: ref → estimate (milli-mana). */
   private open = new Map<string, { mm: number; playerId: string | null }>();
   private listeners = new Set<(state: ManaState) => void>();
+  private spendCache: { at: number; total: number } | null = null;
 
   constructor(private db: Database.Database) {
     db.exec(`
@@ -185,7 +190,17 @@ export class ManaLedger {
       shortfall: toMana(t.shortfall),
       params: { ...MANA_PARAMS },
       lastDonationAt: t.lastDonationAt,
+      level: poolLevel(toMana(t.creative), this.spend30d()),
     };
+  }
+
+  /** Creation spend over the last 30 days (cached for a minute). */
+  private spend30d(now = Date.now()): number {
+    const c = this.spendCache;
+    if (c && now - c.at < LEVEL_SPEND_TTL_MS) return c.total;
+    const total = this.creationSpendSince(now - LEVEL_WINDOW_DAYS * 86_400_000).total;
+    this.spendCache = { at: now, total };
+    return total;
   }
 
   /** Creative mana not already held by in-flight manifestations. */
