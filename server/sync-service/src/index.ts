@@ -12,7 +12,7 @@ import { cleanPlayerName } from "../../../shared/names.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
-import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
+import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore } from "./planner.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
 import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
@@ -24,7 +24,7 @@ import { RunwayWatch } from "./runway.js";
 import { sendEmail } from "./email.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
-const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
+const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit"]);
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -451,6 +451,16 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   if (path === "/api/player/plan" && req.method === "GET") {
     return planResume(session.playerId, new URL(req.url ?? "/", "http://x").searchParams.get("worldId") ?? "", json);
+  }
+  // Direct edits + version history (M5c): no planner call
+  if (path === "/api/player/plan/edit" && req.method === "POST") {
+    return planEdit(rooms, session.playerId, await readJson(req).catch(() => null), json);
+  }
+  if (path === "/api/player/plan/versions" && req.method === "GET") {
+    return planVersions(session.playerId, new URL(req.url ?? "/", "http://x").searchParams.get("sessionId") ?? "", json);
+  }
+  if (path === "/api/player/plan/restore" && req.method === "POST") {
+    return planRestore(session.playerId, await readJson(req).catch(() => null), json);
   }
   if (path?.startsWith("/api/player/create/") && req.method === "GET") {
     return creationStatus(rooms, session.playerId, path.slice("/api/player/create/".length), json);

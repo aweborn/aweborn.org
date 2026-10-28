@@ -201,6 +201,61 @@ export function parseDraft(raw: unknown): Parsed<BlueprintDraft> {
   return { ok: true, value: draft, warnings };
 }
 
+// ── Direct edits (no planner call) ─────────────────────────────────────
+/** One hand edit to a draft. Text ops (prompt, rename) are safety-checked by the server before they're kept. */
+export type BlueprintEdit =
+  | { op: "remove"; key: string }
+  | { op: "prompt"; key: string; prompt: string }
+  | { op: "size"; key: string; factor: number }
+  | { op: "rename"; name: string };
+
+/** Size an asset gets when the planner didn't give one (meters; matches where the client places it). */
+export const DEFAULT_ASSET_SIZE: Vec3 = [1.5, 1.5, 1.5];
+
+/** Validate an untrusted edit op. */
+export function parseEdit(raw: unknown): Parsed<BlueprintEdit> {
+  if (!isObj(raw)) return { ok: false, errors: ["edit must be an object"] };
+  const key = slug(raw.key);
+  switch (raw.op) {
+    case "remove":
+      return key ? { ok: true, value: { op: "remove", key }, warnings: [] } : { ok: false, errors: ["key is required"] };
+    case "prompt": {
+      const prompt = str(raw.prompt, LIMITS.prompt);
+      if (!key || !prompt) return { ok: false, errors: ["key and prompt are required"] };
+      return { ok: true, value: { op: "prompt", key, prompt }, warnings: [] };
+    }
+    case "size": {
+      if (!key || typeof raw.factor !== "number" || !Number.isFinite(raw.factor) || raw.factor <= 0) return { ok: false, errors: ["key and a positive factor are required"] };
+      return { ok: true, value: { op: "size", key, factor: Math.min(4, Math.max(0.25, raw.factor)) }, warnings: [] };
+    }
+    case "rename": {
+      const name = str(raw.name, 60);
+      return name ? { ok: true, value: { op: "rename", name }, warnings: [] } : { ok: false, errors: ["name is required"] };
+    }
+    default:
+      return { ok: false, errors: [`unknown op ${String(raw.op)}`] };
+  }
+}
+
+/** Apply one edit; returns a new draft (the input is never mutated). Unknown keys are errors, sizes stay within 0.1–20 m. */
+export function applyEdit<T extends BlueprintDraft>(draft: T, edit: BlueprintEdit): Parsed<T> {
+  if (edit.op === "rename") return { ok: true, value: { ...draft, name: edit.name }, warnings: [] };
+  const i = draft.assets.findIndex((a) => a.key === edit.key);
+  if (i < 0) return { ok: false, errors: [`no asset ${edit.key}`] };
+  const assets = draft.assets.slice();
+  const a = assets[i];
+  const warnings: string[] = [];
+  if (edit.op === "remove") assets.splice(i, 1);
+  else if (edit.op === "prompt") assets[i] = { ...a, prompt: edit.prompt };
+  else {
+    const s = a.size ?? DEFAULT_ASSET_SIZE;
+    const next = s.map((v) => Math.round(Math.min(20, Math.max(0.1, v * edit.factor)) * 100) / 100) as Vec3;
+    if (next.every((v, j) => v === s[j])) warnings.push(`${a.key} is already as ${edit.factor > 1 ? "big" : "small"} as it gets`);
+    assets[i] = { ...a, size: next };
+  }
+  return { ok: true, value: { ...draft, assets }, warnings };
+}
+
 export function parsePlannerTurn(raw: unknown): Parsed<PlannerTurn> {
   if (!isObj(raw)) return { ok: false, errors: ["answer must be a JSON object"] };
   const reply = str(raw.reply, 600);

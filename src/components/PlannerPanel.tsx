@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
 import { refreshMana } from '../stores/manaTrackerStore'
-import type { Blueprint } from '@aweborn/shared/blueprint'
+import type { Blueprint, BlueprintEdit } from '@aweborn/shared/blueprint'
+import { DEFAULT_ASSET_SIZE } from '@aweborn/shared/blueprint'
 import { usePlannerStore } from '../stores/plannerStore'
 import { setVoxelTerrain, placeModel, replaceModelAsset, useWorldStore } from '../stores/worldStore'
 import { usePresence } from '../hooks/usePresence'
@@ -42,6 +43,16 @@ interface Making {
 const POLL_MS = 2500
 
 const MODEL_LABEL = (id: string) => id.split('/')[1] ?? id
+
+interface Version { version: number; kind: string; label: string; at: number; items: number }
+
+const ago = (at: number) => {
+  const s = Math.max(0, (Date.now() - at) / 1000)
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`
+  return `${Math.floor(s / 86400)} d ago`
+}
 
 export function PlannerPanel() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
@@ -100,6 +111,73 @@ export function PlannerPanel() {
     }
   }, [sessionId, activeWorldId])
 
+  // ── Direct edits + history (M5c): free, no planner call ──
+  const [wordKey, setWordKey] = useState<string | null>(null)
+  const [wordText, setWordText] = useState('')
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [undoTo, setUndoTo] = useState<number | null>(null)
+  const [versions, setVersions] = useState<Version[] | null>(null)
+  const historyRef = useRef<HTMLDetailsElement>(null)
+
+  const adopt = useCallback((bp: Blueprint) => {
+    setBlueprint(bp)
+    if (activeWorldId) usePlannerStore.getState().setBlueprint(activeWorldId, bp)
+    if (historyRef.current?.open) setVersions(null) // reloads below
+  }, [activeWorldId])
+
+  const loadVersions = useCallback(async () => {
+    if (!sessionId) return
+    try {
+      const r = await fetch(`${AUTH_URL}/api/player/plan/versions?sessionId=${encodeURIComponent(sessionId)}`, { credentials: 'include' })
+      if (r.ok) setVersions(((await r.json()) as { versions: Version[] }).versions)
+    } catch { /* the list stays as it was */ }
+  }, [sessionId])
+
+  useEffect(() => {
+    if (versions === null && historyRef.current?.open) void loadVersions()
+  }, [versions, loadVersions])
+
+  const post = useCallback(async (path: 'edit' | 'restore', body: object): Promise<boolean> => {
+    if (!sessionId || editing) return false
+    setEditing(true)
+    setError(null)
+    try {
+      const res = await fetch(`${AUTH_URL}/api/player/plan/${path}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, ...body }),
+      })
+      const j = (await res.json().catch(() => ({}))) as { blueprint?: Blueprint; message?: string; warnings?: string[] }
+      if (path === 'edit') void refreshMana() // new words cost a safety check
+      if (j.blueprint) adopt(j.blueprint)
+      if (!res.ok) {
+        setError(j.message ?? "That change didn't stick.")
+        return false
+      }
+      if (j.warnings?.length) setError(j.warnings[0])
+      return true
+    } catch {
+      setError('The planner is resting right now. Try again soon.')
+      return false
+    } finally {
+      setEditing(false)
+    }
+  }, [sessionId, editing, adopt])
+
+  const edit = useCallback(async (e: BlueprintEdit): Promise<boolean> => {
+    if (!blueprint) return false
+    const base = blueprint.version
+    const ok = await post('edit', { base, edit: e })
+    if (ok) setUndoTo(base)
+    return ok
+  }, [blueprint, post])
+
+  const restore = useCallback(async (version: number) => {
+    if (await post('restore', { version })) setUndoTo(null)
+  }, [post])
+
   // Bumped after every poll round (even failed ones) so the loop always re-arms
   const [pollTick, setPollTick] = useState(0)
 
@@ -148,6 +226,8 @@ export function PlannerPanel() {
     setTurns([])
     setBlueprint(null)
     setMakings([])
+    setUndoTo(null)
+    setVersions(null)
     usePlannerStore.getState().clear()
     if (!activeWorldId) {
       setOpen(false)
@@ -299,6 +379,8 @@ export function PlannerPanel() {
         }
         setSessionId(j.sessionId ?? null)
         setBlueprint(j.blueprint ?? null)
+        setUndoTo(null)
+        setVersions(null)
         if (j.blueprint) usePlannerStore.getState().setBlueprint(activeWorldId, j.blueprint)
         setTurns((t) => [
           ...t,
@@ -380,55 +462,126 @@ export function PlannerPanel() {
           <summary>
             Blueprint v{blueprint.version} · {blueprint.assets.length} items · ≈{blueprint.estimate.total} mana
           </summary>
+          <div className="planner-card-bar">
+            {renaming === null ? (
+              <button type="button" className="planner-tool planner-tool--text" disabled={editing} onClick={() => setRenaming(blueprint.name)}>
+                ✎ Rename
+              </button>
+            ) : (
+              <form className="planner-redo-form planner-rename" onSubmit={(e) => { e.preventDefault(); void edit({ op: 'rename', name: renaming }).then((ok) => { if (ok) setRenaming(null) }) }}>
+                <label htmlFor="planner-rename" className="visually-hidden">World plan name</label>
+                <input
+                  id="planner-rename"
+                  autoFocus
+                  className="planner-redo-input"
+                  value={renaming}
+                  maxLength={60}
+                  required
+                  onChange={(e) => setRenaming(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRenaming(null) } }}
+                />
+                <button type="submit" className="planner-redo-go" disabled={editing || !renaming.trim()}>Save</button>
+              </form>
+            )}
+            {undoTo !== null && renaming === null && (
+              <button id="planner-undo" type="button" className="planner-tool planner-tool--text" disabled={editing} onClick={() => void restore(undoTo)}>
+                ↶ Undo
+              </button>
+            )}
+          </div>
           <p className="planner-art">{blueprint.style.artDirection}</p>
           <div className="planner-palette">
             {blueprint.style.palette.map((c) => <span key={c} style={{ background: c }} title={c} />)}
           </div>
           <ul className="planner-assets">
-            {blueprint.assets.map((a) => (
-              <li key={a.key}>
-                <div className="planner-asset-head">
-                  <strong>{a.key}</strong> <em>{a.kind}{a.quality === 'full' ? ' · full' : ''}</em>
-                  {(a.kind === 'model' || a.kind === 'terrain-piece') && !placedKeys.has(`${blueprint.id}:${a.key}`) && (
-                    <button
-                      type="button"
-                      className="planner-redo"
-                      title="Make just this one"
-                      disabled={manifesting || busy}
-                      onClick={() => void manifest([a.key])}
-                    >
-                      ✦
-                    </button>
+            {blueprint.assets.map((a) => {
+              const isModel = a.kind === 'model' || a.kind === 'terrain-piece'
+              const placed = placedKeys.has(`${blueprint.id}:${a.key}`)
+              const size = Math.max(...(a.size ?? DEFAULT_ASSET_SIZE))
+              const name = a.key.replace(/-/g, ' ')
+              return (
+                <li key={a.key}>
+                  <div className="planner-asset-head">
+                    <strong>{a.key}</strong> <em>{a.kind}{a.quality === 'full' ? ' · full' : ''}{isModel ? ` · ${size.toFixed(1)} m` : ''}{placed ? ' · placed' : ''}</em>
+                  </div>
+                  <span>{a.prompt}</span>
+                  <div className="planner-asset-tools" role="group" aria-label={`Change ${name}`}>
+                    {isModel && !placed && (
+                      <button type="button" className="planner-tool" title="Make just this one" aria-label={`Make ${name}`} disabled={manifesting || busy} onClick={() => void manifest([a.key])}>✦</button>
+                    )}
+                    {isModel && (
+                      <button type="button" className="planner-tool" title="Make this one again" aria-label={`Remake ${name}`} onClick={() => { setRedoKey(redoKey === a.key ? null : a.key); setRedoNote(''); setWordKey(null) }}>↻</button>
+                    )}
+                    {isModel && !placed && (
+                      <>
+                        <button type="button" className="planner-tool" title="Smaller" aria-label={`Make ${name} smaller`} disabled={editing || size <= 0.1} onClick={() => void edit({ op: 'size', key: a.key, factor: 0.8 })}>−</button>
+                        <button type="button" className="planner-tool" title="Bigger" aria-label={`Make ${name} bigger`} disabled={editing || size >= 20} onClick={() => void edit({ op: 'size', key: a.key, factor: 1.25 })}>+</button>
+                      </>
+                    )}
+                    <button type="button" className="planner-tool" title="Reword" aria-label={`Reword ${name}`} disabled={editing} onClick={() => { setWordKey(wordKey === a.key ? null : a.key); setWordText(a.prompt); setRedoKey(null) }}>✎</button>
+                    <button type="button" className="planner-tool planner-tool--remove" title={placed ? 'Remove from the plan (what’s placed stays)' : 'Remove from the plan'} aria-label={`Remove ${name} from the plan`} disabled={editing} onClick={() => void edit({ op: 'remove', key: a.key })}>✕</button>
+                  </div>
+                  {wordKey === a.key && (
+                    <form className="planner-redo-form planner-word-form" onSubmit={(e) => { e.preventDefault(); void edit({ op: 'prompt', key: a.key, prompt: wordText }).then((ok) => { if (ok) setWordKey(null) }) }}>
+                      <label htmlFor={`planner-word-${a.key}`} className="visually-hidden">Words for {name}</label>
+                      <textarea
+                        id={`planner-word-${a.key}`}
+                        autoFocus
+                        className="planner-redo-input"
+                        rows={3}
+                        value={wordText}
+                        maxLength={400}
+                        required
+                        onChange={(e) => setWordText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setWordKey(null) } }}
+                      />
+                      <button type="submit" className="planner-redo-go" disabled={editing || !wordText.trim() || wordText.trim() === a.prompt}>Save words</button>
+                    </form>
                   )}
-                  {(a.kind === 'model' || a.kind === 'terrain-piece') && (
-                    <button
-                      type="button"
-                      className="planner-redo"
-                      title="Make this one again"
-                      onClick={() => { setRedoKey(redoKey === a.key ? null : a.key); setRedoNote('') }}
-                    >
-                      ↻
-                    </button>
+                  {redoKey === a.key && (
+                    <form className="planner-redo-form" onSubmit={(e) => { e.preventDefault(); void redo(a.key, redoNote) }}>
+                      <input
+                        autoFocus
+                        className="planner-redo-input"
+                        value={redoNote}
+                        maxLength={200}
+                        placeholder="What should change? (optional)"
+                        aria-label={`What should change about ${name}`}
+                        onChange={(e) => setRedoNote(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRedoKey(null) } }}
+                      />
+                      <button type="submit" className="planner-redo-go">Remake ✦ 60</button>
+                    </form>
                   )}
-                </div>
-                <span>{a.prompt}</span>
-                {redoKey === a.key && (
-                  <form className="planner-redo-form" onSubmit={(e) => { e.preventDefault(); void redo(a.key, redoNote) }}>
-                    <input
-                      autoFocus
-                      className="planner-redo-input"
-                      value={redoNote}
-                      maxLength={200}
-                      placeholder="What should change? (optional)"
-                      onChange={(e) => setRedoNote(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRedoKey(null) } }}
-                    />
-                    <button type="submit" className="planner-redo-go">Remake ✦ 60</button>
-                  </form>
-                )}
-              </li>
-            ))}
+                </li>
+              )
+            })}
           </ul>
+          <details
+            className="planner-history"
+            ref={historyRef}
+            onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) void loadVersions() }}
+          >
+            <summary id="planner-history">History</summary>
+            {versions === null ? (
+              <p className="planner-history-empty">Loading…</p>
+            ) : (
+              <ol className="planner-history-list">
+                {versions.map((v) => (
+                  <li key={`${v.version}-${v.at}`} className={v.version === blueprint.version ? 'is-current' : undefined}>
+                    <span className="planner-history-v">v{v.version}</span>
+                    <span className="planner-history-label">{v.label}</span>
+                    <span className="planner-history-at">{ago(v.at)} · {v.items} items</span>
+                    {v.version === blueprint.version ? (
+                      <span className="planner-history-now">now</span>
+                    ) : (
+                      <button type="button" className="planner-tool planner-tool--text" disabled={editing} aria-label={`Restore version ${v.version}`} onClick={() => void restore(v.version)}>Restore</button>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </details>
         </details>
       )}
 

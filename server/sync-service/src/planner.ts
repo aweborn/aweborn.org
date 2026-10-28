@@ -17,7 +17,7 @@ import type { RoomManager } from "./rooms.js";
 import { getDb } from "./persistence.js";
 import { startJob } from "./creations.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
-import { estimate, parsePlannerTurn, LIMITS, ASSET_MANA, type Blueprint, type BlueprintDraft } from "../../../shared/blueprint.js";
+import { estimate, parsePlannerTurn, parseEdit, applyEdit, LIMITS, ASSET_MANA, type Blueprint, type BlueprintDraft, type BlueprintEdit } from "../../../shared/blueprint.js";
 import { checkCreation, chargeCheck, type SafetyVerdict } from "./safety.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
@@ -365,29 +365,130 @@ export async function planRedo(rooms: RoomManager, playerId: string, body: unkno
   if (!asset || (asset.kind !== "model" && asset.kind !== "terrain-piece")) return json(400, { error: "bad_item" });
   const note = typeof b.note === "string" ? b.note.trim().slice(0, 200) : "";
 
+  let prompt = asset.prompt;
   if (note) {
     const checkRef = `redo:${s.id}:${asset.key}:${randomUUID().slice(0, 6)}`;
     const safe = await checkCreation(playerId, "redo", [`${asset.prompt}. ${note}`], checkRef);
     chargeCheck(rooms.mana, playerId, checkRef, safe.costUsd);
     if (!safe.ok) return json(422, { error: "unsafe", category: safe.category, message: safe.message });
-    asset.prompt = `${asset.prompt.replace(/\.?\s*$/, "")}. ${note}`.slice(0, LIMITS.prompt);
-    s.version += 1;
-    s.blueprint = { ...s.blueprint, version: s.version };
-    logEvent(s.id, "edit", { key: asset.key, note, prompt: asset.prompt, blueprint: s.blueprint }, { version: s.version });
-    saveSession(s);
+    prompt = `${asset.prompt.replace(/\.?\s*$/, "")}. ${note}`.slice(0, LIMITS.prompt);
+    const next = applyEdit(s.blueprint, { op: "prompt", key: asset.key, prompt });
+    if (!next.ok) return json(400, { error: "bad_item" });
+    commitVersion(s, next.value, "edit", { key: asset.key, note, prompt });
   }
 
   const ref = `redo:${s.id}:v${s.version}:${asset.key}:${randomUUID().slice(0, 6)}`;
   const decision = rooms.admission.requestDraw({ playerId, ref, estimate: ASSET_MANA[asset.kind].quick, progress: progressOf(rooms, playerId) });
   if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
   try {
-    const jobId = await startJob(ref, playerId, `${asset.prompt}. Style: ${s.blueprint.style.artDirection}`);
+    const jobId = await startJob(ref, playerId, `${prompt}. Style: ${s.blueprint.style.artDirection}`);
     logEvent(s.id, "redo", { key: asset.key, note, jobId }, { version: s.version });
-    json(200, { version: s.version, key: asset.key, jobId, prompt: asset.prompt, blueprint: s.blueprint });
+    json(200, { version: s.version, key: asset.key, jobId, prompt, blueprint: s.blueprint });
   } catch (err) {
     rooms.mana.release(ref);
     json(503, { error: "genai_unavailable", message: (err as Error).message });
   }
+}
+
+/** New blueprint version from a hand edit or a restore: re-stamped, re-estimated, logged with its blueprint so history can return to it. */
+function commitVersion(s: Session, draft: BlueprintDraft, kind: "edit" | "restore", payload: Record<string, unknown>) {
+  s.version += 1;
+  s.blueprint = { ...stripMeta(draft as Blueprint), id: s.id, version: s.version, worldId: s.worldId, estimate: estimate(draft, PLAN_ESTIMATE_MANA) };
+  logEvent(s.id, kind, { ...payload, blueprint: s.blueprint }, { version: s.version });
+  saveSession(s);
+}
+
+// Hand edits are free, so they get their own per-player limit (sliding minute)
+const EDITS_PER_MIN = 30;
+const editTimes = new Map<string, number[]>();
+function takeEdit(playerId: string): boolean {
+  const now = Date.now();
+  const recent = (editTimes.get(playerId) ?? []).filter((t) => now - t < 60_000);
+  if (recent.length >= EDITS_PER_MIN) {
+    editTimes.set(playerId, recent);
+    return false;
+  }
+  recent.push(now);
+  editTimes.set(playerId, recent);
+  if (editTimes.size > 5000) for (const [k, v] of editTimes) if (!v.some((t) => now - t < 60_000)) editTimes.delete(k);
+  return true;
+}
+
+const editLabel = (e: BlueprintEdit): string =>
+  e.op === "rename" ? `renamed “${e.name}”`
+  : e.op === "remove" ? `removed ${e.key}`
+  : e.op === "prompt" ? `reworded ${e.key}`
+  : `${e.key} ${e.factor > 1 ? "bigger" : "smaller"}`;
+
+/**
+ * Direct edit: change the blueprint by hand, no planner call (free, except
+ * the safety check on new words). `base` is the version the player was
+ * looking at; if the plan moved on, 409 with the current one.
+ *
+ *   POST /api/player/plan/edit { sessionId, base, edit } → { version, blueprint, warnings } | 409 { blueprint } | 422 unsafe
+ */
+export async function planEdit(rooms: RoomManager, playerId: string, body: unknown, json: Json): Promise<void> {
+  const b = (body ?? {}) as { sessionId?: unknown; base?: unknown; edit?: unknown };
+  const s = typeof b.sessionId === "string" ? getSession(b.sessionId) : undefined;
+  if (!s || s.playerId !== playerId || !s.blueprint) return json(404, { error: "not_found" });
+  if (b.base !== s.version) return json(409, { error: "stale", message: "The plan changed. Here's the latest.", version: s.version, blueprint: s.blueprint });
+  const edit = parseEdit(b.edit);
+  if (!edit.ok) return json(400, { error: "bad_edit", message: edit.errors.join("; ") });
+  if (!takeEdit(playerId)) return json(429, { error: "slow_down", message: "That's a lot of edits. Give it a moment." });
+  const next = applyEdit(s.blueprint, edit.value);
+  if (!next.ok) return json(400, { error: "bad_edit", message: next.errors.join("; ") });
+  const words = edit.value.op === "prompt" ? edit.value.prompt : edit.value.op === "rename" ? edit.value.name : "";
+  if (words) {
+    const checkRef = `edit:${s.id}:${randomUUID().slice(0, 8)}`;
+    const safe = await checkCreation(playerId, "edit", [words], checkRef);
+    chargeCheck(rooms.mana, playerId, checkRef, safe.costUsd);
+    if (!safe.ok) return json(422, { error: "unsafe", category: safe.category, message: safe.message });
+    // The check awaited: someone else's edit may have landed meanwhile
+    if (b.base !== s.version) return json(409, { error: "stale", message: "The plan changed. Here's the latest.", version: s.version, blueprint: s.blueprint });
+  }
+  commitVersion(s, next.value, "edit", { edit: edit.value, label: editLabel(edit.value) });
+  json(200, { version: s.version, blueprint: s.blueprint, warnings: next.warnings });
+}
+
+interface VersionRow { kind: string; version: number; at: number; payload: string }
+const VERSION_KINDS = "('turn','edit','restore')";
+
+/**
+ * Version history: every planner turn, hand edit and restore, newest first (last 100).
+ *
+ *   GET /api/player/plan/versions?sessionId → { current, versions: [{ version, kind, label, at, items }] }
+ */
+export function planVersions(playerId: string, sessionId: string, json: Json): void {
+  const s = getSession(sessionId);
+  if (!s || s.playerId !== playerId) return json(404, { error: "not_found" });
+  const rows = db().prepare(`SELECT kind, version, at, payload FROM plan_events WHERE session_id = ? AND kind IN ${VERSION_KINDS} AND version IS NOT NULL ORDER BY seq DESC LIMIT 100`).all(s.id) as VersionRow[];
+  const versions = rows.map((r) => {
+    const p = JSON.parse(r.payload) as { reply?: string; label?: string; note?: string; key?: string; from?: number; blueprint?: Blueprint };
+    const label = r.kind === "turn" ? `planner: ${(p.reply ?? "").slice(0, 70)}`
+      : r.kind === "restore" ? `restored v${p.from}`
+      : p.label ?? (p.key ? `reworded ${p.key}` : "edit");
+    return { version: r.version, kind: r.kind, label, at: r.at, items: p.blueprint?.assets.length ?? 0 };
+  });
+  json(200, { current: s.version, versions });
+}
+
+/**
+ * Restore: bring an earlier version back as the newest one (history is never rewritten).
+ *
+ *   POST /api/player/plan/restore { sessionId, version } → { version, blueprint }
+ */
+export function planRestore(playerId: string, body: unknown, json: Json): void {
+  const b = (body ?? {}) as { sessionId?: unknown; version?: unknown };
+  const s = typeof b.sessionId === "string" ? getSession(b.sessionId) : undefined;
+  if (!s || s.playerId !== playerId || !s.blueprint) return json(404, { error: "not_found" });
+  if (typeof b.version !== "number" || b.version === s.version) return json(400, { error: "bad_version" });
+  if (!takeEdit(playerId)) return json(429, { error: "slow_down", message: "That's a lot of edits. Give it a moment." });
+  const row = db().prepare(`SELECT payload FROM plan_events WHERE session_id = ? AND version = ? AND kind IN ${VERSION_KINDS} ORDER BY seq DESC LIMIT 1`).get(s.id, b.version) as { payload: string } | undefined;
+  const old = row ? (JSON.parse(row.payload) as { blueprint?: Blueprint }).blueprint : undefined;
+  if (!old) return json(404, { error: "no_version" });
+  // Was shown (and safety-checked) when it was made, so no new check
+  commitVersion(s, old, "restore", { from: b.version });
+  json(200, { version: s.version, blueprint: s.blueprint });
 }
 
 function stripMeta(bp: Blueprint): BlueprintDraft {
