@@ -22,7 +22,7 @@ import type { ProgressDelta } from "./progress.js";
 import { isNature } from "../../../shared/sky.js";
 import { RunwayWatch } from "./runway.js";
 import { sendEmail } from "./email.js";
-import { CardOrders } from "./cards.js";
+import { CardOrders, CHECKOUT_BODY_LIMIT } from "./cards.js";
 import { checkCreation } from "./safety.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
@@ -443,7 +443,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   // Card orders (M6): any player, saved or not, can buy a card of any world
   if (path === "/api/player/cards/checkout" && req.method === "POST") {
-    const r = await cardOrders.create(session.playerId, await readJson(req).catch(() => null));
+    const r = await cardOrders.create(session.playerId, await readJson(req, CHECKOUT_BODY_LIMIT).catch(() => null));
     return r.ok ? json(200, { orderId: r.order.id, order: r.order }) : json(r.status, { error: r.error, message: r.message });
   }
   // Creations (Phase 07): reserve → generate → settle. Signed-in players only.
@@ -638,6 +638,7 @@ function handleManaPublic(req: IncomingMessage, res: ServerResponse): boolean {
 /**
  * Card orders over HTTP (M6; see cards.ts for the flow):
  *   GET  /cards/orders/:id                 public status page data
+ *   GET  /cards/orders/:id/photo           public: the order's photo art (M6b), while it can still print
  *   GET  /api/cards/checkout-info/:id      payment Lambda (Bearer inflow or admin)
  *   POST /api/cards/paid                   Stripe webhook Lambda (Bearer inflow or admin)
  *   GET  /api/admin/cards?status=          admin
@@ -660,7 +661,15 @@ async function handleCards(req: IncomingMessage, res: ServerResponse, path: stri
   }
   if (isPublic) {
     if (req.method !== "GET") return (json(405, { error: "method_not_allowed" }), true);
-    const o = cardOrders.publicView(path.slice("/cards/orders/".length));
+    const rest = path.slice("/cards/orders/".length);
+    if (rest.endsWith("/photo")) {
+      const p = cardOrders.photo(rest.slice(0, -"/photo".length));
+      if (!p) return (json(404, { error: "not_found" }), true);
+      res.writeHead(200, { "Content-Type": "image/jpeg", "Content-Length": p.jpeg.length, "Cache-Control": "private, max-age=3600", ...cors });
+      res.end(p.jpeg);
+      return true;
+    }
+    const o = cardOrders.publicView(rest);
     return (o ? json(200, { order: o }) : json(404, { error: "not_found" }), true);
   }
   const role = manaRole(req);

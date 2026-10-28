@@ -117,10 +117,12 @@ interface WorldCardProps {
   face?: 'front' | 'back'
   /** Animate the art (detail view, reveal). Tilt cards also animate while hovered. */
   live?: boolean
+  /** A photo in the art window instead of the rendered orb (photo-mode card art, M6b). */
+  artUrl?: string
   className?: string
 }
 
-export function WorldCard({ entry, myCharacters, tilt = false, face, live = false, className }: WorldCardProps) {
+export function WorldCard({ entry, myCharacters, tilt = false, face, live = false, artUrl, className }: WorldCardProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [hovered, setHovered] = useState(false)
   const showFront = face ? face === 'front' : isFaceUp(entry)
@@ -167,7 +169,13 @@ export function WorldCard({ entry, myCharacters, tilt = false, face, live = fals
               ◇ Dreamt
             </span>
           )}
-          <CardArt entry={entry} live={live || hovered} />
+          {artUrl ? (
+            <div className="wc-art wc-art--photo" aria-hidden="true">
+              <img src={artUrl} alt="" draggable={false} />
+            </div>
+          ) : (
+            <CardArt entry={entry} live={live || hovered} />
+          )}
           <span className="wc-by">
             by <strong>{creatorLabel(w?.creator, myCharacters)}</strong>
           </span>

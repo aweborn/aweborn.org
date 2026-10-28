@@ -72,6 +72,10 @@ interface WorldIndexState {
   open: boolean
   setOpen: (open: boolean) => void
   toggle: () => void
+  /** Open on one world's detail (and its card checkout), taken by the panel once shown. */
+  focus: { worldId: string; buy: boolean } | null
+  openTo: (worldId: string, buy?: boolean) => void
+  clearFocus: () => void
 }
 
 export const useWorldIndexStore = create<WorldIndexState>((set) => ({
@@ -81,6 +85,9 @@ export const useWorldIndexStore = create<WorldIndexState>((set) => ({
   open: false,
   setOpen: (open) => set({ open }),
   toggle: () => set((s) => ({ open: !s.open })),
+  focus: null,
+  openTo: (worldId, buy = false) => set({ open: true, focus: { worldId, buy } }),
+  clearFocus: () => set({ focus: null }),
 }))
 
 // ── Helpers (also used by the UI) ────────────────────────────────────

@@ -44,6 +44,10 @@
         .order-meta { text-align: center; }
       }
       @media (prefers-reduced-motion: reduce) { .order-card, .steps li.now::before { animation: none; } }
+      .order-photo { margin: 0 0 1.25rem; }
+      .order-photo img { display: block; width: min(100%, 20rem); height: auto; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.14); }
+      .order-photo figcaption { margin-top: 0.4rem; font-size: 0.85rem; color: var(--text-3); }
+      @media (max-width: 34rem) { .order-photo img { margin: 0 auto; } .order-photo figcaption { text-align: center; } }
     </style>
   </head>
   <body>
@@ -102,6 +106,20 @@
           body.append(el('p', 'notice dim', 'This order was refunded. It can take 5\u201310 days to show on your statement.'))
         } else {
           body.append(el('p', 'order-headline', o.status === 'shipped' ? 'It\u2019s in the mail.' : 'It\u2019s happening.'))
+        }
+
+        // Photo-mode art (M6b): the buyer's own shot goes in the card's picture window
+        if (o.art === 'photo' && o.status !== 'cancelled' && o.status !== 'refunded') {
+          const fig = el('figure', 'order-photo')
+          const img = el('img')
+          img.src = API + '/cards/orders/' + encodeURIComponent(o.id) + '/photo'
+          img.alt = 'Your photo of ' + o.worldName + ', for the card'
+          img.width = 550
+          img.height = 450
+          img.id = 'order-photo'
+          img.onerror = () => fig.remove()
+          fig.append(img, el('figcaption', '', 'Your photo goes in the card\u2019s picture window.'))
+          body.append(fig)
         }
 
         if (o.status in RANK && !(o.status === 'pending' && cancelled)) {

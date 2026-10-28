@@ -1,8 +1,9 @@
 import { useId, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { WorldIndexEntry } from '@aweborn/shared/crdt-schema'
-import { CARD_MAX_QUANTITY, CARD_PRICE_CENTS, type CardArrival } from '@aweborn/shared/cards'
+import { CARD_MAX_QUANTITY, CARD_PRICE_CENTS, type CardArrival, type CardArt } from '@aweborn/shared/cards'
 import { getPlayerSnapshot, subscribePlayer } from '../lib/player'
 import { SoonError, formatCardPrice as price, startCardCheckout } from '../lib/cardCheckout'
+import { blobToDataUrl, type Shot } from '../lib/photo'
 import { useNameStore } from '../stores/nameStore'
 
 /**
@@ -19,7 +20,24 @@ import { useNameStore } from '../stores/nameStore'
 
 type Status = { kind: 'idle' } | { kind: 'busy' } | { kind: 'error'; message: string } | { kind: 'soon' }
 
-export function CardCheckout({ entry, onBack }: { entry: WorldIndexEntry; onBack: () => void }) {
+export function CardCheckout({
+  entry,
+  onBack,
+  art,
+  photo,
+  onArt,
+  onTakePhoto,
+}: {
+  entry: WorldIndexEntry
+  onBack: () => void
+  /** What goes in the art window (M6b); the parent shows it on the big card. */
+  art: CardArt
+  /** Your photo-mode shot of this world, if you kept one. */
+  photo: Shot | null
+  onArt: (art: CardArt) => void
+  /** Leave for photo mode, framed for this world. */
+  onTakePhoto: () => void
+}) {
   const player = useSyncExternalStore(subscribePlayer, getPlayerSnapshot)
   const myName = useNameStore((s) => (player ? s.names[player.playerId] ?? null : null))
   const [quantity, setQuantity] = useState(1)
@@ -29,6 +47,7 @@ export function CardCheckout({ entry, onBack }: { entry: WorldIndexEntry; onBack
   const uid = useId()
   const qtyId = `${uid}-qty`
   const nameHintId = `${uid}-name-hint`
+  const photoHintId = `${uid}-photo-hint`
   const worldName = entry.world?.name ?? 'this world'
   const total = CARD_PRICE_CENTS * quantity
   const busy = status.kind === 'busy'
@@ -38,7 +57,8 @@ export function CardCheckout({ entry, onBack }: { entry: WorldIndexEntry; onBack
     if (busy) return
     setStatus({ kind: 'busy' })
     try {
-      const url = await startCardCheckout({ worldId: entry.worldId, quantity, arrival, showName: showName && !!myName })
+      const photoData = art === 'photo' && photo ? await blobToDataUrl(photo.blob) : undefined
+      const url = await startCardCheckout({ worldId: entry.worldId, quantity, arrival, showName: showName && !!myName, photo: photoData })
       window.location.assign(url)
     } catch (err) {
       if (err instanceof SoonError) setStatus({ kind: 'soon' })
@@ -122,6 +142,53 @@ export function CardCheckout({ entry, onBack }: { entry: WorldIndexEntry; onBack
             </span>
           </label>
         </div>
+      </fieldset>
+
+      <fieldset className="cc-field">
+        <legend className="cc-legend">On the card</legend>
+        <div className="cc-options">
+          <label className="cc-option" htmlFor="card-art-card">
+            <input
+              type="radio"
+              id="card-art-card"
+              name="art"
+              value="card"
+              checked={art === 'card'}
+              onChange={() => onArt('card')}
+              disabled={busy}
+            />
+            <span className="cc-option-text">
+              <strong>Its World Index picture</strong>
+              <span>The world glowing in space, like your card here.</span>
+            </span>
+          </label>
+          <label className={`cc-option${photo ? ' cc-option--photo' : ' cc-option--off'}`} htmlFor="card-art-photo">
+            <input
+              type="radio"
+              id="card-art-photo"
+              name="art"
+              value="photo"
+              checked={art === 'photo'}
+              onChange={() => onArt('photo')}
+              disabled={!photo || busy}
+              aria-describedby={photoHintId}
+            />
+            <span className="cc-option-text">
+              <strong>Your photo</strong>
+              <span id={photoHintId}>
+                {photo
+                  ? photo.soft
+                    ? 'Framed in photo mode. Taken on a small screen, so it may print a little soft.'
+                    : 'Framed in photo mode.'
+                  : 'Frame your own view of the world in photo mode.'}
+              </span>
+            </span>
+            {photo && <img className="cc-photo-thumb" src={photo.url} alt="" width={66} height={54} />}
+          </label>
+        </div>
+        <button type="button" id="card-take-photo" className="cc-take-photo" onClick={onTakePhoto} disabled={busy}>
+          {photo ? 'Take another photo' : 'Take a photo'}
+        </button>
       </fieldset>
 
       <label className="cc-check" htmlFor="card-show-name">

@@ -64,6 +64,7 @@ export const BINDING_DEFS: readonly BindingDef[] = [
   { id: 'cameraMedium', group: 'camera', label: 'Medium camera', contexts: BOTH, default: 'Digit2' },
   { id: 'cameraFar', group: 'camera', label: 'Far camera', contexts: BOTH, default: 'Digit3' },
   { id: 'cameraCinematic', group: 'camera', label: 'Cinematic camera', contexts: BOTH, default: 'Digit4' },
+  { id: 'photoMode', group: 'camera', label: 'Photo mode', contexts: BOTH, default: 'Digit5' },
   { id: 'lockBehind', group: 'camera', label: 'Lock camera behind', contexts: UNI, default: 'KeyZ' },
   { id: 'freeLook', group: 'camera', label: 'Free look', contexts: UNI, default: 'KeyX' },
   { id: 'lookBehind', group: 'camera', label: 'Look behind', contexts: UNI, default: 'KeyC' },

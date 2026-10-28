@@ -35,6 +35,8 @@
       .status.cancelled, .status.refunded { color: var(--dim); }
       .meta { font-size: 12px; color: var(--dim); }
       .meta a { color: var(--dim); }
+      .photo { justify-self: start; font-size: 12px; color: var(--dim); }
+      .photo img { display: block; width: min(220px, 100%); height: auto; border-radius: 8px; border: 1px solid var(--border); }
       .actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
       .actions input { width: 8rem; min-height: 40px; padding: 6px 10px; font-size: 13px; }
       .msg { min-height: 1.4em; color: var(--dim); margin: 0 0 12px; }
@@ -103,6 +105,7 @@
         const bits = [
           'order ' + o.id,
           'tap: ' + (o.arrival === 'land' ? 'land beside' : 'step inside'),
+          'art: ' + (o.art === 'photo' ? 'buyer\u2019s photo (check it)' : 'World Index picture'),
           'created ' + when(o.createdAt),
           o.paidAt ? 'paid ' + when(o.paidAt) : null,
           o.netDollars != null ? 'net $' + o.netDollars.toFixed(2) : null,
@@ -121,6 +124,21 @@
           meta.append(pay)
         }
         li.append(meta)
+        if (o.art === 'photo' && o.status !== 'cancelled' && o.status !== 'refunded') {
+          const link = el('a', 'photo')
+          link.href = API + '/cards/orders/' + encodeURIComponent(o.id) + '/photo'
+          link.target = '_blank'
+          link.rel = 'noopener'
+          const img = el('img')
+          img.src = link.href
+          img.alt = 'Photo art for ' + o.worldName
+          img.width = 220
+          img.height = 180
+          img.loading = 'lazy'
+          img.onerror = () => link.replaceChildren('photo missing: print the World Index picture')
+          link.append(img)
+          li.append(link)
+        }
 
         const nexts = NEXT[o.status] || []
         if (nexts.length) {

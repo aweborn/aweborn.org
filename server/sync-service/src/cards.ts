@@ -1,12 +1,14 @@
 /**
  * Card orders (Rough Draft M6; Phase 08 8D): "Get this card" for any world.
  *
- *   player  POST /api/player/cards/checkout { worldId, quantity, arrival, showName } → { orderId }
+ *   player  POST /api/player/cards/checkout { worldId, quantity, arrival, showName, photo? } → { orderId }
+ *           (photo: a photo-mode shot as a data:image/jpeg URL, M6b)
  *           then the browser asks the payment Lambda for a Stripe Checkout URL
  *           (POST $VITE_API_ENDPOINT/create-card-checkout { orderId }).
  *   Lambda  GET  /api/cards/checkout-info/:id   (Bearer inflow/admin) → what to charge for (pending orders only)
  *   webhook POST /api/cards/paid { orderId, ref, netDollars, email?, at? }  (Bearer inflow/admin)
  *   public  GET  /cards/orders/:id                → status page data (no email, player or payment ids)
+ *           GET  /cards/orders/:id/photo          → the order's photo art (image/jpeg), if it has one
  *   admin   GET  /api/admin/cards?status=         → orders, newest first
  *           POST /api/admin/cards/:id { status, costDollars?, tracking?, note? }
  *
@@ -18,15 +20,17 @@
  *
  * Printed cards are permanent, so a person approves every order before it
  * prints (`paid → approved`), after the automatic safety check of the world
- * name at checkout. The Stripe Lambda holds the shipping address; we keep
+ * name at checkout. A photo is seen by that person too (no automatic image
+ * check yet). The Stripe Lambda holds the shipping address; we keep
  * only the buyer's email, to tell them about their order (Privacy).
  */
 import { randomBytes } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { ManaLedger } from "./mana.js";
 import {
-  CARD_ARRIVALS, CARD_NEXT, CARD_ORDER_STATUSES, CARD_PRICE_CENTS, cardCreativeBase, cardOrderUrl, clampQuantity, isCardOrderId,
-  type CardArrival, type CardOrderPublic, type CardOrderStatus,
+  CARD_ARRIVALS, CARD_NEXT, CARD_ORDER_STATUSES, CARD_PHOTO, CARD_PRICE_CENTS, cardCreativeBase, cardOrderUrl, cardPhotoFits, clampQuantity,
+  isCardOrderId, jpegSize,
+  type CardArrival, type CardArt, type CardOrderPublic, type CardOrderStatus,
 } from "../../../shared/cards.js";
 import { isWorldId } from "../../../shared/crdt-schema.js";
 
@@ -37,7 +41,7 @@ export const ORDERS_PER_HOUR = 6;
 export const OPEN_PENDING_MAX = 3;
 
 interface OrderRow {
-  id: string; world_id: string; world_name: string; quantity: number; arrival: string; status: string;
+  id: string; world_id: string; world_name: string; quantity: number; arrival: string; art: string; status: string;
   player_id: string | null; show_name: number; public_name: string | null; email: string | null;
   payment_ref: string | null; net_cents: number | null; cost_cents: number; tracking: string | null; note: string | null;
   created_at: number; updated_at: number; paid_at: number | null; shipped_at: number | null;
@@ -67,9 +71,28 @@ const newOrderId = (): string => `o${randomBytes(12).toString("hex")}`;
 const cleanEmail = (v: unknown): string | null =>
   typeof v === "string" && v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : null;
 
+const PHOTO_PREFIX = "data:image/jpeg;base64,";
+/** Upload body limit for a checkout with a photo (base64 is 4/3 of the bytes, plus the JSON around it). */
+export const CHECKOUT_BODY_LIMIT = Math.ceil(CARD_PHOTO.maxBytes * 4 / 3) + 4096;
+
+/** A photo-mode shot from the checkout body, checked: a JPEG, the art window's shape, not too big. */
+function readPhoto(v: unknown): { ok: true; jpeg: Buffer; width: number; height: number } | { ok: false; message: string } {
+  if (typeof v !== "string" || !v.startsWith(PHOTO_PREFIX)) return { ok: false, message: "The photo has to be a JPEG from photo mode." };
+  const b64 = v.slice(PHOTO_PREFIX.length);
+  if (b64.length > Math.ceil(CARD_PHOTO.maxBytes * 4 / 3) + 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) {
+    return { ok: false, message: "That photo is too big. Take it again." };
+  }
+  const jpeg = Buffer.from(b64, "base64");
+  const size = jpegSize(jpeg);
+  if (!size) return { ok: false, message: "The photo has to be a JPEG from photo mode." };
+  if (!cardPhotoFits(size.width, size.height)) return { ok: false, message: "That photo doesn't fit the card. Take it again in photo mode." };
+  return { ok: true, jpeg, ...size };
+}
+
 function toPublic(r: OrderRow): CardOrderPublic {
   return {
     id: r.id, worldId: r.world_id, worldName: r.world_name, quantity: r.quantity, arrival: r.arrival as CardArrival,
+    art: (r.art ?? "card") as CardArt,
     status: r.status as CardOrderStatus, createdAt: r.created_at, paidAt: r.paid_at, shippedAt: r.shipped_at,
   };
 }
@@ -95,7 +118,23 @@ export class CardOrders {
       tracking TEXT, note TEXT,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, paid_at INTEGER, shipped_at INTEGER);
       CREATE INDEX IF NOT EXISTS card_orders_status ON card_orders(status, created_at);
-      CREATE INDEX IF NOT EXISTS card_orders_player ON card_orders(player_id, created_at);`);
+      CREATE INDEX IF NOT EXISTS card_orders_player ON card_orders(player_id, created_at);
+      CREATE TABLE IF NOT EXISTS card_order_photos (
+        order_id TEXT PRIMARY KEY, jpeg BLOB NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, created_at INTEGER NOT NULL);`);
+    // M6b: art choice (older rows are the World Index picture)
+    const cols = db.prepare("PRAGMA table_info(card_orders)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "art")) db.exec("ALTER TABLE card_orders ADD COLUMN art TEXT NOT NULL DEFAULT 'card'");
+  }
+
+  private dropPhoto(id: string): void {
+    this.db.prepare("DELETE FROM card_order_photos WHERE order_id = ?").run(id);
+  }
+
+  /** The photo art of an order, while it can still print (null if none). */
+  photo(id: string): { jpeg: Buffer; width: number; height: number } | null {
+    if (!isCardOrderId(id)) return null;
+    return (this.db.prepare("SELECT jpeg, width, height FROM card_order_photos WHERE order_id = ?").get(id) as
+      { jpeg: Buffer; width: number; height: number } | undefined) ?? null;
   }
 
   private row(id: string): OrderRow | undefined {
@@ -108,21 +147,27 @@ export class CardOrders {
       .run(...keys.map((k) => (fields as Record<string, unknown>)[k] as string | number | null), this.now(), id);
   }
 
-  /** Cancel checkouts nobody finished (cheap: indexed, bounded by time). */
+  /** Cancel checkouts nobody finished (cheap: indexed, bounded by time), and drop their photos. */
   sweep(): number {
-    return this.db.prepare("UPDATE card_orders SET status = 'cancelled', updated_at = ? WHERE status = 'pending' AND created_at < ?")
-      .run(this.now(), this.now() - PENDING_TTL_MS).changes;
+    const cutoff = this.now() - PENDING_TTL_MS;
+    return this.db.transaction(() => {
+      this.db.prepare("DELETE FROM card_order_photos WHERE order_id IN (SELECT id FROM card_orders WHERE status = 'pending' AND created_at < ?)").run(cutoff);
+      return this.db.prepare("UPDATE card_orders SET status = 'cancelled', updated_at = ? WHERE status = 'pending' AND created_at < ?")
+        .run(this.now(), cutoff).changes;
+    })();
   }
 
   /** Start an order for a world (any world that exists, Card Invariant #3). */
   async create(playerId: string, body: unknown): Promise<{ ok: true; order: CardOrderPublic } | Fail> {
-    const b = (body ?? {}) as { worldId?: unknown; quantity?: unknown; arrival?: unknown; showName?: unknown };
+    const b = (body ?? {}) as { worldId?: unknown; quantity?: unknown; arrival?: unknown; showName?: unknown; photo?: unknown };
     const worldId = typeof b.worldId === "string" ? b.worldId.toLowerCase() : "";
     if (!isWorldId(worldId)) return { ok: false, status: 400, error: "bad_world" };
     const w = this.deps.world(worldId);
     if (!w || !(w.resolvedAt > 0)) return { ok: false, status: 404, error: "no_world", message: "That world isn't in the universe anymore." };
     const arrival: CardArrival = CARD_ARRIVALS.includes(b.arrival as CardArrival) ? (b.arrival as CardArrival) : "enter";
     const quantity = clampQuantity(b.quantity);
+    const photo = b.photo === undefined || b.photo === null ? null : readPhoto(b.photo);
+    if (photo && !photo.ok) return { ok: false, status: 400, error: "bad_photo", message: photo.message };
 
     this.sweep();
     const now = this.now();
@@ -137,9 +182,16 @@ export class CardOrders {
 
     const showName = b.showName === true;
     const id = newOrderId();
-    this.db.prepare(`INSERT INTO card_orders (id, world_id, world_name, quantity, arrival, status, player_id, show_name, public_name, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`)
-      .run(id, worldId, w.name.slice(0, 60), quantity, arrival, playerId, showName ? 1 : 0, showName ? this.deps.nameOf(playerId) : null, now, now);
+    this.db.transaction(() => {
+      this.db.prepare(`INSERT INTO card_orders (id, world_id, world_name, quantity, arrival, art, status, player_id, show_name, public_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`)
+        .run(id, worldId, w.name.slice(0, 60), quantity, arrival, photo?.ok ? "photo" : "card", playerId, showName ? 1 : 0,
+          showName ? this.deps.nameOf(playerId) : null, now, now);
+      if (photo?.ok) {
+        this.db.prepare("INSERT INTO card_order_photos (order_id, jpeg, width, height, created_at) VALUES (?, ?, ?, ?, ?)")
+          .run(id, photo.jpeg, photo.width, photo.height, now);
+      }
+    })();
     return { ok: true, order: toPublic(this.row(id)!) };
   }
 
@@ -178,7 +230,11 @@ export class CardOrders {
         publicName: r.public_name ?? undefined,
         at,
       });
-      this.set(r.id, { status: "paid", payment_ref: ref, net_cents: Math.round(netDollars * 100), email, paid_at: at });
+      this.set(r.id, {
+        status: "paid", payment_ref: ref, net_cents: Math.round(netDollars * 100), email, paid_at: at,
+        // Paid after the sweep dropped its photo: print the World Index picture (the admin sees it)
+        ...(r.art === "photo" && !this.photo(r.id) ? { art: "card" } : {}),
+      });
     })();
     const order = toPublic(this.row(r.id)!);
     if (email) {
@@ -195,6 +251,7 @@ export class CardOrders {
     const r = this.db.prepare("SELECT id, status FROM card_orders WHERE payment_ref = ?").get(paymentRef) as { id: string; status: string } | undefined;
     if (!r || r.status === "refunded") return false;
     this.set(r.id, { status: "refunded" });
+    this.dropPhoto(r.id);
     return true;
   }
 
@@ -239,6 +296,7 @@ export class CardOrders {
         cost_cents: r.cost_cents + Math.round(cost * 100),
         ...(next === "shipped" ? { shipped_at: now } : {}),
       });
+      if (next === "cancelled") this.dropPhoto(r.id); // never printing: don't keep the photo
     })();
     if (next === "shipped" && r.email) {
       void this.deps.email(r.email, `Your Aweborn card${r.quantity > 1 ? "s are" : " is"} in the mail`,

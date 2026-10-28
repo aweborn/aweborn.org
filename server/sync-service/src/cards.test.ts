@@ -3,9 +3,18 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { ManaLedger } from "./mana.js";
 import { CardOrders, ORDERS_PER_HOUR, PENDING_TTL_MS } from "./cards.js";
-import { cardCreativeBase, clampQuantity, isCardOrderId, CARD_MAX_QUANTITY } from "../../../shared/cards.js";
+import { cardCreativeBase, clampQuantity, isCardOrderId, jpegSize, cardPhotoFits, CARD_MAX_QUANTITY, CARD_PHOTO } from "../../../shared/cards.js";
 
 const WORLD = "11111111-2222-4333-8444-555555555555";
+
+/** A minimal JPEG header (SOI, APP0, SOF0, EOI): enough for the size check; the server never decodes pixels. */
+function fakeJpeg(width: number, height: number, pad = 0): Buffer {
+  const app0 = [0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00];
+  const sof0 = [0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 255, width >> 8, width & 255, 0x03,
+    0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01];
+  return Buffer.concat([Buffer.from([0xff, 0xd8, ...app0, ...sof0]), Buffer.alloc(pad), Buffer.from([0xff, 0xd9])]);
+}
+const dataUrl = (b: Buffer) => `data:image/jpeg;base64,${b.toString("base64")}`;
 
 function setup(opts: { unsafe?: boolean } = {}) {
   const db = new Database(":memory:");
@@ -146,4 +155,76 @@ test("admin list hides abandoned checkouts by default", async () => {
   await cards.markPaid({ orderId: a.order.id, ref: "pi_l", netDollars: 8.44 });
   assert.deepEqual(cards.list().map((o) => o.id), [a.order.id]);
   assert.equal(cards.list("pending").length, 1);
+});
+
+test("photo art: JPEG size check, the art window's shape", () => {
+  assert.deepEqual(jpegSize(fakeJpeg(1100, 900)), { width: 1100, height: 900 });
+  assert.equal(jpegSize(Buffer.from("not a jpeg at all")), null);
+  assert.equal(jpegSize(Buffer.from([0xff, 0xd8, 0xff, 0xd9])), null, "no frame header");
+  assert.ok(cardPhotoFits(1100, 900) && cardPhotoFits(550, 450));
+  assert.ok(!cardPhotoFits(1100, 1100), "square isn't 11:9");
+  assert.ok(!cardPhotoFits(440, 360), "too small to print");
+});
+
+test("photo art: stored with the order, served by its id, refused when wrong", async () => {
+  const { cards } = setup();
+  const r = await cards.create("p", { worldId: WORLD, photo: dataUrl(fakeJpeg(1100, 900, 2000)) });
+  if (!r.ok) return assert.fail(JSON.stringify(r));
+  assert.equal(r.order.art, "photo");
+  assert.deepEqual(cards.photo(r.order.id) && { w: cards.photo(r.order.id)!.width, h: cards.photo(r.order.id)!.height }, { w: 1100, h: 900 });
+  assert.equal(cards.photo("nope"), null);
+
+  const plain = await cards.create("p", { worldId: WORLD });
+  if (!plain.ok) return assert.fail();
+  assert.equal(plain.order.art, "card");
+  assert.equal(cards.photo(plain.order.id), null);
+
+  const other = setup().cards;
+  for (const photo of [
+    "data:image/png;base64,iVBORw0KGgo=",
+    dataUrl(Buffer.from("hello")),
+    dataUrl(fakeJpeg(1000, 1000)),
+    dataUrl(fakeJpeg(1100, 900, CARD_PHOTO.maxBytes + 10)),
+    "data:image/jpeg;base64,!!!",
+  ]) {
+    const bad = await other.create("q", { worldId: WORLD, photo });
+    assert.equal((bad as { error: string }).error, "bad_photo", photo.slice(0, 40));
+  }
+  assert.equal(other.list("pending").length, 0, "a refused photo makes no order");
+});
+
+test("photo art: dropped when the order can't print anymore", async () => {
+  const { cards, tick } = setup();
+  const photo = dataUrl(fakeJpeg(1100, 900));
+  const cancelled = await cards.create("p", { worldId: WORLD, photo });
+  const refunded = await cards.create("p", { worldId: WORLD, photo });
+  const swept = await cards.create("p", { worldId: WORLD, photo });
+  if (!cancelled.ok || !refunded.ok || !swept.ok) return assert.fail();
+  assert.ok(cards.advance(cancelled.order.id, { status: "cancelled" }).ok);
+  assert.equal(cards.photo(cancelled.order.id), null);
+  await cards.markPaid({ orderId: refunded.order.id, ref: "pi_photo", netDollars: 8.44 });
+  assert.ok(cards.photo(refunded.order.id), "paid orders keep it for printing");
+  cards.markRefunded("pi_photo");
+  assert.equal(cards.photo(refunded.order.id), null);
+  tick(PENDING_TTL_MS + 1);
+  cards.sweep();
+  assert.equal(cards.photo(swept.order.id), null);
+  // Paid after the sweep: prints the World Index picture instead
+  const late = await cards.markPaid({ orderId: swept.order.id, ref: "pi_late_photo", netDollars: 8.44 });
+  assert.ok(late.ok && late.order.art === "card");
+});
+
+test("orders made before photo art migrate (art = card)", () => {
+  const db = new Database(":memory:");
+  db.exec(`CREATE TABLE card_orders (
+    id TEXT PRIMARY KEY, world_id TEXT NOT NULL, world_name TEXT NOT NULL, quantity INTEGER NOT NULL, arrival TEXT NOT NULL, status TEXT NOT NULL,
+    player_id TEXT, show_name INTEGER NOT NULL DEFAULT 0, public_name TEXT, email TEXT, payment_ref TEXT UNIQUE, net_cents INTEGER,
+    cost_cents INTEGER NOT NULL DEFAULT 0, tracking TEXT, note TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    paid_at INTEGER, shipped_at INTEGER);
+    INSERT INTO card_orders (id, world_id, world_name, quantity, arrival, status, created_at, updated_at)
+    VALUES ('o${"a".repeat(24)}', '${WORLD}', 'Old', 1, 'enter', 'paid', 1, 1);`);
+  const cards = new CardOrders(db, {
+    mana: new ManaLedger(db), world: () => null, nameOf: () => null, check: async () => ({ ok: true }), email: async () => {},
+  });
+  assert.equal(cards.publicView("o" + "a".repeat(24))!.art, "card");
 });

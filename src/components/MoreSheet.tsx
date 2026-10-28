@@ -9,6 +9,7 @@ import { QualityControl } from './DisplaySettings'
 import { SoundControl } from './SoundControl'
 import { openAccount } from './ManaSeal'
 import { JourneyRow } from './Journey'
+import { usePhotoStore } from '../stores/photoStore'
 
 /**
  * ••• More (touch, 2026-10-22): everything a phone needs that isn't a thumb
@@ -55,31 +56,10 @@ export function MoreSheet() {
   }
   const saved = player ? !player.isAnonymous && !player.isGuest : false
 
-  const capturePhoto = () => {
-    const srcCanvas = document.querySelector<HTMLCanvasElement>('.canvas-container canvas')
-    if (!srcCanvas) return
+  // Photo mode (M6b) replaced the one-tap snapshot; "Whole screen" in photo mode still saves the full view.
+  const openPhotoMode = () => {
     setOpen(false)
-    requestAnimationFrame(() => {
-      srcCanvas.toBlob((blob) => {
-        if (!blob) return
-        const filename = `aweborn-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`
-        const file = new File([blob], filename, { type: 'image/png' })
-        if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
-          void navigator.share({ files: [file], title: 'Aweborn' }).catch(() => {
-            /* user dismissed share sheet */
-          })
-          return
-        }
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        setTimeout(() => URL.revokeObjectURL(url), 5000)
-      }, 'image/png')
-    })
+    usePhotoStore.getState().open()
   }
 
   return (
@@ -138,12 +118,13 @@ export function MoreSheet() {
           <span className="more-row-text"><span className="more-row-title">Show FPS</span></span>
           <input id="more-fps" type="checkbox" role="switch" checked={showFps} onChange={(e) => setShowFps(e.target.checked)} />
         </label>
-        <button id="more-photo" type="button" className="more-row" onClick={capturePhoto}>
+        <button id="more-photo" type="button" className="more-row" onClick={openPhotoMode}>
           <span className="more-icon" aria-hidden="true">📸</span>
           <span className="more-row-text">
-            <span className="more-row-title">Share or save photo</span>
-            <span className="more-row-sub">Clean snapshot without controls</span>
+            <span className="more-row-title">Photo mode</span>
+            <span className="more-row-sub">Frame a world for its card, or save the view</span>
           </span>
+          <span className="more-chev" aria-hidden="true">›</span>
         </button>
 
         <h3 className="more-section">Controls</h3>

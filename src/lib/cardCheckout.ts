@@ -14,7 +14,7 @@ const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' 
 /** "$9", "$18", "$9.50" */
 export const formatCardPrice = (cents: number): string => usd.format(cents / 100).replace(/\.00$/, '')
 
-export async function startCardCheckout(body: { worldId: string; quantity: number; arrival: CardArrival; showName: boolean }): Promise<string> {
+export async function startCardCheckout(body: { worldId: string; quantity: number; arrival: CardArrival; showName: boolean; photo?: string }): Promise<string> {
   const res = await fetch(`${AUTH_URL}/api/player/cards/checkout`, {
     method: 'POST',
     credentials: 'include',

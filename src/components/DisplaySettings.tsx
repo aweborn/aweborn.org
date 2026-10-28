@@ -7,6 +7,8 @@ import {
 } from '../stores/qualityStore'
 import { SIGHT_DISTANCE } from '../stores/worldIndexStore'
 import { SoundControl } from './SoundControl'
+import { usePhotoStore } from '../stores/photoStore'
+import { keyCapLabel, useKeybindingStore } from '../stores/keybindingStore'
 
 /**
  * Display settings: a gear under the FPS counter that opens a small glass
@@ -29,6 +31,8 @@ function fromSlider(v: number): QualitySetting {
 export function DisplaySettings() {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const photoKey = useKeybindingStore((s) => s.bindings.photoMode)
+  const layout = useKeybindingStore((s) => s.layout)
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -78,6 +82,17 @@ export function DisplaySettings() {
           <QualityControl />
           <div className="display-settings-title display-settings-title--sub">Sound</div>
           <SoundControl idPrefix="display" label="Volume" />
+          <button
+            id="display-photo-mode"
+            type="button"
+            className="display-settings-photo"
+            onClick={() => {
+              setOpen(false)
+              usePhotoStore.getState().open()
+            }}
+          >
+            Photo mode{photoKey && <kbd>{keyCapLabel(photoKey, layout)}</kbd>}
+          </button>
         </div>
       )}
     </div>

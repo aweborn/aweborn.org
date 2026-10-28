@@ -21,6 +21,49 @@ export const CARD_MAX_QUANTITY = 10;
  */
 export const CARD_COST_ESTIMATE = { perCardDollars: 1.0, perOrderDollars: 4.0 } as const;
 
+/**
+ * The picture in the card's art window (55 × 45 mm, 11:9):
+ *   card   the world's World Index picture (its orb in space), rendered at print time
+ *   photo  a photo-mode shot the buyer framed in-game (M6b), uploaded with the order
+ */
+export type CardArt = "card" | "photo";
+export const CARD_ARTS: readonly CardArt[] = ["card", "photo"];
+
+/**
+ * Photo art: a JPEG cropped to the art window. 1100 × 900 is ~508 dpi on the
+ * 55 mm window; 550 px wide (~254 dpi) is the least we print. The upload is
+ * base64 in JSON, so keep it under ~600 KB.
+ */
+export const CARD_PHOTO = { width: 1100, height: 900, minWidth: 550, maxBytes: 600_000 } as const;
+
+/** True if a photo is the art window's shape (11:9) and sharp enough to print. */
+export function cardPhotoFits(width: number, height: number): boolean {
+  return width >= CARD_PHOTO.minWidth && width <= 4000 && height > 0 && Math.abs(width / height - 11 / 9) < 0.01;
+}
+
+/** Width × height of a baseline/progressive JPEG (from its SOF marker), or null if it isn't one. */
+export function jpegSize(b: Uint8Array): { width: number; height: number } | null {
+  if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < b.length) {
+    if (b[i] !== 0xff) return null;
+    const m = b[i + 1];
+    if (m === 0xff) { i++; continue; } // fill byte
+    if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; } // no length
+    const len = (b[i + 2] << 8) | b[i + 3];
+    if (len < 2) return null;
+    // SOF0..SOF15, except DHT (C4), JPG (C8), DAC (CC)
+    if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+      const height = (b[i + 5] << 8) | b[i + 6];
+      const width = (b[i + 7] << 8) | b[i + 8];
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (m === 0xda || m === 0xd9) return null; // scan/end before any frame header
+    i += 2 + len;
+  }
+  return null;
+}
+
 /** Where a tap lands: beside the world (sighted) or inside it (visited). */
 export type CardArrival = "land" | "enter";
 export const CARD_ARRIVALS: readonly CardArrival[] = ["land", "enter"];
@@ -69,6 +112,7 @@ export interface CardOrderPublic {
   worldName: string;
   quantity: number;
   arrival: CardArrival;
+  art: CardArt;
   status: CardOrderStatus;
   createdAt: number;
   paidAt: number | null;

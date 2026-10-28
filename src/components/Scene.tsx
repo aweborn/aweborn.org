@@ -22,6 +22,8 @@ import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
 import { usePlannerStore } from '../stores/plannerStore'
+import { usePhotoStore } from '../stores/photoStore'
+import { CARD_PHOTO } from '@aweborn/shared/cards'
 import { chunksAround, placeOnTerrain, sameTerrainShape, halfExtentOf, COLLIDE_RADIUS, useTerrainEditsRev } from '../stores/worldVoxels'
 import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
@@ -919,7 +921,12 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
 export function Scene({ onPortalActivate, onProgress }: SceneProps) {
   const [, setReady] = useState(false)
   const tier = useQualityTier()
-  const dpr = Math.min(tier.dpr, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1)
+  const composing = usePhotoStore((s) => s.composing)
+  const baseDpr = Math.min(tier.dpr, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1)
+  // Photo mode (M6b): render sharp enough that the card frame holds ~1100 px (capped at 3×)
+  const dpr = composing && typeof window !== 'undefined'
+    ? Math.min(3, Math.max(baseDpr, CARD_PHOTO.width / Math.max(1, Math.min(window.innerWidth - 24, ((window.innerHeight - 200) * 11) / 9))))
+    : baseDpr
 
   const handleCreated = useCallback(() => {
     // Done as soon as the scene has really drawn (2026-10-22, Alex: "make it

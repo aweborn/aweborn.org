@@ -21,6 +21,7 @@ import { OnboardingHint } from './components/OnboardingHint'
 import { teleportSystem } from './systems/TeleportSystem'
 import { WorldIndex } from './components/WorldIndex'
 import { CardReveal } from './components/CardReveal'
+import { PhotoMode } from './components/PhotoMode'
 import { startWorldIndex } from './stores/worldIndexStore'
 import { Journey, ProgressToast } from './components/Journey'
 import { startProgress } from './stores/progressStore'
@@ -171,6 +172,9 @@ export default function App() {
         </>
       )}
       {isLoaded && webglSupported && <CardReveal />}
+
+      {/* Photo mode (M6b): frame a world for its card */}
+      {isLoaded && webglSupported && <PhotoMode />}
 
       {/* Solidification wave: recognition line + golden flash */}
       {isLoaded && webglSupported && <WaveBanner />}

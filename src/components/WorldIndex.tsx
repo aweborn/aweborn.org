@@ -20,7 +20,8 @@ import { matchesBinding } from '../stores/keybindingStore'
 import { useProgressStore } from '../stores/progressStore'
 import { CardCheckout } from './CardCheckout'
 import { CARD_CHECKOUT_ON } from '../lib/cardCheckout'
-import { CARD_PRICE_CENTS } from '@aweborn/shared/cards'
+import { CARD_PRICE_CENTS, type CardArt } from '@aweborn/shared/cards'
+import { usePhotoStore } from '../stores/photoStore'
 
 /**
  * World Index (Phase 08B): every world you've found, as cards. Press M (or
@@ -99,6 +100,16 @@ export function WorldIndex() {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [buyFirst, setBuyFirst] = useState(false)
+  const focus = useWorldIndexStore((s) => s.focus)
+
+  // Opened on one world (photo mode → "Use on a card"): show it, maybe on its checkout.
+  useEffect(() => {
+    if (!open || !focus) return
+    setSelectedId(focus.worldId)
+    setBuyFirst(focus.buy)
+    useWorldIndexStore.getState().clearFocus()
+  }, [open, focus])
 
   // M toggles (the game's input is disabled while the panel is open, so listen directly).
   useEffect(() => {
@@ -132,6 +143,7 @@ export function WorldIndex() {
     inputManager.setEnabled(true)
     setOpen(false)
     setSelectedId(null)
+    setBuyFirst(false)
   }, [setOpen])
 
   // Light dismiss fallback for browsers without <dialog closedby> (Safari).
@@ -203,7 +215,14 @@ export function WorldIndex() {
         </header>
 
         {selected ? (
-          <WorldDetail entry={selected} characters={characters} onBack={() => setSelectedId(null)} onWarp={() => setOpen(false)} />
+          <WorldDetail
+            key={selected.worldId}
+            entry={selected}
+            characters={characters}
+            startBuying={buyFirst}
+            onBack={() => { setSelectedId(null); setBuyFirst(false) }}
+            onWarp={() => setOpen(false)}
+          />
         ) : total === 0 ? (
           <div className="wi-empty">
             <img className="wi-empty-card" src="/cards/back.svg" alt="" />
@@ -251,11 +270,13 @@ export function WorldIndex() {
 function WorldDetail({
   entry,
   characters,
+  startBuying = false,
   onBack,
   onWarp,
 }: {
   entry: WorldIndexEntry
   characters: readonly string[]
+  startBuying?: boolean
   onBack: () => void
   onWarp: () => void
 }) {
@@ -264,7 +285,11 @@ function WorldDetail({
   const warpUnlocked = useProgressStore((s) => s.view?.warpUnlocked ?? true)
   const pos = useUniverseStore.getState().playerPosition // a snapshot is enough (updates every frame)
   const [copied, setCopied] = useState(false)
-  const [buying, setBuying] = useState(false)
+  const [buying, setBuying] = useState(startBuying)
+  // Card art (M6b): your photo-mode shot of this world, if you kept one; else the World Index picture
+  const shot = usePhotoStore((s) => s.byWorld[entry.worldId] ?? null)
+  const [artChoice, setArtChoice] = useState<CardArt>(() => (usePhotoStore.getState().byWorld[entry.worldId] ? 'photo' : 'card'))
+  const art: CardArt = artChoice === 'photo' && shot ? 'photo' : 'card'
   const w = entry.world
   const isOrigin = entry.worldId === ORIGIN_WORLD_ID
   const target = worldEntryFor(entry)
@@ -309,11 +334,21 @@ function WorldDetail({
       </button>
       <div className={`wi-detail-body${buying ? ' wi-detail-body--buying' : ''}`}>
         <div className="wi-detail-card">
-          <WorldCard entry={entry} myCharacters={characters} tilt live />
+          <WorldCard entry={entry} myCharacters={characters} tilt live artUrl={buying && art === 'photo' ? shot?.url : undefined} />
         </div>
         {buying ? (
           <div className="wi-detail-info">
-            <CardCheckout entry={entry} onBack={() => setBuying(false)} />
+            <CardCheckout
+              entry={entry}
+              onBack={() => setBuying(false)}
+              art={art}
+              photo={shot}
+              onArt={setArtChoice}
+              onTakePhoto={() => {
+                onWarp() // closes the index
+                usePhotoStore.getState().open(entry.worldId)
+              }}
+            />
           </div>
         ) : (
         <div className="wi-detail-info">
