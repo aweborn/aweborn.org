@@ -9,8 +9,10 @@
  */
 import { create } from 'zustand'
 import { snapToCell, stackedY, type LibraryBlock } from '@aweborn/shared/library'
-import { placeBlock, placeModel, placeShape, useWorldStore } from './worldStore'
-import { placeOnTerrain } from './worldVoxels'
+import { CHUNK, cellAt } from '@aweborn/shared/voxel'
+import { editKey } from '@aweborn/shared/terrain-edits'
+import { editTerrainCell, placeBlock, placeModel, placeShape, useWorldStore } from './worldStore'
+import { getChunk, placeOnTerrain } from './worldVoxels'
 import { useUniverseStore } from './universeStore'
 import { interiorController } from '../systems/InteriorController'
 
@@ -18,6 +20,9 @@ export type HeldItem =
   | { kind: 'block'; block: LibraryBlock }
   | { kind: 'shape'; shape: { id: string; name: string }; color: string; size: number; rotY: number }
   | { kind: 'model'; sha: string; file: string; prompt: string; size: number; rotY: number }
+  /** Terrain editing (M5d, owners): dig a cell out, or fill one with the world's block `block` (1-based, as in the grid). */
+  | { kind: 'terrain'; op: 'dig' }
+  | { kind: 'terrain'; op: 'fill'; block: number; name: string; color: string }
 
 interface HeldItemState {
   /** Library item equipped in hand for repeat placement. */
@@ -45,12 +50,12 @@ export const useHeldItemStore = create<HeldItemState>((set) => ({
   clear: () => set({ item: null }),
   rotateItem: (deltaRad) =>
     set((s) => {
-      if (!s.item || s.item.kind === 'block') return s
+      if (!s.item || s.item.kind === 'block' || s.item.kind === 'terrain') return s
       return { item: { ...s.item, rotY: s.item.rotY + deltaRad } }
     }),
   scaleItem: (factor) =>
     set((s) => {
-      if (!s.item || s.item.kind === 'block') return s
+      if (!s.item || s.item.kind === 'block' || s.item.kind === 'terrain') return s
       const next = Math.min(30, Math.max(0.5, +(s.item.size * factor).toFixed(2)))
       return { item: { ...s.item, size: next } }
     }),
@@ -62,17 +67,75 @@ export const useHeldItemStore = create<HeldItemState>((set) => ({
   setCarryingId: (carryingId) => set({ carryingId }),
 }))
 
+/** How far down from your feet a dig/fill reaches (cells), so you never edit ground you can't see. */
+const TERRAIN_REACH_DOWN = 3
+
+export interface TerrainTarget {
+  /** Global cell */
+  gi: number
+  j: number
+  gk: number
+  /** The value it becomes (0 = air) */
+  v: number
+  /** Cell centre in world coordinates (for the preview) */
+  x: number
+  y: number
+  z: number
+}
+
+/**
+ * The cell a terrain tool would change right now: the column 1.6 m ahead, between
+ * a few cells below your feet and head height. Dig takes the highest non-air cell;
+ * fill lands on the highest solid one (it may replace water). Null when there's
+ * nothing to dig / no room to fill, or no voxel terrain.
+ */
+export function computeTerrainTarget(
+  item: Extract<HeldItem, { kind: 'terrain' }>,
+  s: { x: number; y: number; z: number; fx: number; fz: number } = interiorController.state,
+): TerrainTarget | null {
+  const t = useWorldStore.getState().voxelTerrain
+  if (!t) return null
+  const [wx, sy, wz] = t.size
+  const gi = Math.floor(s.x + s.fx * 1.6 + wx / 2)
+  const gk = Math.floor(s.z + s.fz * 1.6 + wz / 2)
+  if (gi < 0 || gk < 0 || gi >= wx || gk >= wz) return null
+  const cx = Math.floor(gi / CHUNK), cz = Math.floor(gk / CHUNK)
+  const c = getChunk(t, cx, cz)
+  if (!c) return null
+  const g = c.grid
+  const at = (j: number) => cellAt(g, gi - cx * CHUNK, j, gk - cz * CHUNK)
+  const feet = Math.floor(s.y + 0.01)
+  const top = Math.min(sy - 1, feet + 1)
+  const low = Math.max(1, feet - TERRAIN_REACH_DOWN)
+  const out = (j: number, v: number): TerrainTarget => ({ gi, j, gk, v, x: gi - wx / 2 + 0.5, y: j + 0.5, z: gk - wz / 2 + 0.5 })
+  if (item.op === 'dig') {
+    for (let j = top; j >= low; j--) if (at(j) !== 0) return out(j, 0)
+    return null
+  }
+  if (item.block < 1 || item.block > g.blocks.length) return null
+  let j = top
+  while (j >= low - 1 && (at(j) === 0 || g.liquid[at(j) - 1])) j--
+  const fill = j + 1
+  if (j < low - 1 || fill > top || fill < 1 || at(fill) === item.block) return null
+  return out(fill, item.block)
+}
+
 /**
  * Compute the exact world position where `item` will land if placed right now
  * in front of the player (`s`), matching Library placement rules:
  *  - Blocks snap to the terrain grid cell 2 m ahead, lifted to terrain surface
  *    and stacked on top of any blocks already in that column.
  *  - Shapes and models sit in front of the player at feet height.
+ *  - Terrain tools: the cell from `computeTerrainTarget` (or straight ahead if none).
  */
 export function computePlacementTarget(
   item: HeldItem,
   s: { x: number; y: number; z: number; fx: number; fz: number } = interiorController.state,
 ): { x: number; y: number; z: number; scale: number; rotY: number } {
+  if (item.kind === 'terrain') {
+    const c = computeTerrainTarget(item, s)
+    return c ? { x: c.x, y: c.y, z: c.z, scale: 1, rotY: 0 } : { x: s.x + s.fx * 1.6, y: s.y + 0.5, z: s.z + s.fz * 1.6, scale: 1, rotY: 0 }
+  }
   if (item.kind === 'block') {
     const worldState = useWorldStore.getState()
     const t = worldState.voxelTerrain
@@ -117,6 +180,12 @@ export function placeEquippedItem(playerId: string): string | null {
   const item = useHeldItemStore.getState().item
   const doc = useUniverseStore.getState().activeWorldDoc
   if (!item || !doc) return null
+  if (item.kind === 'terrain') {
+    const t = useWorldStore.getState().voxelTerrain
+    const c = computeTerrainTarget(item, interiorController.state)
+    if (!t || !c) return null
+    return editTerrainCell(doc, t, c.gi, c.j, c.gk, c.v) ? editKey(c.gi, c.j, c.gk) : null
+  }
   const pos = computePlacementTarget(item, interiorController.state)
   if (item.kind === 'block') {
     return placeBlock(doc, item.block, { x: pos.x, y: pos.y, z: pos.z }, playerId)

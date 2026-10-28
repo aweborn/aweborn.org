@@ -294,25 +294,24 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
       if (cached) {
         Y.applyUpdate(doc, cached, "remote");
       }
-      // Ensure meta is populated from the Universe entry if this world hasn't synced yet (cold offline entry)
-      const meta = doc.getMap("meta");
-      if (!meta.get("name")) {
-        const entry = get().worlds.get(worldId);
-        if (entry) {
-          doc.transact(() => {
-            meta.set("name", entry.name);
-            meta.set("creator", entry.creator);
-            meta.set("createdAt", entry.createdAt);
-            meta.set("color", entry.color);
-            meta.set("solidified", entry.solidified);
-            if (entry.parentWorldId) meta.set("parentWorldId", entry.parentWorldId);
-            if (entry.allowPortals !== undefined) meta.set("allowPortals", entry.allowPortals);
-          }, "remote");
-        }
-      }
+      // Cold offline entry (world not synced yet): show the Universe entry's name/colour until the doc syncs.
+      // Never write it into the doc: local writes tagged "remote" are never sent, and every later write from
+      // this client builds on them, so the server would hold all of them as pending forever (found 2026-10-28).
+      const entry = get().worlds.get(worldId);
+      const fallbackMeta = entry
+        ? {
+            name: entry.name,
+            creator: entry.creator,
+            createdAt: entry.createdAt,
+            color: entry.color,
+            solidified: entry.solidified,
+            ...(entry.parentWorldId ? { parentWorldId: entry.parentWorldId } : {}),
+            ...(entry.allowPortals !== undefined ? { allowPortals: entry.allowPortals } : {}),
+          }
+        : null;
       wireWorldDoc(worldId, doc, get);
       set({ activeWorldId: worldId, activeWorldDoc: doc });
-      useWorldStore.getState().loadFromDoc(doc);
+      useWorldStore.getState().loadFromDoc(doc, fallbackMeta);
     },
 
     exitWorld: (toSpace = false) => {

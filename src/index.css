@@ -4594,6 +4594,10 @@ html.touch-ui .held-clear-btn {
 }
 .held-clear-btn:hover { color: var(--color-text-primary); background: rgba(255, 255, 255, 0.18); }
 .library-swatch { width: 22px; height: 22px; flex: none; border-radius: 6px; border: 1px solid rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
+/* Terrain shelf (M5d): the digger's swatch is a pick on a warm tile */
+.library-swatch--dig { display: grid; place-items: center; font-size: 14px; line-height: 1; background: linear-gradient(145deg, #ff8a7a, #b8475a); }
+/* Made shelf as a tabpanel: the list inside stays the one scrolling area */
+.library-made { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .library-shape { flex-direction: column; gap: 2px; padding: 10px 6px 8px; }
 .library-picker { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .library-color { display: inline-flex; align-items: center; gap: 8px; font-size: var(--text-xs); color: var(--color-text-secondary); cursor: pointer; }

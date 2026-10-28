@@ -21,6 +21,8 @@ import { DEFAULT_PHYSICS } from "@aweborn/shared/crdt-schema";
 import { progress } from "./progressStore";
 import { cleanColor } from "@aweborn/shared/library";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
+import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, editKey } from "@aweborn/shared/terrain-edits";
+import { changeTerrainEdits, resetTerrainEdits, terrainCellAt } from "./worldVoxels";
 
 interface WorldState {
   /** World metadata */
@@ -48,8 +50,8 @@ interface WorldState {
 
   // ── Actions ──
 
-  /** Load world state from a Y.Doc */
-  loadFromDoc: (doc: Y.Doc) => void;
+  /** Load world state from a Y.Doc (`fallbackMeta`: shown until the doc has synced its own) */
+  loadFromDoc: (doc: Y.Doc, fallbackMeta?: WorldMeta | null) => void;
 
   /** Place a new object in the world */
   placeObject: (
@@ -162,14 +164,35 @@ function readSky(doc: Y.Doc): BlueprintSky | null {
   }
 }
 
-/** Manifest the terrain (and its sky): every client regenerates the same grid (shared/voxel.ts). */
+/** Manifest the terrain (and its sky): every client regenerates the same grid (shared/voxel.ts). Clears dig/fill edits (they belong to the old ground). */
 export function setVoxelTerrain(doc: Y.Doc, terrain: VoxelTerrain, sky?: BlueprintSky | null): void {
   doc.transact(() => {
     const m = doc.getMap("terrain");
-    m.set("voxel", JSON.stringify(terrain));
+    const before = m.get("voxel");
+    const next = JSON.stringify(terrain);
+    m.set("voxel", next);
     if (sky) m.set("sky", JSON.stringify(sky));
     else m.delete("sky");
+    if (before !== next) doc.getMap(TERRAIN_EDITS_MAP).clear();
   });
+}
+
+/**
+ * Dig or fill one terrain cell (Rough Draft M5d): `v` 0 = air, n = blocks[n - 1].
+ * Setting a cell back to what the generator made deletes its edit. Owners only
+ * (the server reverts anyone else). False if the world's edit cap is reached.
+ */
+export function editTerrainCell(doc: Y.Doc, t: VoxelTerrain, gi: number, j: number, gk: number, v: number): boolean {
+  if (j < 1 || j >= t.size[1] || gi < 0 || gk < 0 || gi >= t.size[0] || gk >= t.size[2]) return false;
+  const map = doc.getMap(TERRAIN_EDITS_MAP);
+  const key = editKey(gi, j, gk);
+  if (v === terrainCellAt(t, gi, j, gk, false)) {
+    if (map.has(key)) map.delete(key);
+    return true;
+  }
+  if (!map.has(key) && map.size >= TERRAIN_EDIT_LIMITS.maxEdits) return false;
+  map.set(key, v);
+  return true;
 }
 
 function readChat(doc: Y.Doc): ChatMessage[] {
@@ -196,25 +219,37 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
   sky: null,
   loaded: false,
 
-  loadFromDoc: (doc) => {
+  loadFromDoc: (doc, fallbackMeta = null) => {
+    const edits = doc.getMap(TERRAIN_EDITS_MAP);
+    const voxelTerrain = readVoxelTerrain(doc);
+    // The edit overlay first, so the first frame already shows the dug/filled ground
+    resetTerrainEdits(voxelTerrain, edits.entries());
     // Read initial state
     set({
-      meta: readMeta(doc),
+      meta: readMeta(doc) ?? fallbackMeta,
       physics: readPhysics(doc),
       objects: readObjects(doc),
       chat: readChat(doc),
       terrainSeed: (doc.getMap("terrain").get("seed") as number) ?? 0,
-      voxelTerrain: readVoxelTerrain(doc),
+      voxelTerrain,
       sky: readSky(doc),
       loaded: true,
     });
 
     // Observe changes
-    doc.getMap("meta").observeDeep(() => set({ meta: readMeta(doc) }));
+    doc.getMap("meta").observeDeep(() => set({ meta: readMeta(doc) ?? fallbackMeta }));
     doc.getMap("physics").observeDeep(() => set({ physics: readPhysics(doc) }));
     doc.getMap("objects").observeDeep(() => set({ objects: readObjects(doc) }));
     doc.getArray("chat").observe(() => set({ chat: readChat(doc) }));
-    doc.getMap("terrain").observe(() => set({ voxelTerrain: readVoxelTerrain(doc), sky: readSky(doc) }));
+    doc.getMap("terrain").observe((ev) => {
+      const t = readVoxelTerrain(doc);
+      if (ev.keysChanged.has("voxel")) resetTerrainEdits(t, edits.entries());
+      set({ voxelTerrain: t, sky: readSky(doc) });
+    });
+    // Dig/fill (M5d): only the changed cells, never the whole map
+    edits.observe((ev) => {
+      changeTerrainEdits([...ev.keysChanged].map((k) => [k, edits.get(k)] as [string, unknown]));
+    });
   },
 
   placeObject: (doc, type, position, rotation, scale, material) => {
@@ -257,6 +292,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
   },
 
   reset: () => {
+    resetTerrainEdits(null);
     set({ voxelTerrain: null, sky: null,
       meta: null,
       physics: { ...DEFAULT_PHYSICS },

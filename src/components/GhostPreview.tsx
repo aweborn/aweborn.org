@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { usePlannerStore } from '../stores/plannerStore'
 import { useWorldStore } from '../stores/worldStore'
-import { chunkCoordsAround, getChunk, placeOnTerrain, sameTerrain, useWorldLoadProgress, type Chunk } from '../stores/worldVoxels'
+import { chunkCoordsAround, getChunk, placeOnTerrain, sameTerrain, useTerrainEditsRev, useWorldLoadProgress, type Chunk } from '../stores/worldVoxels'
 import { useUniverseStore } from '../stores/universeStore'
 import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
@@ -101,6 +101,8 @@ function TerrainChunks({ terrain, ghost }: { terrain: BlueprintDraft['terrain'];
   const coords = useMemo(() => chunkCoordsAround(terrain, cx, cz, radius), [terrain, cx, cz, radius])
   const initialBatch = Math.min(9, coords.length)
   const [visibleCount, setVisibleCount] = useState(initialBatch)
+  // Dig/fill edits (M5d): edited chunks come back with a new id, so only they rebuild.
+  const editsRev = useTerrainEditsRev((s) => s.rev)
 
   useEffect(() => {
     setVisibleCount(Math.min(9, coords.length))
@@ -125,7 +127,8 @@ function TerrainChunks({ terrain, ghost }: { terrain: BlueprintDraft['terrain'];
       if (c) out.push(c)
     }
     return out
-  }, [terrain, coords, visibleCount])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- editsRev: getChunk reads the edit overlay
+  }, [terrain, coords, visibleCount, editsRev])
 
   return (
     <>

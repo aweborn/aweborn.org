@@ -15,7 +15,7 @@ import { useAtmosphere } from '../hooks/useAtmosphere'
 import { useQualityTier } from '../stores/qualityStore'
 import type { BlueprintSky } from '@aweborn/shared/blueprint'
 import { RETURN_PORTAL_XZ, type WorldEntry } from '@aweborn/shared/crdt-schema'
-import { useHeldItemStore, computePlacementTarget } from '../stores/heldItemStore'
+import { useHeldItemStore, computePlacementTarget, computeTerrainTarget } from '../stores/heldItemStore'
 import { interiorController } from '../systems/InteriorController'
 import { PictureObject, SoundObject, SignObject, WorldSound, SpatialListener } from './MediaObjects'
 
@@ -276,11 +276,24 @@ function HeldItemPreview() {
     if (!item) return new THREE.Color('#ffffff')
     if (item.kind === 'block') return new THREE.Color(item.block.color)
     if (item.kind === 'shape') return new THREE.Color(item.color)
+    if (item.kind === 'terrain') return new THREE.Color(item.op === 'dig' ? '#ff6b7a' : item.color)
     return new THREE.Color('#9fe8ff')
   }, [item])
 
   useFrame((state) => {
     if (!groupRef.current || !item || carryingId) return
+    if (item.kind === 'terrain') {
+      // The exact cell a dig/fill would change; nothing shown when there isn't one
+      const c = computeTerrainTarget(item, interiorController.state)
+      groupRef.current.visible = !!c
+      if (!c) return
+      groupRef.current.position.set(c.x, c.y, c.z)
+      groupRef.current.rotation.set(0, 0, 0)
+      const s = 1.04 + Math.sin(state.clock.elapsedTime * 4) * 0.015
+      groupRef.current.scale.set(s, s, s)
+      return
+    }
+    groupRef.current.visible = true
     const target = computePlacementTarget(item, interiorController.state)
     groupRef.current.position.set(target.x, target.y, target.z)
     groupRef.current.rotation.set(0, target.rotY, 0)
@@ -300,7 +313,7 @@ function HeldItemPreview() {
           </Suspense>
         </ModelBoundary>
       ) : (
-        <mesh geometry={geo}>
+        <mesh geometry={geo} renderOrder={item.kind === 'terrain' ? 10 : 0}>
           <meshStandardMaterial
             color={color}
             roughness={0.5}
@@ -308,13 +321,15 @@ function HeldItemPreview() {
             emissive={color}
             emissiveIntensity={0.25}
             transparent
-            opacity={0.52}
+            opacity={item.kind === 'terrain' ? 0.3 : 0.52}
             depthWrite={false}
+            depthTest={item.kind !== 'terrain'}
           />
         </mesh>
       )}
-      <mesh geometry={geo} scale={[1.02, 1.02, 1.02]}>
-        <meshBasicMaterial color={color} wireframe transparent opacity={0.65} depthWrite={false} />
+      {/* Terrain targets sit in the ground and behind the avatar: draw their outline over everything */}
+      <mesh geometry={geo} scale={[1.02, 1.02, 1.02]} renderOrder={item.kind === 'terrain' ? 11 : 0}>
+        <meshBasicMaterial color={color} wireframe transparent opacity={item.kind === 'terrain' ? 0.95 : 0.65} depthWrite={false} depthTest={item.kind !== 'terrain'} />
       </mesh>
     </group>
   )

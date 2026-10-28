@@ -549,9 +549,15 @@ export class TouchInputAdapter {
     btn.tabIndex = on ? 0 : -1
   }
 
-  /** World: PLACE appears around the right stick when an item is equipped in hand. */
+  /** World: PLACE appears around the right stick when an item is equipped in hand (DIG / FILL for terrain tools). */
   private _showPlace(on: boolean): void {
-    if (!this._placeBtn || on === this._placeShown) return
+    if (!this._placeBtn) return
+    if (on && this._placeBtn.textContent !== sceneHints.placeLabel) {
+      this._placeBtn.textContent = sceneHints.placeLabel
+      const names = { PLACE: 'Place the item in your hand', DIG: 'Dig the ground in front of you', FILL: 'Fill the ground in front of you' }
+      this._placeBtn.setAttribute('aria-label', names[sceneHints.placeLabel])
+    }
+    if (on === this._placeShown) return
     this._placeShown = on
     this._placeBtn.classList.toggle('touch-btn--off', !on)
     this._placeBtn.setAttribute('aria-hidden', String(!on))

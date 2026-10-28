@@ -8,6 +8,7 @@ import {
   type Rec,
   type WorldActor,
 } from "../../../shared/world-policy.js";
+import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, parseEditKey, validEditValue } from "../../../shared/terrain-edits.js";
 
 /**
  * Server-side world write authority (Rough Draft M1, 2026-10-27).
@@ -44,6 +45,10 @@ export class WorldAuthority {
   private maps = new Map<GuardedWorldMap, Rec>();
   private dirtyObjects = new Set<string>();
   private dirtyMaps = new Set<GuardedWorldMap>();
+  // Terrain edits (M5d): a big sparse map, so it's mirrored and judged per key, never whole
+  private readonly editsType: Y.Map<unknown>;
+  private edits = new Map<string, unknown>();
+  private dirtyEdits = new Set<string>();
 
   constructor(private readonly doc: Y.Doc) {
     this.objectsType = doc.getMap("objects");
@@ -53,6 +58,8 @@ export class WorldAuthority {
       if (rec && typeof rec === "object") this.objects.set(id, rec as Rec);
     });
     for (const name of GUARDED_WORLD_MAPS) this.maps.set(name, doc.getMap(name).toJSON() as Rec);
+    this.editsType = doc.getMap(TERRAIN_EDITS_MAP);
+    this.editsType.forEach((v, k) => this.edits.set(k, v));
     doc.on("afterTransaction", this.track);
   }
 
@@ -64,6 +71,10 @@ export class WorldAuthority {
     tr.changed.forEach((keys, type) => {
       if ((type as unknown) === this.objectsType) {
         keys.forEach((k) => k && this.dirtyObjects.add(k));
+        return;
+      }
+      if ((type as unknown) === this.editsType) {
+        keys.forEach((k) => k && this.dirtyEdits.add(k));
         return;
       }
       const item = (type as unknown as { _item?: { parent?: unknown; parentSub?: string | null } | null })._item;
@@ -89,8 +100,14 @@ export class WorldAuthority {
       else this.objects.delete(id);
     }
     for (const name of this.dirtyMaps) this.maps.set(name, this.doc.getMap(name).toJSON() as Rec);
+    for (const k of this.dirtyEdits) {
+      const v = this.editsType.get(k);
+      if (v === undefined) this.edits.delete(k);
+      else this.edits.set(k, v);
+    }
     this.dirtyObjects.clear();
     this.dirtyMaps.clear();
+    this.dirtyEdits.clear();
   }
 
   /**
@@ -103,8 +120,10 @@ export class WorldAuthority {
 
     const objIds = [...this.dirtyObjects];
     const mapNames = [...this.dirtyMaps];
+    const editKeys = [...this.dirtyEdits];
     this.dirtyObjects.clear();
     this.dirtyMaps.clear();
+    this.dirtyEdits.clear();
 
     const fixes: Array<() => void> = [];
     const details: string[] = [];
@@ -144,11 +163,37 @@ export class WorldAuthority {
       }
     }
 
+    if (editKeys.length) {
+      let size = this.edits.size;
+      let writes = 0;
+      let refused = 0;
+      for (const key of editKeys) {
+        const before = this.edits.get(key);
+        const after = this.editsType.get(key);
+        if (before === after) continue;
+        let ok = actor.owner;
+        if (ok && after !== undefined) {
+          const isNew = before === undefined;
+          ok = parseEditKey(key) !== null && validEditValue(after) &&
+            ++writes <= TERRAIN_EDIT_LIMITS.maxPerUpdate && (!isNew || size < TERRAIN_EDIT_LIMITS.maxEdits);
+          if (ok && isNew) size++;
+        } else if (ok && after === undefined) size--;
+        if (ok) continue;
+        refused++;
+        fixes.push(() => {
+          if (before === undefined) this.editsType.delete(key);
+          else this.editsType.set(key, before);
+        });
+      }
+      if (refused) details.push(`${TERRAIN_EDITS_MAP} x${refused}`);
+    }
+
     if (fixes.length) this.doc.transact(() => fixes.forEach((f) => f()), AUTHORITY_ORIGIN);
 
     // Whatever stands now is the accepted state.
     for (const id of objIds) this.dirtyObjects.add(id);
     for (const name of mapNames) this.dirtyMaps.add(name);
+    for (const k of editKeys) this.dirtyEdits.add(k);
     this.acceptDirty();
 
     return { reverted: fixes.length, details };

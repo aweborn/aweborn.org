@@ -84,16 +84,19 @@ export function HeldItemBar() {
       ? item.block.name
       : item.kind === 'shape'
         ? `${item.shape.name} (${item.size}m)`
-        : item.prompt
+        : item.kind === 'terrain'
+          ? item.op === 'dig' ? 'Dig the ground' : `Fill with ${item.name}`
+          : item.prompt
 
   const swatchColor =
-    item.kind === 'block' ? item.block.color : item.kind === 'shape' ? item.color : '#9fe8ff'
+    item.kind === 'block' ? item.block.color : item.kind === 'shape' ? item.color : item.kind === 'terrain' ? (item.op === 'dig' ? '#ff6b7a' : item.color) : '#9fe8ff'
+  const action = item.kind === 'terrain' ? (item.op === 'dig' ? 'Dig' : 'Fill') : 'Place'
 
   return (
     <div id="held-item-bar" className="held-item-bar" role="region" aria-label="Item in hand">
       <span className="held-item-swatch" style={{ background: swatchColor }} aria-hidden="true" />
       <span className="held-item-name" title={label}>{label}</span>
-      {item.kind !== 'block' && (
+      {item.kind !== 'block' && item.kind !== 'terrain' && (
         <div className="held-item-tools" role="group" aria-label="Adjust held item">
           <button type="button" className="held-tool-btn" onClick={() => triggerHeldAdjust('rotLeft')} aria-label="Rotate left" title="Rotate left (Z)">⟲</button>
           <button type="button" className="held-tool-btn" onClick={() => triggerHeldAdjust('rotRight')} aria-label="Rotate right" title="Rotate right (X)">⟳</button>
@@ -102,7 +105,7 @@ export function HeldItemBar() {
         </div>
       )}
       <button id="held-place-btn" type="button" className="held-place-btn" onClick={triggerPlaceHeld}>
-        Place <kbd>{keyCapLabel(placeCode, layout)}</kbd>
+        {action} <kbd>{keyCapLabel(placeCode, layout)}</kbd>
       </button>
       <button
         id="held-clear-btn"

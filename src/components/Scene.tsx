@@ -22,7 +22,7 @@ import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
 import { usePlannerStore } from '../stores/plannerStore'
-import { chunksAround, placeOnTerrain, sameTerrain, halfExtentOf, COLLIDE_RADIUS } from '../stores/worldVoxels'
+import { chunksAround, placeOnTerrain, sameTerrain, halfExtentOf, COLLIDE_RADIUS, useTerrainEditsRev } from '../stores/worldVoxels'
 import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
@@ -465,6 +465,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const [heldId, setHeldId] = useState<string | null>(null)
   const held = useRef<{ id: string; rotY: number; dist: number; lift: number; lastWrite: number; k: number; base: { x: number; y: number; z: number } } | null>(null)
   const turnKeys = useRef({ z: false, x: false, r: false, f: false })
+  // Dig/fill edits (M5d) change the chunks' colliders
+  const editsRev = useTerrainEditsRev((s) => s.rev)
   const boxes = useMemo(() => {
     const near = (t: NonNullable<typeof refTerrain>) => chunksAround(t, pcx, pcz, COLLIDE_RADIUS).flatMap((c) => c.colliders)
     const real = voxelTerrain ? near(voxelTerrain) : NO_BOXES
@@ -477,7 +479,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       else out.push(...collidersFor([o]))
     }
     return [...out, ...real, ...ghost]
-  }, [objects, ghostVisible, ghostTerrain, voxelTerrain, heldId, shapes, pcx, pcz])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- editsRev: chunksAround reads the edit overlay
+  }, [objects, ghostVisible, ghostTerrain, voxelTerrain, heldId, shapes, pcx, pcz, editsRev])
 
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -683,9 +686,10 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     sceneHints.hasTargetObject = targetObj !== null
     sceneHints.isCarryingObject = held.current !== null
     sceneHints.hasHeldItem = heldStore.item !== null
+    sceneHints.placeLabel = heldStore.item?.kind === 'terrain' ? (heldStore.item.op === 'dig' ? 'DIG' : 'FILL') : 'PLACE'
 
     // If not carrying an existing world object, Z/X/=/− rotate/scale the equipped item in hand
-    if (!held.current && heldStore.item && heldStore.item.kind !== 'block') {
+    if (!held.current && heldStore.item && heldStore.item.kind !== 'block' && heldStore.item.kind !== 'terrain') {
       const rotDelta = ((turnKeys.current.x ? 1 : 0) - (turnKeys.current.z ? 1 : 0)) * 1.8 * delta
       if (rotDelta !== 0) heldStore.rotateItem(rotDelta)
       const scaleExp = ((turnKeys.current.r ? 1 : 0) - (turnKeys.current.f ? 1 : 0)) * 1.0 * delta

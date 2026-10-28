@@ -7,6 +7,7 @@ import { libraryThumb } from '../lib/libraryThumbs'
 import { matchesBinding } from '../stores/keybindingStore'
 import { useSheet } from '../stores/sheetStore'
 import { useHeldItemStore } from '../stores/heldItemStore'
+import { useOwnsCurrentWorld } from '../lib/worldActor'
 import { MakeTabs } from './MakeTabs'
 import {
   STANDARD_BLOCKS, SHAPES, SHAPE_COLORS, SHAPE_SIZE, cleanColor,
@@ -18,6 +19,8 @@ import {
  *  - Blocks: terrain-style blocks (this world's own, plus the standard set), snapped to the grid
  *  - Shapes: cubes, rings, cones … in any color and size
  *  - Made: every model anyone has made, searchable
+ * And for the world's creators, a fourth: Terrain (dig the ground, fill it with
+ * the world's own blocks; Rough Draft M5d).
  * Everything placed from the Library is free (blocks and shapes never touch the
  * server, so they work offline); placing an existing made model is free too, it
  * is already made.
@@ -35,7 +38,9 @@ interface Asset {
 
 const STARTING_SIZE = 3 // meters, longest side
 
-type Tab = 'blocks' | 'shapes' | 'made'
+type Tab = 'blocks' | 'shapes' | 'made' | 'terrain'
+const TABS: ReadonlyArray<readonly [Tab, string]> = [['blocks', 'Blocks'], ['shapes', 'Shapes'], ['made', 'Made']]
+const TABS_WITH_TERRAIN: ReadonlyArray<readonly [Tab, string]> = [...TABS, ['terrain', 'Terrain']]
 const PREFS_KEY = 'aweborn-library-prefs'
 
 function loadPrefs(): { color: string; size: number; tab: Tab } {
@@ -44,7 +49,7 @@ function loadPrefs(): { color: string; size: number; tab: Tab } {
     return {
       color: cleanColor(p.color, SHAPE_COLORS[5]),
       size: Math.min(SHAPE_SIZE.max, Math.max(SHAPE_SIZE.min, Number(p.size) || SHAPE_SIZE.start)),
-      tab: p.tab === 'shapes' || p.tab === 'made' ? p.tab : 'blocks',
+      tab: p.tab === 'shapes' || p.tab === 'made' || p.tab === 'terrain' ? p.tab : 'blocks',
     }
   } catch {
     return { color: SHAPE_COLORS[5], size: SHAPE_SIZE.start, tab: 'blocks' }
@@ -133,8 +138,12 @@ export function LibraryPanel() {
   const [myMaker, setMyMaker] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
   const [prefs, setPrefs] = useState(loadPrefs)
-  const { tab, color, size } = prefs
   const worldTerrain = useWorldStore((s) => s.voxelTerrain)
+  // Terrain shelf: only the world's creators, and only where there's voxel ground to reshape
+  const owns = useOwnsCurrentWorld()
+  const canTerrain = owns && !!worldTerrain
+  const tab: Tab = prefs.tab === 'terrain' && !canTerrain ? 'blocks' : prefs.tab
+  const { color, size } = prefs
   const setPref = useCallback((p: Partial<typeof prefs>) => {
     setPrefs((cur) => {
       const next = { ...cur, ...p }
@@ -145,6 +154,7 @@ export function LibraryPanel() {
   // This world's own terrain blocks first, then the standard set (skipping repeats)
   const worldBlocks: LibraryBlock[] = (worldTerrain?.blocks ?? []).map((b) => ({ id: b.id, name: b.name, color: cleanColor(b.color) }))
   const standardBlocks = STANDARD_BLOCKS.filter((b) => !worldBlocks.some((w) => w.id === b.id))
+  const tabs = canTerrain ? TABS_WITH_TERRAIN : TABS
 
   useEffect(() => {
     if (!playerId) return
@@ -206,7 +216,10 @@ export function LibraryPanel() {
     }
   }, [open, q, tab])
 
+  // Keyboard moves between shelves keep focus on the tabs (no jump into the search box)
+  const keyNav = useRef(false)
   useEffect(() => {
+    if (keyNav.current) { keyNav.current = false; return }
     if (open && tab === 'made') setTimeout(() => inputRef.current?.focus(), 0)
   }, [open, tab])
 
@@ -247,6 +260,32 @@ export function LibraryPanel() {
     [equip, color, size, setOpen],
   )
 
+  // Terrain tools: `block` is the grid's 1-based index into this world's blocks
+  const selectTerrain = useCallback(
+    (tool: { op: 'dig' } | { op: 'fill'; block: number; name: string; color: string }) => {
+      equip({ kind: 'terrain', ...tool })
+      setPlaced(tool.op === 'dig' ? 'terrain:dig' : `terrain:${tool.block}`)
+      setOpen(false)
+    },
+    [equip, setOpen],
+  )
+
+  // Arrow keys / Home / End move between shelves (the tab pattern), focus follows the selection
+  const onTabKey = useCallback(
+    (e: React.KeyboardEvent<HTMLElement>) => {
+      const i = tabs.findIndex(([id]) => id === tab)
+      const n = tabs.length
+      const next = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i - 1 + n) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1
+      if (next < 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      keyNav.current = true
+      setPref({ tab: tabs[next][0] })
+      document.getElementById(`library-tab-${tabs[next][0]}`)?.focus()
+    },
+    [tabs, tab, setPref],
+  )
+
   if (!activeWorldId) return null
 
   if (!open) {
@@ -266,14 +305,16 @@ export function LibraryPanel() {
           ×
         </button>
       </header>
-      <nav className="library-tabs" role="tablist" aria-label="Library shelves">
-        {([['blocks', 'Blocks'], ['shapes', 'Shapes'], ['made', 'Made']] as const).map(([id, label]) => (
+      <nav className="library-tabs" role="tablist" aria-label="Library shelves" onKeyDown={onTabKey}>
+        {tabs.map(([id, label]) => (
           <button
             key={id}
             id={`library-tab-${id}`}
             type="button"
             role="tab"
             aria-selected={tab === id}
+            aria-controls={`library-${id}`}
+            tabIndex={tab === id ? 0 : -1}
             className={`library-tab${tab === id ? ' is-on' : ''}`}
             onClick={() => setPref({ tab: id })}
           >
@@ -282,8 +323,49 @@ export function LibraryPanel() {
         ))}
       </nav>
 
+      {tab === 'terrain' && worldTerrain && (
+        <div className="library-shelf" id="library-terrain" role="tabpanel" aria-labelledby="library-tab-terrain">
+          <ul className="library-blocks">
+            <li>
+              <button
+                id="library-terrain-dig"
+                type="button"
+                className={`library-block library-dig${heldItem?.kind === 'terrain' && heldItem.op === 'dig' ? ' is-on' : ''}`}
+                onClick={() => selectTerrain({ op: 'dig' })}
+                title="Hold the digger, then tap DIG to take out the ground in front of you"
+              >
+                <span className="library-swatch library-swatch--dig" aria-hidden="true">⛏</span>
+                <span>{(heldItem?.kind === 'terrain' && heldItem.op === 'dig') || placed === 'terrain:dig' ? 'Dig ✓' : 'Dig'}</span>
+              </button>
+            </li>
+            {worldTerrain.blocks.map((b, i) => {
+              const n = i + 1
+              const c = cleanColor(b.color)
+              const isHeld = heldItem?.kind === 'terrain' && heldItem.op === 'fill' && heldItem.block === n
+              return (
+                <li key={`t-${b.id}`}>
+                  <button
+                    type="button"
+                    className={`library-block${isHeld ? ' is-on' : ''}`}
+                    onClick={() => selectTerrain({ op: 'fill', block: n, name: b.name, color: c })}
+                    aria-label={`Fill with ${b.name}`}
+                    title={`Hold ${b.name}, then tap FILL to raise the ground in front of you`}
+                  >
+                    <span className="library-swatch" style={{ background: c }} aria-hidden="true" />
+                    <span>{isHeld || placed === `terrain:${n}` ? `${b.name} ✓` : b.name}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="library-hint">
+            Reshape this world's ground: hold Dig or a block, face where you want it and tap the button. Everyone here sees it. Only creators can do this, and reshaping the whole terrain in the planner starts the ground fresh.
+          </p>
+        </div>
+      )}
+
       {tab === 'blocks' && (
-        <div className="library-shelf" id="library-blocks">
+        <div className="library-shelf" id="library-blocks" role="tabpanel" aria-labelledby="library-tab-blocks">
           {worldBlocks.length > 0 && (
             <>
               <h3 className="library-shelf-title">This world</h3>
@@ -321,7 +403,7 @@ export function LibraryPanel() {
       )}
 
       {tab === 'shapes' && (
-        <div className="library-shelf" id="library-shapes">
+        <div className="library-shelf" id="library-shapes" role="tabpanel" aria-labelledby="library-tab-shapes">
           <div className="library-picker">
             <label className="library-color" htmlFor="library-color">
               <input
@@ -379,20 +461,20 @@ export function LibraryPanel() {
       )}
 
       {tab === 'made' && (
+        <div className="library-made" id="library-made" role="tabpanel" aria-labelledby="library-tab-made">
         <form className="planner-form" onSubmit={(e) => e.preventDefault()}>
           <input
             ref={inputRef}
             id="library-search"
             className="planner-input"
             placeholder="Search everything anyone has made…"
+            aria-label="Search the library"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.stopPropagation()}
           />
         </form>
-      )}
-      {tab === 'made' && error && <p className="planner-error">{error}</p>}
-      {tab === 'made' && (
+      {error && <p className="planner-error">{error}</p>}
       <ul className="library-list">
         {assets.map((a) => {
           const isHeld = heldItem?.kind === 'model' && heldItem.sha === a.sha
@@ -421,6 +503,7 @@ export function LibraryPanel() {
         })}
         {!loading && !assets.length && !error && <li className="planner-empty">Nothing here yet. Make something, and it lands here for everyone.</li>}
       </ul>
+        </div>
       )}
     </aside>
   )

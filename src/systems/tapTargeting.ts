@@ -24,6 +24,8 @@ export const sceneHints = {
   isCarryingObject: false,
   /** World: the player has a Library item equipped in hand (PLACE button active). */
   hasHeldItem: false,
+  /** World: what the PLACE button says (terrain tools dig / fill instead, M5d). */
+  placeLabel: 'PLACE' as 'PLACE' | 'DIG' | 'FILL',
 }
 
 export function setPickCamera(camera: THREE.Camera): void {

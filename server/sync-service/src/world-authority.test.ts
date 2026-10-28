@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as Y from "yjs";
 import { WorldAuthority, CreateLimiter } from "./world-authority.js";
 import type { WorldActor } from "../../../shared/world-policy.js";
+import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS } from "../../../shared/terrain-edits.js";
 
 const ALICE = "char-alice"; // world creator
 const BOB = "char-bob"; // another signed-in player
@@ -160,3 +161,37 @@ test("CreateLimiter: sliding window", () => {
   assert.ok(!lim.take(k, 20));
   assert.ok(lim.take(k, 1500));
 });
+
+// ── Terrain edits (M5d) ──
+const edits = (d: Y.Doc) => d.getMap(TERRAIN_EDITS_MAP);
+
+test("terrain edits: the creator digs and fills; a non-owner's dig snaps back for everyone", () => {
+  const { server, client, act } = setup();
+  assert.equal(act(alice, (d) => edits(d).set("10,3,10", 0)), 0);
+  assert.equal(act(alice, (d) => edits(d).set("11,4,10", 2)), 0);
+  assert.equal(edits(server).get("10,3,10"), 0);
+  assert.equal(act(bob, (d) => edits(d).set("12,3,10", 0)), 1);
+  assert.equal(act(guest, (d) => edits(d).delete("10,3,10")), 1);
+  assert.equal(edits(server).has("12,3,10"), false);
+  assert.equal(edits(client).has("12,3,10"), false);
+  assert.equal(edits(client).get("10,3,10"), 0);
+});
+
+test("terrain edits: bad keys and values are refused, even from the owner", () => {
+  const { server, act } = setup();
+  assert.equal(act(alice, (d) => edits(d).set("10,0,10", 0)), 1); // the floor
+  assert.equal(act(alice, (d) => edits(d).set("nope", 0)), 1);
+  assert.equal(act(alice, (d) => edits(d).set("10,3,10", 99)), 1);
+  assert.equal(act(alice, (d) => edits(d).set("10,3,10", "x")), 1);
+  assert.equal(edits(server).size, 0);
+});
+
+test("terrain edits: at most maxPerUpdate cells per update; owner deletes always pass", () => {
+  const { server, act } = setup();
+  const n = TERRAIN_EDIT_LIMITS.maxPerUpdate + 6;
+  assert.equal(act(alice, (d) => d.transact(() => { for (let i = 0; i < n; i++) edits(d).set(`${i},2,5`, 0); })), 6);
+  assert.equal(edits(server).size, TERRAIN_EDIT_LIMITS.maxPerUpdate);
+  assert.equal(act(alice, (d) => d.transact(() => edits(d).clear())), 0);
+  assert.equal(edits(server).size, 0);
+});
+

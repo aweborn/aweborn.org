@@ -11,11 +11,28 @@
 import * as Y from 'yjs'
 
 const KEY_UNIVERSE = 'aweborn.offline.universe'
-const KEY_WORLD_PREFIX = 'aweborn.offline.world:'
+// v2 (2026-10-28): v1 world caches could hold local-only placeholder meta the server never got;
+// any later write from that client built on it and stayed pending on the server forever.
+const KEY_WORLD_PREFIX = 'aweborn.offline.world.v2:'
+const KEY_WORLD_PREFIX_V1 = 'aweborn.offline.world:'
 const KEY_WORLD_LRU = 'aweborn.offline.world-lru'
 const KEY_PENDING_PREFIX = 'aweborn.offline.pending:'
 const KEY_PENDING_INDEX = 'aweborn.offline.pending-index'
 const MAX_CACHED_WORLDS = 24
+
+// Drop the v1 world caches once (they'd only take up quota now)
+try {
+  if (typeof localStorage !== 'undefined') {
+    const old: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k?.startsWith(KEY_WORLD_PREFIX_V1)) old.push(k)
+    }
+    for (const k of old) localStorage.removeItem(k)
+  }
+} catch {
+  /* private mode */
+}
 
 function toBase64(bytes: Uint8Array): string {
   let binary = ''
