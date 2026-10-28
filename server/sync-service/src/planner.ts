@@ -36,7 +36,8 @@ export const PLANNER_MODELS = [
   "anthropic/claude-haiku-5.5",
 ] as const;
 
-const PROVISIONAL_PROGRESS: PlayerProgress = { chapter: 5, warpUnlocked: false, levelsSinceWarp: 0 };
+/** The character's chapter/level for admission (Rough Draft M3: was a provisional "everyone is chapter 5"). */
+const progressOf = (rooms: RoomManager, playerId: string): PlayerProgress => rooms.progress.playerProgress(playerId);
 const MAX_TURNS = 40; // history kept per session (oldest dropped)
 
 export const PLANNER_SYSTEM = `You are the world planner in Aweborn, a shared universe where players dream up small worlds and they become real.
@@ -183,7 +184,7 @@ export async function planTurn(rooms: RoomManager, playerId: string, body: unkno
   }
 
   const ref = `plan:${s.id}:${s.version + 1}:${randomUUID().slice(0, 8)}`;
-  const decision = rooms.admission.requestDraw({ playerId, ref, estimate: PLAN_ESTIMATE_MANA, progress: PROVISIONAL_PROGRESS });
+  const decision = rooms.admission.requestDraw({ playerId, ref, estimate: PLAN_ESTIMATE_MANA, progress: progressOf(rooms, playerId) });
   if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
 
   const current = s.blueprint ? `\n\nCURRENT BLUEPRINT (v${s.version}):\n${JSON.stringify(stripMeta(s.blueprint))}` : "";
@@ -332,7 +333,7 @@ export async function planManifest(rooms: RoomManager, playerId: string, body: u
     }
     const ref = `manifest:${s.id}:v${bp.version}:${a.key}:${randomUUID().slice(0, 6)}`;
     const est = ASSET_MANA[a.kind].quick; // preview quality only until refine is wired
-    const decision = rooms.admission.requestDraw({ playerId, ref, estimate: est, progress: PROVISIONAL_PROGRESS });
+    const decision = rooms.admission.requestDraw({ playerId, ref, estimate: est, progress: progressOf(rooms, playerId) });
     if (!decision.ok) {
       items.push({ key: a.key, error: decision.reason, message: decision.message });
       continue;
@@ -377,7 +378,7 @@ export async function planRedo(rooms: RoomManager, playerId: string, body: unkno
   }
 
   const ref = `redo:${s.id}:v${s.version}:${asset.key}:${randomUUID().slice(0, 6)}`;
-  const decision = rooms.admission.requestDraw({ playerId, ref, estimate: ASSET_MANA[asset.kind].quick, progress: PROVISIONAL_PROGRESS });
+  const decision = rooms.admission.requestDraw({ playerId, ref, estimate: ASSET_MANA[asset.kind].quick, progress: progressOf(rooms, playerId) });
   if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
   try {
     const jobId = await startJob(ref, playerId, `${asset.prompt}. Style: ${s.blueprint.style.artDirection}`);

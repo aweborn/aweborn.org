@@ -60,6 +60,13 @@ export const CHAPTERS = [
 
 export const WARP_CHAPTER = 7;
 
+/** What reaching a chapter opens up (Journey panel; enforced by caps, the leash and the warp gate). Chapters 1–4 only teach. */
+export const CHAPTER_UNLOCKS: Partial<Record<number, string>> = {
+  5: "Make with mana: 600 a day",
+  6: "Fly beyond the Frontier · 1,000 mana a day",
+  7: "Warp anywhere · fly without limits · more mana every level",
+};
+
 /** Chapter 6 (Alex, 2026-10-14 evening). */
 export const EXPLORER = {
   visits: 10,

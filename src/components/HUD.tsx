@@ -8,6 +8,7 @@ import { useHudPrefsStore } from '../stores/hudPrefsStore'
 import { RadarMinimap } from './RadarMinimap'
 import { PlayerAccount } from './PlayerAccount'
 import { WorldIndexChip } from './WorldIndex'
+import { JourneyChip } from './Journey'
 import { DisplaySettings } from './DisplaySettings'
 import { KeybindingsButton, KeybindingsPanel } from './KeybindingsPanel'
 import { useKeybindingStore, keyCapLabel } from '../stores/keybindingStore'
@@ -148,6 +149,7 @@ export function HUD() {
         <div className="hud-brand">aweborn</div>
         <PlayerAccount />
         <WorldIndexChip />
+        <JourneyChip />
       </div>
 
       {/* Top right — Context mode */}

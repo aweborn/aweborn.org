@@ -197,16 +197,16 @@ Frontier
 - `[x]` Preview: `awebornWave()` in the console (visual only, nothing solidifies). The `?wave` URL trigger was removed 2026-10-17 (Alex)
 
 ### Awe → Experience + Reach
-- `[ ]` Create `src/systems/AweTracker.ts` (client) and wire the stubbed server hook `server/sync-service/src/awe.ts` (`onFirstDiscovery`, `onAwe`)
-- `[ ]` Awe events (first world visit, first creation seen, distance milestone, slingshot chain, cluster discovery, long-absence return) grant **XP** and **high-water reach**, never pool mana. Amounts TBD with the levels design
-- `[ ]` **Reactions:** other players' awe at a world credits XP to its creator(s): the main XP source for makers
-- `[ ]` Shared-awe 2× when near other players; diminishing novelty on revisits
-- `[ ]` Server validates (cheap checks now, [Phase 09](./09-authoritative-flight.md) server-derived later)
+- `[x]` Create `src/systems/AweTracker.ts` (client) and wire the stubbed server hook `server/sync-service/src/awe.ts` (`onFirstDiscovery`, `onAwe`) → **replaced** (2026-10-27, Rough Draft M3) by [`server/sync-service/src/progress.ts`](../server/sync-service/src/progress.ts) (`Progress`: tables `progress` + `xp_event`) and [`src/stores/progressStore.ts`](../src/stores/progressStore.ts) (client skill/flight reports). The `awe.ts` stub is left in place, unused
+- `[~]` Awe events grant **XP**, never pool mana. Done: first world visit, sighting a new world, distance milestones (every 1,000 u flown), reactions, finished creations. Not yet: slingshot chain, cluster discovery, long-absence return. **Deviation (Alex, 2026-10-27): awe is character XP only and does NOT move the high-water line; only gifts do.** ROADMAP still says awe grows reach; not edited, per the rules. `mana.ts` `recordAweReach` is now unused
+- `[x]` **Reactions:** other players' awe at a world credits XP to its creator(s)
+- `[x]` Shared-awe 2× on a first visit with company; revisits give 0 (novelty is first-visit only for now)
+- `[x]` Server validates: skill reports limited to `CLIENT_SKILLS`, 1 report per 3 s per character, flight distance clamped per report; enter/mesh/world skills and visits are server-observed only ([Phase 09](./09-authoritative-flight.md) server-derived later)
 
 ### Experience & Levels
 - `[x]` Decide what a level measures → **mix of mana channeled into creations + breadth of skills** (Alex, 2026-10-14)
-- `[ ]` XP curve: concave per creation and per day for channeled mana; **usage is enough** (Alex, 2026-10-14: no "still standing after N hours" rule)
-- `[ ]` Skill list (move, place, terrain, mesh, texture, sound, music, voice, world…) and the breadth gate (level *n* needs *k* distinct skills)
+- `[x]` XP curve: concave per creation and per day for channeled mana; **usage is enough** (Alex, 2026-10-14: no "still standing after N hours" rule). 2026-10-27 (M3): `creationXp(mana)` + a daily cap, `xpForLevel(n)` in [`shared/progress.ts`](../shared/progress.ts); numbers are agent defaults, approved for the rough draft
+- `[~]` Skill list and the breadth gate: 12 skills today (move, steer, drive, brake, approach, enter, leave, place, arrange, mesh, terrain, world); texture/sound/music/voice arrive with Rough Draft M5. Breadth gate: level *n* needs ⌊(n−1)/3⌋ mastered skills (`masteredForLevel`)
 - `[x]` Unlock ladder order → **warp last** (Alex, 2026-10-14). Draft chapters:
   1. **First light:** move, steer
   2. **Pilot:** drive / neutral mode, brake, approach and orbit a world
@@ -222,12 +222,12 @@ Frontier
   - **Visit `N = 10` worlds, sight `M = 30`**
   - **Distance:** 5,000 u flown in total, plus one flight ≥ 1,000 u from Origin, made possible by the **loosened leash** below (Alex, 2026-10-14, option b)
   - **Safety valve:** `N = min(10, worlds inside the Frontier)`, `M = min(30, …)`, so a sparse universe never locks anyone out
-- `[ ]` **Beginner cradle:** until warp unlocks, a soft leash keeps the player near a beginner baseline inside the Frontier and gently turns them back if they stray too far (lots of controls, and it's 3D: cradle them in). Arrivals by card or `/w/` link are never yanked back
+- `[x]` **Beginner cradle:** (2026-10-27, M3: [`src/systems/leash.ts`](../src/systems/leash.ts), soft: outward velocity removed and the overshoot eased back; teleports/card/link arrivals widen the leash to include the arrival point) until warp unlocks, a soft leash keeps the player near a beginner baseline inside the Frontier and gently turns them back if they stray too far (lots of controls, and it's 3D: cradle them in). Arrivals by card or `/w/` link are never yanked back
   - **Chapters 1–5:** leash = the Frontier
   - **Chapter 6, "off the leash" (option b):** the leash widens to `max(1,500 u, Frontier + 500 u)` from Origin (proposal; tune in playtests), so the ≥ 1,000 u flight is a first supervised trip into the Ghost dark. A coming-of-age moment that shows what warp will be for
   - **Chapter 7 (warp):** leash removed
-- `[ ]` Map chapters 1–4 onto the existing tutorial steps; chapter 5 needs `base(level)` > 0 for each tool
-- `[ ]` Gate the live K-warp and World Index "Warp here" button behind chapter 7 (link/card arrival never gated)
+- `[~]` Map chapters 1–4 onto the existing tutorial steps; chapter 5 needs `base(level)` > 0 for each tool. Chapters map to skill steps shown in Your journey (`chapterSteps`); the OnboardingHint cards are not merged with them yet. `[x]` chapter 5 opens the daily mana cap (`CHAPTER_UNLOCKS`, server reads real progress in every draw)
+- `[x]` Gate the live K-warp and World Index "Warp here" button behind chapter 7 (link/card arrival never gated). 2026-10-27: `WarpSystem.setAllowed`; lock-on still works, charging shows a notice
 
 ### Budget Shortfall (disclosed shrink)
 - `[x]` Behavior decided (Alex, 2026-10-14): bills always get paid; when a non-creative draw exceeds `pool − creative`, the **creative share shrinks by the gap**, in the open. No hidden clip, no loan bookkeeping
@@ -355,3 +355,4 @@ Frontier
 | 2026-10-20 (grill) | **Phase 05 closed as Complete† (Alex).** Goal for the next ~4 weeks is **Card Event Readiness** (see phases/README → Active Phase): strangers must trust the game. The rest of 05 (awe → XP, levels, cradle, warp gate, shooting stars, ambience, solar, donor names) waits until after the first community event; saved players keep the flat caps. Acceptance criteria ticked against what shipped; one `[~]`: verify a failed Meshy job releases its hold. Docs only, no code. | Card Event Readiness step 1: bot load test |
 | 2026-10-27 | **Rough Draft GOAL reopens the rest of 05 (Alex; see [ROUGH_DRAFT.md](./ROUGH_DRAFT.md)).** Decisions: **awe = the character's experience (XP); awe is NOT linked to the high-water line / Frontier reach** (only gifts move it). *Deviation from ROADMAP (Awe section + System Rules "awe generation"), ROADMAP not edited.* Default numbers approved (agent proposes, tune after playtests). Universe audio = procedural WebAudio. Refunds/disputes = labeled draws for now. Card price $9. | M2 audio, M3 awe/levels, M4 living sky |
 | 2026-10-27 | **M2 audio shipped.** Server: `mana.level` (creative ÷ max(3,000, 30-day creation draw); 30-day spend cached 60 s). Client: procedural WebAudio engine ([`src/audio/`](../src/audio/)): band-driven ambience, wave sweep + hum, creation inhale/exhale by band, sighting bell + reveal arpeggio, warp charge + crack, approach hum, UI ticks; mute + volume in ••• More and the gear panel. Verified with real taps at 4 sizes (meters, not ears). Details in the ROUGH_DRAFT log. M4 reuses `poolBand` for the sky. | Alex listens; M3 |
+| 2026-10-27 | **M3 awe = XP + levels shipped** (Rough Draft). Server [`progress.ts`](../server/sync-service/src/progress.ts) (`progress` + `xp_event`; first visits ×2 with company, sightings, reactions to your worlds, creations, flight distance; skill reports limited to client skills, 1 per 3 s, distance clamped by elapsed time). Shared [`progress.ts`](../shared/progress.ts): 12 skills, mastery = 3 uses, 7 chapters, breadth gate, `CHAPTER_UNLOCKS`. Real progress now drives `base(level)` caps in every draw (`PROVISIONAL_PROGRESS` removed). Client: Your journey (desktop Level chip, touch ••• More row), level/chapter toast, soft leash ([`leash.ts`](../src/systems/leash.ts), spec option b), warp + "Warp here" gated at chapter 7 (cards/links/teleports never yanked). **Awe does not move the high-water line** (Alex deviation; `recordAweReach` left unused). Existing players were seeded at chapter 5 (Maker), so they're leashed to the Frontier until they finish chapter 6. Privacy updated. Checked with real taps at 390×844, 360×740, 844×390, 1440×900 (puppeteer-core). 67 shared + 68 sync tests. | M4 living sky. Open for Alex: unsaved players can't reach warp (making needs sign-in); legacy players at Maker + leashed; XP numbers |

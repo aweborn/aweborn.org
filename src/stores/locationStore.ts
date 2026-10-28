@@ -5,6 +5,7 @@ import { useWorldStore } from './worldStore'
 import { flightController } from '../systems/FlightController'
 import { interiorController } from '../systems/InteriorController'
 import { teleportSystem } from '../systems/TeleportSystem'
+import { grantLeashTo } from '../systems/leash'
 
 /**
  * Where you left off: on reload, a player returns to the same spot, flying in
@@ -145,6 +146,7 @@ async function restore(): Promise<void> {
   const [px, py, pz] = loc.flight.p
   const [qx, qy, qz, qw] = loc.flight.q
   flightController.reset(new THREE.Vector3(px, py, pz), new THREE.Quaternion(qx, qy, qz, qw))
+  grantLeashTo({ x: px, y: py, z: pz })
   useUniverseStore.getState().updatePlayerState({ x: px, y: py, z: pz }, { x: 0, y: 0, z: 0 }, { x: qx, y: qy, z: qz, w: qw }, 0)
   teleportSystem.requestSnap()
 

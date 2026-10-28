@@ -32,6 +32,7 @@ import { interiorController } from '../systems/InteriorController'
 import { AUTH_URL, getPlayerSnapshot, playerReady, subscribePlayer, type Player } from '../lib/player'
 import type { WorldLookup } from '../systems/TeleportSystem'
 import { audio } from '../audio/engine'
+import { refreshProgress } from './progressStore'
 
 // ── Tuning ───────────────────────────────────────────────────────────
 
@@ -337,6 +338,7 @@ async function flush(): Promise<void> {
         .filter((e): e is WorldIndexEntry => Boolean(e?.pending && e.state === 'sighted'))
         .map((e) => ({ ...e, pending: undefined }))
       if (updates.length) upsert(updates)
+      if (confirmed.length) void refreshProgress()
     }
   } catch {
     backoffUntil = Date.now() + BACKOFF_OFFLINE_MS

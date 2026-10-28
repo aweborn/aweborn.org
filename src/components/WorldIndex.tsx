@@ -17,6 +17,7 @@ import { warpSystem } from '../systems/WarpSystem'
 import { showNotice } from '../systems/TeleportSystem'
 import { WorldCard } from './WorldCard'
 import { matchesBinding } from '../stores/keybindingStore'
+import { useProgressStore } from '../stores/progressStore'
 
 /**
  * World Index (Phase 08B): every world you've found, as cards. Press M (or
@@ -256,6 +257,8 @@ function WorldDetail({
   onWarp: () => void
 }) {
   const inWorld = useUniverseStore((s) => s.activeWorldId !== null)
+  // Warp opens at chapter 7 (M3c). No progress (guest, outage) → open.
+  const warpUnlocked = useProgressStore((s) => s.view?.warpUnlocked ?? true)
   const pos = useUniverseStore.getState().playerPosition // a snapshot is enough (updates every frame)
   const [copied, setCopied] = useState(false)
   const w = entry.world
@@ -267,7 +270,7 @@ function WorldDetail({
   const here = distance !== null && distance < 8
 
   const warp = () => {
-    if (!target) return
+    if (!target || !warpUnlocked) return
     warpSystem.lockRemote(target)
     onWarp()
     showNotice({
@@ -368,7 +371,7 @@ function WorldDetail({
               id="wi-warp"
               className="pa-btn pa-btn--primary"
               onClick={warp}
-              disabled={!target || inWorld || here}
+              disabled={!target || inWorld || here || !warpUnlocked}
             >
               {here ? 'You\u2019re here' : 'Warp here'}
             </button>
@@ -376,8 +379,9 @@ function WorldDetail({
               {copied ? 'Link copied' : 'Copy link'}
             </button>
           </div>
-          {inWorld && <p className="wi-hint">Exit this world first (Esc), then warp.</p>}
-          {!inWorld && !here && target && <p className="wi-hint">Free. Locks on, then hold K to leap.</p>}
+          {!warpUnlocked && !here && <p className="wi-hint">Warp opens at chapter 7. Your journey shows what&rsquo;s left.</p>}
+          {warpUnlocked && inWorld && <p className="wi-hint">Exit this world first (Esc), then warp.</p>}
+          {warpUnlocked && !inWorld && !here && target && <p className="wi-hint">Free. Locks on, then hold K to leap.</p>}
         </div>
       </div>
     </div>

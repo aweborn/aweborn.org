@@ -26,6 +26,7 @@ import { flightController } from './FlightController'
 import { warpSystem } from './WarpSystem'
 import { useUniverseStore } from '../stores/universeStore'
 import { recordArrival, useWorldIndexStore } from '../stores/worldIndexStore'
+import { grantLeashTo } from './leash'
 
 // ── Config ───────────────────────────────────────────────────────────
 
@@ -245,6 +246,7 @@ class TeleportSystem {
     // Arrive on a scattered halo facing the world/portal so crowds don't stack on one spot.
     const { pos: arrivalPos, quat: arrivalQuat } = computeArrivalPose(world)
     flightController.reset(arrivalPos, arrivalQuat)
+    grantLeashTo(arrivalPos) // card / link arrivals are never yanked back (M3c)
     this._snapRequested = true
     warpSystem.requestArrivalEffect()
     recordArrival(world) // sighted by link (a card tap is a link)

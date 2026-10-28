@@ -8,6 +8,7 @@ import { touchInputAdapter, isFullscreen, isStandalone } from '../systems/TouchI
 import { QualityControl } from './DisplaySettings'
 import { SoundControl } from './SoundControl'
 import { openAccount } from './ManaSeal'
+import { JourneyRow } from './Journey'
 
 /**
  * ••• More (touch, 2026-10-22): everything a phone needs that isn't a thumb
@@ -103,6 +104,7 @@ export function MoreSheet() {
           </span>
           <span className="more-chev" aria-hidden="true">›</span>
         </button>
+        <JourneyRow />
         <div className="more-mods" role="group" aria-label="Your star's look">
           {(['trail', 'aura', 'shape'] as const).map((slot) => (
             <button key={slot} id={`more-mod-${slot}`} type="button" className="more-mod" onClick={() => cycle(slot)}>

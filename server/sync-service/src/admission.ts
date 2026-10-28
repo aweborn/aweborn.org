@@ -154,7 +154,7 @@ export class ManaAdmission {
     const solar = clamp(req.solar ?? 1, 0.9, 1.1);
     const cap = this.capFor(req.playerId, req.progress, solar);
     if (cap <= 0) {
-      return { ok: false, reason: "not_unlocked", message: "Making things comes a little later on your path.", remainingToday: 0 };
+      return { ok: false, reason: "not_unlocked", message: "Making with mana opens at chapter 5 (Maker). See the steps in Your journey.", remainingToday: 0 };
     }
 
     const share = this.shareFor(req.playerId, cap, at);

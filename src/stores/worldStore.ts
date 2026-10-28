@@ -18,6 +18,7 @@ import type {
   ChatMessage,
 } from "@aweborn/shared/crdt-schema";
 import { DEFAULT_PHYSICS } from "@aweborn/shared/crdt-schema";
+import { progress } from "./progressStore";
 import { cleanColor } from "@aweborn/shared/library";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
 
@@ -313,6 +314,7 @@ export function placeModel(
     m.set("prompt", prompt.slice(0, 600));
     doc.getMap("objects").set(id, m);
   });
+  if (!opts.planKey) progress.use("place");
   return id;
 }
 
@@ -347,6 +349,7 @@ function placeLibraryItem(
     m.set("prompt", item.label.slice(0, 60));
     doc.getMap("objects").set(id, m);
   });
+  progress.use("place");
   return id;
 }
 

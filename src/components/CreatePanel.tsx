@@ -9,6 +9,7 @@ import { ManaSeal, useCanChannel } from './ManaSeal'
 import { useSheet } from '../stores/sheetStore'
 import { MakeTabs } from './MakeTabs'
 import { audio } from '../audio/engine'
+import { refreshProgress } from '../stores/progressStore'
 
 /**
  * Create panel (Phase 07, first gen-AI slice): inside a world, type what you
@@ -79,6 +80,7 @@ export function CreatePanel() {
             const s = interiorController.state
             if (doc) placeModel(doc, j.asset, m.prompt, { x: s.x + s.fx * 2.5, y: 0.5, z: s.z + s.fz * 2.5 }, playerId)
             audio.creationDone()
+            void refreshProgress()
           }
           setMakings((all) => all.map((x) => (x.jobId === m.jobId ? { ...x, status: j.status, progress: j.progress, message: j.error } : x)))
         } catch {

@@ -22,11 +22,8 @@ const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 /** Meshy preview + texture refine ≈ $0.60 (30 credits × $0.02) × K = 100 → 60 mana. */
 export const MODEL_ESTIMATE_MANA = 60;
 
-/**
- * Progression (chapters/levels) isn't tracked yet, so every player is treated
- * as a maker (chapter 5) for now. Replace when Experience & Levels lands.
- */
-const PROVISIONAL_PROGRESS: PlayerProgress = { chapter: 5, warpUnlocked: false, levelsSinceWarp: 0 };
+/** The character's chapter/level for admission (Rough Draft M3: was a provisional "everyone is chapter 5"). */
+const progressOf = (rooms: RoomManager, playerId: string): PlayerProgress => rooms.progress.playerProgress(playerId);
 
 interface Creation {
   ref: string;
@@ -67,7 +64,7 @@ type Json = (status: number, body: unknown) => void;
 export function manaStatus(rooms: RoomManager, playerId: string, json: Json, guest = false): void {
   const now = Date.now();
   const usage = rooms.mana.playerUsage(playerId, now - 7 * 24 * 60 * 60 * 1000);
-  const { available, ...status } = rooms.admission.status(playerId, PROVISIONAL_PROGRESS);
+  const { available, ...status } = rooms.admission.status(playerId, progressOf(rooms, playerId));
   return json(200, {
     ...status,
     guest,
@@ -84,7 +81,7 @@ export async function startCreation(rooms: RoomManager, playerId: string, prompt
   if (!text) return json(400, { error: "empty_prompt" });
 
   const ref = `create:${randomUUID()}`;
-  const decision = rooms.admission.requestDraw({ playerId, ref, estimate: MODEL_ESTIMATE_MANA, progress: PROVISIONAL_PROGRESS });
+  const decision = rooms.admission.requestDraw({ playerId, ref, estimate: MODEL_ESTIMATE_MANA, progress: progressOf(rooms, playerId) });
   if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
 
   // Safety before Meshy ever sees it (M1)

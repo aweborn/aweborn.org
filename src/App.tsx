@@ -22,6 +22,8 @@ import { teleportSystem } from './systems/TeleportSystem'
 import { WorldIndex } from './components/WorldIndex'
 import { CardReveal } from './components/CardReveal'
 import { startWorldIndex } from './stores/worldIndexStore'
+import { Journey, ProgressToast } from './components/Journey'
+import { startProgress } from './stores/progressStore'
 import { startLocationPersistence } from './stores/locationStore'
 import { startWaveWatcher } from './stores/waveStore'
 import { WaveBanner } from './components/WaveBanner'
@@ -65,6 +67,11 @@ export default function App() {
   // World Index: sightings, visits, offline queue (from boot, so link arrivals count).
   useEffect(() => {
     if (webglSupported) startWorldIndex()
+  }, [webglSupported])
+
+  // Awe = experience (M3): levels, chapters, client-observed skills + distance.
+  useEffect(() => {
+    if (webglSupported) startProgress()
   }, [webglSupported])
 
   // Remember where the player is, and put them back there on reload.
@@ -140,6 +147,8 @@ export default function App() {
 
       {/* World Index (M) + first-visit card reveal */}
       {isLoaded && webglSupported && <WorldIndex />}
+      {isLoaded && webglSupported && <Journey />}
+      {isLoaded && webglSupported && <ProgressToast />}
             {isLoaded && webglSupported && (
         <>
           <CreatePanel />

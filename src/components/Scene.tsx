@@ -51,6 +51,8 @@ import {
   HELD_RECOLOR_EVENT,
   type HeldAdjustKind,
 } from '../stores/heldItemStore'
+import { progress, useProgressStore } from '../stores/progressStore'
+import { applyLeash } from '../systems/leash'
 
 // ── Module-level slingshot visual state ──
 // Shared between FlightSystem (writer) and SlingshotArc/UniverseView (reader)
@@ -121,6 +123,23 @@ function FlightSystem() {
     }
   }, [isInWorld])
 
+  // Warp gate (M3c): charging opens at chapter 7. No progress (guest, outage) → open.
+  useEffect(() => {
+    const sync = () => warpSystem.setAllowed(useProgressStore.getState().view?.warpUnlocked ?? true)
+    sync()
+    warpSystem.onDenied = () =>
+      useChatStore.getState().showNotice(
+        document.documentElement.classList.contains('touch-ui')
+          ? 'Warp opens at chapter 7. See Your journey in ••• More.'
+          : 'Warp opens at chapter 7. See Your journey (the Level chip, top left).',
+      )
+    const unsub = useProgressStore.subscribe(sync)
+    return () => {
+      unsub()
+      warpSystem.onDenied = null
+    }
+  }, [])
+
   /**
    * Fixed physics timestep (seconds).
    * Physics runs at 60Hz regardless of framerate for deterministic behavior.
@@ -130,6 +149,9 @@ function FlightSystem() {
   const MAX_SUBSTEPS = 4 // safety cap to prevent spiral-of-death at very low fps
   const physicsAccumulator = useRef(0)
   const lastSlingshotWorld = useRef<string | null>(null)
+  // Progress (M3): how long thrust / steering has been held, and edges for brake + approach
+  const skillHold = useRef({ thrust: 0, steer: 0, brake: false, canEnter: false })
+  const prevPos = useRef(new THREE.Vector3())
 
   useFrame((state, delta) => {
     // Process input edge events at frame start
@@ -156,6 +178,8 @@ function FlightSystem() {
     // This ensures gravity, thrust, and slingshot behavior is identical
     // regardless of whether the player is at 30fps or 144fps.
     physicsAccumulator.current += Math.min(delta, 0.1) // clamp to prevent huge jumps on tab-refocus
+    prevPos.current.copy(flightController.position)
+    const speedSqBefore = flightController.velocity.lengthSq()
     let substeps = 0
     let gravResult = gravitySystem.calculate(
       flightController.position,
@@ -214,6 +238,11 @@ function FlightSystem() {
 
       physicsAccumulator.current -= PHYSICS_DT
       substeps++
+    }
+
+    // ── Beginner cradle (M3c): a soft leash until warp unlocks ──
+    if (warpSystem.getState().phase !== 'leaping') {
+      applyLeash(flightController.position, flightController.velocity, Math.min(delta, 0.1))
     }
 
     // ── Camera (per-frame for smooth visuals; snap on first frame + after teleports / remote warps) ──
@@ -275,6 +304,24 @@ function FlightSystem() {
     const events = inputManager.getEvents()
     if (events.justPressed.has('gravityToggle')) {
       flightController.toggleGravity()
+      progress.use('drive')
+    }
+
+    // ── Progress (M3): piloting skills + distance flown (warp leaps excluded) ──
+    {
+      const a = inputManager.getActions()
+      const hold = skillHold.current
+      const dt = Math.min(delta, 0.1)
+      hold.thrust = a.thrust || a.reverse ? hold.thrust + dt : 0
+      if (hold.thrust >= 0.6) { progress.use('move'); hold.thrust = 0 }
+      const steering = a.yawLeft || a.yawRight || a.pitchUp || a.pitchDown ||
+        inputManager.getAxis('yaw') !== 0 || inputManager.getAxis('pitch') !== 0
+      hold.steer = steering ? hold.steer + dt : 0
+      if (hold.steer >= 0.4) { progress.use('steer'); hold.steer = 0 }
+      if (a.brake && !hold.brake && speedSqBefore > 4) progress.use('brake')
+      hold.brake = a.brake
+      const phase = warpSystem.getState().phase
+      progress.flightFrame(dt, flightController.position, phase === 'leaping' || phase === 'arriving' || teleportSnap || warpSnap, prevPos.current)
     }
 
     // ── Slingshot event (velocity impulse + VFX + mana hook) ──
@@ -305,6 +352,8 @@ function FlightSystem() {
     // ── World entry: press N near a world ──
     const canEnter = !!gravResult.nearestWorld && gravResult.nearestDistance < 3.0
     sceneHints.canEnter = canEnter // touch: ENTER only shows when it would work
+    if (canEnter && !skillHold.current.canEnter && speedSqBefore > 1) progress.use('approach') // flown in, not spawned beside it
+    skillHold.current.canEnter = canEnter
     if (events.justPressed.has('interact') && canEnter && gravResult.nearestWorld) {
       useUniverseStore.getState().enterWorld(gravResult.nearestWorld.id)
     }
@@ -440,6 +489,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         if (doc && o) {
           const p = carryPosition(s, held.current, { scaleY: scaleOf(held.current).y })
           moveObject(doc, o.id, p, held.current.rotY, scaleOf(held.current))
+          progress.use('arrange')
         }
         held.current = null
         setHeldId(null)

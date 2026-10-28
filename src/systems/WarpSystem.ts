@@ -119,6 +119,17 @@ class WarpSystem {
   private _snapRequested = false
 
   /**
+   * Warp unlocks at chapter 7 (Rough Draft M3c). Lock-on still works (it's how
+   * you find your way); only the charge is gated. Open until the progress
+   * store says otherwise, so guests and outages are never stranded. Card and
+   * link arrivals (TeleportSystem) never pass through here.
+   */
+  private _allowed = true
+  private _deniedAt = 0
+  /** Called (throttled) when someone tries to warp before it's unlocked. */
+  onDenied: (() => void) | null = null
+
+  /**
    * J / Esc presses latched once per render frame by `captureInput()` and
    * consumed by the next physics step. Input edges are computed per render
    * frame, but `update()` runs per fixed 60 Hz step: on a 120 Hz display half
@@ -192,10 +203,15 @@ class WarpSystem {
         if (lockOnPressed) {
           this._cycleTarget()
         }
-        // K pressed → start charging
+        // K pressed → start charging (once warp is unlocked)
         if (actions.warp && this._lockedTarget) {
-          this._phase = 'charging'
-          this._chargeProgress = 0
+          if (this._allowed) {
+            this._phase = 'charging'
+            this._chargeProgress = 0
+          } else if (performance.now() - this._deniedAt > 4000) {
+            this._deniedAt = performance.now()
+            this.onDenied?.()
+          }
         }
         // Escape or target out of range → cancel lock (World Index locks have no range)
         if (escapePressed || (!this._remote && !this._isTargetInRange(playerPos))) {
@@ -285,6 +301,19 @@ class WarpSystem {
   /** Cancel any active warp state. */
   cancel(): void {
     this._cancelLock()
+  }
+
+  /** Warp gate (chapter 7). Closing it mid-charge drops back to locked. */
+  setAllowed(on: boolean): void {
+    this._allowed = on
+    if (!on && this._phase === 'charging') {
+      this._phase = 'locked'
+      this._chargeProgress = 0
+    }
+  }
+
+  isAllowed(): boolean {
+    return this._allowed
   }
 
   /**

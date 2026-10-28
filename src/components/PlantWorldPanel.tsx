@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useUniverseStore } from '../stores/universeStore'
+import { refreshProgress } from '../stores/progressStore'
 import { useWorldStore } from '../stores/worldStore'
 import { placeOnTerrain } from '../stores/worldVoxels'
 import { interiorController } from '../systems/InteriorController'
@@ -187,6 +188,7 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
       }
       markMeaningfulMoment('world-created')
       setPlanted({ ...j.world, leftToday: j.leftToday ?? 0 })
+      void refreshProgress()
     } catch {
       setError('Can’t reach the universe right now. Try again in a moment.')
     } finally {

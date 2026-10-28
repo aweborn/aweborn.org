@@ -14,6 +14,7 @@ import { MakeTabs } from './MakeTabs'
 import { ManaSeal, useCanChannel } from './ManaSeal'
 import { useOwnsCurrentWorld } from '../lib/worldActor'
 import { audio } from '../audio/engine'
+import { progress, refreshProgress } from '../stores/progressStore'
 
 /**
  * World Planner panel (Phase 07): talk a world into a blueprint before
@@ -129,6 +130,7 @@ export function PlannerPanel() {
               })
             }
             audio.creationDone()
+            void refreshProgress()
           }
           setMakings((all) => all.map((x) => (x.jobId === m.jobId ? { ...x, status: j.status, progress: j.progress, message: j.error } : x)))
         } catch {
@@ -220,6 +222,7 @@ export function PlannerPanel() {
     if (doc) {
       setVoxelTerrain(doc, blueprint.terrain, blueprint.sky ?? null)
       audio.creationDone()
+      progress.use('terrain')
     }
   }, [blueprint, ownsWorld])
 
