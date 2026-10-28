@@ -164,10 +164,13 @@ if (!items.length) {
 // ── 2. Check every world (Card Invariant #3) ───────────────────────────
 const skipped = [];
 const ready = [];
+const originOrders = [];
 for (const it of items) {
   const skip = (reason) => skipped.push([it.orderId, it.worldId, it.orderName ?? "", reason]);
   if (!WORLD_ID.test(it.worldId)) { skip("not a world id"); continue; }
-  if (it.worldId === ORIGIN_ID && it.orderId) { skip("Origin is printed by Aweborn (render-preview.mjs), not from orders"); continue; }
+  // Origin's front is Alex's own (render-preview.mjs, origin-tunnel art): no front here, but its
+  // cards (event orders, M6e) still go into encode.csv with everything else.
+  if (it.worldId === ORIGIN_ID && it.orderId) { originOrders.push(it); continue; }
   let w;
   try {
     w = await getJson(`${API}/worlds/${it.worldId}`);
@@ -188,7 +191,7 @@ const creators = await creatorLabels(ready.map((r) => r.world.creator));
 await mkdir(path.join(OUT, "fronts"), { recursive: true });
 await writeFile(path.join(OUT, "skipped.csv"), csv([["order_id", "world_id", "world_name", "reason"], ...skipped]));
 for (const s of skipped) console.warn(`✗ skip ${s[0] || s[1]}: ${s[3]}`);
-if (!ready.length) {
+if (!ready.length && !originOrders.length) {
   console.log(`No printable cards. See ${OUT}/skipped.csv`);
   process.exit(1);
 }
@@ -303,6 +306,13 @@ for (const [i, r] of ready.entries()) {
   console.log(`✓ ${n} ${r.name} ×${r.quantity} (${art}${edition === "dreamt" ? ", Dreamt" : ""}${label.number ? `, ${label.name} ${label.number}` : ""})${qrOk ? ` QR ${qrOk === "yes" ? "✓" : "✗"}` : ""}`);
 }
 await browser?.close();
+for (const o of originOrders) {
+  const url = worldUrl(ORIGIN_ID);
+  const label = setOf.get(ORIGIN_ID) ?? { name: "World Index", number: "" };
+  manifest.push(["origin", o.orderId, ORIGIN_ID, "Origin", o.quantity, url, label.name, label.number, "solid", "origin front (render-preview.mjs)", "", "", ""]);
+  for (let q = 0; q < o.quantity; q++) encode.push([++cardNo, o.orderId, ORIGIN_ID, url]);
+  console.log(`✓ Origin ×${o.quantity} (order ${o.orderId}): print the Origin front from render-preview.mjs; its cards are in encode.csv`);
+}
 
 await writeFile(path.join(OUT, "manifest.csv"), csv(manifest));
 await writeFile(path.join(OUT, "encode.csv"), csv(encode));
@@ -321,6 +331,6 @@ if (!DRY) {
 }
 
 const rel = OUT.startsWith(root + path.sep) ? path.relative(root, OUT) : OUT;
-console.log(`\n${manifest.length - 1} front(s), ${cardNo} card(s) to encode, ${skipped.length} skipped → ${rel}/`);
+console.log(`\n${manifest.length - 1 - originOrders.length} front(s)${originOrders.length ? ` + ${originOrders.length} Origin order(s)` : ""}, ${cardNo} card(s) to encode, ${skipped.length} skipped → ${rel}/`);
 if (!DRY) console.log(`Next: look at ${rel}/proof.png, send fronts/*.svg + back.svg, encode + lock tags from encode.csv.`);
 process.exit(failures ? 1 : 0);

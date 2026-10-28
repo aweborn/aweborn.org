@@ -242,3 +242,61 @@ test("orders made before photo art migrate (art = card)", () => {
   });
   assert.equal(cards.publicView("o" + "a".repeat(24))!.art, "card");
 });
+
+test("event orders (M6e): one approved row per world, shared event id, money booked once", () => {
+  const { cards, mana } = setup();
+  const before = mana.state().pool;
+  const r = cards.createEvent({ worldIds: [WORLD, GHOST, WORLD.toUpperCase()], quantity: 40, note: "Fall meetup", netDollars: 500, email: "org@example.com" });
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  assert.equal(r.orders.length, 2, "duplicates dropped");
+  assert.ok(/^e[0-9a-f]{16}$/.test(r.eventId));
+  for (const o of r.orders) {
+    assert.equal(o.status, "approved");
+    assert.equal(o.eventId, r.eventId);
+    assert.equal(o.quantity, 40);
+    assert.equal(o.playerId, null);
+    assert.equal(o.note, "Fall meetup");
+    assert.equal(o.netDollars, 250);
+  }
+  assert.equal(r.orders.find((o) => o.worldId === GHOST)?.edition, "dreamt");
+  assert.ok(mana.state().pool > before);
+  assert.equal(mana.state().lastCard?.worldId, WORLD, "the swell beams at the first world");
+  assert.equal(cards.list("approved").length, 2, "build-batch --orders picks them up");
+  // Then the usual fulfillment
+  assert.ok(cards.advance(r.orders[0].id, { status: "printing", costDollars: 30 }).ok);
+});
+
+test("event orders: free events, Origin allowed, bad input refused", () => {
+  const { cards, mana } = setup();
+  const pool = mana.state().pool;
+  const ORIGIN = "5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7";
+  // Origin has resolvedAt 0 by design; the setup's world() doesn't know it, so it's refused here like any unknown world
+  assert.equal((cards.createEvent({ worldIds: [ORIGIN], quantity: 5, note: "x" }) as { status: number }).status, 404);
+  const free = cards.createEvent({ worldIds: [WORLD], quantity: 10_000, note: "School visit" });
+  assert.ok(free.ok && free.orders[0].netDollars === null && free.orders[0].paidAt === null);
+  assert.equal(mana.state().pool, pool, "no money, no inflow");
+  const bad = (body: unknown) => (cards.createEvent(body) as { error: string }).error;
+  assert.equal(bad({ worldIds: [], quantity: 1, note: "x" }), "no_worlds");
+  assert.equal(bad({ worldIds: [WORLD], quantity: 0, note: "x" }), "bad_quantity");
+  assert.equal(bad({ worldIds: [WORLD], quantity: 10_001, note: "x" }), "bad_quantity");
+  assert.equal(bad({ worldIds: [WORLD], quantity: 2.5, note: "x" }), "bad_quantity");
+  assert.equal(bad({ worldIds: [WORLD], quantity: 1, note: "  " }), "no_note");
+  assert.equal(bad({ worldIds: [WORLD], quantity: 1, note: "x", netDollars: -1 }), "bad_amount");
+  assert.equal(bad({ worldIds: [WORLD], quantity: 1, note: "x", email: "nope" }), "bad_email");
+  assert.equal(bad({ worldIds: [WORLD, "22222222-2222-4333-8444-555555555555"], quantity: 1, note: "x" }), "no_world");
+  assert.equal(bad({ worldIds: Array.from({ length: 101 }, (_, i) => `${String(i).padStart(8, "0")}-2222-4333-8444-555555555555`), quantity: 1, note: "x" }), "too_many_worlds");
+  assert.equal(cards.list("approved").length, 1, "refused events wrote nothing");
+});
+
+test("event orders: Origin is allowed even though it never resolves", () => {
+  const db = new Database(":memory:");
+  const ORIGIN = "5949dfc5-3a9b-46b7-a2c8-ad19323c5fa7";
+  const cards = new CardOrders(db, {
+    mana: new ManaLedger(db),
+    world: (id) => (id === ORIGIN ? { id, name: "Origin", resolvedAt: 0 } : null),
+    nameOf: () => null, check: async () => ({ ok: true }), email: async () => {},
+  });
+  const r = cards.createEvent({ worldIds: [ORIGIN], quantity: 60, note: "Community night" });
+  assert.ok(r.ok && r.orders[0].worldName === "Origin");
+});

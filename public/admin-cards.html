@@ -85,6 +85,23 @@
       </form>
       <p class="msg" id="sets-msg" role="status"></p>
       <ul id="sets-list"></ul>
+
+      <h2 id="event-title">Event orders</h2>
+      <p class="sub">Cards for an event, a school, a shop: no checkout. The order is created already approved (you&rsquo;re the person check) and prints with <code>build-batch.mjs --orders</code>. Origin is allowed here. If the organiser paid you (invoice, cash), enter what you received after fees: it goes into the pool once, like a card sale.</p>
+      <form class="set-form" id="event-form" autocomplete="off" aria-labelledby="event-title">
+        <input id="event-note" placeholder="Event: who it&rsquo;s for (e.g. Fall Meetup, Oak St Library)" aria-label="Event name" maxlength="500" required />
+        <select id="event-set" aria-label="Which worlds">
+          <option value="">The worlds listed below</option>
+        </select>
+        <textarea id="event-worlds" placeholder="World ids, one per line (or /w/ links)" aria-label="World ids"></textarea>
+        <div class="row">
+          <input id="event-qty" type="text" inputmode="numeric" placeholder="Cards per world" aria-label="Cards per world (1 to 10,000)" required />
+          <input id="event-net" type="text" inputmode="decimal" placeholder="Money received $ (optional)" aria-label="Money received after fees, in dollars (optional)" />
+          <input id="event-email" type="email" placeholder="Organiser email (optional)" aria-label="Organiser email for the shipping notice (optional)" />
+        </div>
+        <div class="row"><button class="primary" type="submit" id="event-save">Create event order</button></div>
+      </form>
+      <p class="msg" id="event-msg" role="status"></p>
     </main>
     <script>
       const API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://localhost:1234' : 'https://sync.aweborn.org'
@@ -125,6 +142,7 @@
 
         const bits = [
           'order ' + o.id,
+          o.eventId ? 'event ' + o.eventId : null,
           o.edition === 'dreamt' ? 'edition: Dreamt (ordered while a Ghost: ghost art)' : null,
           'art: ' + (o.art === 'photo' ? 'buyer\u2019s photo (check it)' : 'World Index picture'),
           'created ' + when(o.createdAt),
@@ -266,6 +284,9 @@
         try {
           const { sets } = await call('/api/admin/card-sets', 'GET')
           setsList.replaceChildren(...sets.map(setRow))
+          const pick = $('event-set'), keep = pick.value
+          pick.replaceChildren(new Option('The worlds listed below', ''), ...sets.map((s) => new Option('Set: ' + s.name + ' (' + s.worldIds.length + (s.worldIds.length === 1 ? ' world)' : ' worlds)'), s.id)))
+          pick.value = sets.some((s) => s.id === keep) ? keep : ''
         } catch (e) { setSay(e.message, true) }
       }
 
@@ -283,6 +304,36 @@
         $('set-save').disabled = false
       })
       if (tokenEl.value) loadSets()
+
+      // ── Event orders (M6e) ──
+      const eventMsg = $('event-msg'), eventForm = $('event-form')
+      const eventSay = (text, err) => { eventMsg.textContent = text; eventMsg.className = 'msg' + (err ? ' err' : '') }
+      $('event-set').addEventListener('change', (e) => { $('event-worlds').disabled = !!e.target.value })
+      eventForm.addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const setId = $('event-set').value
+        const quantity = Number($('event-qty').value.trim().replace(/,/g, ''))
+        if (!Number.isInteger(quantity) || quantity < 1) return eventSay('Cards per world: a whole number, 1 to 10,000.', true)
+        const netText = $('event-net').value.trim().replace(/^\$/, '').replace(/,/g, '')
+        const netDollars = netText ? Number(netText) : 0
+        if (!Number.isFinite(netDollars) || netDollars < 0) return eventSay('Money received must be a number of dollars.', true)
+        const body = { note: $('event-note').value.trim(), quantity, netDollars, email: $('event-email').value.trim() }
+        if (setId) body.setId = setId
+        else body.worldIds = [...new Set(($('event-worlds').value.match(WORLD_RE) || []).map((x) => x.toLowerCase()))]
+        if (!setId && !body.worldIds.length) return eventSay('Pick a set or list at least one world id.', true)
+        const total = quantity * (setId ? Number(($('event-set').selectedOptions[0].textContent.match(/\((\d+) worlds?\)/) || [])[1] || 0) : body.worldIds.length)
+        if (!confirm('Create an approved order of ' + total.toLocaleString() + ' card' + (total === 1 ? '' : 's') + ' for \u201c' + body.note + '\u201d?' + (netDollars ? '\n\n$' + netDollars.toFixed(2) + ' goes into the pool.' : ''))) return
+        $('event-save').disabled = true
+        try {
+          const { orders } = await call('/api/admin/cards/event', 'POST', body)
+          eventSay('Created ' + orders.length + ' order' + (orders.length === 1 ? '' : 's') + ' (' + total.toLocaleString() + ' cards), approved. Print with build-batch.mjs --orders.')
+          eventForm.reset()
+          $('event-worlds').disabled = false
+          filterEl.value = 'approved'
+          load()
+        } catch (err) { eventSay(err.message, true) }
+        $('event-save').disabled = false
+      })
     </script>
   </body>
 </html>

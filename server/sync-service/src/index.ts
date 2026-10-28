@@ -646,6 +646,7 @@ function handleManaPublic(req: IncomingMessage, res: ServerResponse): boolean {
  *   POST /api/cards/paid                   Stripe webhook Lambda (Bearer inflow or admin)
  *   GET  /api/admin/cards?status=          admin
  *   POST /api/admin/cards/:id              admin: { status, costDollars?, tracking?, note? }
+ *   POST /api/admin/cards/event            admin: { worldIds | setId, quantity, note, netDollars?, email? } (M6e)
  *   GET  /card-sets                        public: curated sets (M6d, card-sets.ts)
  *   GET/POST /api/admin/card-sets, DELETE /api/admin/card-sets/:id   admin
  */
@@ -703,6 +704,16 @@ async function handleCards(req: IncomingMessage, res: ServerResponse, path: stri
     if (role !== "admin") return (json(MANA_ADMIN_TOKEN ? 401 : 503, { error: MANA_ADMIN_TOKEN ? "unauthorized" : "admin_disabled" }), true);
     if (path === "/api/admin/cards" && req.method === "GET") {
       return (json(200, { orders: cardOrders.list(new URL(req.url ?? "/", "http://x").searchParams.get("status") ?? undefined) }), true);
+    }
+    if (path === "/api/admin/cards/event" && req.method === "POST") {
+      const body = ((await readJson(req).catch(() => null)) ?? {}) as Record<string, unknown>;
+      if (typeof body.setId === "string" && body.setId) {
+        const set = cardSets.list().find((s) => s.id === body.setId);
+        if (!set) return (json(404, { error: "no_set", message: "No set with that id." }), true);
+        body.worldIds = set.worldIds;
+      }
+      const r = cardOrders.createEvent(body);
+      return (r.ok ? json(200, { eventId: r.eventId, orders: r.orders }) : json(r.status, { error: r.error, message: r.message }), true);
     }
     if (req.method === "POST") {
       const r = cardOrders.advance(path.slice("/api/admin/cards/".length), await readJson(req).catch(() => null));

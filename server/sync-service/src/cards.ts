@@ -11,6 +11,8 @@
  *           GET  /cards/orders/:id/photo          → the order's photo art (image/jpeg), if it has one
  *   admin   GET  /api/admin/cards?status=         → orders, newest first
  *           POST /api/admin/cards/:id { status, costDollars?, tracking?, note? }
+ *           POST /api/admin/cards/event { worldIds | setId, quantity, note, netDollars?, email? }
+ *           (M6e: bulk / event orders, see createEvent)
  *
  * Money: a paid order is a `card` inflow (full net into the pool; the
  * creative share only gets what's left after estimated production +
@@ -32,24 +34,29 @@ import {
   isCardOrderId, jpegSize,
   type CardArrival, type CardArt, type CardEdition, type CardOrderPublic, type CardOrderStatus,
 } from "../../../shared/cards.js";
-import { isWorldId } from "../../../shared/crdt-schema.js";
+import { ORIGIN_WORLD_ID, isWorldId } from "../../../shared/crdt-schema.js";
 
 /** Pending checkouts older than this are cancelled (Stripe sessions expire after 24 h). */
 export const PENDING_TTL_MS = 25 * 60 * 60 * 1000;
 /** Per player: orders started per hour, and open (unpaid) checkouts at once. */
 export const ORDERS_PER_HOUR = 6;
 export const OPEN_PENDING_MAX = 3;
+/** Event orders (M6e): worlds per event, cards per world, invoiced money per event. */
+export const EVENT_LIMITS = { maxWorlds: 100, maxPerWorld: 10_000, maxNetDollars: 100_000 } as const;
 
 interface OrderRow {
   id: string; world_id: string; world_name: string; quantity: number; arrival: string; art: string; edition: string; status: string;
   player_id: string | null; show_name: number; public_name: string | null; email: string | null;
   payment_ref: string | null; net_cents: number | null; cost_cents: number; tracking: string | null; note: string | null;
+  event_id: string | null;
   created_at: number; updated_at: number; paid_at: number | null; shipped_at: number | null;
 }
 
 export interface CardOrderAdmin extends CardOrderPublic {
   playerId: string | null; publicName: string | null; email: string | null; paymentRef: string | null;
   netDollars: number | null; costDollars: number; tracking: string | null; note: string | null; updatedAt: number;
+  /** Set on event (bulk) orders, shared by every world of that event. */
+  eventId: string | null;
 }
 
 export interface CardDeps {
@@ -101,7 +108,7 @@ function toAdmin(r: OrderRow): CardOrderAdmin {
   return {
     ...toPublic(r), playerId: r.player_id, publicName: r.public_name, email: r.email, paymentRef: r.payment_ref,
     netDollars: r.net_cents === null ? null : r.net_cents / 100, costDollars: r.cost_cents / 100,
-    tracking: r.tracking, note: r.note, updatedAt: r.updated_at,
+    tracking: r.tracking, note: r.note, updatedAt: r.updated_at, eventId: r.event_id ?? null,
   };
 }
 
@@ -126,6 +133,8 @@ export class CardOrders {
     if (!cols.some((c) => c.name === "art")) db.exec("ALTER TABLE card_orders ADD COLUMN art TEXT NOT NULL DEFAULT 'card'");
     // M6d: the world's look when ordered (older rows: solid; build-batch --ghost still overrides)
     if (!cols.some((c) => c.name === "edition")) db.exec("ALTER TABLE card_orders ADD COLUMN edition TEXT NOT NULL DEFAULT 'solid'");
+    // M6e: event (bulk) orders share an event id
+    if (!cols.some((c) => c.name === "event_id")) db.exec("ALTER TABLE card_orders ADD COLUMN event_id TEXT");
   }
 
   private dropPhoto(id: string): void {
@@ -198,6 +207,69 @@ export class CardOrders {
       }
     })();
     return { ok: true, order: toPublic(this.row(id)!) };
+  }
+
+  /**
+   * An event (bulk) order, made by an admin (Phase 08 "Bulk order path for
+   * events"): one order row per world, all sharing an event id, created
+   * straight as `approved` (the admin choosing the worlds is the person
+   * check), so `build-batch.mjs --orders` prints them with everything else.
+   * Origin is allowed here (events are where Origin cards go). No Stripe:
+   * if the organiser paid (invoice, cash), `netDollars` is that money, booked
+   * once as a `card` inflow with the usual creative base. No player row, no
+   * per-player limit: admin only.
+   */
+  createEvent(body: unknown): { ok: true; eventId: string; orders: CardOrderAdmin[] } | Fail {
+    const b = (body ?? {}) as { worldIds?: unknown; quantity?: unknown; note?: unknown; netDollars?: unknown; email?: unknown };
+    const raw = Array.isArray(b.worldIds) ? b.worldIds : [];
+    const ids = [...new Set(raw.map((v) => (typeof v === "string" ? v.trim().toLowerCase() : "")))];
+    if (ids.length === 0) return { ok: false, status: 400, error: "no_worlds", message: "Add at least one world." };
+    if (ids.length > EVENT_LIMITS.maxWorlds) return { ok: false, status: 400, error: "too_many_worlds", message: `At most ${EVENT_LIMITS.maxWorlds} worlds per event.` };
+    const quantity = typeof b.quantity === "number" && Number.isInteger(b.quantity) ? b.quantity : NaN;
+    if (!(quantity >= 1 && quantity <= EVENT_LIMITS.maxPerWorld)) {
+      return { ok: false, status: 400, error: "bad_quantity", message: `Cards per world: 1 to ${EVENT_LIMITS.maxPerWorld.toLocaleString("en-US")}.` };
+    }
+    const note = typeof b.note === "string" ? b.note.trim().slice(0, 500) : "";
+    if (!note) return { ok: false, status: 400, error: "no_note", message: "Name the event (who it's for), so the order makes sense later." };
+    const net = b.netDollars === undefined || b.netDollars === null || b.netDollars === "" ? 0 : b.netDollars;
+    if (typeof net !== "number" || !Number.isFinite(net) || net < 0 || net > EVENT_LIMITS.maxNetDollars) {
+      return { ok: false, status: 400, error: "bad_amount", message: `Money received: 0 to $${EVENT_LIMITS.maxNetDollars.toLocaleString("en-US")}.` };
+    }
+    const email = b.email === undefined || b.email === null || b.email === "" ? null : cleanEmail(b.email);
+    if (b.email && !email) return { ok: false, status: 400, error: "bad_email", message: "That email doesn't look right." };
+
+    const worlds: { id: string; name: string; dreamt: boolean }[] = [];
+    const bad: string[] = [];
+    for (const id of ids) {
+      const w = isWorldId(id) ? this.deps.world(id) : null;
+      if (!w || (id !== ORIGIN_WORLD_ID && !(w.resolvedAt > 0))) bad.push(id);
+      else worlds.push({ id, name: w.name.slice(0, 60), dreamt: w.solidified === false });
+    }
+    if (bad.length) return { ok: false, status: 404, error: "no_world", message: `Not in the universe: ${bad.slice(0, 5).join(", ")}${bad.length > 5 ? ` and ${bad.length - 5} more` : ""}` };
+
+    const eventId = `e${randomBytes(8).toString("hex")}`;
+    const now = this.now();
+    const total = quantity * worlds.length;
+    const orderIds: string[] = [];
+    this.db.transaction(() => {
+      if (net > 0) {
+        this.deps.mana.recordInflow({
+          source: "card", netDollars: net, creativeBaseDollars: cardCreativeBase(net, total),
+          ref: `event:${eventId}`, note: `card:${worlds[0].id} x${total} event: ${note.slice(0, 80)}`, at: now,
+        });
+      }
+      const insert = this.db.prepare(`INSERT INTO card_orders (id, world_id, world_name, quantity, arrival, art, edition, status, player_id, show_name,
+          email, net_cents, note, event_id, created_at, updated_at, paid_at)
+        VALUES (?, ?, ?, ?, 'enter', 'card', ?, 'approved', NULL, 0, ?, ?, ?, ?, ?, ?, ?)`);
+      for (const w of worlds) {
+        const id = newOrderId();
+        orderIds.push(id);
+        // The money is split evenly across the event's worlds (for the admin view; the pool got it once).
+        insert.run(id, w.id, w.name, quantity, w.dreamt ? "dreamt" : "solid", email,
+          net > 0 ? Math.round((net * 100) / worlds.length) : null, note, eventId, now, now, net > 0 ? now : null);
+      }
+    })();
+    return { ok: true, eventId, orders: orderIds.map((id) => toAdmin(this.row(id)!)) };
   }
 
   /** What the payment Lambda charges for. Only unpaid, live orders. */
