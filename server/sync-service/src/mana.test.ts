@@ -131,6 +131,22 @@ test("creations: release on failure draws nothing", () => {
   assert.equal(mana.settle("gen-2", 10), null, "can't settle a released hold");
 });
 
+test("staleHolds: only open holds taken before the cutoff, and they survive a replay", () => {
+  const { db, mana } = fresh();
+  mana.recordInflow({ source: "gift", netDollars: 10 });
+  const t0 = Date.now() - 7 * 3600_000;
+  mana.reserve("old-open", 10, "p", t0);
+  mana.reserve("old-done", 10, "p", t0);
+  mana.settle("old-done", 1);
+  mana.reserve("new-open", 10, "p");
+  const cutoff = Date.now() - 6 * 3600_000;
+  assert.deepEqual(mana.staleHolds(cutoff), ["old-open"]);
+  assert.deepEqual(new ManaLedger(db).staleHolds(cutoff), ["old-open"], "rebuilt from the ledger");
+  mana.release("old-open");
+  assert.deepEqual(mana.staleHolds(cutoff), []);
+  assert.equal(mana.state().reserved, 10, "only the fresh hold is still held");
+});
+
 test("reserve refuses more than the unreserved creative share, and duplicates", () => {
   const { mana } = fresh();
   mana.recordInflow({ source: "gift", netDollars: 1 }); // creative 50

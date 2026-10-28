@@ -351,3 +351,8 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
     setWorldDocUpdateHandler: (handler) => set({ _worldDocUpdateHandler: handler }),
   };
 });
+
+// Dev only (tree-shaken from prod): lets local verify scripts reach the live world doc
+if (import.meta.env.DEV) {
+  ;(window as unknown as { awebornUniverse: unknown }).awebornUniverse = useUniverseStore
+}

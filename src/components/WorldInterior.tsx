@@ -17,6 +17,7 @@ import type { BlueprintSky } from '@aweborn/shared/blueprint'
 import { RETURN_PORTAL_XZ, type WorldEntry } from '@aweborn/shared/crdt-schema'
 import { useHeldItemStore, computePlacementTarget } from '../stores/heldItemStore'
 import { interiorController } from '../systems/InteriorController'
+import { PictureObject, SoundObject, SignObject, WorldSound, SpatialListener } from './MediaObjects'
 
 /** A model that fails to load must not take the whole scene down: show a wireframe stand-in instead. */
 class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -597,6 +598,7 @@ export function WorldInterior() {
   // Worlds are small and the camera can fly far above them, so fog only touches the extreme distance (any nearer turned the terrain dark from altitude)
   const fogColor = useMemo(() => new THREE.Color(worldColor).multiplyScalar(0.15), [worldColor])
   const objectList = useMemo(() => Array.from(objects.values()), [objects])
+  const hasSounds = useMemo(() => objectList.some((o) => o.type === 'sound'), [objectList])
 
   if (!activeWorldId || !loaded) return null
 
@@ -612,10 +614,20 @@ export function WorldInterior() {
       <WorldTerrain />
       <GhostPreview />
 
-      {/* Placed objects from CRDT */}
-      {objectList.map((obj) => (
-        <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} fogFar={atmo?.fogFar ?? 200} />
-      ))}
+      {/* Placed objects from CRDT (pictures, sounds and signs have their own renderers, M5) */}
+      {objectList.map((obj) =>
+        obj.type === 'picture' ? (
+          <PictureObject key={obj.id} obj={obj} fogFar={atmo?.fogFar ?? 200} />
+        ) : obj.type === 'sound' ? (
+          <SoundObject key={obj.id} obj={obj} fogFar={atmo?.fogFar ?? 200} />
+        ) : obj.type === 'sign' ? (
+          <SignObject key={obj.id} obj={obj} fogFar={atmo?.fogFar ?? 200} />
+        ) : (
+          <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} fogFar={atmo?.fogFar ?? 200} />
+        ),
+      )}
+      {(hasSounds || meta?.ambientSound) && <SpatialListener />}
+      {meta?.ambientSound && <WorldSound key={meta.ambientSound} asset={meta.ambientSound} />}
 
       {/* Nested child worlds planted inside this world */}
       <ChildWorldPortals parentWorldId={activeWorldId} />

@@ -6,6 +6,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 # in the same bucket under archive/, which is never public.
 #
 #   models/<sha256>.glb          public via CloudFront, immutable
+#   media/<sha256>.webp|mp3|wav  pictures + sounds (Rough Draft M5), public, immutable
 #   archive/calls/YYYY/MM/DD/…   private: research replay
 #
 # Deploy (separate stack; does not touch aweborn-website or aweborn-vps):
@@ -71,7 +72,8 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # CloudFront may read models/ only; archive/ stays private.
+  # CloudFront may read models/ and media/ only; archive/ stays private.
+  # (After applying the media/ line, set MEDIA_CDN=1 for genai-service so it redirects pictures/sounds here.)
   AssetBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -83,7 +85,9 @@ Resources:
             Principal:
               Service: cloudfront.amazonaws.com
             Action: s3:GetObject
-            Resource: !Sub "${AssetBucket.Arn}/models/*"
+            Resource:
+              - !Sub "${AssetBucket.Arn}/models/*"
+              - !Sub "${AssetBucket.Arn}/media/*"
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${AssetDistribution}"

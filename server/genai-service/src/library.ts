@@ -6,6 +6,7 @@
  * can use"). Local disk is a cache; S3 is the source of truth when configured:
  *
  *   s3://$ASSETS_BUCKET/models/<sha256>.glb        public via $ASSETS_CDN_URL
+ *   s3://$ASSETS_BUCKET/media/<sha256>.webp|mp3|wav  pictures + sounds (Rough Draft M5)
  *   s3://$ASSETS_BUCKET/archive/calls/Y/M/D/<id>.json   private, research replay
  *
  * Without ASSETS_BUCKET (local dev) everything stays on disk and still works.
@@ -78,13 +79,16 @@ export function listTrash(db: DatabaseSync): TrashAsset[] {
 export async function purgeAsset(db: DatabaseSync, assetDir: string, sha: string): Promise<boolean> {
   const row = db.prepare("SELECT file FROM library WHERE sha = ? AND removed_at IS NOT NULL").get(sha) as { file: string } | undefined;
   if (!row) return false;
+  const isModel = row.file.endsWith(".glb");
   const png = row.file.replace(/\.glb$/, ".png");
   if (s3) {
-    for (const key of [`models/${row.file}`, `models/opt/${row.file}`, `models/${png}`]) {
+    const keys = isModel ? [`models/${row.file}`, `models/opt/${row.file}`, `models/${png}`] : [`media/${row.file}`];
+    for (const key of keys) {
       await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
     }
   }
-  for (const p of [join(assetDir, row.file), join(assetDir, png), optPath(assetDir, row.file)]) rmSync(p, { force: true });
+  const paths = isModel ? [join(assetDir, row.file), join(assetDir, png), optPath(assetDir, row.file)] : [join(assetDir, row.file)];
+  for (const p of paths) rmSync(p, { force: true });
   // The startup backfill re-catalogues completed jobs; detach this one so it stays gone
   db.prepare("UPDATE jobs SET asset = NULL WHERE asset = ?").run(row.file);
   db.prepare("DELETE FROM library WHERE sha = ?").run(sha);
@@ -171,6 +175,39 @@ export async function addToLibrary(
   }
 }
 
+const MEDIA_TYPES: Record<string, string> = { webp: "image/webp", mp3: "audio/mpeg", wav: "audio/wav" };
+
+/** Upload a picture/sound to media/<file> (idempotent: content-addressed). */
+export async function uploadMedia(path: string, file: string): Promise<boolean> {
+  if (!s3) return false;
+  const key = `media/${file}`;
+  if (await exists(key)) return true;
+  await s3.send(new PutObjectCommand({
+    Bucket: BUCKET, Key: key, Body: createReadStream(path), ContentLength: statSync(path).size,
+    ContentType: MEDIA_TYPES[file.split(".").pop() ?? ""] ?? "application/octet-stream",
+    CacheControl: "public, max-age=31536000, immutable",
+  }));
+  return true;
+}
+
+/** Record a finished picture/sound (no optimize or thumbnail step: the file is already web-sized). */
+export async function addMedia(
+  db: DatabaseSync, assetDir: string,
+  a: { file: string; kind: string; prompt: string; provider: string; jobId: string; ref: string; creator?: string | null },
+): Promise<void> {
+  const path = join(assetDir, a.file);
+  const bytes = existsSync(path) ? statSync(path).size : 0;
+  const creator = a.creator ? createHash("sha256").update(a.creator).digest("hex").slice(0, 6) : null;
+  // opt = 1, thumb = 1: nothing to optimize; a picture is its own preview
+  db.prepare(`INSERT OR IGNORE INTO library (sha, file, kind, prompt, provider, job_id, ref, bytes, creator, opt, thumb, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`).run(a.file.replace(/\.\w+$/, ""), a.file, a.kind, a.prompt, a.provider, a.jobId, a.ref, bytes, creator, Date.now());
+  try {
+    if (await uploadMedia(path, a.file)) db.prepare("UPDATE library SET s3 = 1 WHERE file = ?").run(a.file);
+  } catch (err) {
+    console.error(`[library] upload ${a.file} failed (will retry on restart):`, (err as Error).message);
+  }
+}
+
 /** One archive entry → its own private object (never lost if the box is). */
 export function archiveToS3(entry: Record<string, unknown>): void {
   if (!s3) return;
@@ -186,27 +223,30 @@ export function archiveToS3(entry: Record<string, unknown>): void {
  */
 export async function backfill(db: DatabaseSync, assetDir: string, dataDir: string): Promise<void> {
   // Catalogue completed jobs whose file isn't in the library yet
-  const jobs = db.prepare("SELECT id, ref, prompt, provider, asset FROM jobs WHERE status = 'complete' AND asset IS NOT NULL").all() as
-    { id: string; ref: string; prompt: string; provider: string; asset: string }[];
+  const jobs = db.prepare("SELECT id, ref, kind, prompt, provider, asset FROM jobs WHERE status = 'complete' AND asset IS NOT NULL").all() as
+    { id: string; ref: string; kind: string; prompt: string; provider: string; asset: string }[];
   for (const j of jobs) {
-    db.prepare(`INSERT OR IGNORE INTO library (sha, file, kind, prompt, provider, job_id, ref, bytes, created_at)
-      VALUES (?, ?, 'model', ?, ?, ?, ?, ?, ?)`).run(j.asset.replace(/\.\w+$/, ""), j.asset, j.prompt, j.provider, j.id, j.ref,
-      existsSync(join(assetDir, j.asset)) ? statSync(join(assetDir, j.asset)).size : 0, Date.now());
+    const model = j.kind === "model";
+    // Pictures/sounds have nothing to optimize and are their own preview (opt = thumb = 1)
+    db.prepare(`INSERT OR IGNORE INTO library (sha, file, kind, prompt, provider, job_id, ref, bytes, opt, thumb, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(j.asset.replace(/\.\w+$/, ""), j.asset, j.kind, j.prompt, j.provider, j.id, j.ref,
+      existsSync(join(assetDir, j.asset)) ? statSync(join(assetDir, j.asset)).size : 0, model ? 0 : 1, model ? 0 : 1, Date.now());
   }
-  for (const { file } of db.prepare("SELECT file FROM library WHERE opt = 0").all() as { file: string }[]) {
+  for (const { file } of db.prepare("SELECT file FROM library WHERE opt = 0 AND kind = 'model'").all() as { file: string }[]) {
     try { await syncOptimized(db, assetDir, file); } catch (err) { console.error(`[library] optimize ${file} failed:`, (err as Error).message); }
   }
   if (!s3) return;
-  const pendingThumbs = db.prepare("SELECT file FROM library WHERE thumb = 0").all() as { file: string }[];
+  const pendingThumbs = db.prepare("SELECT file FROM library WHERE thumb = 0 AND kind = 'model'").all() as { file: string }[];
   for (const { file } of pendingThumbs) {
     try { await uploadThumb(db, assetDir, file); } catch (err) { console.error(`[library] thumb ${file} failed:`, (err as Error).message); }
   }
-  const pending = db.prepare("SELECT file FROM library WHERE s3 = 0").all() as { file: string }[];
-  for (const { file } of pending) {
+  const pending = db.prepare("SELECT file, kind FROM library WHERE s3 = 0").all() as { file: string; kind: string }[];
+  for (const { file, kind } of pending) {
     const path = join(assetDir, file);
     if (!existsSync(path)) continue;
     try {
-      if (await uploadModel(path, file)) db.prepare("UPDATE library SET s3 = 1 WHERE file = ?").run(file);
+      const up = kind === "model" ? uploadModel : uploadMedia;
+      if (await up(path, file)) db.prepare("UPDATE library SET s3 = 1 WHERE file = ?").run(file);
     } catch (err) {
       console.error(`[library] backfill ${file} failed:`, (err as Error).message);
     }
@@ -221,10 +261,11 @@ export async function backfill(db: DatabaseSync, assetDir: string, dataDir: stri
   if (pending.length) console.log(`[library] backfilled ${pending.length} files to s3`);
 }
 
-export function listLibrary(db: DatabaseSync, q: string, limit: number): LibraryAsset[] {
+/** `kind` defaults to models so existing callers (the model library) never see pictures/sounds. */
+export function listLibrary(db: DatabaseSync, q: string, limit: number, kind = "model"): LibraryAsset[] {
   const like = `%${q.replace(/[%_]/g, "")}%`;
   return db.prepare(`SELECT sha, file, kind, prompt, provider, bytes, s3, thumb, creator, created_at FROM library
-    WHERE prompt LIKE ? AND removed_at IS NULL ORDER BY created_at DESC LIMIT ?`).all(like, limit) as unknown as LibraryAsset[];
+    WHERE prompt LIKE ? AND kind = ? AND removed_at IS NULL ORDER BY created_at DESC LIMIT ?`).all(like, kind, limit) as unknown as LibraryAsset[];
 }
 
 export function assetFiles(assetDir: string): string[] {

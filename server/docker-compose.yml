@@ -39,6 +39,8 @@ services:
       # Empty = stub provider (sample GLB). Put the real key in server/.env (gitignored).
       - MESHY_API_KEY=${MESHY_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      - IMAGE_MODEL=${IMAGE_MODEL:-}
     volumes:
       - ./genai-service/src:/app/src
       - ./genai-data:/data

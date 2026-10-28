@@ -162,7 +162,7 @@ export class ManaLedger {
   /** Totals in milli-mana. */
   private t: Totals = zeroTotals();
   /** Open reservations: ref → estimate (milli-mana). */
-  private open = new Map<string, { mm: number; playerId: string | null }>();
+  private open = new Map<string, { mm: number; playerId: string | null; at: number }>();
   private listeners = new Set<(state: ManaState) => void>();
   private spendCache: { at: number; total: number } | null = null;
 
@@ -514,10 +514,13 @@ export class ManaLedger {
           ORDER BY s.id DESC`,
       )
       .all(playerId, since) as { at: number; mm: number; ref: string | null; note: string | null }[];
-    const kindOf = (ref: string | null): "plan" | "model" => (ref?.startsWith("plan:") ? "plan" : "model");
-    const agg = { plan: { count: 0, mm: 0 }, model: { count: 0, mm: 0 } };
+    // M5: pictures/sounds/music/voice settle with their kind as the note; lore refs start with "lore:"
+    const MEDIA = new Set(["image", "sound", "music", "voice", "lore"]);
+    const kindOf = (ref: string | null, note: string | null): "plan" | "model" | "media" =>
+      ref?.startsWith("plan:") ? "plan" : ref?.startsWith("lore:") || (note && MEDIA.has(note)) ? "media" : "model";
+    const agg = { plan: { count: 0, mm: 0 }, model: { count: 0, mm: 0 }, media: { count: 0, mm: 0 } };
     for (const r of rows) {
-      const a = agg[kindOf(r.ref)];
+      const a = agg[kindOf(r.ref, r.note)];
       a.count += 1;
       a.mm += r.mm;
     }
@@ -530,7 +533,8 @@ export class ManaLedger {
       held: toMana(held),
       plan: stat(agg.plan),
       model: stat(agg.model),
-      recent: rows.slice(0, recentLimit).map((r) => ({ at: r.at, amount: toMana(r.mm), kind: kindOf(r.ref), note: r.note })),
+      media: stat(agg.media),
+      recent: rows.slice(0, recentLimit).map((r) => ({ at: r.at, amount: toMana(r.mm), kind: kindOf(r.ref, r.note), note: r.note })),
     };
   }
 
@@ -561,6 +565,13 @@ export class ManaLedger {
     const r = this.open.get(ref);
     if (!r) return null;
     return this.append({ kind: "release", amountMm: r.mm, creativeMm: 0, playerId: r.playerId, ref });
+  }
+
+  /** Refs of holds taken before `before` that are still open (the creations sweeper returns them). */
+  staleHolds(before: number): string[] {
+    const out: string[] = [];
+    for (const [ref, o] of this.open) if (o.at < before) out.push(ref);
+    return out;
   }
 
   // ── Universe CRDT ────────────────────────────────────────────────
@@ -609,7 +620,7 @@ export class ManaLedger {
         break;
       case "reserve":
         t.reserved += a;
-        if (row.ref) this.open.set(row.ref, { mm: a, playerId: row.player_id });
+        if (row.ref) this.open.set(row.ref, { mm: a, playerId: row.player_id, at: row.at });
         break;
       case "settle": {
         const r = row.ref ? this.open.get(row.ref) : undefined;

@@ -454,6 +454,66 @@ class AudioEngine {
     this.tone('sine', 220, t, t + 0.62, dG).frequency.exponentialRampToValueAtTime(40, t + 0.5)
   }
 
+  // ── World sounds (Rough Draft M5) ───────────────────────────────
+  // Player-made sounds (objects that sound in 3D, a world's own sound) go
+  // through `world` → master, so mute, volume and hidden tabs apply to them too.
+
+  private world: GainNode | null = null
+  private clips = new Map<string, Promise<AudioBuffer | null>>()
+
+  /** The context + an input for positional nodes, or null before the first tap. */
+  worldBus(): { ctx: AudioContext; input: GainNode } | null {
+    if (!this.ctx) return null
+    if (!this.world) this.world = this.gain(0.9, this.master)
+    return { ctx: this.ctx, input: this.world }
+  }
+
+  /** True when a sound started now would be heard. */
+  get audibleNow(): boolean {
+    return !!this.live()
+  }
+
+  /** Fetch + decode a clip once (every object playing the same file shares it). */
+  loadClip(url: string): Promise<AudioBuffer | null> {
+    const ctx = this.ctx
+    if (!ctx) return Promise.resolve(null)
+    let p = this.clips.get(url)
+    if (!p) {
+      p = fetch(url)
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
+        .then((b) => ctx.decodeAudioData(b))
+        .catch(() => {
+          this.clips.delete(url) // let a later visit retry
+          return null
+        })
+      this.clips.set(url, p)
+    }
+    return p
+  }
+
+  /** Put the ears where the camera is (called per frame only while a world has sounds). */
+  setListener(px: number, py: number, pz: number, fx: number, fy: number, fz: number): void {
+    const ctx = this.ctx
+    if (!ctx || ctx.state !== 'running') return
+    const l = ctx.listener
+    const t = ctx.currentTime
+    if (l.positionX) {
+      l.positionX.setTargetAtTime(px, t, 0.05)
+      l.positionY.setTargetAtTime(py, t, 0.05)
+      l.positionZ.setTargetAtTime(pz, t, 0.05)
+      l.forwardX.setTargetAtTime(fx, t, 0.05)
+      l.forwardY.setTargetAtTime(fy, t, 0.05)
+      l.forwardZ.setTargetAtTime(fz, t, 0.05)
+      l.upX.value = 0
+      l.upY.value = 1
+      l.upZ.value = 0
+    } else {
+      // Older Safari
+      l.setPosition(px, py, pz)
+      l.setOrientation(fx, fy, fz, 0, 1, 0)
+    }
+  }
+
   // ── UI ───────────────────────────────────────────────────────────
 
   /** A faint tick for a button press (at most one per 60 ms). */

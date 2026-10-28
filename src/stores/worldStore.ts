@@ -78,6 +78,7 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
   if (!name) return null;
   const parentWorldId = meta.get("parentWorldId") as string | undefined;
   const allowPortals = meta.get("allowPortals") as boolean | undefined;
+  const ambientSound = meta.get("ambientSound") as string | undefined;
   return {
     name,
     creator: (meta.get("creator") as string) ?? "",
@@ -86,6 +87,7 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
     solidified: (meta.get("solidified") as boolean) ?? false,
     ...(parentWorldId ? { parentWorldId } : {}),
     ...(allowPortals !== undefined ? { allowPortals } : {}),
+    ...(typeof ambientSound === "string" && /^[a-f0-9]{64}\.(mp3|wav)$/.test(ambientSound) ? { ambientSound } : {}),
     ...coCreatorsField(meta.get("coCreators")),
   };
 }
@@ -128,6 +130,10 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
       asset: (m.get("asset") as string) ?? undefined,
       prompt: (m.get("prompt") as string) ?? undefined,
       planKey: (m.get("planKey") as string) ?? undefined,
+      media: (m.get("media") as PlacedObject["media"]) ?? undefined,
+      loop: (m.get("loop") as boolean) ?? undefined,
+      volume: (m.get("volume") as number) ?? undefined,
+      text: (m.get("text") as string) ?? undefined,
     });
   });
   return objects;
@@ -316,6 +322,58 @@ export function placeModel(
   });
   if (!opts.planKey) progress.use("place");
   return id;
+}
+
+/**
+ * Place a picture, a sounding orb or a lore sign (Rough Draft M5). `rotY`
+ * turns a picture/sign to face the player who placed it.
+ */
+export function placeMedia(
+  doc: Y.Doc,
+  item:
+    | { type: "picture"; asset: string; prompt: string }
+    | { type: "sound"; asset: string; prompt: string; media: "sound" | "music" | "voice"; loop: boolean }
+    | { type: "sign"; text: string; prompt: string },
+  position: { x: number; y: number; z: number },
+  placedBy: string,
+  rotY = 0,
+): string {
+  const id = `obj-${Math.random().toString(36).slice(2, 8)}`;
+  doc.transact(() => {
+    const m = new Y.Map();
+    m.set("id", id);
+    m.set("type", item.type);
+    m.set("x", position.x);
+    m.set("y", position.y);
+    m.set("z", position.z);
+    m.set("rotX", 0);
+    m.set("rotY", rotY);
+    m.set("rotZ", 0);
+    m.set("scaleX", 1);
+    m.set("scaleY", 1);
+    m.set("scaleZ", 1);
+    m.set("material", "default");
+    m.set("placedBy", placedBy);
+    m.set("placedAt", Date.now());
+    m.set("prompt", item.prompt.slice(0, 600));
+    if (item.type !== "sign") m.set("asset", item.asset);
+    if (item.type === "sound") {
+      m.set("media", item.media);
+      m.set("loop", item.loop);
+      m.set("volume", 0.8);
+    }
+    if (item.type === "sign") m.set("text", item.text.slice(0, 700));
+    doc.getMap("objects").set(id, m);
+  });
+  progress.use("place");
+  return id;
+}
+
+/** The world's own sound (creators and co-creators only; the server reverts anyone else). Null clears it. */
+export function setWorldSound(doc: Y.Doc, asset: string | null): void {
+  const meta = doc.getMap("meta");
+  if (asset) meta.set("ambientSound", asset);
+  else meta.delete("ambientSound");
 }
 
 /**

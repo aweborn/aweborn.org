@@ -9,12 +9,15 @@
 import { createHash } from "node:crypto";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { isMediaKind, mediaProvider } from "./media.js";
 
 export interface ProviderJob {
   id: string;
   prompt: string;
   /** Provider task id if one was already started (resume after restart). */
   providerTask: string | null;
+  /** Per-kind options (media: seconds, loop). */
+  params?: Record<string, unknown>;
   assetDir: string;
   onTask(task: string): void;
   onProgress(percent: number): void;
@@ -145,6 +148,7 @@ const stub: Provider = {
 };
 
 export function providerFor(kind: string): Provider {
+  if (isMediaKind(kind)) return mediaProvider(kind);
   if (kind !== "model") throw new Error(`unsupported kind: ${kind}`);
   return MESHY_KEY ? meshy : stub;
 }

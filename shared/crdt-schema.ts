@@ -244,6 +244,8 @@ export interface WorldMeta {
   parentWorldId?: string;
   allowPortals?: boolean;
   coCreators?: string[];
+  /** The world's own sound (Rough Draft M5): a generated sound/music file that loops for everyone inside. */
+  ambientSound?: string;
 }
 
 /**
@@ -298,6 +300,19 @@ export interface PlacedObject {
   asset?: string;
   /** The prompt that made it (shown on hover later; kept with the creation archive). */
   prompt?: string;
+  /**
+   * Media objects (Rough Draft M5). `type` says how they show:
+   *   "picture"  a framed generated image (asset = <sha>.webp)
+   *   "sound"    a glowing orb that sounds in 3D (asset = <sha>.mp3|wav); `media` says sound | music | voice
+   *   "sign"     a sign carrying `text` (lore)
+   */
+  media?: "sound" | "music" | "voice";
+  /** Sounds: loop while you're near (ambience, music) vs play once as you arrive (a voice, a chime). */
+  loop?: boolean;
+  /** Sounds: 0–1 (default 0.8). */
+  volume?: number;
+  /** Signs: the lore text. */
+  text?: string;
   /**
    * Event-sourced physics (Phase 07): a kick from (x, y, z) at time `t` (ms).
    * Every client simulates the same flight; once settled, x/y/z is updated

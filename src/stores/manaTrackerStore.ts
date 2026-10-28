@@ -28,8 +28,9 @@ export interface ManaStatus {
   activePlayers: number
   windowMs: number
   /** Last 7 days, settled */
-  week: { plan: UsageStat; model: UsageStat }
-  recent: { at: number; amount: number; kind: 'plan' | 'model'; note: string | null }[]
+  /** media: pictures, sounds, music, voice, lore (M5); absent from older servers */
+  week: { plan: UsageStat; model: UsageStat; media?: UsageStat }
+  recent: { at: number; amount: number; kind: 'plan' | 'model' | 'media'; note: string | null }[]
   pool: { creative: number; available: number }
   /** Daylight factor on the cap (0.9 at local midnight … 1.1 at local noon) */
   solar?: number

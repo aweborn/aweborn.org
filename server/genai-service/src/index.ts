@@ -4,9 +4,10 @@
  * Not public. sync-service owns the player-facing API (session, mana
  * reserve → settle) and calls this service on the private network:
  *
- *   POST /jobs            { ref, kind: "model", prompt }  → { jobId }
+ *   POST /jobs            { ref, kind, prompt, params? }  → { jobId }
+ *                         kind: model | image | sound | music | voice (media.ts)
  *   GET  /jobs/:id        → { status, progress, asset, costUsd, error }
- *   GET  /assets/:file    → the generated file (GLB); 302 to the CDN once it is in S3
+ *   GET  /assets/:file    → the generated file (GLB, WebP, MP3, WAV); 302 to the CDN once it is in S3
  *   GET  /library?q=      → the asset library (every file ever made), newest first
  *   POST /llm             { ref, model, messages, json? } → { content, model, costUsd }
  *                         (OpenRouter; synchronous; caller validates the output)
@@ -21,8 +22,9 @@ import { mkdirSync, createReadStream, existsSync, appendFileSync, writeFileSync 
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { providerFor, type ProviderJob } from "./providers.js";
+import { isMediaKind, MEDIA_EXT } from "./media.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
-import { initLibrary, addToLibrary, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
+import { initLibrary, addToLibrary, addMedia, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -48,11 +50,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS jobs (
   updated_at INTEGER NOT NULL
 )`);
 try { db.exec("ALTER TABLE jobs ADD COLUMN creator TEXT"); } catch { /* already there */ }
+try { db.exec("ALTER TABLE jobs ADD COLUMN params TEXT"); } catch { /* already there */ }
 
 interface JobRow {
   id: string; ref: string; kind: string; prompt: string; provider: string;
   provider_task: string | null; status: string; progress: number;
   asset: string | null; cost_usd: number | null; error: string | null; creator: string | null;
+  params: string | null;
 }
 
 function update(id: string, fields: Partial<JobRow>): void {
@@ -86,6 +90,7 @@ async function run(id: string): Promise<void> {
     id: row.id,
     prompt: row.prompt,
     providerTask: row.provider_task,
+    params: row.params ? (JSON.parse(row.params) as Record<string, unknown>) : undefined,
     assetDir: ASSET_DIR,
     onTask: (task) => update(id, { provider_task: task, status: "processing" }),
     onProgress: (p) => update(id, { progress: Math.max(0, Math.min(99, Math.round(p))) }),
@@ -95,7 +100,8 @@ async function run(id: string): Promise<void> {
     update(id, { status: "processing" });
     const out = await provider.generate(job);
     // Shrink + upload first: the game loads the web copy the moment the job completes
-    await addToLibrary(db, ASSET_DIR, { file: out.asset, kind: row.kind, prompt: row.prompt, provider: provider.name, jobId: id, ref: row.ref, creator: row.creator });
+    const entry = { file: out.asset, kind: row.kind, prompt: row.prompt, provider: provider.name, jobId: id, ref: row.ref, creator: row.creator };
+    await (isMediaKind(row.kind) ? addMedia(db, ASSET_DIR, entry) : addToLibrary(db, ASSET_DIR, entry));
     update(id, { status: "complete", progress: 100, asset: out.asset, cost_usd: out.costUsd });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
@@ -136,7 +142,8 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "genai-service", providers: { model: providerFor("model").name, llm: llmConfigured() ? "openrouter" : "none" }, library: s3Enabled() ? "s3" : "local" });
+  const providers = Object.fromEntries(["model", "image", "sound", "music", "voice"].map((k) => [k, providerFor(k).name]));
+  res.json({ status: "ok", service: "genai-service", providers: { ...providers, llm: llmConfigured() ? "openrouter" : "none" }, library: s3Enabled() ? "s3" : "local" });
 });
 
 app.post("/llm", async (req, res) => {
@@ -164,19 +171,26 @@ app.post("/llm", async (req, res) => {
 });
 
 app.post("/jobs", (req, res) => {
-  const { ref, kind, prompt, creator } = req.body ?? {};
-  if (typeof ref !== "string" || !ref || kind !== "model" || typeof prompt !== "string") {
+  const { ref, kind, prompt, creator, params } = req.body ?? {};
+  if (typeof ref !== "string" || !ref || (kind !== "model" && !isMediaKind(kind)) || typeof prompt !== "string") {
     return res.status(400).json({ error: "bad_request" });
   }
-  const clean = prompt.trim().slice(0, 600);
+  const clean = prompt.trim().slice(0, kind === "voice" ? 1200 : 600);
   if (!clean) return res.status(400).json({ error: "empty_prompt" });
   const existing = db.prepare("SELECT id FROM jobs WHERE ref = ?").get(ref) as { id: string } | undefined;
   if (existing) return res.json({ jobId: existing.id });
+  // Only the known options, as plain numbers/booleans
+  const p: Record<string, number | boolean> = {};
+  if (params && typeof params === "object") {
+    if (typeof params.seconds === "number" && Number.isFinite(params.seconds)) p.seconds = params.seconds;
+    if (typeof params.loop === "boolean") p.loop = params.loop;
+  }
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    "INSERT INTO jobs (id, ref, kind, prompt, provider, creator, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
-  ).run(id, ref, kind, clean, providerFor(kind).name, typeof creator === "string" ? creator.slice(0, 80) : null, now, now);
+    "INSERT INTO jobs (id, ref, kind, prompt, provider, creator, params, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+  ).run(id, ref, kind, clean, providerFor(kind).name, typeof creator === "string" ? creator.slice(0, 80) : null,
+    Object.keys(p).length ? JSON.stringify(p) : null, now, now);
   pumpJobs();
   res.json({ jobId: id });
 });
@@ -193,7 +207,8 @@ app.get("/jobs/:id", (req, res) => {
 app.get("/library", (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.slice(0, 80) : "";
   const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
-  res.json({ assets: listLibrary(db, q, limit), cdn: CDN_URL || null });
+  const kind = typeof req.query.kind === "string" && (req.query.kind === "model" || isMediaKind(req.query.kind)) ? req.query.kind : "model";
+  res.json({ assets: listLibrary(db, q, limit, kind), cdn: CDN_URL || null });
 });
 
 // Trash + shared thumbnails (sync-service checks who may call these). Removal never deletes; only purge does.
@@ -251,6 +266,20 @@ app.delete("/trash/:sha", async (req, res) => {
 
 app.get("/assets/:file", (req, res) => {
   const file = req.params.file;
+  if (/^[a-f0-9]{64}\.(webp|mp3|wav)$/.test(file)) {
+    // Pictures + sounds: one copy, under media/. CloudFront may read media/ only after the
+    // assets stack update (cloudformation-assets.yml); until MEDIA_CDN=1 the box serves its copy.
+    const m = db.prepare("SELECT s3 FROM library WHERE file = ?").get(file) as { s3: number } | undefined;
+    if (CDN_URL && m?.s3 && process.env.MEDIA_CDN === "1") {
+      res.setHeader("Cache-Control", "public, max-age=300");
+      return res.redirect(302, `${CDN_URL}/media/${file}`);
+    }
+    const mp = join(ASSET_DIR, file);
+    if (!existsSync(mp)) return res.status(404).end();
+    res.setHeader("Content-Type", MEDIA_EXT[file.split(".").pop()!] ?? "application/octet-stream");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return createReadStream(mp).pipe(res);
+  }
   if (!/^[a-f0-9]{64}\.(glb|png)$/.test(file)) return res.status(404).end();
   // In the library bucket: send the client to the CDN (cached at the edge, survives the box)
   const isPng = file.endsWith(".png");

@@ -6,6 +6,9 @@ createRoot(document.getElementById('root')!).render(
   <App />,
 )
 
+// <input type="checkbox" switch> (Make panel's "Loop" etc.): native in Safari; polyfilled only where missing
+if (!('switch' in HTMLInputElement.prototype)) void import('./vendor/input-switch-polyfill.js')
+
 // Register the offline app-shell service worker in production (and when supported)
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

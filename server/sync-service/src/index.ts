@@ -11,7 +11,7 @@ import { cleanCoCreators } from "../../../shared/world-policy.js";
 import { cleanPlayerName } from "../../../shared/names.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
-import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus } from "./creations.js";
+import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo } from "./planner.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
@@ -24,7 +24,7 @@ import { RunwayWatch } from "./runway.js";
 import { sendEmail } from "./email.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
-const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
+const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -198,6 +198,17 @@ setInterval(() => {
   const now = Date.now();
   for (const [k, w] of sightingWindows) if (now - w.start >= 60_000) sightingWindows.delete(k);
 }, 5 * 60_000).unref();
+
+// Settle/release creation holds nobody is polling for any more (closed tab), one sweep at a time
+let sweeping = false;
+setInterval(() => {
+  if (sweeping) return;
+  sweeping = true;
+  sweepCreations(rooms)
+    .then((r) => { if (r.settled || r.released) console.log(`[creations] swept: ${r.settled} settled, ${r.released} released`); })
+    .catch((err) => console.error("[creations] sweep failed:", (err as Error).message))
+    .finally(() => { sweeping = false; });
+}, 60_000).unref();
 
 /** A live world id (normalised), or null. */
 function knownWorld(id: unknown): string | null {
@@ -421,8 +432,12 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     return json(403, { error: "sign_in_required", message: SIGN_IN_MESSAGE });
   }
   if (path === "/api/player/create" && req.method === "POST") {
-    const body = (await readJson(req).catch(() => null)) as { prompt?: unknown } | null;
-    return startCreation(rooms, session.playerId, body?.prompt, json);
+    const body = (await readJson(req).catch(() => null)) as CreateRequest | null;
+    return startCreation(rooms, session.playerId, body, json);
+  }
+  if (path === "/api/player/lore" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { prompt?: unknown; subject?: unknown } | null;
+    return writeLore(rooms, session.playerId, body, json);
   }
   if (path === "/api/player/plan" && req.method === "POST") {
     return planTurn(rooms, session.playerId, await readJson(req).catch(() => null), json);

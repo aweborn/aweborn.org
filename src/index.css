@@ -5894,3 +5894,172 @@ html.touch-ui #journey-chip { display: none; }
   color: var(--color-text-tertiary);
 }
 .mana-note a { color: var(--color-accent-primary); text-underline-offset: 2px; }
+
+/* ── Make: pictures, sounds, music, voice, lore (Rough Draft M5) ── */
+.create-form--kinds { border-radius: 22px; }
+.make-kinds {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 2px 2px 4px;
+  border: 0;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.make-kinds::-webkit-scrollbar { display: none; }
+.make-kind,
+.make-length {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  font: 600 var(--text-xs) var(--font-body);
+  color: var(--color-text-secondary);
+  background: rgba(238, 240, 246, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.15s var(--ease-spring);
+}
+/* The real radio stays in the tree (keyboard + screen readers); the chip is its label */
+.make-kind input,
+.make-length input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.make-kind-icon { font-size: 14px; line-height: 1; opacity: 0.85; }
+.make-kind:hover,
+.make-length:hover { color: var(--color-text-primary); background: rgba(238, 240, 246, 0.09); }
+.make-kind:has(input:checked),
+.make-length:has(input:checked) {
+  color: #1a1206;
+  background: linear-gradient(135deg, #ffd27a, #ff9f5a);
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(255, 170, 80, 0.3);
+}
+.make-kind:has(input:checked) { transform: translateY(-1px); }
+.make-kind:has(input:focus-visible),
+.make-length:has(input:focus-visible) { outline: 2px solid var(--color-accent-secondary); outline-offset: 2px; }
+.make-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  width: 100%;
+  padding: 0 4px;
+}
+.make-lengths {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.make-lengths legend {
+  float: left;
+  margin-right: 4px;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+.make-length { padding: 0 12px; }
+.make-loop {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.make-loop input[type='checkbox'][switch] {
+  /* Native (Safari) and polyfilled switches both scale with font-size; the polyfill draws its
+     thumb with a 1em inset shadow, so width/height overrides would misdraw it. */
+  accent-color: var(--color-accent-primary);
+  font-size: 1.25rem;
+  margin: 0;
+  cursor: pointer;
+}
+.make-loop input:focus-visible { outline: 2px solid var(--color-accent-secondary); outline-offset: 4px; }
+.make-hold {
+  width: 100%;
+  margin: 0;
+  padding: 0 12px 2px;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+.create-making-kind {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent-secondary);
+  opacity: 0.8;
+}
+.create-making-prompt { flex: 1; min-width: 0; }
+.create-making:has(.create-making-action) { flex-wrap: wrap; }
+.create-making-action {
+  width: 100%;
+  min-height: 44px;
+  font: 600 var(--text-xs) var(--font-body);
+  color: #1a1206;
+  background: linear-gradient(135deg, #c59bff, #7fe3ff);
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  animation: rise-in 0.3s var(--ease-out-expo) both;
+}
+
+/* Lore signs: the card floats above the sign while you're close */
+/* The card hangs above the board and grows upward, away from the player's avatar */
+.lore-sign-anchor { pointer-events: none; }
+.lore-sign {
+  /* `translate` (not `transform`): drei owns the anchor's transform and lore-rise animates this one's */
+  translate: -50% -100%;
+  width: min(260px, 66vw);
+  max-height: 40vh; /* cardPosition() in MediaObjects.tsx keeps this much room above the anchor */
+  overflow: hidden;
+  margin: 0;
+  padding: 10px 12px 12px;
+  font-family: var(--font-body);
+  color: #2b1d0e;
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgba(255, 255, 255, 0.55), transparent 60%),
+    linear-gradient(160deg, #f6e7c4, #e8cf98);
+  border: 1px solid rgba(120, 80, 30, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 0 0 3px rgba(255, 245, 220, 0.35);
+  animation: lore-rise 0.35s var(--ease-out-expo) both;
+}
+.lore-sign-title {
+  margin: 0 0 4px;
+  font: 700 10.5px var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a4f1d;
+}
+.lore-sign-text { margin: 0; font-size: 12.5px; line-height: 1.45; }
+/* Landscape phones have little height: go wider so the lore fits in 40vh */
+@media (orientation: landscape) and (max-height: 500px) {
+  .lore-sign { width: min(380px, 50vw); }
+}
+@keyframes lore-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lore-sign, .create-making-action { animation: none; }
+  .make-kind:has(input:checked) { transform: none; }
+}

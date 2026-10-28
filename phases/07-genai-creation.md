@@ -276,16 +276,16 @@ interface Blueprint {
 
 ### genai-service: Core Framework
 > *Reconciled 2026-10-27 against code: the shape differs from the plan (sync-service fronts every paid call; genai is cluster-internal with `/jobs`, `/llm`, `/library`), but the jobs are done.*
-- `[~]` Implement the consistent request/response interface above *(per-kind routes `/jobs` (Meshy) + `/llm`; image/music/voice join in M5)*
+- `[~]` Implement the consistent request/response interface above *(per-kind routes `/jobs` (Meshy) + `/llm`; 2026-10-27 M5: `/jobs` also takes `image | sound | music | voice` with `params {seconds, loop}`, routed to `media.ts`)*
 - `[x]` Request validation middleware *(per route; sync-service validates player input first)*
 - `[x]` Mana admission: ask sync-service `requestDraw(player, estimate)` (pool − reserved, global cap, personal cap, priority queue) before proxying to the AI API; denial = "The world must be replenished…" *(`creations.ts` → `ManaAdmission`)*
 - `[x]` Reserve → settle: reserve the estimate → generate → draw the actual cost
 - `[x]` Task queue: track in-progress generations (in-memory or Redis) *(SQLite jobs + `MAX_CONCURRENT_JOBS = 4`; holds persisted in `creations`)*
 - `[x]` Status polling endpoint (`GET /generate/status/:id`) *(`GET /jobs/:id`)*
 - `[x]` Asset storage: upload completed assets to S3 or Lightsail object storage *(`aweborn-assets` + CloudFront, content-addressed)*
-- `[ ]` Cost table endpoint (`GET /generate/cost`) — returns current mana prices *(M5)*
+- `[~]` Cost table endpoint (`GET /generate/cost`) — returns current mana prices *(2026-10-27 M5: estimates live in [`shared/make-costs.ts`](../shared/make-costs.ts), shared by client and server; the Make panel shows the hold before you submit. No endpoint yet)*
 - `[x]` Rate limiting per player = Phase 05 personal caps (one mechanism, not two)
-- `[~]` Error handling: failed generations draw nothing (release the reservation) *(built; verify a failed Meshy job releases its hold)*
+- `[~]` Error handling: failed generations draw nothing (release the reservation) *(built; verify a failed Meshy job releases its hold. 2026-10-27 M5: holds no longer depend on the maker's tab: `sweepCreations` settles/releases unwatched jobs every minute and returns any hold older than 6 h)*
 
 ### genai-service: 3D Model Generation (Meshy AI)
 - `[-]` ~~Migrate Meshy AI integration from `tokbot-backend/functions/src/avatars/`~~ written fresh in `providers.ts`
@@ -296,33 +296,33 @@ interface Blueprint {
 - `[x]` Return asset URLs in GenerateResult *(`PlacedObject.asset`)*
 
 ### genai-service: Image Generation
-- `[ ]` **[SEAM]** Evaluate providers: Stability AI, DALL-E, Flux, etc.
-- `[ ]` Implement proxy to chosen provider
-- `[ ]` Parameters: style, resolution, aspect ratio
-- `[ ]` Use cases: object textures, world paintings, decals, skyboxes
-- `[ ]` Upload generated image to storage
+- `[x]` **[SEAM]** Evaluate providers: Stability AI, DALL-E, Flux, etc. *(2026-10-27 M5: OpenRouter, default `IMAGE_MODEL = microsoft/mai-image-2.6-flash` ≈ $0.02. Gemini image was the plan, but the OpenRouter account enforces zero data retention and every Gemini image endpoint refuses it; Alex to confirm)*
+- `[x]` Implement proxy to chosen provider *(`server/genai-service/src/media.ts`; WebP ≤ 1024 px via sharp)*
+- `[~]` Parameters: style, resolution, aspect ratio *(square 1024 only; style goes in the prompt)*
+- `[~]` Use cases: object textures, world paintings, decals, skyboxes *(framed pictures in worlds; textures/decals/skyboxes later)*
+- `[x]` Upload generated image to storage *(`media/<sha256>.webp`; served by the box until the assets stack lets CloudFront read `media/*`, then `MEDIA_CDN=1`)*
 
 ### genai-service: Music Generation
-- `[ ]` **[SEAM]** Evaluate providers: Suno, MusicGen, Udio, etc.
-- `[ ]` Implement proxy to chosen provider
-- `[ ]` Parameters: genre, mood, duration, tempo
-- `[ ]` Use cases: world ambient soundtrack, music loops, interactive instruments
-- `[ ]` Upload generated audio to storage
+- `[~]` **[SEAM]** Evaluate providers: Suno, MusicGen, Udio, etc. *(2026-10-27 M5: ElevenLabs music + sound effects (one key); **key not set yet**, so a synthesized stand-in plays)*
+- `[~]` Implement proxy to chosen provider *(`media.ts`; untested against the real API until the key lands)*
+- `[~]` Parameters: genre, mood, duration, tempo *(length: sound 3/8/20 s, music 15/30/60 s; the rest goes in the prompt)*
+- `[~]` Use cases: world ambient soundtrack, music loops, interactive instruments *(a world's own sound (creators/builders) + sound/music orbs; no instruments)*
+- `[x]` Upload generated audio to storage *(`media/<sha256>.mp3`)*
 
 ### genai-service: Voice Generation
-- `[ ]` **[SEAM]** Evaluate providers: ElevenLabs, Play.ht, etc.
-- `[ ]` Implement proxy to chosen provider
-- `[ ]` Parameters: voice preset, emotion, speed, language
-- `[ ]` Use cases: NPC voices, narration, recorded messages in worlds
-- `[ ]` Upload generated audio to storage
+- `[~]` **[SEAM]** Evaluate providers: ElevenLabs, Play.ht, etc. *(2026-10-27 M5: ElevenLabs TTS; key pending, stand-in until then)*
+- `[~]` Implement proxy to chosen provider *(`media.ts`)*
+- `[~]` Parameters: voice preset, emotion, speed, language *(one default voice; ≤ 600 characters)*
+- `[~]` Use cases: NPC voices, narration, recorded messages in worlds *(voice orbs that speak once as you walk up, then rest; no NPCs)*
+- `[x]` Upload generated audio to storage
 
 ### genai-service: Text Generation
-- `[ ]` **[SEAM]** Evaluate providers: Gemini (recommended), GPT, Claude, etc.
-- `[ ]` Implement proxy to chosen provider
-- `[ ]` Parameters: tone, length, format
-- `[ ]` Use cases: world lore, NPC dialogue, signs, object descriptions, names
-- `[ ]` Content moderation/safety filtering
-- `[ ]` Returns text directly (no storage needed)
+- `[x]` **[SEAM]** Evaluate providers: Gemini (recommended), GPT, Claude, etc. *(2026-10-27 M5: Claude Haiku via OpenRouter `/llm`, `LORE_MODEL`, ≈ 0.02 mana a sign)*
+- `[x]` Implement proxy to chosen provider *(`POST /api/player/lore` → `writeLore` in `creations.ts`)*
+- `[~]` Parameters: tone, length, format *(fixed: 2–5 sentences, under 90 words)*
+- `[~]` Use cases: world lore, NPC dialogue, signs, object descriptions, names *(lore signs only)*
+- `[x]` Content moderation/safety filtering *(the M1 safety check on the prompt **and** on the written text)*
+- `[x]` Returns text directly (no storage needed) *(stored only as the sign's text in the world doc)*
 
 ### genai-service: Terrain Generation
 - `[x]` **Decided (Alex, 2026-10-16):** default terrain is a **voxel grid** ("perfect grids have a nice feel", Minecraft-like), generated deterministically from blueprint parameters: free, offline-capable. AI terrain = **Meshy terrain pieces** (island, mesa, cliff, cave mouth) placed on the grid
@@ -352,12 +352,12 @@ interface Blueprint {
 ### Client: Creation UI (Inside World Interior)
 - `[ ]` Create `src/components/creation/CreationPanel.tsx` — in-world creation interface
 - `[ ]` Prompt input bar (text field + generate button)
-- `[ ]` Type selector: model, image, music, voice, text, terrain
-- `[ ]` Style/parameter controls per type
-- `[ ]` Mana cost preview (shows estimated cost before confirming)
-- `[ ]` Generation progress indicator (polling status)
+- `[~]` Type selector: model, image, music, voice, text, terrain *(2026-10-27 M5: Object · Picture · Sound · Music · Voice · Lore radio chips in `CreatePanel.tsx`; terrain stays the planner's free Shape terrain)*
+- `[~]` Style/parameter controls per type *(length for sound/music, Loop switch for sounds)*
+- `[x]` Mana cost preview (shows estimated cost before confirming) *("Holds up to N mana · you're only charged what it really costs")*
+- `[x]` Generation progress indicator (polling status) *(makings list with progress bar)*
 - `[ ]` Preview generated result before placing in world
-- `[ ]` Place in world: add asset to World CRDT with position/rotation/scale
+- `[x]` Place in world: add asset to World CRDT with position/rotation/scale *(`placeModel` / `placeMedia`, a few steps ahead, facing you)*
 
 ### Client: Editing Tools (Free, Works Offline)
 - `[x]` Create `src/components/HeldItemBar.tsx` (in-world editing controls while carrying an object)
@@ -389,8 +389,8 @@ interface Blueprint {
   }
   ```
   > **Schema note (2026-10-03):** the shipped `PlacedObject` in `shared/crdt-schema.ts` uses flat fields (`x, y, z, rotX…, scaleX…, material, placedBy, placedAt`). Either extend `PlacedObject` with the AI fields below or migrate existing objects to this nested shape. Decide before implementing.
-- `[ ]` Render AI-generated assets in WorldInterior (load GLB, apply textures, play audio)
-- `[ ]` Spatial audio for music/voice objects (proximity-based volume)
+- `[x]` Render AI-generated assets in WorldInterior (load GLB, apply textures, play audio) *(2026-10-27 M5: [`MediaObjects.tsx`](../src/components/MediaObjects.tsx): framed pictures, glowing sound orbs, lore signs; `PlacedObject` stayed flat, plus `media`, `loop`, `volume`, `text`; `WorldMeta.ambientSound`)*
+- `[x]` Spatial audio for music/voice objects (proximity-based volume) *(PannerNode on the audio engine's world bus; loops within 34 u, one-shots within 5 u then rest)*
 
 ## Acceptance Criteria
 
@@ -400,7 +400,7 @@ interface Blueprint {
 - [ ] Generated assets appear in the world and sync to other players via CRDT
 - [ ] Editing (move, rotate, scale, delete) works offline and is free
 - [ ] Cost table endpoint returns current mana prices
-- [ ] Placeholder seams exist for all generation types (even if not all are implemented)
+- [x] Placeholder seams exist for all generation types (even if not all are implemented) *(2026-10-27 M5: model, image, sound, music, voice, lore; audio is a stand-in until the ElevenLabs key)*
 - [x] MANA_COSTS.md documents the cost formula and current rates (2026-10-14/16)
 - [ ] A prompt becomes a blueprint the player can shape in a back-and-forth, preview as a Ghost, and manifest at the estimated price
 - [ ] Every provider call, planner turn and blueprint version lands in the creation archive (Privacy page updated first)
@@ -424,7 +424,11 @@ interface Blueprint {
 | `server/genai-service/src/planner.ts` | NEW | World planner (`POST /plan`, manifest) |
 | `server/genai-service/src/archive.ts` | NEW | Creation archive writer (S3) |
 | `src/components/creation/BlueprintPanel.tsx` | NEW | Planner chat, chips, direct edits, Ghost preview |
-| `infra/cloudformation-assets.yml` | NEW | `aweborn-assets` + `aweborn-creation-archive` buckets |
+| `infra/cloudformation-assets.yml` | NEW | `aweborn-assets` + `aweborn-creation-archive` buckets (M5: CloudFront may read `media/*`) |
+| `server/genai-service/src/media.ts` | NEW | Picture (OpenRouter), sound/music/voice (ElevenLabs), stand-ins (M5) |
+| `shared/make-costs.ts` | NEW | Make kinds, lengths, estimates (M5) |
+| `src/components/MediaObjects.tsx` | NEW | Pictures, sound orbs (positional audio), lore signs, world sound (M5) |
+| `src/vendor/input-switch-polyfill.js` | NEW | Vendored `<input switch>` polyfill, CSS inlined (M5) |
 
 ## Session Log
 
@@ -458,3 +462,4 @@ interface Blueprint {
 | 2026-10-22 | **Card Event Readiness hardening (Steps 2–5): client-side model LOD + distance culling, Origin/world crowd scatter + chat/genai caps, cold-start offline PWA + CRDT cache/queue, and 3-step onboarding hints.** (1) Kept full-quality Meshy models in S3 and `MAX_TRIANGLES = 120_000` in `optimize.ts` per Alex; added client-built vertex-colored silhouette proxy meshes (`modelShapes.ts`) + per-tier `modelDetailDist` (`28 / 45 / 80 / 160` m in `qualityStore.ts`), fog-distance culling, and lazy GLB loading in `WorldInterior.tsx`. (2) Scattered card/link arrivals around a 3D halo facing Origin/planets (`TeleportSystem.ts` `computeArrivalPose`) and interior spawns (`InteriorController.ts`), capped simultaneous overhead speech bubbles to 4 (`ChatBubble.tsx`), and bounded active Meshy jobs (`MAX_CONCURRENT_JOBS = 4` in `genai-service/src/index.ts`) + serialized child glTF optimization (`optimize.ts`). (3) Built cold-start offline support: `public/sw.js` + `src/main.tsx` warm-cache registration, `src/lib/offlineCache.ts` for Universe/World `Y.Doc` localStorage persistence + `Y.mergeUpdates` offline edit queue, `SyncBridge.tsx` + `rooms.ts` reconnect flush, and offline `/w/<uuid>` lookup fallback. (4) Built portrait-first 3-step `OnboardingHint.tsx` (`1/3` Steer → `2/3` Fly → `3/3` Enter a world), verified at 390×844, 360×740, 844×390 (touch) and 1440×900 (desktop) with zero overlaps. | Alex playtests on his phone (Lost-world volcano FPS, touch controls, offline card tap). |
 | 2026-10-22 | **Close-range client-side model decimation + relief-baked Lambert material (`modelShapes.ts`, `WorldInterior.tsx`, `qualityStore.ts`).** Alex reported close-range FPS inside worlds with Meshy models was still too low because `PlacedObjectMesh` rendered the full 120k-triangle PBR GLB inside `modelDetailDist`. Kept S3 assets and `optimize.ts` (`120_000` tris) untouched; on the client, `GeneratedModelLoader` never mounts the raw 120k PBR scene into WebGL, and `prepareModelAsset` uses `MeshoptSimplifier` (WASM, UV-aware, staggered 1 model/frame) to build 3 compacted LODs (`lod0` close: `modelMaxTris` = `900 / 1,600 / 3,200 / 6,500` tris for Low–Ultra, a **75×–133× close-range triangle cut**; `lod1` mid: `~520` tris; `lod2` far: `~190` tris) with blended high-res normals and per-vertex AO/cavity/grain shading. `bakeLiteMaterial` converts each model's `MeshStandardMaterial` to a single-texture `MeshLambertMaterial` with `normalMap` bump relief, `roughnessMap`/`aoMap` crevices, and a 64×64 procedural micro-grain layer composited onto a 512×512 diffuse canvas, then disposes the raw 120k geometry and 1024×1024 PBR textures from GPU memory. **Alex confirmed high framerate throughout play on mobile; also fixed black mobile screenshots (`480a060`: `preserveDrawingBuffer: true` on `<Canvas>`, lazy `loadStripe()` in `DonationModal.tsx`, and `📸 Share or save photo` in `MoreSheet.tsx`).** | Alex tests mobile screenshots & `••• More → Share or save photo`. |
 | 2026-10-23 | **World-entry frame-slicing + determinate loading progress bar, in-world object editing (duplicate / recolor / delete), server thumbnail upload, and recursive worlds-within-worlds (`worldVoxels.ts`, `GhostPreview.tsx`, `modelShapes.ts`, `WorldTransition.tsx`, `HeldItemBar.tsx`, `libraryThumbs.ts`, `universe.ts`, `PlantWorldPanel.tsx`, `WorldInterior.tsx`).** (1) **Eliminated world-entry input freeze:** made `Chunk.colliders` lazy (only computed for the 3×3 chunks around the player), cached `BufferGeometry` per chunk (`chunkGeoCache`), streamed visible terrain chunks across frames (initial 9 chunks immediately so ground is under the player's feet, then +3 chunks/frame up to `tier.worldChunks`), moved `scene.clone(true)` / `Box3` / `registerModelShape` inside `prepChain`, and added `await nextFrame()` yields between vertex transform, `MeshoptSimplifier`, and `bakeLiteMaterial`; added a proportional `<progress class="world-load-progress">` HUD bar in `WorldTransition.tsx` tracking CRDT sync + terrain chunks + 3D models. (2) **In-world editing tools:** added Duplicate (`⧉`), Recolor (for shapes/blocks), and Delete (`🗑` or `Backspace`/`Delete`) in `HeldItemBar.tsx` / `worldStore.ts` (`duplicateObject`, `recolorObject`, `removeObject`). (3) **Server thumbnail upload:** client-rendered PNG thumbnails in `libraryThumbs.ts` upload once via `POST /api/player/library/:sha/thumb` → `genai-service` `POST /library/:sha/thumb` (validated PNG header + size cap, saved to local assets + S3, `thumb = 1` in `library`). (4) **Recursive worlds within worlds:** added `parentWorldId` (unlimited nesting depth; only the active world's `Y.Doc` is loaded), `🌱 Portal` tab in `MakeTabs` (`PlantWorldPanel` works inside worlds, with a creator toggle `Anyone` / `Only me` via `allowPortals` + `POST /api/player/world/policy`), glowing `ChildWorldPortal` orbs on parent terrain + physical `ParentWorldPortal` (`↑ Return to <Parent>`) at `RETURN_PORTAL_XZ = (0, 14)` in child worlds (`WorldInterior.tsx`), emerging right beside the child world's portal in the parent world on return (`restoreOnNextReset`, no client stack needed), touch `KICK` → `ENTER` swap near portals (`TouchInputAdapter.ts`), and root-world Frontier solidification (`frontier.ts`). | Alex playtests smooth world entry + loading bar, carrying edit tools (duplicate/recolor/delete), and planting/traversing portals inside worlds. |
+| 2026-10-27 | **M5a/b: pictures, sounds, music, voice, lore** (Rough Draft). Make has six kinds (Object · Picture · Sound · Music · Voice · Lore), per-kind holds from [`shared/make-costs.ts`](../shared/make-costs.ts) (picture 7, sound 1, music ⌈s/4⌉+1, voice 0.5 + 0.005/char, lore 2), safety check per kind. genai `media.ts`: pictures via OpenRouter **MAI Image 2.6 Flash** (deviation: Gemini image is refused under the account's zero-data-retention rule), sound/music/voice via ElevenLabs (**key pending; synthesized stand-ins until then**), stored as `media/<sha>` and served by the box until the assets stack lets CloudFront read `media/*`. Lore = Claude Haiku, safety-checked in and out, placed as a sign; only the nearest sign opens its card, held on screen. In worlds: framed pictures (unlit), glowing orbs that play positionally (loop within earshot, or once as you walk up), and a creator-set **world sound**. Media skills (picture, sound, music, voice, lore) earn XP but don't gate chapter 6 (`EXPLORER_SKILLS`). Mana tracker gets a "pictures & sounds" bucket. **Holds sweeper:** a closed tab used to leave its hold forever (likely prod's stuck `reserved: 60`); `sweepCreations` now settles/releases unwatched jobs each minute and returns holds older than 6 h. Fixed on the way: the world-load HUD counted pictures/sounds as models (stuck at "Preparing creations"); a reused placeholder material kept pictures dark. **Known gaps:** sign text is written by the client into the world doc, not server-verified (Phase 09 intent authority); media objects have no colliders or pick-up yet. Privacy + Terms updated. Real-tap checks at 390×844 (with a real picture), 360×740, 844×390, 1440×900; no console errors or failed requests. 75 shared + 78 sync tests. | Alex: ElevenLabs key, apply the assets stack then `MEDIA_CDN=1`, confirm the picture model. Next: planner direct edits + history, terrain editing |

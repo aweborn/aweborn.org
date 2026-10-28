@@ -41,7 +41,8 @@ export function WorldTransition() {
   const distinctAssets = useMemo(() => {
     const s = new Set<string>()
     objects.forEach((o) => {
-      if (o.asset) s.add(o.asset)
+      // Pictures/sounds also carry `asset`, but they stream in on approach — not a load gate
+      if (o.type === 'model' && o.asset) s.add(o.asset)
     })
     return [...s]
   }, [objects])

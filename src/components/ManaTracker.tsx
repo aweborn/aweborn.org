@@ -13,6 +13,8 @@ const HOLD_LEAVE_MS = 600
 const HOLD_ABORT_MS = 220
 
 const fmt = (n: number) => (n >= 100 ? Math.round(n).toLocaleString() : (Math.round(n * 10) / 10).toString())
+/** Settle notes of M5 makings → what Recent calls them. */
+const MEDIA_LABELS: Record<string, string> = { image: 'picture', sound: 'sound', music: 'music', voice: 'voice', lore: 'lore' }
 const ago = (at: number) => {
   const m = Math.max(0, Math.round((Date.now() - at) / 60000))
   return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`
@@ -206,6 +208,7 @@ export function ManaTracker() {
           <div className="mana-avgs">
             <Avg label="Per planner turn" s={status.week.plan} />
             <Avg label="Per model" s={status.week.model} />
+            {status.week.media && status.week.media.count > 0 && <Avg label="Per picture or sound" s={status.week.media} />}
           </div>
 
           <h3>The world</h3>
@@ -266,7 +269,7 @@ export function ManaTracker() {
               <ul className="mana-recent">
                 {status.recent.map((r, i) => (
                   <li key={i}>
-                    <span>{r.kind === 'plan' ? 'planner turn' : 'model'}</span>
+                    <span>{r.kind === 'plan' ? 'planner turn' : r.kind === 'media' ? MEDIA_LABELS[r.note ?? ''] ?? 'making' : 'model'}</span>
                     <b>−{fmt(r.amount)}</b>
                     <i>{ago(r.at)}</i>
                   </li>

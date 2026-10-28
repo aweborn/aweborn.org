@@ -11,9 +11,9 @@
  *   2 Pilot         drive mode, brake, approach a world
  *   3 Visitor       enter + leave a world
  *   4 Builder       place + move/arrange objects
- *   5 Maker         every maker tool once (today: make an object, shape
- *                   terrain, plant a world; M5 adds texture, sound, music…)
- *   6 Explorer      master every skill (3 uses), visit N, sight M, fly 5,000 u,
+ *   5 Maker         every maker tool once (make an object, shape terrain,
+ *                   plant a world)
+ *   6 Explorer      master every core skill (3 uses), visit N, sight M, fly 5,000 u,
  *                   one flight ≥ 1,000 u from Origin
  *   7 Warp          K-warp + "Warp here" unlocked
  *
@@ -26,6 +26,8 @@ export const SKILLS = [
   "enter", "leave",
   "place", "arrange",
   "mesh", "terrain", "world",
+  // M5 media makers: count toward level breadth, but don't gate chapters (EXPLORER_SKILLS)
+  "picture", "sound", "music", "voice", "lore",
 ] as const;
 export type Skill = (typeof SKILLS)[number];
 
@@ -42,10 +44,20 @@ export const SKILL_LABELS: Record<Skill, string> = {
   mesh: "Make an object from thought",
   terrain: "Shape a world's terrain",
   world: "Plant a world",
+  picture: "Make a picture",
+  sound: "Make a sound",
+  music: "Make music",
+  voice: "Give something a voice",
+  lore: "Write lore",
 };
 
+/** The skills chapter 6 asks you to master (the ladder from before M5; media makers stay optional). */
+export const EXPLORER_SKILLS: readonly Skill[] = [
+  "move", "steer", "drive", "brake", "approach", "enter", "leave", "place", "arrange", "mesh", "terrain", "world",
+];
+
 /** Skills the server sees for itself; the rest are reported by the client (cheap checks now, Phase 09 later). */
-export const SERVER_SKILLS: readonly Skill[] = ["enter", "mesh", "world"];
+export const SERVER_SKILLS: readonly Skill[] = ["enter", "mesh", "world", "picture", "sound", "music", "voice", "lore"];
 export const CLIENT_SKILLS: readonly Skill[] = SKILLS.filter((s) => !SERVER_SKILLS.includes(s));
 
 export const CHAPTERS = [
@@ -133,8 +145,9 @@ export function emptyStats(): ProgressStats {
   return { skills: {}, visits: 0, sightings: 0, distance: 0, farthest: 0 };
 }
 
-export function masteredCount(stats: ProgressStats): number {
-  return SKILLS.filter((s) => (stats.skills[s] ?? 0) >= masteryUses(s)).length;
+/** Mastered skills (all of them count for the level breadth gate; chapter 6 passes EXPLORER_SKILLS). */
+export function masteredCount(stats: ProgressStats, among: readonly Skill[] = SKILLS): number {
+  return among.filter((s) => (stats.skills[s] ?? 0) >= masteryUses(s)).length;
 }
 
 /** Explorer thresholds shrink with a sparse universe, so nobody is locked out (2026-10-14 safety valve). */
@@ -166,7 +179,7 @@ export function chapterSteps(n: number, stats: ProgressStats, worldsInFrontier: 
   if (n === 6) {
     const t = explorerTargets(worldsInFrontier);
     return [
-      { id: "mastery", label: "Master every skill (use each 3×)", have: masteredCount(stats), need: SKILLS.length },
+      { id: "mastery", label: "Master every core skill (use each 3×)", have: masteredCount(stats, EXPLORER_SKILLS), need: EXPLORER_SKILLS.length },
       { id: "visits", label: "Visit worlds", have: Math.min(stats.visits, t.visits), need: t.visits },
       { id: "sightings", label: "Sight worlds", have: Math.min(stats.sightings, t.sightings), need: t.sightings },
       { id: "distance", label: "Fly in total (u)", have: Math.min(Math.floor(stats.distance), t.distance), need: t.distance },
