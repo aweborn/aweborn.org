@@ -55,6 +55,9 @@ test("checkout: needs a real world, clamps input, and checks the printed name", 
   assert.equal(r.order.arrival, "enter");
   assert.equal(r.order.status, "pending");
   assert.equal(r.order.worldName, "Moss Hill");
+  // Every card lands inside (Alex, 2026-10-13): an old client asking to land beside still gets "enter".
+  const land = await cards.create("p", { worldId: WORLD, arrival: "land" });
+  assert.ok(land.ok && land.order.arrival === "enter");
 
   const blocked = await setup({ unsafe: true }).cards.create("p", { worldId: WORLD });
   assert.equal((blocked as { status: number }).status, 422);

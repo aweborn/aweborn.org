@@ -13,6 +13,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        index: path.resolve(__dirname, 'index.html'),
+        // Print-size World Index art for card print files (scripts/cards/build-batch.mjs)
+        cardArt: path.resolve(__dirname, 'card-art.html'),
+      },
+    },
   },
   server: {
     proxy: {

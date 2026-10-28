@@ -28,7 +28,7 @@ import { randomBytes } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { ManaLedger } from "./mana.js";
 import {
-  CARD_ARRIVALS, CARD_NEXT, CARD_ORDER_STATUSES, CARD_PHOTO, CARD_PRICE_CENTS, cardCreativeBase, cardOrderUrl, cardPhotoFits, clampQuantity,
+  CARD_NEXT, CARD_ORDER_STATUSES, CARD_PHOTO, CARD_PRICE_CENTS, cardCreativeBase, cardOrderUrl, cardPhotoFits, clampQuantity,
   isCardOrderId, jpegSize,
   type CardArrival, type CardArt, type CardOrderPublic, type CardOrderStatus,
 } from "../../../shared/cards.js";
@@ -164,7 +164,9 @@ export class CardOrders {
     if (!isWorldId(worldId)) return { ok: false, status: 400, error: "bad_world" };
     const w = this.deps.world(worldId);
     if (!w || !(w.resolvedAt > 0)) return { ok: false, status: 404, error: "no_world", message: "That world isn't in the universe anymore." };
-    const arrival: CardArrival = CARD_ARRIVALS.includes(b.arrival as CardArrival) ? (b.arrival as CardArrival) : "enter";
+    // Every card lands inside (Alex, 2026-10-13: "like a game pack, tap and you're in"); the printed
+    // URL is just /w/<id>, so there is nothing to choose. The column stays for older rows.
+    const arrival: CardArrival = "enter";
     const quantity = clampQuantity(b.quantity);
     const photo = b.photo === undefined || b.photo === null ? null : readPhoto(b.photo);
     if (photo && !photo.ok) return { ok: false, status: 400, error: "bad_photo", message: photo.message };
@@ -302,7 +304,7 @@ export class CardOrders {
       void this.deps.email(r.email, `Your Aweborn card${r.quantity > 1 ? "s are" : " is"} in the mail`,
         `Your ${r.quantity > 1 ? `${r.quantity} cards` : "card"} of ${r.world_name} ${r.quantity > 1 ? "are" : "is"} on the way.` +
         (tracking ? `\nTracking: ${tracking}` : "") +
-        `\n\nTap a card on your phone to land ${r.arrival === "enter" ? "inside" : "beside"} the world. Order: ${cardOrderUrl(r.id)}\n\nAweborn`);
+        `\n\nTap a card on your phone to step inside the world. Order: ${cardOrderUrl(r.id)}\n\nAweborn`);
     }
     return { ok: true, order: toAdmin(this.row(r.id)!) };
   }

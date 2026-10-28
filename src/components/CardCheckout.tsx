@@ -1,6 +1,6 @@
 import { useId, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { WorldIndexEntry } from '@aweborn/shared/crdt-schema'
-import { CARD_MAX_QUANTITY, CARD_PRICE_CENTS, type CardArrival, type CardArt } from '@aweborn/shared/cards'
+import { CARD_MAX_QUANTITY, CARD_PRICE_CENTS, type CardArt } from '@aweborn/shared/cards'
 import { getPlayerSnapshot, subscribePlayer } from '../lib/player'
 import { SoonError, formatCardPrice as price, startCardCheckout } from '../lib/cardCheckout'
 import { blobToDataUrl, type Shot } from '../lib/photo'
@@ -41,7 +41,6 @@ export function CardCheckout({
   const player = useSyncExternalStore(subscribePlayer, getPlayerSnapshot)
   const myName = useNameStore((s) => (player ? s.names[player.playerId] ?? null : null))
   const [quantity, setQuantity] = useState(1)
-  const [arrival, setArrival] = useState<CardArrival>('enter')
   const [showName, setShowName] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const uid = useId()
@@ -58,7 +57,8 @@ export function CardCheckout({
     setStatus({ kind: 'busy' })
     try {
       const photoData = art === 'photo' && photo ? await blobToDataUrl(photo.blob) : undefined
-      const url = await startCardCheckout({ worldId: entry.worldId, quantity, arrival, showName: showName && !!myName, photo: photoData })
+      // Every card lands inside its world (Alex, 2026-10-13), so there is no arrival choice
+      const url = await startCardCheckout({ worldId: entry.worldId, quantity, arrival: 'enter', showName: showName && !!myName, photo: photoData })
       window.location.assign(url)
     } catch (err) {
       if (err instanceof SoonError) setStatus({ kind: 'soon' })
@@ -105,42 +105,6 @@ export function CardCheckout({
             +
           </button>
           <span className="cc-each">{price(CARD_PRICE_CENTS)} each · free US shipping</span>
-        </div>
-      </fieldset>
-
-      <fieldset className="cc-field">
-        <legend className="cc-legend">When someone taps it</legend>
-        <div className="cc-options">
-          <label className="cc-option" htmlFor="card-arrival-enter">
-            <input
-              type="radio"
-              id="card-arrival-enter"
-              name="arrival"
-              value="enter"
-              checked={arrival === 'enter'}
-              onChange={() => setArrival('enter')}
-              disabled={busy}
-            />
-            <span className="cc-option-text">
-              <strong>Step inside</strong>
-              <span>They open their eyes in the world.</span>
-            </span>
-          </label>
-          <label className="cc-option" htmlFor="card-arrival-land">
-            <input
-              type="radio"
-              id="card-arrival-land"
-              name="arrival"
-              value="land"
-              checked={arrival === 'land'}
-              onChange={() => setArrival('land')}
-              disabled={busy}
-            />
-            <span className="cc-option-text">
-              <strong>Land beside it</strong>
-              <span>They see it from space first, then fly in.</span>
-            </span>
-          </label>
         </div>
       </fieldset>
 

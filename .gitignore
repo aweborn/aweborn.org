@@ -35,3 +35,6 @@ server/*/data/
 cards/explore/origin-*/
 server/genai-data/
 server/.env
+
+# Card print batches (scripts/cards/build-batch.mjs): may hold buyers' photos, never commit
+cards/batches/

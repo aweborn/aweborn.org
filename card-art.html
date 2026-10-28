@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Card art · Aweborn</title>
+    <meta name="description" content="Print-size World Index art of an Aweborn world, for its trading card." />
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-content: center;
+        gap: 1rem;
+        padding: 1.25rem;
+        font: 15px/1.5 system-ui, sans-serif;
+        color: #e4e4e7;
+        background: #050510;
+        text-align: center;
+      }
+      main { display: grid; justify-items: center; gap: 0.85rem; }
+      h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+      img {
+        display: block;
+        width: auto;
+        max-width: min(100%, 550px);
+        height: auto;
+        max-height: max(10rem, calc(100dvh - 12.5rem));
+        border-radius: 8px;
+        border: 1px solid #27272a;
+      }
+      p { margin: 0; color: #acacb4; }
+      a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        padding: 0 1.1rem;
+        border-radius: 999px;
+        color: #18181b;
+        font-weight: 600;
+        text-decoration: none;
+        background: linear-gradient(135deg, #f3dd8e, #e8c860);
+      }
+      a:focus-visible { outline: 2px solid #e8c860; outline-offset: 3px; }
+    </style>
+  </head>
+  <body>
+    <main id="card-art" aria-live="polite">
+      <h1 id="card-art-title">Card art</h1>
+      <p id="card-art-status">Rendering…</p>
+    </main>
+    <script type="module" src="/src/cardArtPage.ts"></script>
+  </body>
+</html>

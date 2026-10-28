@@ -237,6 +237,34 @@ export function drawCardArt(ctx: CanvasRenderingContext2D, look: CardLook, t: nu
   return true
 }
 
+/** The still pose a card shows in the grid (the world's own phase, frozen). */
+export const stillTime = (id: string): number => hash01(id, 9) * 10
+
+/**
+ * One-off render at print size (e.g. 1100 × 900 = 55 × 45 mm at ~508 dpi) for print files
+ * (`/card-art.html`, M6). Same pose as the grid's still. Null if WebGL is unavailable.
+ */
+export function renderCardArtImage(look: CardLook, width: number, height: number): HTMLCanvasElement | null {
+  const r = buildRig()
+  if (!r) return null
+  const starMat = r.stars.material as THREE.PointsMaterial
+  const starSize = starMat.size
+  r.renderer.setSize(width, height, false)
+  starMat.size = starSize * (width / ART_W) // star size is in pixels: keep it the same on the card
+  try {
+    pose(r, look, stillTime(look.id))
+    r.renderer.render(r.scene, r.camera)
+    const out = document.createElement('canvas')
+    out.width = width
+    out.height = height
+    out.getContext('2d')?.drawImage(r.renderer.domElement, 0, 0)
+    return out
+  } finally {
+    starMat.size = starSize
+    r.renderer.setSize(ART_W, ART_H, false)
+  }
+}
+
 // ── Scheduling: still queue + live loop ─────────────────────────────
 
 interface Target {

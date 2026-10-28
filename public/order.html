@@ -92,7 +92,7 @@
         document.title = o.worldName + ' \u00b7 your card order | Aweborn'
         $('order-card-name').textContent = o.worldName
         $('order-title').textContent = o.quantity + ' ' + plural + ' of ' + o.worldName
-        $('order-meta').textContent = 'Ordered ' + dateFmt.format(o.createdAt) + ' \u00b7 tap to ' + (o.arrival === 'land' ? 'land beside it' : 'step inside') + ' \u00b7 order ' + o.id.slice(1, 9)
+        $('order-meta').textContent = 'Ordered ' + dateFmt.format(o.createdAt) + ' \u00b7 tap to step inside \u00b7 order ' + o.id.slice(1, 9)
         const body = $('order-body')
         body.replaceChildren()
 

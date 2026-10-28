@@ -105,6 +105,7 @@ function handleWorldLookup(req: IncomingMessage, res: ServerResponse, id: string
       solidified: w.solidified,
       sector: w.sector,
       position: w.resolvedPosition,
+      resolvedAt: w.resolvedAt, // 0 = position not settled yet (Origin is fixed at 0, 0, 0)
       isOrigin: w.id === ORIGIN_WORLD_ID,
       ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
     })
