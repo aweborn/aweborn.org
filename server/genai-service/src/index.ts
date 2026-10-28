@@ -4,13 +4,15 @@
  * Not public. sync-service owns the player-facing API (session, mana
  * reserve → settle) and calls this service on the private network:
  *
- *   POST /jobs            { ref, kind, prompt, params? }  → { jobId }
+ *   POST /jobs            { ref, kind, prompt, params?, researchId? }  → { jobId }
  *                         kind: model | image | sound | music | voice (media.ts)
  *   GET  /jobs/:id        → { status, progress, asset, costUsd, error }
  *   GET  /assets/:file    → the generated file (GLB, WebP, MP3, WAV); 302 to the CDN once it is in S3
  *   GET  /library?q=      → the asset library (every file ever made), newest first
- *   POST /llm             { ref, model, messages, json? } → { content, model, costUsd }
+ *   POST /llm             { ref, model, messages, json?, researchId? } → { content, model, costUsd }
  *                         (OpenRouter; synchronous; caller validates the output)
+ *
+ * `researchId` (sync-service research.ts) labels archive entries instead of the player id.
  *
  * Jobs live in a SQLite table in workflow shape (Alex, 2026-10-16), so a
  * restart can pick up where it left off. Every provider call and response is
@@ -51,12 +53,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS jobs (
 )`);
 try { db.exec("ALTER TABLE jobs ADD COLUMN creator TEXT"); } catch { /* already there */ }
 try { db.exec("ALTER TABLE jobs ADD COLUMN params TEXT"); } catch { /* already there */ }
+// Pseudonymous research id (Phase 07 Creation Archive): archive entries carry this, never the player id
+try { db.exec("ALTER TABLE jobs ADD COLUMN research_id TEXT"); } catch { /* already there */ }
+
+/** sync-service's research id shape (`r` + 20 hex); anything else is dropped. */
+const researchIdOf = (v: unknown): string | null => (typeof v === "string" && /^r[0-9a-f]{20}$/.test(v) ? v : null);
 
 interface JobRow {
   id: string; ref: string; kind: string; prompt: string; provider: string;
   provider_task: string | null; status: string; progress: number;
   asset: string | null; cost_usd: number | null; error: string | null; creator: string | null;
-  params: string | null;
+  params: string | null; research_id: string | null;
 }
 
 function update(id: string, fields: Partial<JobRow>): void {
@@ -94,7 +101,7 @@ async function run(id: string): Promise<void> {
     assetDir: ASSET_DIR,
     onTask: (task) => update(id, { provider_task: task, status: "processing" }),
     onProgress: (p) => update(id, { progress: Math.max(0, Math.min(99, Math.round(p))) }),
-    archive: (e) => archive({ jobId: id, provider: provider.name, ...e }),
+    archive: (e) => archive({ jobId: id, provider: provider.name, researchId: row.research_id ?? undefined, ...e }),
   };
   try {
     update(id, { status: "processing" });
@@ -148,6 +155,7 @@ app.get("/health", (_req, res) => {
 
 app.post("/llm", async (req, res) => {
   const { ref, model, messages, json, maxTokens } = req.body ?? {};
+  const researchId = researchIdOf(req.body?.researchId) ?? undefined;
   const okMsgs = Array.isArray(messages) && messages.length > 0 && messages.length <= 80 &&
     messages.every((m: ChatMessage) => ["system", "user", "assistant"].includes(m?.role) && typeof m.content === "string");
   if (typeof ref !== "string" || typeof model !== "string" || !/^[\w.-]+\/[\w.:-]+$/.test(model) || !okMsgs) {
@@ -158,11 +166,11 @@ app.post("/llm", async (req, res) => {
   const timer = setTimeout(() => ac.abort(), 90_000);
   try {
     const out = await chat({ model, messages, json: !!json, maxTokens: typeof maxTokens === "number" ? Math.min(maxTokens, 8000) : undefined }, ac.signal);
-    archive({ kind: "llm", ref, provider: "openrouter", model: out.model, requested: model, messages, response: out.content, usage: out.usage, costUsd: out.costUsd, latencyMs: out.latencyMs });
+    archive({ kind: "llm", ref, researchId, provider: "openrouter", model: out.model, requested: model, messages, response: out.content, usage: out.usage, costUsd: out.costUsd, latencyMs: out.latencyMs });
     res.json({ content: out.content, model: out.model, costUsd: out.costUsd });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
-    archive({ kind: "llm", ref, provider: "openrouter", requested: model, messages, error: msg });
+    archive({ kind: "llm", ref, researchId, provider: "openrouter", requested: model, messages, error: msg });
     console.error(`[genai] llm ${ref} failed:`, msg);
     res.status(502).json({ error: "llm_failed", message: msg.slice(0, 300) });
   } finally {
@@ -188,9 +196,9 @@ app.post("/jobs", (req, res) => {
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    "INSERT INTO jobs (id, ref, kind, prompt, provider, creator, params, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+    "INSERT INTO jobs (id, ref, kind, prompt, provider, creator, params, research_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
   ).run(id, ref, kind, clean, providerFor(kind).name, typeof creator === "string" ? creator.slice(0, 80) : null,
-    Object.keys(p).length ? JSON.stringify(p) : null, now, now);
+    Object.keys(p).length ? JSON.stringify(p) : null, researchIdOf(req.body?.researchId), now, now);
   pumpJobs();
   res.json({ jobId: id });
 });

@@ -256,6 +256,18 @@ export function applyEdit<T extends BlueprintDraft>(draft: T, edit: BlueprintEdi
   return { ok: true, value: { ...draft, assets }, warnings };
 }
 
+/** Models sometimes wrap JSON in prose or fences; take the outermost object. */
+export function extractJson(text: string): unknown {
+  const a = text.indexOf("{");
+  const b = text.lastIndexOf("}");
+  if (a < 0 || b <= a) return null;
+  try {
+    return JSON.parse(text.slice(a, b + 1));
+  } catch {
+    return null;
+  }
+}
+
 export function parsePlannerTurn(raw: unknown): Parsed<PlannerTurn> {
   if (!isObj(raw)) return { ok: false, errors: ["answer must be a JSON object"] };
   const reply = str(raw.reply, 600);

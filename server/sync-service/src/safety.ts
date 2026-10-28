@@ -14,6 +14,7 @@
  */
 import { createHash } from "node:crypto";
 import { getDb } from "./persistence.js";
+import { tryResearchId } from "./research.js";
 import { maskProfanity } from "../../../shared/chat.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
@@ -120,9 +121,9 @@ export function parseVerdict(content: string): Cached | null {
   }
 }
 
-type Classify = (ref: string, texts: string[]) => Promise<{ verdict: Cached | null; costUsd: number }>;
+type Classify = (ref: string, texts: string[], researchId?: string) => Promise<{ verdict: Cached | null; costUsd: number }>;
 
-const classifyViaGenai: Classify = async (ref, texts) => {
+const classifyViaGenai: Classify = async (ref, texts, researchId) => {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
   try {
@@ -131,7 +132,7 @@ const classifyViaGenai: Classify = async (ref, texts) => {
       headers: { "Content-Type": "application/json" },
       signal: ac.signal,
       body: JSON.stringify({
-        ref, model: SAFETY_MODEL, json: true, maxTokens: 200,
+        ref, model: SAFETY_MODEL, json: true, maxTokens: 200, researchId,
         messages: [
           { role: "system", content: SAFETY_SYSTEM },
           { role: "user", content: texts.map((t, i) => `TEXT ${i + 1}: ${t}`).join("\n") },
@@ -172,7 +173,7 @@ export async function checkCreation(playerId: string | null, surface: string, ra
   let v = cache.get(key);
   let costUsd = 0;
   if (!v) {
-    const out = await classify(`safety:${ref}`, texts);
+    const out = await classify(`safety:${ref}`, texts, tryResearchId(playerId));
     costUsd = out.costUsd;
     if (!out.verdict) {
       console.warn(`[safety] classifier unavailable for ${ref}; letting it through (local list passed)`);

@@ -18,6 +18,7 @@ import type { RoomManager } from "./rooms.js";
 import { getDb } from "./persistence.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
 import { checkCreation, chargeCheck, SAFETY_MODEL } from "./safety.js";
+import { tryResearchId } from "./research.js";
 import { isMakeKind, makeEstimate, clampSeconds, MAKE_SKILL, VOICE_MAX_CHARS, type MakeKind } from "../../../shared/make-costs.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
@@ -134,7 +135,7 @@ export async function startJob(
   const res = await fetch(`${GENAI_URL}/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ref, kind, prompt: prompt.slice(0, kind === "voice" ? VOICE_MAX_CHARS : 600), creator: playerId, params }),
+    body: JSON.stringify({ ref, kind, prompt: prompt.slice(0, kind === "voice" ? VOICE_MAX_CHARS : 600), creator: playerId, params, researchId: tryResearchId(playerId) }),
   });
   const body = (await res.json()) as { jobId?: string };
   if (!res.ok || !body.jobId) throw new Error(`genai ${res.status}`);
@@ -250,7 +251,7 @@ export async function writeLore(rooms: RoomManager, playerId: string, body: { pr
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ref, model: LORE_MODEL, maxTokens: 300,
+        ref, model: LORE_MODEL, maxTokens: 300, researchId: tryResearchId(playerId),
         messages: [{ role: "system", content: LORE_SYSTEM }, { role: "user", content: subject ? `About: ${subject}\n${prompt}` : prompt }],
       }),
     });

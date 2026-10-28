@@ -8,7 +8,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/server/sync-service/src/index.js",
-    "test": "node --import tsx --test src/*.test.ts"
+    "test": "node --import tsx --test src/*.test.ts",
+    "replay": "tsx src/replay.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1149.0",

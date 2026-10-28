@@ -17,8 +17,9 @@ import type { RoomManager } from "./rooms.js";
 import { getDb } from "./persistence.js";
 import { startJob } from "./creations.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
-import { estimate, parsePlannerTurn, parseEdit, applyEdit, LIMITS, ASSET_MANA, type Blueprint, type BlueprintDraft, type BlueprintEdit } from "../../../shared/blueprint.js";
+import { estimate, parsePlannerTurn, parseEdit, applyEdit, extractJson, LIMITS, ASSET_MANA, type Blueprint, type BlueprintDraft, type BlueprintEdit } from "../../../shared/blueprint.js";
 import { checkCreation, chargeCheck, type SafetyVerdict } from "./safety.js";
+import { researchIdFor } from "./research.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 
@@ -95,6 +96,9 @@ function db() {
         payload TEXT NOT NULL,       -- JSON: message / request+raw response / validated turn + blueprint
         at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS plan_events_session ON plan_events(session_id, seq);`);
+    // Research id (M5): what research exports key sessions by, instead of the player id
+    const cols = d.prepare("PRAGMA table_info(plan_sessions)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "research_id")) d.exec("ALTER TABLE plan_sessions ADD COLUMN research_id TEXT");
     schemaReady = true;
   }
   return d;
@@ -108,8 +112,8 @@ function logEvent(sessionId: string, kind: string, payload: unknown, extra: { re
 function saveSession(s: Session, created = false) {
   const now = Date.now();
   if (created) {
-    db().prepare("INSERT INTO plan_sessions (id, player_id, world_id, version, blueprint, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(s.id, s.playerId, s.worldId, s.version, s.blueprint ? JSON.stringify(s.blueprint) : null, now, now);
+    db().prepare("INSERT INTO plan_sessions (id, player_id, world_id, version, blueprint, created_at, updated_at, research_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(s.id, s.playerId, s.worldId, s.version, s.blueprint ? JSON.stringify(s.blueprint) : null, now, now, researchIdFor(s.playerId));
   } else {
     db().prepare("UPDATE plan_sessions SET version = ?, blueprint = ?, updated_at = ? WHERE id = ?")
       .run(s.version, s.blueprint ? JSON.stringify(s.blueprint) : null, now, s.id);
@@ -145,27 +149,15 @@ function getSession(id: string): Session | undefined {
 type Json = (status: number, body: unknown) => void;
 interface LlmOut { content: string; model: string; costUsd: number }
 
-async function callLlm(ref: string, model: string, messages: { role: string; content: string }[]): Promise<LlmOut> {
+async function callLlm(ref: string, model: string, messages: { role: string; content: string }[], researchId: string): Promise<LlmOut> {
   const res = await fetch(`${GENAI_URL}/llm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ref, model, messages, json: true, maxTokens: 4000 }),
+    body: JSON.stringify({ ref, model, messages, json: true, maxTokens: 4000, researchId }),
   });
   const body = (await res.json().catch(() => ({}))) as Partial<LlmOut> & { error?: string; message?: string };
   if (!res.ok || typeof body.content !== "string") throw new Error(body.message ?? body.error ?? `genai ${res.status}`);
   return { content: body.content, model: body.model ?? model, costUsd: body.costUsd ?? 0 };
-}
-
-/** Models sometimes wrap JSON in prose or fences; take the outermost object. */
-function extractJson(text: string): unknown {
-  const a = text.indexOf("{");
-  const b = text.lastIndexOf("}");
-  if (a < 0 || b <= a) return null;
-  try {
-    return JSON.parse(text.slice(a, b + 1));
-  } catch {
-    return null;
-  }
 }
 
 export async function planTurn(rooms: RoomManager, playerId: string, body: unknown, json: Json): Promise<void> {
@@ -200,9 +192,10 @@ export async function planTurn(rooms: RoomManager, playerId: string, body: unkno
   let costUsd = 0;
   let usedModel = model;
   const sid = s.id;
+  const researchId = researchIdFor(playerId);
   const attempt = async (callRef: string, msgs: { role: string; content: string }[]) => {
     try {
-      const out = await callLlm(callRef, model, msgs);
+      const out = await callLlm(callRef, model, msgs, researchId);
       costUsd += out.costUsd;
       usedModel = out.model;
       logEvent(sid, "llm_call", { requested: model, messages: msgs, response: out.content }, { ref: callRef, model: out.model, costMana: out.costUsd * 100 });
