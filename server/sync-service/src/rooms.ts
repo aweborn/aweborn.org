@@ -32,6 +32,7 @@ import {
 import { saveDoc, loadDoc, listDocIds, getDb } from "./persistence.js";
 import { ManaLedger } from "./mana.js";
 import { ManaAdmission } from "./admission.js";
+import { Progress } from "./progress.js";
 import { insideFrontier, solidifyWithinFrontier } from "./frontier.js";
 import { createWorldDoc } from "./world-factory.js";
 import { resolveNewWorld } from "./resolver.js";
@@ -120,6 +121,9 @@ export class RoomManager {
   readonly mana: ManaLedger;
   /** Flow & admission: who may draw how much right now (Phase 05). */
   readonly admission: ManaAdmission;
+  /** Awe = experience: XP, skills, chapters (Rough Draft M3). */
+  readonly progress: Progress;
+  private frontierCount: { at: number; n: number } | null = null;
 
   constructor() {
     this.universeDoc = initUniverseDoc();
@@ -144,8 +148,19 @@ export class RoomManager {
       this.applyFrontier();
     });
     this.admission = new ManaAdmission(this.mana);
+    this.progress = new Progress(getDb(), () => this.worldsInFrontier());
 
     console.log("[rooms] room manager initialized");
+  }
+
+  /** Top-level worlds inside the Frontier now (explorer thresholds; cached a minute). */
+  worldsInFrontier(now = Date.now()): number {
+    if (this.frontierCount && now - this.frontierCount.at < 60_000) return this.frontierCount.n;
+    const r = this.mana.state().frontierRadius;
+    let n = 0;
+    for (const w of this.allWorlds()) if (!w.parentWorldId && insideFrontier(w.resolvedPosition, r)) n++;
+    this.frontierCount = { at: now, n };
+    return n;
   }
 
   // ── Universe Room ────────────────────────────────────────────────
@@ -269,7 +284,16 @@ export class RoomManager {
             companions: others.size,
             at: now,
           });
+          if (characterId) {
+            this.progress.firstVisit(characterId, worldId, others.size);
+            // A reaction: someone else's awe at what you made.
+            const creator = entry?.creator;
+            if (creator && creator !== "system" && !listCharacters(accountId).some((c) => c.id === creator)) {
+              this.progress.reaction(creator, worldId, accountId);
+            }
+          }
         }
+        if (characterId) this.progress.useSkill(characterId, "enter");
       } catch (err) {
         console.warn("[rooms] could not record discovery:", err);
       }

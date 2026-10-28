@@ -129,8 +129,10 @@ export async function creationStatus(rooms: RoomManager, playerId: string, jobId
   const j = (await res.json()) as { status: string; progress: number; asset: string | null; costUsd: number | null; error: string | null };
 
   if (!c.settled && j.status === "complete") {
-    rooms.mana.settle(c.ref, Math.max(0, (j.costUsd ?? 0) * 100), "model");
+    const mana = Math.max(0, (j.costUsd ?? 0) * 100);
+    rooms.mana.settle(c.ref, mana, "model");
     creations.markSettled(jobId);
+    rooms.progress.creation(c.playerId, mana, jobId, "mesh");
   } else if (!c.settled && j.status === "failed") {
     rooms.mana.release(c.ref); // failed generations draw nothing
     creations.markSettled(jobId);

@@ -17,6 +17,8 @@ import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
 import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
 import { listMutes, setMute, fileReport, handleReportsAdmin, isPlayerId } from "./moderation.js";
+import { CLIENT_SKILLS, type Skill } from "../../../shared/progress.js";
+import type { ProgressDelta } from "./progress.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
@@ -146,7 +148,27 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
  *   POST /api/player/world  { name, color, position } → { world: { id, name, color, position }, leftToday }
  *        Plant a world (signed-in only; WORLDS_PER_DAY per rolling 24 h).
  *        403 sign_in_required · 429 daily_limit · 400 bad_name | bad_color | bad_position
+ *   GET  /api/player/progress  → { progress: ProgressView }  (awe = experience, Rough Draft M3)
+ *   POST /api/player/progress/report  { skills?: Skill[], flight?: { distance, farthest } }
+ *        → { delta: { xp, level?, chapter? }, progress }  (429 slow_down: one report per 3 s)
+ *        Piloting/building skills and flight distance, client-reported (cheap
+ *        checks now; Phase 09 derives them on the server later).
  */
+
+/** One progress report per character per this long. */
+const PROGRESS_REPORT_MS = 3000;
+const progressReports = new Map<string, number>();
+
+/** True if this character may report now (and remembers it). Old entries are pruned as the map grows. */
+function takeProgressReport(playerId: string, now = Date.now()): boolean {
+  const last = progressReports.get(playerId);
+  if (last !== undefined && now - last < PROGRESS_REPORT_MS) return false;
+  if (progressReports.size > 50_000) {
+    for (const [id, at] of progressReports) if (now - at > 60_000) progressReports.delete(id);
+  }
+  progressReports.set(playerId, now);
+  return true;
+}
 
 /** Sightings per account per minute (a busy flight past a cluster stays well under). */
 const SIGHTINGS_PER_MIN = 60;
@@ -268,13 +290,13 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
       seen.set(worldId, Math.min(at, seen.get(worldId) ?? at));
     }
     if (!takeSightings(accountId, seen.size)) return json(429, { error: "slow_down" });
+    const playerId = session.playerId;
     const results = [...seen].map(([worldId, at]) => {
       const w = rooms.lookupWorld(worldId);
       const edition = w?.solidified === false ? "dreamt" : "solid";
-      return {
-        worldId,
-        ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "flight", at, edition),
-      };
+      const r = recordDiscovery(accountId, worldId, playerId, "sighted", "flight", at, edition);
+      if (r.isNew) rooms.progress.sighted(playerId, worldId);
+      return { worldId, ...r };
     });
     return json(200, { results });
   }
@@ -284,7 +306,29 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (!worldId) return json(404, { error: "not_found" });
     const w = rooms.lookupWorld(worldId);
     const edition = w?.solidified === false ? "dreamt" : "solid";
-    return json(200, { worldId, ...recordDiscovery(accountId, worldId, session.playerId, "sighted", "link", Date.now(), edition) });
+    const r = recordDiscovery(accountId, worldId, session.playerId, "sighted", "link", Date.now(), edition);
+    if (r.isNew) rooms.progress.sighted(session.playerId, worldId);
+    return json(200, { worldId, ...r });
+  }
+  // Awe = experience (Rough Draft M3)
+  if (path === "/api/player/progress" && req.method === "GET") {
+    return json(200, { progress: rooms.progress.view(session.playerId) });
+  }
+  if (path === "/api/player/progress/report" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { skills?: unknown; flight?: { distance?: unknown; farthest?: unknown } } | null;
+    if (!body) return json(400, { error: "bad_request" });
+    if (!takeProgressReport(session.playerId)) return json(429, { error: "slow_down" });
+    const skills = Array.isArray(body.skills)
+      ? [...new Set(body.skills.filter((s): s is Skill => typeof s === "string" && (CLIENT_SKILLS as readonly string[]).includes(s)))]
+      : [];
+    let delta: ProgressDelta = { xp: 0 };
+    const add = (d: ProgressDelta) => {
+      delta = { xp: delta.xp + d.xp, level: Math.max(delta.level ?? 0, d.level ?? 0) || undefined, chapter: Math.max(delta.chapter ?? 0, d.chapter ?? 0) || undefined };
+    };
+    for (const s of skills) add(rooms.progress.useSkill(session.playerId, s));
+    const f = body.flight;
+    if (f && typeof f.distance === "number" && typeof f.farthest === "number") add(rooms.progress.flight(session.playerId, f.distance, f.farthest));
+    return json(200, { delta, progress: rooms.progress.view(session.playerId) });
   }
   // Where this character stands (saved as they move; restored on any device)
   if (path === "/api/player/location" && req.method === "GET") {
@@ -323,6 +367,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     }
     const w = rooms.createWorld(reqd.name, session.playerId, reqd.position, reqd.color, reqd.parentWorldId);
     recordDiscovery(accountId, w.id, session.playerId, "sighted", "flight", Date.now(), w.solidified ? "solid" : "dreamt");
+    rooms.progress.useSkill(session.playerId, "world");
     return json(200, {
       world: {
         id: w.id,
