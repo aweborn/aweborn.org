@@ -13,9 +13,13 @@
  */
 import { cellAt, type VoxelGrid } from "./voxel.js";
 
-/** What occupies a cell, for face culling. */
-export const AIR = 0, SOLID = 1, LIQUID = 2;
-export type CellKind = typeof AIR | typeof SOLID | typeof LIQUID;
+/**
+ * What occupies a cell, for face culling. SMOOTH (M5e) = a solid block whose
+ * blueprint says `surface: "smooth"`: shared/surfaceNets.ts draws it, so the
+ * block layer skips it. Both are solid ground to each other: no faces between them.
+ */
+export const AIR = 0, SOLID = 1, LIQUID = 2, SMOOTH = 3;
+export type CellKind = typeof AIR | typeof SOLID | typeof LIQUID | typeof SMOOTH;
 
 /** Liquids sit a little below the block top, like a water surface. */
 export const LIQUID_HEIGHT = 0.85;
@@ -48,7 +52,7 @@ const FACES: { n: [number, number, number]; c: [number, number, number][] }[] = 
 ];
 
 export function kindOf(g: VoxelGrid, v: number): CellKind {
-  return v === 0 ? AIR : g.liquid[v - 1] ? LIQUID : SOLID;
+  return v === 0 ? AIR : g.liquid[v - 1] ? LIQUID : g.blocks[v - 1]?.surface === "smooth" ? SMOOTH : SOLID;
 }
 
 /**
@@ -70,12 +74,13 @@ export function buildChunkMesh(g: VoxelGrid, liquid: boolean, outside: OutsideLo
   for (let j = 0; j < sy; j++) for (let k = 0; k < sz; k++) for (let i = 0; i < sx; i++) {
     const v = cellAt(g, i, j, k);
     if (v === 0 || g.liquid[v - 1] !== liquid) continue;
+    if (!liquid && g.blocks[v - 1]?.surface === "smooth") continue; // surfaceNets.ts draws it
     const h = liquid ? LIQUID_HEIGHT : 1;
     let rgb: [number, number, number] | null = null;
     for (const f of FACES) {
       const nk = neighbour(i + f.n[0], j + f.n[1], k + f.n[2]);
-      // Solid: show faces toward air or see-through liquid. Liquid: only toward air.
-      if (liquid ? nk !== AIR : nk === SOLID) continue;
+      // Solid: show faces toward air or see-through liquid (smooth ground is solid too). Liquid: only toward air.
+      if (liquid ? nk !== AIR : nk === SOLID || nk === SMOOTH) continue;
       rgb ??= colorOf(v, g.origin[0] + i, j, g.origin[1] + k);
       const base = pos.length / 3;
       for (const [cx, cy, cz] of f.c) {

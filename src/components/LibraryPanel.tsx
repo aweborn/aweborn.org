@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
-import { useWorldStore } from '../stores/worldStore'
+import { setBlockSurface, useWorldStore } from '../stores/worldStore'
+import { isLiquidBlock } from '@aweborn/shared/voxel'
 import { usePresence } from '../hooks/usePresence'
 import { libraryThumb } from '../lib/libraryThumbs'
 import { matchesBinding } from '../stores/keybindingStore'
@@ -270,6 +271,17 @@ export function LibraryPanel() {
     [equip, setOpen],
   )
 
+  // Smooth ↔ blocks for one ground block (M5e): same cells, so edits stay; the server only lets creators write terrain
+  const sky = useWorldStore((s) => s.sky)
+  const flipSurface = useCallback(
+    (blockId: string, smooth: boolean) => {
+      const doc = useUniverseStore.getState().activeWorldDoc
+      if (!doc || !worldTerrain) return
+      setBlockSurface(doc, worldTerrain, sky, blockId, smooth)
+    },
+    [worldTerrain, sky],
+  )
+
   // Arrow keys / Home / End move between shelves (the tab pattern), focus follows the selection
   const onTabKey = useCallback(
     (e: React.KeyboardEvent<HTMLElement>) => {
@@ -358,6 +370,27 @@ export function LibraryPanel() {
               )
             })}
           </ul>
+          <fieldset className="library-surface" aria-describedby="library-surface-hint">
+            <legend>Smooth ground</legend>
+            {worldTerrain.blocks.map((b, i) =>
+              isLiquidBlock(b) ? null : (
+                <label key={`s-${b.id}`} className="library-surface-row">
+                  <input
+                    id={`library-smooth-${i}`}
+                    type="checkbox"
+                    role="switch"
+                    {...({ switch: '' } as Record<string, string>)}
+                    checked={b.surface === 'smooth'}
+                    onChange={(e) => flipSurface(b.id, e.target.checked)}
+                  />
+                  {b.name}
+                </label>
+              ),
+            )}
+            <p className="library-hint" id="library-surface-hint">
+              On: rolling, natural ground. Off: crisp blocks. Same ground either way, so your digs and fills stay.
+            </p>
+          </fieldset>
           <p className="library-hint">
             Reshape this world's ground: hold Dig or a block, face where you want it and tap the button. Everyone here sees it. Only creators can do this, and reshaping the whole terrain in the planner starts the ground fresh.
           </p>

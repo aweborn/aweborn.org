@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseEditKey, editKey, validEditValue, chunkCell, withEdits, edgeNeighbours } from "./terrain-edits.ts";
+import { parseEditKey, editKey, validEditValue, chunkCell, withEdits, edgeNeighbours, terrainShapeKey } from "./terrain-edits.ts";
 import { generateVoxels, cellAt, CHUNK } from "./voxel.ts";
 import type { BlueprintDraft } from "./blueprint.ts";
 
@@ -41,4 +41,19 @@ test("edgeNeighbours: edge cells touch the next chunk, the last chunk's edge use
   assert.deepEqual(edgeNeighbours(31, 31, terrain.size), [[1, 0], [0, 1]]);
   assert.deepEqual(edgeNeighbours(69, 39, terrain.size), [[1, 0], [0, 1]]);
   assert.deepEqual(edgeNeighbours(10, 10, terrain.size), []);
+});
+
+test("edgeNeighbours with a smooth reach: two cells in, and the diagonal chunk at a corner", () => {
+  assert.deepEqual(edgeNeighbours(1, 10, terrain.size, 2), [[-1, 0]]);
+  assert.deepEqual(edgeNeighbours(2, 10, terrain.size, 2), []);
+  assert.deepEqual(edgeNeighbours(30, 1, terrain.size, 2), [[1, 0], [0, -1], [1, -1]]);
+  assert.deepEqual(edgeNeighbours(64, 10, terrain.size, 2), [[-1, 0]]); // last chunk: 6 wide
+  assert.deepEqual(edgeNeighbours(68, 10, terrain.size, 2), [[1, 0]]);
+});
+
+test("terrainShapeKey ignores only how blocks are drawn", () => {
+  const smooth = { ...terrain, blocks: terrain.blocks.map((b, n) => (n === 0 ? { ...b, surface: "smooth" as const } : b)) };
+  assert.equal(terrainShapeKey(smooth), terrainShapeKey(terrain));
+  assert.notEqual(terrainShapeKey({ ...terrain, seed: 4 }), terrainShapeKey(terrain));
+  assert.notEqual(terrainShapeKey({ ...terrain, blocks: [...terrain.blocks].reverse() }), terrainShapeKey(terrain));
 });

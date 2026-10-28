@@ -36,6 +36,9 @@ export const GROUND = 3;
 
 const LIQUID = /water|lava|pond|lake|sea|river/;
 
+/** Liquids don't collide, render translucent, and are never drawn smooth. */
+export const isLiquidBlock = (b: Pick<BlueprintBlock, "id" | "name">): boolean => LIQUID.test(b.id) || LIQUID.test(b.name.toLowerCase());
+
 // ── Deterministic noise ───────────────────────────────────────────────
 function hash(seed: number, x: number, z: number): number {
   let h = (seed ^ Math.imul(x, 374761393) ^ Math.imul(z, 668265263)) >>> 0;
@@ -59,7 +62,7 @@ export function generateVoxels(t: BlueprintDraft["terrain"], region?: VoxelRegio
   const sx = region?.w ?? wx, sz = region?.d ?? wz;
   const seed = t.seed | 0;
   const blocks = t.blocks;
-  const liquid = blocks.map((b) => LIQUID.test(b.id) || LIQUID.test(b.name.toLowerCase()));
+  const liquid = blocks.map(isLiquidBlock);
   const idx = (id: string) => Math.max(0, blocks.findIndex((b) => b.id === id)) + 1;
   const solidIds = blocks.map((_, i) => i + 1).filter((n) => !liquid[n - 1]);
   const ground = solidIds[0] ?? 1;

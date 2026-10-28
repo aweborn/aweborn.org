@@ -4611,6 +4611,20 @@ html.touch-ui .held-clear-btn {
 .library-size b { min-width: 44px; text-align: right; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
 .library-hint { margin: 0; font-size: 11px; color: rgba(200, 190, 255, 0.5); }
 
+/* Smooth ground switches (M5e): one per solid block, wrapping into rows on wide sheets */
+.library-surface { border: 0; margin: 0; padding: 0; min-inline-size: 0; display: flex; flex-wrap: wrap; gap: 0 18px; }
+.library-surface legend { padding: 0; margin-bottom: 2px; font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.02em; color: var(--color-text-secondary); }
+.library-surface-row { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: var(--text-sm); color: var(--color-text-primary); cursor: pointer; }
+.library-surface-row input[type='checkbox'][switch] {
+  /* Same as the Loop switch: native (Safari) and polyfilled switches scale with font-size */
+  accent-color: var(--color-accent-primary);
+  font-size: 1.25rem;
+  margin: 0;
+  cursor: pointer;
+}
+.library-surface-row input:focus-visible { outline: 2px solid var(--color-accent-secondary); outline-offset: 4px; }
+.library-surface .library-hint { flex-basis: 100%; }
+
 .library-thumb--none.is-loading { animation: library-thumb-pulse 1.4s ease-in-out infinite; }
 @keyframes library-thumb-pulse { 50% { opacity: 0.55; } }
 

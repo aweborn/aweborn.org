@@ -21,7 +21,7 @@ import { DEFAULT_PHYSICS } from "@aweborn/shared/crdt-schema";
 import { progress } from "./progressStore";
 import { cleanColor } from "@aweborn/shared/library";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
-import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, editKey } from "@aweborn/shared/terrain-edits";
+import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, editKey, terrainShapeKey } from "@aweborn/shared/terrain-edits";
 import { changeTerrainEdits, resetTerrainEdits, terrainCellAt } from "./worldVoxels";
 
 interface WorldState {
@@ -164,7 +164,11 @@ function readSky(doc: Y.Doc): BlueprintSky | null {
   }
 }
 
-/** Manifest the terrain (and its sky): every client regenerates the same grid (shared/voxel.ts). Clears dig/fill edits (they belong to the old ground). */
+/**
+ * Manifest the terrain (and its sky): every client regenerates the same grid (shared/voxel.ts).
+ * Clears dig/fill edits when the ground's shape changes (they belong to the old ground); a change
+ * to how blocks are drawn only (smooth ↔ blocks, M5e) keeps them.
+ */
 export function setVoxelTerrain(doc: Y.Doc, terrain: VoxelTerrain, sky?: BlueprintSky | null): void {
   doc.transact(() => {
     const m = doc.getMap("terrain");
@@ -173,8 +177,27 @@ export function setVoxelTerrain(doc: Y.Doc, terrain: VoxelTerrain, sky?: Bluepri
     m.set("voxel", next);
     if (sky) m.set("sky", JSON.stringify(sky));
     else m.delete("sky");
-    if (before !== next) doc.getMap(TERRAIN_EDITS_MAP).clear();
+    if (before !== next && !sameShape(before, terrain)) doc.getMap(TERRAIN_EDITS_MAP).clear();
   });
+}
+
+function sameShape(before: unknown, next: VoxelTerrain): boolean {
+  if (typeof before !== "string") return false;
+  try {
+    return terrainShapeKey(JSON.parse(before) as VoxelTerrain) === terrainShapeKey(next);
+  } catch {
+    return false;
+  }
+}
+
+/** Draw one solid block smooth or as blocks (owners; M5e). Same cells, so edits stay. */
+export function setBlockSurface(doc: Y.Doc, terrain: VoxelTerrain, sky: BlueprintSky | null, blockId: string, smooth: boolean): void {
+  const blocks = terrain.blocks.map((b) => {
+    if (b.id !== blockId) return b;
+    const { surface: _surface, ...rest } = b;
+    return smooth ? { ...rest, surface: "smooth" as const } : rest;
+  });
+  setVoxelTerrain(doc, { ...terrain, blocks }, sky);
 }
 
 /**

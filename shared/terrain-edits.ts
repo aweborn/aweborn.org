@@ -7,10 +7,19 @@
  * n = blocks[n - 1]). A cell set back to what the generator made is deleted,
  * so the map only holds real differences. Who may edit: the same rule as the
  * terrain (creator + co-creators), enforced by the server's world authority.
- * Reshaping the terrain clears every edit (they belong to the old ground).
+ * Reshaping the terrain clears every edit (they belong to the old ground);
+ * changing only how a block is drawn (smooth ↔ blocks, M5e) keeps them.
  */
-import { LIMITS } from "./blueprint.js";
+import { LIMITS, type BlueprintDraft } from "./blueprint.js";
 import { CHUNK, type VoxelGrid } from "./voxel.js";
+
+/**
+ * The terrain's shape, ignoring how its blocks are drawn (`surface`, M5e): flipping a block
+ * between smooth and blocks keeps the same cells, so it keeps the world's dig/fill edits too.
+ */
+export function terrainShapeKey(t: BlueprintDraft["terrain"]): string {
+  return JSON.stringify({ ...t, blocks: t.blocks.map(({ surface: _surface, ...b }) => b) });
+}
 
 export const TERRAIN_EDITS_MAP = "terrainEdits";
 
@@ -54,15 +63,20 @@ export function withEdits(g: VoxelGrid, edits: Map<number, number>): VoxelGrid {
   return { ...g, cells };
 }
 
-/** Is a cell on its chunk's edge (so the neighbour chunk's faces change too)? Returns neighbour chunk offsets. */
-export function edgeNeighbours(gi: number, gk: number, world: [number, number, number]): [number, number][] {
+/**
+ * Is a cell near its chunk's edge (so the neighbour chunk's mesh changes too)? Returns neighbour
+ * chunk offsets. `reach` = how many cells past its edge a chunk's mesh reads: 1 for block faces,
+ * more for smooth surfaces (M5e), which also reach the diagonal chunk at a corner.
+ */
+export function edgeNeighbours(gi: number, gk: number, world: [number, number, number], reach = 1): [number, number][] {
   const out: [number, number][] = [];
   const i = gi % CHUNK, k = gk % CHUNK;
   const cx = Math.floor(gi / CHUNK), cz = Math.floor(gk / CHUNK);
   const sx = Math.min(CHUNK, world[0] - cx * CHUNK), sz = Math.min(CHUNK, world[2] - cz * CHUNK);
-  if (i === 0) out.push([-1, 0]);
-  if (i === sx - 1) out.push([1, 0]);
-  if (k === 0) out.push([0, -1]);
-  if (k === sz - 1) out.push([0, 1]);
+  const xs = [...(i < reach ? [-1] : []), ...(i >= sx - reach ? [1] : [])];
+  const zs = [...(k < reach ? [-1] : []), ...(k >= sz - reach ? [1] : [])];
+  for (const dx of xs) out.push([dx, 0]);
+  for (const dz of zs) out.push([0, dz]);
+  if (reach > 1) for (const dx of xs) for (const dz of zs) out.push([dx, dz]);
   return out;
 }

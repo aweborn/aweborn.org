@@ -22,7 +22,7 @@ import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
 import { usePlannerStore } from '../stores/plannerStore'
-import { chunksAround, placeOnTerrain, sameTerrain, halfExtentOf, COLLIDE_RADIUS, useTerrainEditsRev } from '../stores/worldVoxels'
+import { chunksAround, placeOnTerrain, sameTerrainShape, halfExtentOf, COLLIDE_RADIUS, useTerrainEditsRev } from '../stores/worldVoxels'
 import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
@@ -470,7 +470,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const boxes = useMemo(() => {
     const near = (t: NonNullable<typeof refTerrain>) => chunksAround(t, pcx, pcz, COLLIDE_RADIUS).flatMap((c) => c.colliders)
     const real = voxelTerrain ? near(voxelTerrain) : NO_BOXES
-    const ghost = ghostVisible && ghostTerrain && !sameTerrain(voxelTerrain, ghostTerrain) ? near(ghostTerrain) : NO_BOXES
+    const ghost = ghostVisible && ghostTerrain && !sameTerrainShape(voxelTerrain, ghostTerrain) ? near(ghostTerrain) : NO_BOXES
     const solid = Array.from(objects.values()).filter((o) => !o.kick && o.id !== heldId)
     const out: Box[] = []
     for (const o of solid) {

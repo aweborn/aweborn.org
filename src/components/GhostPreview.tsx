@@ -4,12 +4,13 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { usePlannerStore } from '../stores/plannerStore'
 import { useWorldStore } from '../stores/worldStore'
-import { chunkCoordsAround, getChunk, placeOnTerrain, sameTerrain, useTerrainEditsRev, useWorldLoadProgress, type Chunk } from '../stores/worldVoxels'
+import { chunkCoordsAround, getChunk, placeOnTerrain, sameTerrainShape, useTerrainEditsRev, useWorldLoadProgress, type Chunk } from '../stores/worldVoxels'
 import { useUniverseStore } from '../stores/universeStore'
 import { usePlayerChunk } from '../hooks/usePlayerChunk'
 import { useAtmosphere } from '../hooks/useAtmosphere'
-import { cellAt } from '@aweborn/shared/voxel'
-import { buildChunkMesh, kindOf, AIR, type OutsideLookup } from '@aweborn/shared/voxelMesh'
+import { cellAt, CHUNK } from '@aweborn/shared/voxel'
+import { buildChunkMesh, kindOf, AIR, type ChunkMesh, type OutsideLookup } from '@aweborn/shared/voxelMesh'
+import { buildSmoothMesh, type RawLookup } from '@aweborn/shared/surfaceNets'
 import type { BlueprintAsset, BlueprintDraft } from '@aweborn/shared/blueprint'
 
 /**
@@ -32,22 +33,37 @@ const GHOST_LIQUID_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, tr
 const MAX_GEO_CACHE = 400
 const chunkGeoCache = new Map<string, THREE.BufferGeometry | null>()
 
-function getChunkGeometry(chunk: Chunk, terrain: BlueprintDraft['terrain'], liquid: boolean): THREE.BufferGeometry | null {
-  const key = `${chunk.id}:${liquid ? 'L' : 'S'}`
+/** Which layer of a chunk: block faces, liquid, or smooth surfaces (M5e). */
+export type ChunkLayerKind = 'solid' | 'liquid' | 'smooth'
+
+function getChunkGeometry(chunk: Chunk, terrain: BlueprintDraft['terrain'], layer: ChunkLayerKind): THREE.BufferGeometry | null {
+  const key = `${chunk.id}:${layer === 'liquid' ? 'L' : layer === 'smooth' ? 'M' : 'S'}`
   if (chunkGeoCache.has(key)) return chunkGeoCache.get(key) ?? null
 
   const g = chunk.grid
   const [sx, , sz] = g.size
-  // Faces on the chunk edge ask the neighbouring chunk (generated once, cached).
-  const outside: OutsideLookup = (i, j, k) => {
-    const dx = i < 0 ? -1 : i >= sx ? 1 : 0
-    const dz = k < 0 ? -1 : k >= sz ? 1 : 0
-    const n = getChunk(terrain, chunk.cx + dx, chunk.cz + dz)
-    if (!n) return AIR // the world's edge
-    const [nx, , nz] = n.grid.size
-    return kindOf(n.grid, cellAt(n.grid, dx < 0 ? nx - 1 : dx > 0 ? 0 : i, j, dz < 0 ? nz - 1 : dz > 0 ? 0 : k))
+  const color = (v: number, gi: number, j: number, gk: number) => cellColor(g.blocks[v - 1].color, gi, j, gk)
+  let m: ChunkMesh
+  if (layer === 'smooth') {
+    // Smooth surfaces read 2 cells past the chunk (any neighbour, diagonals too): global lookup.
+    const raw: RawLookup = (i, j, k) => {
+      const gi = g.origin[0] + i, gk = g.origin[1] + k
+      const n = getChunk(terrain, Math.floor(gi / CHUNK), Math.floor(gk / CHUNK))
+      return n ? cellAt(n.grid, gi - n.grid.origin[0], j, gk - n.grid.origin[1]) : 0
+    }
+    m = buildSmoothMesh(g, raw, color)
+  } else {
+    // Faces on the chunk edge ask the neighbouring chunk (generated once, cached).
+    const outside: OutsideLookup = (i, j, k) => {
+      const dx = i < 0 ? -1 : i >= sx ? 1 : 0
+      const dz = k < 0 ? -1 : k >= sz ? 1 : 0
+      const n = getChunk(terrain, chunk.cx + dx, chunk.cz + dz)
+      if (!n) return AIR // the world's edge
+      const [nx, , nz] = n.grid.size
+      return kindOf(n.grid, cellAt(n.grid, dx < 0 ? nx - 1 : dx > 0 ? 0 : i, j, dz < 0 ? nz - 1 : dz > 0 ? 0 : k))
+    }
+    m = buildChunkMesh(g, layer === 'liquid', outside, color)
   }
-  const m = buildChunkMesh(g, liquid, outside, (v, gi, j, gk) => cellColor(g.blocks[v - 1].color, gi, j, gk))
   let geo: THREE.BufferGeometry | null = null
   if (m.faces) {
     geo = new THREE.BufferGeometry()
@@ -76,15 +92,16 @@ function cellColor(hex: string, gi: number, j: number, gk: number): [number, num
 }
 
 /**
- * One layer (solid or liquid) of a chunk: only the faces that border air (2026-10-21).
+ * One layer (solid, liquid or smooth) of a chunk: only the faces that border air (2026-10-21).
  * It used to be a full instanced cube per visible voxel: ~7× the triangles, ~86%
  * of them buried against a neighbour, which made phones drop frames when facing
  * big terrain (a volcano) or with the camera inside the ground.
  */
-export function ChunkLayer({ chunk, terrain, liquid, ghost }: { chunk: Chunk; terrain: BlueprintDraft['terrain']; liquid: boolean; ghost?: boolean }) {
-  const geometry = useMemo(() => getChunkGeometry(chunk, terrain, liquid), [chunk, terrain, liquid])
+export function ChunkLayer({ chunk, terrain, layer, ghost }: { chunk: Chunk; terrain: BlueprintDraft['terrain']; layer: ChunkLayerKind; ghost?: boolean }) {
+  const geometry = useMemo(() => getChunkGeometry(chunk, terrain, layer), [chunk, terrain, layer])
 
   if (!geometry) return null
+  const liquid = layer === 'liquid'
   const material = ghost ? (liquid ? GHOST_LIQUID_MAT : GHOST_SOLID_MAT) : liquid ? LIQUID_MAT : SOLID_MAT
   return <mesh geometry={geometry} material={material} />
 }
@@ -134,8 +151,9 @@ function TerrainChunks({ terrain, ghost }: { terrain: BlueprintDraft['terrain'];
     <>
       {chunks.map((c) => (
         <group key={c.id}>
-          <ChunkLayer chunk={c} terrain={terrain} liquid={false} ghost={ghost} />
-          <ChunkLayer chunk={c} terrain={terrain} liquid ghost={ghost} />
+          <ChunkLayer chunk={c} terrain={terrain} layer="solid" ghost={ghost} />
+          <ChunkLayer chunk={c} terrain={terrain} layer="smooth" ghost={ghost} />
+          <ChunkLayer chunk={c} terrain={terrain} layer="liquid" ghost={ghost} />
         </group>
       ))}
     </>
@@ -200,9 +218,11 @@ export function GhostPreview() {
   const worldTerrain = useWorldStore((s) => s.voxelTerrain)
   const objects = useWorldStore((s) => s.objects)
   const placed = useMemo(() => new Set([...objects.values()].map((o) => o.planKey).filter(Boolean)), [objects])
+  const planTerrain = blueprint?.terrain
+  // Real when only the drawing differs (a block flipped smooth ↔ blocks in the world, M5e)
+  const terrainIsReal = useMemo(() => sameTerrainShape(worldTerrain, planTerrain), [worldTerrain, planTerrain])
   if (!blueprint || !visible || worldId !== activeWorldId) return null
   const accent = blueprint.style.palette[1] ?? blueprint.style.palette[0] ?? '#b8a8ff'
-  const terrainIsReal = sameTerrain(worldTerrain, blueprint.terrain)
   return (
     <group>
       {!terrainIsReal && (

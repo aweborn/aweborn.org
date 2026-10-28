@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { generateVoxels, voxelColliders, cellToWorld, cellAt, CHUNK, type VoxelGrid } from '@aweborn/shared/voxel'
 import type { Box } from '@aweborn/shared/sim/interior'
 import type { BlueprintDraft } from '@aweborn/shared/blueprint'
-import { chunkCell, edgeNeighbours, parseEditKey, validEditValue, withEdits } from '@aweborn/shared/terrain-edits'
+import { chunkCell, edgeNeighbours, parseEditKey, terrainShapeKey, validEditValue, withEdits } from '@aweborn/shared/terrain-edits'
+import { SMOOTH_REACH } from '@aweborn/shared/surfaceNets'
 
 type Terrain = BlueprintDraft['terrain']
 
@@ -84,7 +85,8 @@ function indexEdit(ix: EditIndex, key: string, value: unknown): void {
   }
   const bump = (id: string) => ix.rev.set(id, (ix.rev.get(id) ?? 0) + 1)
   bump(c.chunk)
-  for (const [dx, dz] of edgeNeighbours(gi, gk, ix.world)) bump(`${c.cx + dx},${c.cz + dz}`)
+  // Smooth surfaces read SMOOTH_REACH cells into the next chunk, so an edit that close rebuilds it too
+  for (const [dx, dz] of edgeNeighbours(gi, gk, ix.world, SMOOTH_REACH)) bump(`${c.cx + dx},${c.cz + dz}`)
 }
 
 /** (Re)build the overlay for the world's terrain from every stored edit (world load, terrain reshaped). */
@@ -202,3 +204,12 @@ export function placeOnTerrain(t: Terrain, at: [number, number, number]): { x: n
 export const halfExtentOf = (t: Terrain): number => Math.min(t.size[0], t.size[2]) / 2 - 0.5
 
 export const sameTerrain = (a: unknown, b: unknown) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b)
+
+const shapeOf = new WeakMap<object, string>()
+/** Same ground, maybe drawn differently (a block flipped smooth ↔ blocks, M5e): the planner's ghost is then not a different terrain. */
+export function sameTerrainShape(a: Terrain | null | undefined, b: Terrain | null | undefined): boolean {
+  if (!a || !b) return false
+  if (a === b) return true
+  const key = (t: Terrain) => { let k = shapeOf.get(t); if (!k) { k = terrainShapeKey(t); shapeOf.set(t, k) } return k }
+  return key(a) === key(b)
+}
