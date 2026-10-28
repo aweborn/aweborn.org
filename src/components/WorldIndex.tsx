@@ -18,6 +18,9 @@ import { showNotice } from '../systems/TeleportSystem'
 import { WorldCard } from './WorldCard'
 import { matchesBinding } from '../stores/keybindingStore'
 import { useProgressStore } from '../stores/progressStore'
+import { CardCheckout } from './CardCheckout'
+import { CARD_CHECKOUT_ON } from '../lib/cardCheckout'
+import { CARD_PRICE_CENTS } from '@aweborn/shared/cards'
 
 /**
  * World Index (Phase 08B): every world you've found, as cards. Press M (or
@@ -261,6 +264,7 @@ function WorldDetail({
   const warpUnlocked = useProgressStore((s) => s.view?.warpUnlocked ?? true)
   const pos = useUniverseStore.getState().playerPosition // a snapshot is enough (updates every frame)
   const [copied, setCopied] = useState(false)
+  const [buying, setBuying] = useState(false)
   const w = entry.world
   const isOrigin = entry.worldId === ORIGIN_WORLD_ID
   const target = worldEntryFor(entry)
@@ -295,16 +299,23 @@ function WorldDetail({
   const dreamt = isDreamtEdition(entry)
   const parentId = target?.parentWorldId ?? w?.parentWorldId
   const parentWorld = parentId ? useUniverseStore.getState().worlds.get(parentId) : undefined
+  // Cards of worlds you've been inside, that are still in the universe (Origin is Alex's own card)
+  const canBuy = CARD_CHECKOUT_ON && !isOrigin && isFaceUp(entry) && !!target
 
   return (
     <div className="wi-detail">
       <button type="button" id="wi-back" className="wi-back" onClick={onBack}>
         ← All worlds
       </button>
-      <div className="wi-detail-body">
+      <div className={`wi-detail-body${buying ? ' wi-detail-body--buying' : ''}`}>
         <div className="wi-detail-card">
           <WorldCard entry={entry} myCharacters={characters} tilt live />
         </div>
+        {buying ? (
+          <div className="wi-detail-info">
+            <CardCheckout entry={entry} onBack={() => setBuying(false)} />
+          </div>
+        ) : (
         <div className="wi-detail-info">
           <div className="wi-badges">
             <span className={`wi-state wi-state--${isFaceUp(entry) ? 'visited' : 'sighted'}`}>
@@ -382,7 +393,14 @@ function WorldDetail({
           {!warpUnlocked && !here && <p className="wi-hint">Warp opens at chapter 7. Your journey shows what&rsquo;s left.</p>}
           {warpUnlocked && inWorld && <p className="wi-hint">Exit this world first (Esc), then warp.</p>}
           {warpUnlocked && !inWorld && !here && target && <p className="wi-hint">Free. Locks on, then hold K to leap.</p>}
+          {canBuy && (
+            <button type="button" id="wi-get-card" className="wi-get-card" onClick={() => setBuying(true)}>
+              <span className="wi-get-card-label">Get this card</span>
+              <span className="wi-get-card-sub">Printed, with a chip · ${CARD_PRICE_CENTS / 100}</span>
+            </button>
+          )}
         </div>
+        )}
       </div>
     </div>
   )

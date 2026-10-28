@@ -158,6 +158,11 @@ export interface ManaState {
    * (most gifts stay anonymous; opt-in only, M4). Optional for older docs.
    */
   lastDonorName?: string | null;
+  /**
+   * The latest card sale (M6): when, which world, and the buyer's name only
+   * if they chose to show it. Drives the card swell + beam. Optional for older docs.
+   */
+  lastCard?: { at: number; worldId: string | null; name: string | null } | null;
 }
 
 export type ManaFunction = "program" | "management" | "fundraising";

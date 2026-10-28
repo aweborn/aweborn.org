@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Card orders (admin) | Aweborn</title>
+    <meta name="description" content="Admin only: check, print and ship Aweborn card orders." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root { color-scheme: dark; --bg: #050510; --glass: rgba(10, 10, 46, 0.6); --border: rgba(238, 240, 246, 0.12); --text: #eef0f6; --dim: rgba(238, 240, 246, 0.55); --accent: #e8b94a; --danger: #ff9a86; --ok: #9be7b0; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: radial-gradient(1200px 600px at 20% -10%, #12124a 0%, var(--bg) 60%); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+      main { max-width: 920px; margin: 0 auto; padding: 32px 20px 80px; }
+      h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+      .sub { color: var(--dim); margin: 0 0 24px; }
+      .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+      input, select { font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; outline: none; min-height: 44px; }
+      .bar input { flex: 1; min-width: 12rem; }
+      input:focus, select:focus { border-color: var(--accent); }
+      button { font: inherit; font-size: 13px; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; min-height: 40px; cursor: pointer; transition: background 0.15s, transform 0.15s; }
+      button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      button.primary { color: #1a1206; border: none; font-weight: 600; background: linear-gradient(135deg, #ffd27a, #ff9f5a); }
+      button.danger { color: var(--danger); border-color: rgba(255, 154, 134, 0.4); }
+      ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+      li { padding: 14px 16px; background: var(--glass); border: 1px solid var(--border); border-radius: 14px; backdrop-filter: blur(8px); display: grid; gap: 8px; }
+      .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+      .world { font-weight: 600; font-size: 16px; }
+      .world a { color: var(--text); }
+      .status { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
+      .status.paid { color: #1a1206; background: var(--accent); }
+      .status.approved { color: #0d2416; background: var(--ok); }
+      .status.printing, .status.shipped { color: var(--accent); background: rgba(232, 185, 74, 0.14); }
+      .status.cancelled, .status.refunded { color: var(--dim); }
+      .meta { font-size: 12px; color: var(--dim); }
+      .meta a { color: var(--dim); }
+      .actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      .actions input { width: 8rem; min-height: 40px; padding: 6px 10px; font-size: 13px; }
+      .msg { min-height: 1.4em; color: var(--dim); margin: 0 0 12px; }
+      .msg.err { color: var(--danger); }
+      .empty { color: var(--dim); text-align: center; padding: 40px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Card orders</h1>
+      <p class="sub">Paid orders wait for a person: check the world&rsquo;s name and art are fine to print forever, then approve. Printing and shipping take the real cost (it&rsquo;s drawn from the pool as a gold star). Shipping addresses are in Stripe: open the payment.</p>
+      <form class="bar" id="cards-login" autocomplete="off">
+        <input id="cards-token" type="password" placeholder="Admin token" aria-label="Admin token" autocomplete="off" />
+        <select id="cards-filter" aria-label="Show">
+          <option value="">Needs attention + history</option>
+          <option value="paid">Paid (to check)</option>
+          <option value="approved">Approved (to print)</option>
+          <option value="printing">Printing (to ship)</option>
+          <option value="shipped">Shipped</option>
+          <option value="pending">Unpaid checkouts</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="refunded">Refunded</option>
+        </select>
+        <button class="primary" type="submit" id="cards-load">Load</button>
+      </form>
+      <p class="msg" id="cards-msg" role="status"></p>
+      <ul id="cards-list"></ul>
+    </main>
+    <script>
+      const API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://localhost:1234' : 'https://sync.aweborn.org'
+      const STRIPE = 'https://dashboard.stripe.com/payments/'
+      const NEXT = { pending: ['cancelled'], paid: ['approved', 'cancelled'], approved: ['printing', 'cancelled'], printing: ['shipped'], shipped: [], cancelled: [], refunded: [] }
+      const LABEL = { approved: 'Approve', printing: 'Sent to printer', shipped: 'Shipped', cancelled: 'Cancel' }
+      const $ = (id) => document.getElementById(id)
+      const tokenEl = $('cards-token'), filterEl = $('cards-filter'), msg = $('cards-msg'), list = $('cards-list')
+      tokenEl.value = sessionStorage.getItem('aweborn-admin') || ''
+
+      function say(text, err) { msg.textContent = text; msg.className = 'msg' + (err ? ' err' : '') }
+      function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+      const when = (t) => (t ? new Date(t).toLocaleString() : '')
+
+      async function call(path, method, body) {
+        const res = await fetch(API + path, {
+          method,
+          headers: { Authorization: 'Bearer ' + tokenEl.value.trim(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+          body: body ? JSON.stringify(body) : undefined,
+        })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(res.status === 401 ? 'Wrong token.' : j.message || j.error || 'Failed (' + res.status + ')')
+        return j
+      }
+
+      function row(o) {
+        const li = el('li')
+        li.id = 'card-order-' + o.id
+        const top = el('div', 'top')
+        const world = el('span', 'world')
+        const a = el('a', '', o.quantity + ' \u00d7 ' + o.worldName)
+        a.href = '/w/' + o.worldId
+        a.target = '_blank'
+        a.rel = 'noopener'
+        world.append(a)
+        top.append(world, el('span', 'status ' + o.status, o.status))
+        li.append(top)
+
+        const bits = [
+          'order ' + o.id,
+          'tap: ' + (o.arrival === 'land' ? 'land beside' : 'step inside'),
+          'created ' + when(o.createdAt),
+          o.paidAt ? 'paid ' + when(o.paidAt) : null,
+          o.netDollars != null ? 'net $' + o.netDollars.toFixed(2) : null,
+          o.costDollars ? 'costs $' + o.costDollars.toFixed(2) : null,
+          o.email ? o.email : null,
+          o.publicName ? 'sky name: ' + o.publicName : null,
+          o.tracking ? 'tracking ' + o.tracking : null,
+          o.note ? 'note: ' + o.note : null,
+        ].filter(Boolean)
+        const meta = el('div', 'meta', bits.join(' \u00b7 '))
+        if (o.paymentRef) {
+          const pay = el('a', '', ' \u00b7 open payment (address)')
+          pay.href = STRIPE + encodeURIComponent(o.paymentRef)
+          pay.target = '_blank'
+          pay.rel = 'noopener'
+          meta.append(pay)
+        }
+        li.append(meta)
+
+        const nexts = NEXT[o.status] || []
+        if (nexts.length) {
+          const actions = el('div', 'actions')
+          const needsCost = nexts.includes('printing') || nexts.includes('shipped')
+          const cost = el('input')
+          cost.type = 'text'
+          cost.inputMode = 'decimal'
+          cost.placeholder = 'Cost $'
+          cost.setAttribute('aria-label', 'Real cost in dollars')
+          cost.id = 'cost-' + o.id
+          const tracking = el('input')
+          tracking.type = 'text'
+          tracking.placeholder = 'Tracking #'
+          tracking.setAttribute('aria-label', 'Tracking number')
+          tracking.id = 'tracking-' + o.id
+          if (needsCost) actions.append(cost)
+          if (nexts.includes('shipped')) actions.append(tracking)
+          for (const next of nexts) {
+            const b = el('button', next === 'cancelled' ? 'danger' : 'primary', LABEL[next] || next)
+            b.type = 'button'
+            b.id = 'card-' + next + '-' + o.id
+            b.onclick = async () => {
+              const body = { status: next }
+              if (needsCost && next !== 'cancelled' && cost.value.trim()) {
+                const n = Number(cost.value.trim().replace(/^\$/, ''))
+                if (!Number.isFinite(n) || n < 0) return say('Cost must be a number of dollars.', true)
+                body.costDollars = n
+              }
+              if (next === 'shipped') body.tracking = tracking.value.trim()
+              if (next === 'cancelled') {
+                if (!confirm('Cancel this order?' + (o.paidAt ? '\n\nIt was paid: refund it in Stripe too (the refund is recorded automatically).' : ''))) return
+              }
+              b.disabled = true
+              try {
+                const { order } = await call('/api/admin/cards/' + o.id, 'POST', body)
+                li.replaceWith(row(order))
+                say(order.worldName + ': ' + order.status + '.' + (order.status === 'shipped' ? ' The buyer was emailed.' : ''))
+              } catch (e) { b.disabled = false; say(e.message, true) }
+            }
+            actions.append(b)
+          }
+          li.append(actions)
+        }
+        return li
+      }
+
+      async function load() {
+        sessionStorage.setItem('aweborn-admin', tokenEl.value.trim())
+        say('Loading\u2026')
+        try {
+          const q = filterEl.value ? '?status=' + encodeURIComponent(filterEl.value) : ''
+          const { orders } = await call('/api/admin/cards' + q, 'GET')
+          list.replaceChildren(...orders.map(row))
+          if (!orders.length) list.append(el('li', 'empty', 'No orders here.'))
+          const waiting = orders.filter((o) => o.status === 'paid').length
+          say(orders.length + ' order' + (orders.length === 1 ? '' : 's') + (waiting ? ' \u00b7 ' + waiting + ' to check' : ''))
+        } catch (e) { say(e.message, true) }
+      }
+
+      $('cards-login').addEventListener('submit', (e) => { e.preventDefault(); load() })
+      filterEl.addEventListener('change', () => { if (tokenEl.value.trim()) load() })
+      if (tokenEl.value) load()
+    </script>
+  </body>
+</html>

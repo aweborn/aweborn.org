@@ -123,6 +123,9 @@ interface Totals {
   drawnByPurpose: Record<ManaPurpose, number>;
   lastDonationAt: number;
   lastDonorName: string | null;
+  lastCardAt: number;
+  lastCardWorldId: string | null;
+  lastCardName: string | null;
 }
 
 function zeroTotals(): Totals {
@@ -137,6 +140,9 @@ function zeroTotals(): Totals {
     drawnByPurpose: { creations: 0, research: 0, cards: 0, servers: 0, compensation: 0, refunds: 0, other: 0 },
     lastDonationAt: 0,
     lastDonorName: null,
+    lastCardAt: 0,
+    lastCardWorldId: null,
+    lastCardName: null,
   };
 }
 
@@ -219,6 +225,7 @@ export class ManaLedger {
       lastDonationAt: t.lastDonationAt,
       level: poolLevel(toMana(t.creative), this.spend30d()),
       lastDonorName: t.lastDonorName,
+      lastCard: t.lastCardAt ? { at: t.lastCardAt, worldId: t.lastCardWorldId, name: t.lastCardName } : null,
     };
   }
 
@@ -608,6 +615,12 @@ export class ManaLedger {
         if (row.source === "gift" && row.at >= t.lastDonationAt) {
           t.lastDonationAt = row.at;
           t.lastDonorName = row.public_name ?? null;
+        }
+        // Card sales note their world as "card:<worldId>" (cards.ts); the note itself stays private
+        if (row.source === "card" && row.at >= t.lastCardAt) {
+          t.lastCardAt = row.at;
+          t.lastCardWorldId = /^card:([0-9a-f-]{36})/.exec(row.note ?? "")?.[1] ?? null;
+          t.lastCardName = row.public_name ?? null;
         }
         break;
       case "draw":

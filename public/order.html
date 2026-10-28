@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Your card order | Aweborn</title>
+    <meta name="description" content="Follow your Aweborn card order: paid, checked, printing and shipped." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/legal.css" />
+    <style>
+      .order { display: grid; grid-template-columns: 9.5rem 1fr; gap: 1.75rem; align-items: start; margin-top: 1.5rem; }
+      .order-card { position: relative; aspect-ratio: 63 / 88; border-radius: 4.8% / 3.4%; overflow: hidden; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5), 0 0 40px rgba(232, 185, 74, 0.18); animation: deal 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+      .order-card img { width: 100%; height: 100%; display: block; }
+      .order-card span { position: absolute; inset: 9% 0 auto 0; padding: 0 9%; text-align: center; font: 700 1rem/1.15 Outfit, sans-serif; color: #fff4dc; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8); overflow-wrap: anywhere; }
+      @keyframes deal { from { opacity: 0; transform: translateY(14px) rotate(-4deg) scale(0.96); } }
+      .order h1 { margin-top: 0; }
+      .order-meta { margin: 0 0 1.25rem; color: var(--text-3); font-size: 0.9rem; }
+      .order-headline { margin: 0 0 1rem; font: 600 1.15rem/1.4 Outfit, sans-serif; color: var(--text); }
+      .steps { list-style: none; margin: 0 0 1.25rem; padding: 0; display: grid; gap: 0; }
+      .steps li { position: relative; display: grid; grid-template-columns: 1.75rem 1fr; gap: 0.1rem 0.75rem; padding: 0 0 1.1rem; margin: 0; color: var(--text-3); }
+      .steps li::before { content: ''; grid-row: 1 / 3; width: 1rem; height: 1rem; margin: 0.35rem auto 0; border-radius: 50%; border: 2px solid rgba(238, 240, 246, 0.25); background: transparent; transition: background 0.4s, border-color 0.4s, box-shadow 0.4s; }
+      .steps li:not(:last-child)::after { content: ''; position: absolute; left: calc(0.875rem - 1px); top: 1.6rem; bottom: 0.1rem; width: 2px; background: rgba(238, 240, 246, 0.12); }
+      .steps li.done { color: var(--text-2); }
+      .steps li.done::before { background: var(--accent); border-color: var(--accent); }
+      .steps li.done:not(:last-child)::after { background: linear-gradient(var(--accent), rgba(232, 185, 74, 0.25)); }
+      .steps li.now { color: var(--text); }
+      .steps li.now::before { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(232, 185, 74, 0.18); animation: pulse 1.8s ease-in-out infinite; }
+      @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(232, 185, 74, 0.06); } }
+      .steps strong { color: inherit; font-weight: 600; }
+      .steps small { grid-column: 2; font-size: 0.85rem; color: var(--text-3); }
+      .notice { padding: 0.75rem 1rem; border-radius: 12px; background: rgba(232, 185, 74, 0.1); border: 1px solid rgba(232, 185, 74, 0.3); color: #ffe2a8; margin: 0 0 1.25rem; }
+      .notice.dim { background: var(--glass); border-color: var(--border); color: var(--text-2); }
+      .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.5rem; }
+      .btn { display: inline-flex; align-items: center; min-height: 48px; padding: 0 1.25rem; border-radius: 999px; font: 600 0.95rem Inter, sans-serif; text-decoration: none; border: 1px solid var(--border); color: var(--text); background: rgba(255, 255, 255, 0.06); transition: transform 0.15s, background 0.15s; }
+      .btn:hover, .btn:focus-visible { color: var(--text); background: rgba(255, 255, 255, 0.12); transform: translateY(-1px); }
+      .btn.primary { color: #1a1206; border: none; background: linear-gradient(135deg, #ffd27a, #ff9f5a); }
+      .btn.primary:hover, .btn.primary:focus-visible { color: #1a1206; }
+      .skeleton { color: var(--text-3); }
+      @media (max-width: 34rem) {
+        .order { grid-template-columns: 1fr; gap: 1.25rem; }
+        .order-card { width: 8rem; margin: 0 auto; }
+        .order h1 { text-align: center; }
+        .order-meta { text-align: center; }
+      }
+      @media (prefers-reduced-motion: reduce) { .order-card, .steps li.now::before { animation: none; } }
+    </style>
+  </head>
+  <body>
+    <header class="legal-header">
+      <a class="legal-brand" href="/" id="order-home"><img src="/favicon.svg" alt="" />Aweborn</a>
+      <nav class="legal-nav" aria-label="Help">
+        <a href="/terms.html#cards" id="order-nav-terms">Card terms</a>
+      </nav>
+    </header>
+
+    <main>
+      <div class="order">
+        <div class="order-card" id="order-card" aria-hidden="true"><img src="/cards/back.svg" alt="" /><span id="order-card-name"></span></div>
+        <div>
+          <h1 id="order-title">Your card order</h1>
+          <p class="order-meta" id="order-meta"></p>
+          <div id="order-body" aria-live="polite"><p class="skeleton">Finding your order…</p></div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://localhost:1234' : 'https://sync.aweborn.org'
+      const params = new URLSearchParams(location.search)
+      const id = params.get('o') || ''
+      const cancelled = params.get('cancelled') === '1'
+      const $ = (x) => document.getElementById(x)
+      const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+
+      function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+
+      const STEPS = [
+        ['paid', 'Paid', 'Thank you. Your money is already in the universe\u2019s pool.'],
+        ['approved', 'Checked', 'A person looks at every card before it\u2019s printed forever.'],
+        ['printing', 'Printing', 'Your cards are being made, chip and all.'],
+        ['shipped', 'Shipped', 'On the way. We emailed you the tracking.'],
+      ]
+      const RANK = { pending: -1, paid: 0, approved: 1, printing: 2, shipped: 3 }
+
+      function render(o) {
+        const plural = o.quantity === 1 ? 'card' : 'cards'
+        document.title = o.worldName + ' \u00b7 your card order | Aweborn'
+        $('order-card-name').textContent = o.worldName
+        $('order-title').textContent = o.quantity + ' ' + plural + ' of ' + o.worldName
+        $('order-meta').textContent = 'Ordered ' + dateFmt.format(o.createdAt) + ' \u00b7 tap to ' + (o.arrival === 'land' ? 'land beside it' : 'step inside') + ' \u00b7 order ' + o.id.slice(1, 9)
+        const body = $('order-body')
+        body.replaceChildren()
+
+        if (o.status === 'pending') {
+          body.append(el('p', 'notice' + (cancelled ? ' dim' : ''), cancelled
+            ? 'Checkout was cancelled. Nothing was charged. You can start again from the card in your World Index.'
+            : 'Waiting for the payment to land\u2026 this page updates by itself.'))
+        } else if (o.status === 'cancelled') {
+          body.append(el('p', 'notice dim', 'This order was cancelled. If you were charged, the money is on its way back to you.'))
+        } else if (o.status === 'refunded') {
+          body.append(el('p', 'notice dim', 'This order was refunded. It can take 5\u201310 days to show on your statement.'))
+        } else {
+          body.append(el('p', 'order-headline', o.status === 'shipped' ? 'It\u2019s in the mail.' : 'It\u2019s happening.'))
+        }
+
+        if (o.status in RANK && !(o.status === 'pending' && cancelled)) {
+          const rank = RANK[o.status]
+          const ol = el('ol', 'steps')
+          ol.setAttribute('aria-label', 'Order progress')
+          STEPS.forEach(([key, label, hint], i) => {
+            const li = el('li', i <= rank ? 'done' : i === rank + 1 ? 'now' : '')
+            if (i === rank) li.setAttribute('aria-current', 'step')
+            const when = key === 'paid' && o.paidAt ? ' \u00b7 ' + dateFmt.format(o.paidAt) : key === 'shipped' && o.shippedAt ? ' \u00b7 ' + dateFmt.format(o.shippedAt) : ''
+            li.append(el('strong', '', label + when), el('small', '', hint))
+            ol.append(li)
+          })
+          body.append(ol)
+        }
+
+        const actions = el('div', 'actions')
+        const visit = el('a', 'btn primary', 'Visit ' + o.worldName)
+        visit.href = '/w/' + o.worldId
+        visit.id = 'order-visit'
+        const help = el('a', 'btn', 'Questions? Email us')
+        help.href = 'mailto:privacy@aweborn.org?subject=' + encodeURIComponent('Card order ' + o.id)
+        help.id = 'order-help'
+        actions.append(visit, help)
+        body.append(actions)
+      }
+
+      function fail(text) {
+        $('order-card').hidden = true
+        $('order-body').replaceChildren(el('p', 'notice dim', text))
+      }
+
+      let tries = 0
+      async function load() {
+        if (!/^o[0-9a-f]{24}$/.test(id)) return fail('This link doesn\u2019t point to an order. Check the link in your email.')
+        try {
+          const res = await fetch(API + '/cards/orders/' + id, { cache: 'no-store' })
+          if (res.status === 404) return fail('We can\u2019t find that order. Unpaid checkouts are cleared after a day.')
+          if (!res.ok) throw new Error(String(res.status))
+          const { order } = await res.json()
+          render(order)
+          // Right after Stripe, the webhook can take a few seconds
+          if (order.status === 'pending' && !cancelled && ++tries < 30) setTimeout(load, 3000)
+        } catch {
+          if (++tries < 5) setTimeout(load, 3000)
+          else fail('We couldn\u2019t reach Aweborn just now. Try reloading in a minute.')
+        }
+      }
+      load()
+    </script>
+  </body>
+</html>

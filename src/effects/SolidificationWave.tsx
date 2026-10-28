@@ -26,6 +26,7 @@ import {
   displayedFrontier,
   WAVE_MAX_RADIUS,
 } from '../stores/waveStore'
+import { CardBeam } from './CardBeam'
 
 const GOLD = new THREE.Color('#f2c45a')
 const WHITE_GOLD = new THREE.Color('#fff4d6')
@@ -306,6 +307,7 @@ export function SolidificationWave() {
       <FrontierEdge />
       <WaveShell />
       <SolidifyBursts />
+      <CardBeam />
     </>
   )
 }

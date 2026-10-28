@@ -27,6 +27,11 @@ Parameters:
     Default: placeholder
     Description: Bearer token for sync.aweborn.org POST /api/mana/inflow (gifts only). Same value as MANA_INFLOW_TOKEN on the VPS (infra/set-stack-key.sh mana-inflow)
 
+  CardPriceId:
+    Type: String
+    Default: ''
+    Description: Stripe Price id (price_…) of the $9 card, live mode (M6). Empty = card checkout answers "not on sale yet"
+
 Resources:
   # ============================================
   # S3 — Static Site Content Bucket
@@ -195,6 +200,11 @@ Resources:
         Variables:
           STRIPE_SECRET_KEY: !Ref StripeSecretKey
           SITE_URL: https://aweborn.org
+          # Card checkout (M6): asks sync what an order is, never trusts the browser
+          CARD_PRICE_ID: !Ref CardPriceId
+          CARD_UNIT_CENTS: '900'
+          MANA_INFLOW_TOKEN: !Ref ManaInflowToken
+          SYNC_URL: https://sync.aweborn.org
       Code:
         ZipFile: |
           const https = require('https');
@@ -234,6 +244,41 @@ Resources:
 
             try {
               const body = JSON.parse(event.body || '{}');
+
+              // Card checkout (M6): { orderId } → Stripe Checkout for that order, at the card price
+              if (path.endsWith('/create-card-checkout')) {
+                const orderId = String(body.orderId || '');
+                if (!/^o[0-9a-f]{24}$/.test(orderId)) return out(400, { error: 'bad_order' });
+                if (!process.env.CARD_PRICE_ID) return out(503, { error: 'cards_not_on_sale', message: 'Card orders open soon.' });
+                const r = await fetch(process.env.SYNC_URL + '/api/cards/checkout-info/' + orderId, { headers: { Authorization: 'Bearer ' + process.env.MANA_INFLOW_TOKEN } });
+                if (r.status === 404) return out(400, { error: 'order_closed', message: 'This order is closed. Start a new one.' });
+                if (!r.ok) return out(502, { error: 'sync_unavailable' });
+                const o = await r.json();
+                // The Stripe price must be the price players see
+                const pr = await fetch('https://api.stripe.com/v1/prices/' + encodeURIComponent(process.env.CARD_PRICE_ID), { headers: { Authorization: 'Bearer ' + process.env.STRIPE_SECRET_KEY } }).then((x) => x.json());
+                if (pr.unit_amount !== Number(process.env.CARD_UNIT_CENTS) || pr.unit_amount !== o.unitCents || pr.currency !== 'usd' || !pr.active) {
+                  console.error('card price mismatch', pr.id, pr.unit_amount, pr.currency, pr.active);
+                  return out(503, { error: 'cards_not_on_sale', message: 'Card orders open soon.' });
+                }
+                const siteUrl = process.env.SITE_URL || 'https://aweborn.org';
+                const session = await stripeRequest('/v1/checkout/sessions', {
+                  mode: 'payment',
+                  'line_items[0][price]': process.env.CARD_PRICE_ID,
+                  'line_items[0][quantity]': String(o.quantity),
+                  client_reference_id: o.id,
+                  'shipping_address_collection[allowed_countries][0]': 'US',
+                  'custom_text[submit][message]': 'Card of “' + String(o.worldName).slice(0, 60) + '” × ' + o.quantity + '. A person checks every card before it prints.',
+                  success_url: siteUrl + '/order.html?o=' + o.id,
+                  cancel_url: siteUrl + '/order.html?o=' + o.id + '&cancelled=1',
+                  'payment_intent_data[description]': 'Aweborn card of ' + String(o.worldName).slice(0, 60),
+                  'payment_intent_data[metadata][source]': 'aweborn.org',
+                  'payment_intent_data[metadata][kind]': 'card',
+                  'payment_intent_data[metadata][order_id]': o.id,
+                  'payment_intent_data[metadata][world_id]': o.worldId
+                }, process.env.STRIPE_SECRET_KEY);
+                if (session.error) { console.error('Stripe error:', session.error); return out(500, { error: 'Failed to create checkout session' }); }
+                return out(200, { url: session.url });
+              }
               const amount = parseInt(body.amount, 10);
               const currency = body.currency || 'usd';
               if (!amount || amount < 100) return out(400, { error: 'Minimum donation is $1.00' });
@@ -376,10 +421,20 @@ Resources:
             });
             const pi = await r.json().catch(() => ({}));
             if (!r.ok || !pi.id) return reply(503, 'could not load payment intent ' + piId);
-            if (!pi.metadata || pi.metadata.source !== 'aweborn.org' || pi.metadata.kind !== 'donation') return reply(200, 'not a donation ' + pi.id);
+            if (!pi.metadata || pi.metadata.source !== 'aweborn.org' || (pi.metadata.kind !== 'donation' && pi.metadata.kind !== 'card')) return reply(200, 'not ours ' + pi.id);
             const bt = pi.latest_charge && pi.latest_charge.balance_transaction;
             if (!bt || typeof bt.net !== 'number') return reply(503, 'balance transaction not ready ' + pi.id);
             if (bt.currency !== 'usd') return reply(500, 'unexpected settlement currency ' + bt.currency);
+
+            // Card order (M6): sync books the inflow (creative share after production + shipping) and marks the order paid.
+            // The buyer's email goes along only for order notices; the shipping address stays in Stripe.
+            if (pi.metadata.kind === 'card') {
+              const email = (pi.latest_charge.billing_details && pi.latest_charge.billing_details.email) || pi.receipt_email || undefined;
+              const res = await ledger('/api/cards/paid', { orderId: pi.metadata.order_id, ref: pi.id, netDollars: bt.net / 100, email, at: pi.created * 1000 });
+              const text = await res.text();
+              if (!res.ok) return reply(502, 'cards refused ' + res.status + ' ' + text.slice(0, 200));
+              return reply(200, (text.includes('"duplicate":true') ? 'already recorded card ' : 'recorded card ') + pi.id);
+            }
 
             const body = { source: 'gift', netDollars: bt.net / 100, ref: pi.id, at: pi.created * 1000 };
             if (pi.metadata.display_name) body.publicName = pi.metadata.display_name;
@@ -436,6 +491,13 @@ Resources:
     Properties:
       ApiId: !Ref PaymentApi
       RouteKey: POST /create-payment-intent
+      Target: !Sub 'integrations/${PaymentApiIntegration}'
+
+  CardCheckoutApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PaymentApi
+      RouteKey: POST /create-card-checkout
       Target: !Sub 'integrations/${PaymentApiIntegration}'
 
   StripeWebhookIntegration:

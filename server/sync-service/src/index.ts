@@ -22,6 +22,8 @@ import type { ProgressDelta } from "./progress.js";
 import { isNature } from "../../../shared/sky.js";
 import { RunwayWatch } from "./runway.js";
 import { sendEmail } from "./email.js";
+import { CardOrders } from "./cards.js";
+import { checkCreation } from "./safety.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit"]);
@@ -37,6 +39,18 @@ const rooms = new RoomManager();
 
 // Private runway warning (M4): email when the non-creative money would last < 90 days.
 new RunwayWatch(getDb(), rooms.mana, sendEmail, process.env.RUNWAY_ALERT_TO ?? "hello@aweborn.org").start();
+
+// Card orders (M6): Get this card → Stripe (payment Lambda) → paid webhook → a person approves → print → mail.
+const cardOrders = new CardOrders(getDb(), {
+  mana: rooms.mana,
+  world: (id) => rooms.lookupWorld(id),
+  nameOf: (playerId) => characterNames([playerId])[playerId] ?? null,
+  check: async (playerId, texts, ref) => {
+    const v = await checkCreation(playerId, "card", texts, ref);
+    return v.ok ? { ok: true } : { ok: false, message: v.message };
+  },
+  email: (to, subject, text) => sendEmail({ to, subject, text, html: `<pre style="font:15px/1.5 system-ui,sans-serif;white-space:pre-wrap">${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</pre>` }),
+});
 
 // ── HTTP API (health, stats, world lookup) ───────────────────────────
 // CORS for the public HTTP API (GET only). Extra origins (comma-separated)
@@ -427,6 +441,11 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (hasPortals) rooms.setWorldPortalPolicy(worldId, body!.allowPortals as boolean);
     return json(200, { worldId, ...(hasPortals ? { allowPortals: body!.allowPortals } : {}), ...(coCreators ? { coCreators } : {}) });
   }
+  // Card orders (M6): any player, saved or not, can buy a card of any world
+  if (path === "/api/player/cards/checkout" && req.method === "POST") {
+    const r = await cardOrders.create(session.playerId, await readJson(req).catch(() => null));
+    return r.ok ? json(200, { orderId: r.order.id, order: r.order }) : json(r.status, { error: r.error, message: r.message });
+  }
   // Creations (Phase 07): reserve → generate → settle. Signed-in players only.
   if (session.isAnonymous && req.method === "POST" && path && GENAI_POST_PATHS.has(path)) {
     return json(403, { error: "sign_in_required", message: SIGN_IN_MESSAGE });
@@ -575,6 +594,7 @@ async function handleManaAdmin(req: IncomingMessage, res: ServerResponse, path: 
       if (!giftRef || !refundRef || dollars === undefined || !(dollars > 0)) return json(400, { error: "bad_request" });
       const r = rooms.mana.recordRefund({ giftRef, refundRef, dollars, dispute: b.dispute === true, at: num(b.at) });
       if (!r.ok) return r.reason === "duplicate" ? json(200, { duplicate: true }) : json(409, { error: r.reason });
+      cardOrders.markRefunded(giftRef); // no-op unless it paid for cards
       return json(200, { draw: r.draw, shortfall: r.shortfall, state: rooms.mana.state() });
     }
   } catch (err) {
@@ -615,8 +635,72 @@ function handleManaPublic(req: IncomingMessage, res: ServerResponse): boolean {
   return true;
 }
 
+/**
+ * Card orders over HTTP (M6; see cards.ts for the flow):
+ *   GET  /cards/orders/:id                 public status page data
+ *   GET  /api/cards/checkout-info/:id      payment Lambda (Bearer inflow or admin)
+ *   POST /api/cards/paid                   Stripe webhook Lambda (Bearer inflow or admin)
+ *   GET  /api/admin/cards?status=          admin
+ *   POST /api/admin/cards/:id              admin: { status, costDollars?, tracking?, note? }
+ */
+async function handleCards(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+  const isPublic = path.startsWith("/cards/orders/");
+  const isServer = path.startsWith("/api/cards/");
+  const isAdmin = path === "/api/admin/cards" || path.startsWith("/api/admin/cards/");
+  if (!isPublic && !isServer && !isAdmin) return false;
+  const cors = corsHeaders(req);
+  const json = (status: number, body: unknown) => {
+    res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...cors });
+    res.end(JSON.stringify(body));
+  };
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, { ...cors, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Max-Age": "600" });
+    res.end();
+    return true;
+  }
+  if (isPublic) {
+    if (req.method !== "GET") return (json(405, { error: "method_not_allowed" }), true);
+    const o = cardOrders.publicView(path.slice("/cards/orders/".length));
+    return (o ? json(200, { order: o }) : json(404, { error: "not_found" }), true);
+  }
+  const role = manaRole(req);
+  if (isAdmin) {
+    if (role !== "admin") return (json(MANA_ADMIN_TOKEN ? 401 : 503, { error: MANA_ADMIN_TOKEN ? "unauthorized" : "admin_disabled" }), true);
+    if (path === "/api/admin/cards" && req.method === "GET") {
+      return (json(200, { orders: cardOrders.list(new URL(req.url ?? "/", "http://x").searchParams.get("status") ?? undefined) }), true);
+    }
+    if (req.method === "POST") {
+      const r = cardOrders.advance(path.slice("/api/admin/cards/".length), await readJson(req).catch(() => null));
+      return (r.ok ? json(200, { order: r.order }) : json(r.status, { error: r.error, message: r.message }), true);
+    }
+    return (json(405, { error: "method_not_allowed" }), true);
+  }
+  // Server-to-server (payment Lambdas): the narrow inflow key is enough for these two
+  if (!role) return (json(MANA_ADMIN_TOKEN || MANA_INFLOW_TOKEN ? 401 : 503, { error: "unauthorized" }), true);
+  if (path.startsWith("/api/cards/checkout-info/") && req.method === "GET") {
+    const info = cardOrders.checkoutInfo(path.slice("/api/cards/checkout-info/".length));
+    return (info ? json(200, info) : json(404, { error: "not_found" }), true);
+  }
+  if (path === "/api/cards/paid" && req.method === "POST") {
+    const b = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
+    if (!b) return (json(400, { error: "bad_json" }), true);
+    const r = await cardOrders.markPaid({ orderId: b.orderId, ref: b.ref, netDollars: b.netDollars, email: b.email, at: b.at });
+    return (r.ok ? json(200, { duplicate: r.duplicate, order: r.order }) : json(r.status, { error: r.error }), true);
+  }
+  return (json(404, { error: "not_found" }), true);
+}
+
 // HTTP server (health checks + stats + world lookup + auth)
 const server = createServer((req, res) => {
+  const urlPath = req.url?.split("?")[0] ?? "";
+  if (urlPath.startsWith("/cards/orders/") || urlPath.startsWith("/api/cards/") || urlPath.startsWith("/api/admin/cards")) {
+    handleCards(req, res, urlPath).catch((err: unknown) => {
+      console.error("[cards]", err);
+      if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "internal" }));
+    });
+    return;
+  }
   if (req.url?.startsWith("/api/mana/")) {
     const path = req.url.split("?")[0];
     handleManaAdmin(req, res, path).catch((err: unknown) => {

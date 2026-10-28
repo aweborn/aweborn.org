@@ -12,6 +12,13 @@
  *
  * Preview without a gift: call `awebornWave()` in the console. Purely
  * visual; nothing is solidified.
+ *
+ * Cards (Rough Draft M6a, Phase 05 "card swell"): a paid card order rises
+ * `mana.lastCard.at`. Its money grows the pool like a gift, so it rides the
+ * same wave, with its own line ("★ Alex brought a card of Origin into the
+ * world", the name only if the buyer opted in) and a beam of light standing
+ * on the card's world. Preview: `awebornCard()` (nearest world) or
+ * `awebornCard('<worldId>')`.
  */
 
 import { create } from 'zustand'
@@ -23,6 +30,14 @@ export const WAVE_MAX_RADIUS = 320
 export const WAVE_DURATION_S = 10
 /** How long the banner stays up (s). */
 export const WAVE_BANNER_S = 7
+/** How long a card's beam stands on its world (s). */
+export const CARD_BEAM_S = 12
+
+/** A card's beam: which world, and when it started (performance.now()). */
+export interface CardBeam {
+  worldId: string
+  startedAt: number
+}
 
 interface WaveState {
   /** performance.now() when the current wave started; null = no wave. */
@@ -38,7 +53,9 @@ interface WaveState {
   seq: number
   /** performance.now() when the front swept past the player (null = not yet). */
   passedAt: number | null
-  trigger: (opts?: { fromRadius?: number; toRadius?: number; message?: string; preview?: boolean }) => void
+  /** The beam of the latest card (null = none). */
+  beam: CardBeam | null
+  trigger: (opts?: { fromRadius?: number; toRadius?: number; message?: string; preview?: boolean; beamWorldId?: string }) => void
   end: () => void
 }
 
@@ -50,20 +67,23 @@ export const useWaveStore = create<WaveState>((set, get) => ({
   message: '',
   seq: 0,
   passedAt: null,
+  beam: null,
 
   trigger: (opts = {}) => {
     const u = useUniverseStore.getState()
     const r = u.mana?.frontierRadius ?? 0
     const pending = new Set<string>()
     if (!opts.preview) for (const w of u.worlds.values()) if (!w.solidified) pending.add(w.id)
+    const now = performance.now()
     set({
-      startedAt: performance.now(),
+      startedAt: now,
       fromRadius: opts.fromRadius ?? r,
       toRadius: opts.toRadius ?? r,
       pendingGhosts: pending,
       message: opts.message ?? 'A wave of light from ★ a generous soul',
       seq: get().seq + 1,
       passedAt: null,
+      ...(opts.beamWorldId ? { beam: { worldId: opts.beamWorldId, startedAt: now } } : {}),
     })
   },
 
@@ -123,6 +143,7 @@ export function startWaveWatcher(): void {
   started = true
 
   let lastGiftAt: number | null = null
+  let lastCardAt = 0
   let lastRadius = 0
   useUniverseStore.subscribe((s) => {
     const m = s.mana
@@ -130,10 +151,22 @@ export function startWaveWatcher(): void {
     if (lastGiftAt === null) {
       // First sync: remember, don't celebrate old gifts.
       lastGiftAt = m.lastDonationAt
+      lastCardAt = m.lastCard?.at ?? 0
       lastRadius = m.frontierRadius
       return
     }
-    if (m.lastDonationAt > lastGiftAt) {
+    const card = m.lastCard
+    if (card && card.at > lastCardAt) {
+      // A card came into the world: its line + a beam on its world (opt-in name only)
+      const worldName = (card.worldId && s.worlds.get(card.worldId)?.name) || 'a world'
+      const name = card.name?.trim()
+      useWaveStore.getState().trigger({
+        fromRadius: lastRadius,
+        toRadius: m.frontierRadius,
+        message: cardLine(name, worldName),
+        beamWorldId: card.worldId ?? undefined,
+      })
+    } else if (m.lastDonationAt > lastGiftAt) {
       // Opt-in donor names (M4): only when the giver chose to show one.
       const name = m.lastDonorName?.trim()
       useWaveStore.getState().trigger({
@@ -143,6 +176,7 @@ export function startWaveWatcher(): void {
       })
     }
     lastGiftAt = Math.max(lastGiftAt, m.lastDonationAt)
+    lastCardAt = Math.max(lastCardAt, card?.at ?? 0)
     lastRadius = m.frontierRadius
   })
 
@@ -152,4 +186,41 @@ export function startWaveWatcher(): void {
     useWaveStore.getState().trigger({ fromRadius: r * 0.97, toRadius: r, preview: true })
   }
   ;(window as unknown as { awebornWave: () => void }).awebornWave = preview
+
+  // Preview a card swell: awebornCard() picks the nearest world; or pass a world id and a name.
+  const previewCard = (worldId?: string, name?: string) => {
+    const u = useUniverseStore.getState()
+    let w = worldId ? u.worlds.get(worldId) : undefined
+    if (!w) {
+      const p = u.playerPosition
+      let best = Infinity
+      for (const c of u.worlds.values()) {
+        const d = Math.hypot(c.resolvedPosition.x - p.x, c.resolvedPosition.y - p.y, c.resolvedPosition.z - p.z)
+        if (d < best) {
+          best = d
+          w = c
+        }
+      }
+    }
+    if (!w) return console.warn('[wave] no world to beam')
+    const r = u.mana?.frontierRadius ?? 100
+    useWaveStore.getState().trigger({ fromRadius: r * 0.97, toRadius: r, preview: true, message: cardLine(name, w.name), beamWorldId: w.id })
+  }
+  ;(window as unknown as { awebornCard: typeof previewCard }).awebornCard = previewCard
+}
+
+/** The recognition line for a card (Phase 05 card swell). */
+export function cardLine(name: string | undefined, worldName: string): string {
+  return name ? `★ ${name} brought a card of ${worldName} into the world` : `★ A card of ${worldName} came into the world`
+}
+
+/** A card beam's strength 0…1 (rise, hold, fade), or null when there's none. */
+export function beamStrength(now: number = performance.now()): number | null {
+  const b = useWaveStore.getState().beam
+  if (!b) return null
+  const t = (now - b.startedAt) / 1000
+  if (t < 0 || t > CARD_BEAM_S) return null
+  const rise = Math.min(1, t / 1.2)
+  const fade = Math.min(1, (CARD_BEAM_S - t) / 3)
+  return rise * rise * (3 - 2 * rise) * fade
 }
