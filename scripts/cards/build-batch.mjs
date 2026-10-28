@@ -6,6 +6,8 @@
  *   MANA_ADMIN_TOKEN=… node scripts/cards/build-batch.mjs --orders
  *   # Any worlds (curated / event runs), N cards each:
  *   node scripts/cards/build-batch.mjs --worlds <id>[,<id>…] [--qty 50]
+ *   # Every world of a card set (M6d; sets live on the sync-service, admin-cards.html → Sets):
+ *   node scripts/cards/build-batch.mjs --set <set-id> [--qty 50]
  *
  * Options
  *   --status <s>       order status to print (default approved)
@@ -13,9 +15,13 @@
  *   --site <url>       site with /card-art.html (default https://aweborn.org). Its build talks to
  *                      its own sync-service, so pair them: --site http://localhost:5173 --api http://localhost:1234
  *   --out <dir>        default cards/batches/<YYYY-MM-DD-HHMM> (git-ignored: may hold buyers' photos)
- *   --ghost <id,…>     draw these worlds in the Dreamt ghost look (default: the world as it is now)
+ *   --ghost <id,…>     draw these worlds in the Dreamt ghost look. Orders already carry their edition
+ *                      (ordered while the world was a Ghost → Dreamt); --worlds/--set use the world as it is now
  *   --creator-names    print the creator's character name (default "a fellow explorer"; see Phase 08)
  *   --dry-run          check worlds and write the manifests only (no art, no fronts)
+ *
+ * A world in a card set prints that set's name and number ("07 / 12"; none for one-card sets);
+ * other worlds print "World Index", like their in-game card.
  *
  * Every world is checked first (Card Invariant #3): it must be in the universe and resolved, and its
  * name must be printable in the card font. Problems go to skipped.csv; the rest print.
@@ -68,6 +74,7 @@ function usage(msg) {
   if (msg) console.error(`✗ ${msg}\n`);
   console.error("Usage: MANA_ADMIN_TOKEN=… node scripts/cards/build-batch.mjs --orders [--status approved]");
   console.error("       node scripts/cards/build-batch.mjs --worlds <id>[,<id>…] [--qty N]");
+  console.error("       node scripts/cards/build-batch.mjs --set <set-id> [--qty N]");
   console.error("Options: --api <url> --site <url> --out <dir> --ghost <id,…> --creator-names --dry-run");
   process.exit(2);
 }
@@ -112,19 +119,40 @@ async function creatorLabels(creators) {
   return out;
 }
 
+/** Card sets (M6d): world → { set, number } (first set wins), and the sets by id. Older servers have none. */
+const sets = await getJson(`${API}/card-sets`).then((r) => r.sets ?? []).catch(() => []);
+const setOf = new Map();
+for (const s of sets) {
+  s.worldIds.forEach((id, i) => {
+    if (setOf.has(id)) return;
+    // shared/cards.ts cardSetNumber(): "07 / 12", at least 2 digits, none for a one-card set
+    const width = Math.max(2, String(s.worldIds.length).length);
+    const number = s.worldIds.length > 1 ? `${String(i + 1).padStart(width, "0")} / ${String(s.worldIds.length).padStart(width, "0")}` : "";
+    setOf.set(id, { name: s.name, number });
+  });
+}
+
 // ── 1. What to print ───────────────────────────────────────────────────
-/** @type {{ orderId: string, worldId: string, orderName?: string, quantity: number, art: "card"|"photo" }[]} */
+/** @type {{ orderId: string, worldId: string, orderName?: string, quantity: number, art: "card"|"photo", dreamt?: boolean }[]} */
 let items = [];
+const qty = Math.max(1, Math.min(10_000, Math.round(Number(opt("qty", "1"))) || 1));
 if (flag("orders")) {
   const token = process.env.MANA_ADMIN_TOKEN;
   if (!token) usage("--orders needs MANA_ADMIN_TOKEN (the admin token) in the environment");
   const status = opt("status", "approved");
   const { orders } = await getJson(`${API}/api/admin/cards?status=${encodeURIComponent(status)}`, { Authorization: `Bearer ${token}` });
-  items = orders.map((o) => ({ orderId: o.id, worldId: o.worldId, orderName: o.worldName, quantity: o.quantity, art: o.art ?? "card" }));
+  items = orders.map((o) => ({
+    orderId: o.id, worldId: o.worldId, orderName: o.worldName, quantity: o.quantity, art: o.art ?? "card",
+    dreamt: o.edition === "dreamt" || GHOST.has(o.worldId),
+  }));
   console.log(`${orders.length} ${status} order(s) from ${API}`);
+} else if (opt("set")) {
+  const s = sets.find((x) => x.id === opt("set"));
+  if (!s) usage(`no card set "${opt("set")}" on ${API} (sets: ${sets.map((x) => x.id).join(", ") || "none"})`);
+  items = s.worldIds.map((worldId) => ({ orderId: "", worldId, quantity: qty, art: "card", dreamt: GHOST.has(worldId) || undefined }));
+  console.log(`Set "${s.name}": ${s.worldIds.length} world(s) × ${qty}`);
 } else if (opt("worlds")) {
-  const qty = Math.max(1, Math.min(10_000, Math.round(Number(opt("qty", "1"))) || 1));
-  items = list(opt("worlds")).map((worldId) => ({ orderId: "", worldId, quantity: qty, art: "card" }));
+  items = list(opt("worlds")).map((worldId) => ({ orderId: "", worldId, quantity: qty, art: "card", dreamt: GHOST.has(worldId) || undefined }));
 } else {
   usage();
 }
@@ -167,14 +195,15 @@ if (!ready.length) {
 
 // ── 3. Art: the order's photo, else the World Index picture (/card-art.html) ──
 let browser = null;
-async function worldIndexArt(worldId) {
+async function worldIndexArt(worldId, dreamt) {
   if (!browser) {
     const puppeteer = require("puppeteer-core");
     browser = await puppeteer.launch({ executablePath: CHROME, headless: "new", args: ["--enable-webgl", "--ignore-gpu-blocklist"] });
   }
   const page = await browser.newPage();
   try {
-    const ghost = GHOST.has(worldId) ? "&ghost=1" : "";
+    // true → Dreamt (ghost) look; false → solid; undefined → the world as it is now
+    const ghost = dreamt === undefined ? "" : `&ghost=${dreamt ? 1 : 0}`;
     await page.goto(`${SITE}/card-art.html?w=${worldId}&size=${ART.w}x${ART.h}${ghost}`, { waitUntil: "load", timeout: 30_000 });
     await page.waitForFunction(() => document.body.dataset.ready, { timeout: 30_000 });
     const { url, error } = await page.evaluate(() => ({ url: window.__cardArt, error: window.__cardArtError }));
@@ -205,7 +234,7 @@ async function qrDecodes(png, url) {
   return true;
 }
 
-const manifest = [["n", "order_id", "world_id", "world_name", "quantity", "url", "art", "front_svg", "front_png", "qr_ok"]];
+const manifest = [["n", "order_id", "world_id", "world_name", "quantity", "url", "set", "set_number", "edition", "art", "front_svg", "front_png", "qr_ok"]];
 const encode = [["card_no", "order_id", "world_id", "url"]];
 const trimmed = [];
 let cardNo = 0;
@@ -216,6 +245,8 @@ for (const [i, r] of ready.entries()) {
   const n = String(i + 1).padStart(Math.max(2, pad), "0");
   const url = worldUrl(r.worldId);
   const base = `${n}-${slug(r.name)}`;
+  const label = setOf.get(r.worldId) ?? { name: "World Index", number: "" };
+  const edition = r.dreamt ? "dreamt" : r.dreamt === false ? "solid" : r.world.solidified === false ? "dreamt" : "solid";
   let art = r.art;
   let svgFile = "";
   let pngFile = "";
@@ -227,7 +258,7 @@ for (const [i, r] of ready.entries()) {
       art = "card";
     }
     try {
-      artHref ??= await worldIndexArt(r.worldId);
+      artHref ??= await worldIndexArt(r.worldId, r.dreamt);
     } catch (err) {
       console.error(`✗ ${r.orderId || r.worldId}: couldn't render the art (${err.message}). Is ${SITE}/card-art.html deployed?`);
       skipped.push([r.orderId, r.worldId, r.name, `art failed: ${err.message}`]);
@@ -241,8 +272,8 @@ for (const [i, r] of ready.entries()) {
         creator: creators.get(r.world.creator),
         coords: formatCoords(r.world.position ?? { x: 0, y: 0, z: 0 }),
         sector: r.world.sector ?? "0:0:0",
-        setName: "World Index", // what the in-game card footer says
-        setNumber: "",
+        setName: label.name, // a card set's name, else "World Index" (what the in-game card footer says)
+        setNumber: label.number,
         artHref,
       },
       QR,
@@ -267,9 +298,9 @@ for (const [i, r] of ready.entries()) {
         .toBuffer(),
     );
   }
-  manifest.push([n, r.orderId, r.worldId, r.name, r.quantity, url, art, svgFile, pngFile, qrOk]);
+  manifest.push([n, r.orderId, r.worldId, r.name, r.quantity, url, label.name, label.number, edition, art, svgFile, pngFile, qrOk]);
   for (let q = 0; q < r.quantity; q++) encode.push([++cardNo, r.orderId, r.worldId, url]);
-  console.log(`✓ ${n} ${r.name} ×${r.quantity} (${art})${qrOk ? ` QR ${qrOk === "yes" ? "✓" : "✗"}` : ""}`);
+  console.log(`✓ ${n} ${r.name} ×${r.quantity} (${art}${edition === "dreamt" ? ", Dreamt" : ""}${label.number ? `, ${label.name} ${label.number}` : ""})${qrOk ? ` QR ${qrOk === "yes" ? "✓" : "✗"}` : ""}`);
 }
 await browser?.close();
 

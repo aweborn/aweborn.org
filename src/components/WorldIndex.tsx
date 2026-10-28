@@ -22,6 +22,7 @@ import { CardCheckout } from './CardCheckout'
 import { CARD_CHECKOUT_ON } from '../lib/cardCheckout'
 import { CARD_PRICE_CENTS, type CardArt } from '@aweborn/shared/cards'
 import { usePhotoStore } from '../stores/photoStore'
+import { groupBySet, refreshCardSets, setLabels, useCardSets, type CardSetLabel } from '../lib/cardSets'
 
 /**
  * World Index (Phase 08B): every world you've found, as cards. Press M (or
@@ -48,6 +49,9 @@ function counts(entries: Map<string, WorldIndexEntry>) {
   for (const e of entries.values()) if (e.state === 'visited') visited++
   return { visited, sighted: entries.size - visited, total: entries.size }
 }
+
+const byRecent = (a: WorldIndexEntry, b: WorldIndexEntry) =>
+  (b.lastVisitedAt ?? b.discoveredAt) - (a.lastVisitedAt ?? a.discoveredAt)
 
 // ── HUD chip ─────────────────────────────────────────────────────────
 
@@ -134,6 +138,7 @@ export function WorldIndex() {
       d.showModal()
       inputManager.setEnabled(false)
       void refresh()
+      refreshCardSets()
     } else if (!open && d.open) {
       d.close()
     }
@@ -164,11 +169,50 @@ export function WorldIndex() {
   const list = useMemo(() => {
     const all = [...entries.values()]
       .filter((e) => filter === 'all' || e.state === filter)
-      .sort((a, b) => (b.lastVisitedAt ?? b.discoveredAt) - (a.lastVisitedAt ?? a.discoveredAt))
+      .sort(byRecent)
     return all
   }, [entries, filter])
+  const cardSets = useCardSets()
+  const labels = useMemo(() => setLabels(cardSets), [cardSets])
+  // "All" groups by set (M6d); Visited / Sighted stay one flat list
+  const grouped = useMemo(() => {
+    if (filter !== 'all') return null
+    const g = groupBySet(entries, cardSets, isFaceUp)
+    return g.groups.length ? { groups: g.groups, rest: g.rest.sort(byRecent) } : null
+  }, [entries, cardSets, filter])
 
   const selected = selectedId ? entries.get(selectedId) ?? null : null
+  // A world can sit in two sets: only its first card keeps the plain id
+  const shown = new Set<string>()
+
+  const renderCard = (e: WorldIndexEntry, i: number, setId = '', number = '') => {
+    const idSuffix = shown.has(e.worldId) && setId ? `-${setId}` : ''
+    shown.add(e.worldId)
+    return (
+    <li key={e.worldId} className="wi-item" style={{ '--wi-i': Math.min(i, 24) } as CSSProperties}>
+      <button
+        type="button"
+        id={`wi-card-${e.worldId}${idSuffix}`}
+        className="wi-card-btn"
+        onClick={() => setSelectedId(e.worldId)}
+        aria-label={`${e.world?.name ?? 'A faded world'}, ${isFaceUp(e) && e.worldId !== ORIGIN_WORLD_ID ? 'visited' : e.state}${number ? `, card ${number}` : ''}`}
+      >
+        <WorldCard entry={e} myCharacters={characters} tilt setLabel={labels.get(e.worldId)} />
+      </button>
+      <span className="wi-caption">
+        {isFaceUp(e) ? (
+          <span className="wi-caption-state">{e.worldId === ORIGIN_WORLD_ID ? 'The Portal' : 'Visited'}</span>
+        ) : (
+          <>
+            <span className="wi-caption-name">{e.world?.name ?? 'Faded world'}</span>
+            <span className="wi-caption-state">Sighted</span>
+          </>
+        )}
+        {e.pending && <span className="wi-pending" title="Saved on this device. It syncs when you're online." />}
+      </span>
+    </li>
+    )
+  }
 
   return (
     <dialog
@@ -219,6 +263,7 @@ export function WorldIndex() {
             key={selected.worldId}
             entry={selected}
             characters={characters}
+            setLabel={labels.get(selected.worldId)}
             startBuying={buyFirst}
             onBack={() => { setSelectedId(null); setBuyFirst(false) }}
             onWarp={() => setOpen(false)}
@@ -232,32 +277,54 @@ export function WorldIndex() {
           <div className="wi-empty wi-empty--filtered">
             <p>{filter === 'visited' ? 'No visited worlds yet. Step inside one to reveal its card.' : 'Nothing waiting. Every world you\u2019ve sighted, you\u2019ve visited.'}</p>
           </div>
+        ) : grouped ? (
+          <div className="wi-scroll">
+            {grouped.groups.map((g) => {
+              const headId = `wi-set-${g.set.id}`
+              return (
+                <section key={g.set.id} className="wi-set" aria-labelledby={headId}>
+                  <header className="wi-set-head">
+                    <h3 id={headId} className="wi-set-name">{g.set.name}</h3>
+                    <span className="wi-set-count">
+                      <strong>{g.discovered}</strong> / {g.slots.length} discovered
+                    </span>
+                    <progress className="wi-set-progress" max={g.slots.length} value={g.discovered} aria-labelledby={headId} />
+                  </header>
+                  <ul className="wi-grid wi-grid--set" aria-label={`${g.set.name} cards`}>
+                    {g.slots.map((s, i) =>
+                      s.entry ? (
+                        renderCard(s.entry, i, g.set.id, s.number)
+                      ) : (
+                        <li key={s.worldId} className="wi-item wi-item--missing" style={{ '--wi-i': Math.min(i, 24) } as CSSProperties}>
+                          <div className="wi-missing" role="img" aria-label={`Card ${s.number || i + 1}: not found yet`}>
+                            <img src="/cards/back.svg" alt="" draggable={false} />
+                            {s.number && <span className="wi-missing-no">{s.number.split(' / ')[0]}</span>}
+                          </div>
+                          <span className="wi-caption">
+                            <span className="wi-caption-state">Not found yet</span>
+                          </span>
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </section>
+              )
+            })}
+            {grouped.rest.length > 0 && (
+              <section className="wi-set" aria-labelledby="wi-set-rest">
+                <header className="wi-set-head">
+                  <h3 id="wi-set-rest" className="wi-set-name">Other worlds</h3>
+                  <span className="wi-set-count"><strong>{grouped.rest.length}</strong> found</span>
+                </header>
+                <ul className="wi-grid wi-grid--set" aria-label="Other worlds">
+                  {grouped.rest.map((e, i) => renderCard(e, i))}
+                </ul>
+              </section>
+            )}
+          </div>
         ) : (
           <ul className="wi-grid" aria-label="Your worlds">
-            {list.map((e, i) => (
-              <li key={e.worldId} className="wi-item" style={{ '--wi-i': Math.min(i, 24) } as CSSProperties}>
-                <button
-                  type="button"
-                  id={`wi-card-${e.worldId}`}
-                  className="wi-card-btn"
-                  onClick={() => setSelectedId(e.worldId)}
-                  aria-label={`${e.world?.name ?? 'A faded world'}, ${isFaceUp(e) && e.worldId !== ORIGIN_WORLD_ID ? 'visited' : e.state}`}
-                >
-                  <WorldCard entry={e} myCharacters={characters} tilt />
-                </button>
-                <span className="wi-caption">
-                  {isFaceUp(e) ? (
-                    <span className="wi-caption-state">{e.worldId === ORIGIN_WORLD_ID ? 'The Portal' : 'Visited'}</span>
-                  ) : (
-                    <>
-                      <span className="wi-caption-name">{e.world?.name ?? 'Faded world'}</span>
-                      <span className="wi-caption-state">Sighted</span>
-                    </>
-                  )}
-                  {e.pending && <span className="wi-pending" title="Saved on this device. It syncs when you're online." />}
-                </span>
-              </li>
-            ))}
+            {list.map((e, i) => renderCard(e, i))}
           </ul>
         )}
       </div>
@@ -270,12 +337,14 @@ export function WorldIndex() {
 function WorldDetail({
   entry,
   characters,
+  setLabel,
   startBuying = false,
   onBack,
   onWarp,
 }: {
   entry: WorldIndexEntry
   characters: readonly string[]
+  setLabel?: CardSetLabel
   startBuying?: boolean
   onBack: () => void
   onWarp: () => void
@@ -334,7 +403,7 @@ function WorldDetail({
       </button>
       <div className={`wi-detail-body${buying ? ' wi-detail-body--buying' : ''}`}>
         <div className="wi-detail-card">
-          <WorldCard entry={entry} myCharacters={characters} tilt live artUrl={buying && art === 'photo' ? shot?.url : undefined} />
+          <WorldCard entry={entry} myCharacters={characters} tilt live setLabel={setLabel} artUrl={buying && art === 'photo' ? shot?.url : undefined} />
         </div>
         {buying ? (
           <div className="wi-detail-info">
@@ -374,6 +443,12 @@ function WorldDetail({
                 {dateFmt.format(entry.discoveredAt)} · {found}
               </dd>
             </div>
+            {setLabel && (
+              <div>
+                <dt>Set</dt>
+                <dd>{setLabel.name}{setLabel.number && <span className="wi-mono"> · {setLabel.number}</span>}</dd>
+              </div>
+            )}
             {!isOrigin && (
               <div>
                 <dt>Edition</dt>

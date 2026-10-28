@@ -113,8 +113,72 @@ export interface CardOrderPublic {
   quantity: number;
   arrival: CardArrival;
   art: CardArt;
+  /** The world's look when ordered (a Ghost world prints its Dreamt art, Phase 08). */
+  edition: CardEdition;
   status: CardOrderStatus;
   createdAt: number;
   paidAt: number | null;
   shippedAt: number | null;
+}
+
+/**
+ * A card's edition (Phase 08 Dreamt edition): a card collected, or ordered,
+ * while its world is still a Ghost is a Dreamt card (wireframe art + "◇ Dreamt").
+ */
+export type CardEdition = "dreamt" | "solid";
+
+// ── Card sets (Rough Draft M6d; ROADMAP World Index "Collector view") ──
+//
+// A set is an ordered list of worlds Aweborn curates (the Origin Set, an
+// event's venue worlds, seasonal sets). The World Index groups by set and
+// shows "7 / 12 discovered"; printed cards carry the set name and number.
+// Worlds in no set print as "World Index".
+
+export interface CardSet {
+  /** Slug: lowercase letters, digits and dashes (e.g. "origin", "fall-meetup-2026"). */
+  id: string;
+  /** Printed on the card (upper-cased there) and shown in the World Index. */
+  name: string;
+  /** In set order: card 1 is worldIds[0]. */
+  worldIds: string[];
+}
+
+export const ORIGIN_SET_ID = "origin";
+export const CARD_SET_LIMITS = { maxSets: 200, maxWorlds: 100, nameMax: 40 } as const;
+
+export const isCardSetId = (s: unknown): s is string =>
+  typeof s === "string" && /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(s);
+
+/** "01 / 12" (padded to the set's width, at least 2 digits); "" for a one-card set (Origin prints none). */
+export function cardSetNumber(index: number, size: number): string {
+  if (size <= 1 || index < 0 || index >= size) return "";
+  const width = Math.max(2, String(size).length);
+  return `${String(index + 1).padStart(width, "0")} / ${String(size).padStart(width, "0")}`;
+}
+
+/** An admin's set from a request body, checked (world ids must look like world ids; existence is the caller's job). */
+export function parseCardSet(
+  body: unknown,
+  isWorldId: (s: string) => boolean,
+): { ok: true; set: CardSet } | { ok: false; message: string } {
+  const b = (body ?? {}) as { id?: unknown; name?: unknown; worldIds?: unknown };
+  if (!isCardSetId(b.id)) return { ok: false, message: "id: lowercase letters, digits and dashes, up to 40" };
+  const name = typeof b.name === "string" ? b.name.replace(/\s+/g, " ").trim() : "";
+  // eslint-disable-next-line no-control-regex
+  if (!name || name.length > CARD_SET_LIMITS.nameMax || /[\u0000-\u001f\u007f]/.test(name)) {
+    return { ok: false, message: `name: 1–${CARD_SET_LIMITS.nameMax} characters` };
+  }
+  if (!Array.isArray(b.worldIds) || b.worldIds.length === 0 || b.worldIds.length > CARD_SET_LIMITS.maxWorlds) {
+    return { ok: false, message: `worldIds: 1–${CARD_SET_LIMITS.maxWorlds} world ids` };
+  }
+  const worldIds: string[] = [];
+  const seen = new Set<string>();
+  for (const v of b.worldIds) {
+    const id = typeof v === "string" ? v.trim().toLowerCase() : "";
+    if (!isWorldId(id)) return { ok: false, message: `not a world id: ${String(v).slice(0, 60)}` };
+    if (seen.has(id)) return { ok: false, message: `listed twice: ${id}` };
+    seen.add(id);
+    worldIds.push(id);
+  }
+  return { ok: true, set: { id: b.id, name, worldIds } };
 }

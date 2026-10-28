@@ -12,6 +12,7 @@ import {
   startLive,
   type CardLook,
 } from '../lib/cardArt'
+import type { CardSetLabel } from '../lib/cardSets'
 
 /**
  * A World Index card. Face-up = an HTML replica of the printed front
@@ -119,10 +120,12 @@ interface WorldCardProps {
   live?: boolean
   /** A photo in the art window instead of the rendered orb (photo-mode card art, M6b). */
   artUrl?: string
+  /** The card's set (M6d): name in the footer, number top-right. Default: "World Index". */
+  setLabel?: CardSetLabel
   className?: string
 }
 
-export function WorldCard({ entry, myCharacters, tilt = false, face, live = false, artUrl, className }: WorldCardProps) {
+export function WorldCard({ entry, myCharacters, tilt = false, face, live = false, artUrl, setLabel, className }: WorldCardProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [hovered, setHovered] = useState(false)
   const showFront = face ? face === 'front' : isFaceUp(entry)
@@ -162,8 +165,9 @@ export function WorldCard({ entry, myCharacters, tilt = false, face, live = fals
       onPointerLeave={tilt ? onLeave : undefined}
     >
       {showFront ? (
-        <div className="wc-face wc-front">
+        <div className={`wc-face wc-front${setLabel?.number ? ' wc-front--numbered' : ''}`}>
           <span className="wc-name">{w?.name ?? 'A faded world'}</span>
+          {setLabel?.number && <span className="wc-setno">{setLabel.number}</span>}
           {dreamt && (
             <span className="wc-edition" title="Dreamt Edition — discovered while still a Ghost outside the Living Frontier">
               ◇ Dreamt
@@ -186,7 +190,7 @@ export function WorldCard({ entry, myCharacters, tilt = false, face, live = fals
           )}
           <span className="wc-rule" />
           <Mark className="wc-mark" />
-          <span className="wc-set">World Index</span>
+          <span className="wc-set">{setLabel?.name ?? 'World Index'}</span>
           <span className="wc-hint">aweborn.org</span>
           {entry.visitCount > 0 && (
             <span className="wc-visits" title={`${entry.visitCount} visit${entry.visitCount === 1 ? '' : 's'}`}>

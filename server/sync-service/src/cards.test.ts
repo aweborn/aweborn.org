@@ -6,6 +6,7 @@ import { CardOrders, ORDERS_PER_HOUR, PENDING_TTL_MS } from "./cards.js";
 import { cardCreativeBase, clampQuantity, isCardOrderId, jpegSize, cardPhotoFits, CARD_MAX_QUANTITY, CARD_PHOTO } from "../../../shared/cards.js";
 
 const WORLD = "11111111-2222-4333-8444-555555555555";
+const GHOST = "33333333-2222-4333-8444-555555555555";
 
 /** A minimal JPEG header (SOI, APP0, SOF0, EOI): enough for the size check; the server never decodes pixels. */
 function fakeJpeg(width: number, height: number, pad = 0): Buffer {
@@ -23,7 +24,8 @@ function setup(opts: { unsafe?: boolean } = {}) {
   const mails: { to: string; subject: string; text: string }[] = [];
   const cards = new CardOrders(db, {
     mana,
-    world: (id) => (id === WORLD ? { id, name: "Moss Hill", resolvedAt: 1 } : null),
+    world: (id) => (id === WORLD ? { id, name: "Moss Hill", resolvedAt: 1 }
+      : id === GHOST ? { id, name: "Far Mist", resolvedAt: 1, solidified: false } : null),
     nameOf: (p) => (p === "named" ? "Alex" : null),
     check: async () => (opts.unsafe ? { ok: false, message: "no" } : { ok: true }),
     email: async (to, subject, text) => { mails.push({ to, subject, text }); },
@@ -41,6 +43,15 @@ test("helpers: order ids, quantity, creative split", () => {
   // $9 card, net ≈ $8.44 after Stripe: creative counts after est. $1 card + $4 order
   assert.equal(cardCreativeBase(8.44, 1), 3.44);
   assert.equal(cardCreativeBase(3, 1), 0);
+});
+
+test("checkout: an order of a Ghost world prints its Dreamt edition (Phase 08)", async () => {
+  const { cards } = setup();
+  const solid = await cards.create("p", { worldId: WORLD });
+  const ghost = await cards.create("p", { worldId: GHOST });
+  assert.ok(solid.ok && solid.order.edition === "solid");
+  assert.ok(ghost.ok && ghost.order.edition === "dreamt");
+  if (ghost.ok) assert.equal(cards.publicView(ghost.order.id)?.edition, "dreamt");
 });
 
 test("checkout: needs a real world, clamps input, and checks the printed name", async () => {

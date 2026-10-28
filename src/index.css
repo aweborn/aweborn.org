@@ -2908,6 +2908,95 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
   animation: pa-orb-breathe 2.4s ease-in-out infinite;
 }
 
+/* ── Sets (M6d): sections with "n / total discovered" ── */
+.wi-scroll {
+  margin: 0 calc(-1 * var(--space-sm));
+  padding: var(--space-xs) var(--space-sm) var(--space-lg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(238, 240, 246, 0.15) transparent;
+}
+.wi-set + .wi-set { margin-top: var(--space-xl); }
+.wi-set-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.45rem var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+.wi-set-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  color: var(--color-text-primary);
+}
+.wi-set-count {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+.wi-set-count strong { font-weight: 600; color: var(--color-accent-secondary); }
+.wi-set-progress {
+  --progress-bar-radius: 1e5px;
+  grid-column: 1 / -1;
+  appearance: none;
+  border: 0 solid;
+  overflow: clip;
+  inline-size: 100%;
+  block-size: 4px;
+  border-radius: var(--progress-bar-radius);
+  background: rgba(238, 240, 246, 0.09);
+}
+.wi-set-progress::-webkit-progress-bar { background: transparent; }
+.wi-set-progress::-webkit-progress-value {
+  background: linear-gradient(90deg, #5b8cb8, #a480b8 55%, var(--color-accent-secondary));
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.3s;
+}
+.wi-set-progress::-moz-progress-bar {
+  background: linear-gradient(90deg, #5b8cb8, #a480b8 55%, var(--color-accent-secondary));
+  border-radius: var(--progress-bar-radius);
+}
+.wi-grid--set {
+  margin: 0;
+  padding: var(--space-xs) 0 0;
+  overflow: visible;
+}
+.wi-missing {
+  display: grid;
+  aspect-ratio: 63 / 88;
+  border-radius: 4.8% / 3.4%;
+  overflow: hidden;
+  outline: 1px dashed rgba(238, 240, 246, 0.22);
+  outline-offset: -1px;
+}
+.wi-missing > * { grid-area: 1 / 1; }
+.wi-missing img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0.22;
+  filter: grayscale(0.8);
+}
+.wi-missing-no {
+  place-self: center;
+  padding: 0.2em 0.75em;
+  border: 1px solid rgba(238, 240, 246, 0.16);
+  border-radius: var(--radius-full);
+  background: rgba(5, 5, 16, 0.78);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
 .wi-empty {
   display: flex;
   flex-direction: column;
@@ -3610,6 +3699,10 @@ body.photo-mode .canvas-container > div > :not(:has(> canvas)) {
 .wc-set {
   left: calc(11.6 * var(--mm));
   top: calc(75.1 * var(--mm));
+  max-width: calc(34 * var(--mm)); /* the print's maxWidth; long set names ellipsize here, shrink in print */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: calc(2.3 * var(--mm));
   font-weight: 500;
   letter-spacing: 0.18em;
@@ -3617,6 +3710,17 @@ body.photo-mode .canvas-container > div > :not(:has(> canvas)) {
   line-height: 1;
   color: #d4d4d8;
 }
+/* Set number, top-right on the name's line (front.mjs: right edge 61.5 mm with bleed, muted 2.2 mm) */
+.wc-setno {
+  right: calc(4.5 * var(--mm));
+  top: calc(7.1 * var(--mm));
+  font-size: calc(2.2 * var(--mm));
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  color: #acacb4;
+}
+.wc-front--numbered .wc-name { right: calc(17 * var(--mm)); }
 .wc-hint {
   left: calc(11.6 * var(--mm));
   top: calc(78.9 * var(--mm));

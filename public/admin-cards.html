@@ -18,7 +18,7 @@
       input, select { font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; outline: none; min-height: 44px; }
       .bar input { flex: 1; min-width: 12rem; }
       input:focus, select:focus { border-color: var(--accent); }
-      button { font: inherit; font-size: 13px; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; min-height: 40px; cursor: pointer; transition: background 0.15s, transform 0.15s; }
+      button { font: inherit; font-size: 13px; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; min-height: 44px; cursor: pointer; transition: background 0.15s, transform 0.15s; }
       button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
       button:disabled { opacity: 0.5; cursor: default; }
       button.primary { color: #1a1206; border: none; font-weight: 600; background: linear-gradient(135deg, #ffd27a, #ff9f5a); }
@@ -38,10 +38,18 @@
       .photo { justify-self: start; font-size: 12px; color: var(--dim); }
       .photo img { display: block; width: min(220px, 100%); height: auto; border-radius: 8px; border: 1px solid var(--border); }
       .actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-      .actions input { width: 8rem; min-height: 40px; padding: 6px 10px; font-size: 13px; }
+      .actions input { width: 8rem; min-height: 44px; padding: 6px 10px; font-size: 13px; }
       .msg { min-height: 1.4em; color: var(--dim); margin: 0 0 12px; }
       .msg.err { color: var(--danger); }
       .empty { color: var(--dim); text-align: center; padding: 40px 0; }
+      h2 { font-size: 18px; font-weight: 600; margin: 48px 0 4px; }
+      .set-form { display: grid; gap: 8px; margin-bottom: 14px; }
+      .set-form .row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .set-form .row input { flex: 1; min-width: 10rem; }
+      textarea { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; outline: none; min-height: 7rem; resize: vertical; width: 100%; }
+      textarea:focus { border-color: var(--accent); }
+      .ids { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); overflow-wrap: anywhere; white-space: pre-line; }
+      code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -64,6 +72,19 @@
       </form>
       <p class="msg" id="cards-msg" role="status"></p>
       <ul id="cards-list"></ul>
+
+      <h2 id="sets-title">Card sets</h2>
+      <p class="sub">A set groups worlds in everyone&rsquo;s World Index (&ldquo;7 / 12 discovered&rdquo;) and prints its name and number on the cards. Print a whole set with <code>node scripts/cards/build-batch.mjs --set &lt;id&gt; --qty 50</code>. Sets are public: only add worlds you&rsquo;re happy for everyone to see listed.</p>
+      <form class="set-form" id="set-form" autocomplete="off" aria-labelledby="sets-title">
+        <div class="row">
+          <input id="set-id" placeholder="id (e.g. fall-meetup-2026)" aria-label="Set id: lowercase letters, digits and dashes" maxlength="40" required />
+          <input id="set-name" placeholder="Name on the card (e.g. Fall Meetup)" aria-label="Set name" maxlength="40" required />
+        </div>
+        <textarea id="set-worlds" placeholder="World ids in card order, one per line (or /w/ links)" aria-label="World ids, in order" required></textarea>
+        <div class="row"><button class="primary" type="submit" id="set-save">Save set</button></div>
+      </form>
+      <p class="msg" id="sets-msg" role="status"></p>
+      <ul id="sets-list"></ul>
     </main>
     <script>
       const API = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'http://localhost:1234' : 'https://sync.aweborn.org'
@@ -104,7 +125,7 @@
 
         const bits = [
           'order ' + o.id,
-          'tap: ' + (o.arrival === 'land' ? 'land beside' : 'step inside'),
+          o.edition === 'dreamt' ? 'edition: Dreamt (ordered while a Ghost: ghost art)' : null,
           'art: ' + (o.art === 'photo' ? 'buyer\u2019s photo (check it)' : 'World Index picture'),
           'created ' + when(o.createdAt),
           o.paidAt ? 'paid ' + when(o.paidAt) : null,
@@ -199,9 +220,69 @@
         } catch (e) { say(e.message, true) }
       }
 
-      $('cards-login').addEventListener('submit', (e) => { e.preventDefault(); load() })
+      $('cards-login').addEventListener('submit', (e) => { e.preventDefault(); load(); loadSets() })
       filterEl.addEventListener('change', () => { if (tokenEl.value.trim()) load() })
       if (tokenEl.value) load()
+
+      // ── Card sets (M6d) ──
+      const setsMsg = $('sets-msg'), setsList = $('sets-list'), setForm = $('set-form')
+      const setSay = (text, err) => { setsMsg.textContent = text; setsMsg.className = 'msg' + (err ? ' err' : '') }
+      const WORLD_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+
+      function setRow(s) {
+        const li = el('li')
+        li.id = 'card-set-' + s.id
+        const top = el('div', 'top')
+        top.append(el('span', 'world', s.name), el('span', 'meta', s.id + ' \u00b7 ' + s.worldIds.length + ' card' + (s.worldIds.length === 1 ? '' : 's')))
+        li.append(top, el('div', 'ids', s.worldIds.map((id, i) => (i + 1) + '. ' + id).join('\n')))
+        const actions = el('div', 'actions')
+        const edit = el('button', '', 'Edit')
+        edit.type = 'button'
+        edit.id = 'set-edit-' + s.id
+        edit.onclick = () => {
+          $('set-id').value = s.id
+          $('set-name').value = s.name
+          $('set-worlds').value = s.worldIds.join('\n')
+          $('set-name').focus()
+        }
+        actions.append(edit)
+        if (s.id !== 'origin') {
+          const del = el('button', 'danger', 'Delete')
+          del.type = 'button'
+          del.id = 'set-delete-' + s.id
+          del.onclick = async () => {
+            if (!confirm('Delete the set \u201c' + s.name + '\u201d? Printed cards keep their set name.')) return
+            del.disabled = true
+            try { await call('/api/admin/card-sets/' + s.id, 'DELETE'); li.remove(); setSay(s.name + ' deleted.') }
+            catch (e) { del.disabled = false; setSay(e.message, true) }
+          }
+          actions.append(del)
+        }
+        li.append(actions)
+        return li
+      }
+
+      async function loadSets() {
+        try {
+          const { sets } = await call('/api/admin/card-sets', 'GET')
+          setsList.replaceChildren(...sets.map(setRow))
+        } catch (e) { setSay(e.message, true) }
+      }
+
+      setForm.addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const worldIds = ($('set-worlds').value.match(WORLD_RE) || []).map((x) => x.toLowerCase())
+        const body = { id: $('set-id').value.trim(), name: $('set-name').value.trim(), worldIds }
+        $('set-save').disabled = true
+        try {
+          const { set } = await call('/api/admin/card-sets', 'POST', body)
+          setSay('Saved \u201c' + set.name + '\u201d (' + set.worldIds.length + ' cards). Players see it within 5 minutes.')
+          setForm.reset()
+          loadSets()
+        } catch (err) { setSay(err.message, true) }
+        $('set-save').disabled = false
+      })
+      if (tokenEl.value) loadSets()
     </script>
   </body>
 </html>

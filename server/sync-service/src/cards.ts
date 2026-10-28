@@ -30,7 +30,7 @@ import type { ManaLedger } from "./mana.js";
 import {
   CARD_NEXT, CARD_ORDER_STATUSES, CARD_PHOTO, CARD_PRICE_CENTS, cardCreativeBase, cardOrderUrl, cardPhotoFits, clampQuantity,
   isCardOrderId, jpegSize,
-  type CardArrival, type CardArt, type CardOrderPublic, type CardOrderStatus,
+  type CardArrival, type CardArt, type CardEdition, type CardOrderPublic, type CardOrderStatus,
 } from "../../../shared/cards.js";
 import { isWorldId } from "../../../shared/crdt-schema.js";
 
@@ -41,7 +41,7 @@ export const ORDERS_PER_HOUR = 6;
 export const OPEN_PENDING_MAX = 3;
 
 interface OrderRow {
-  id: string; world_id: string; world_name: string; quantity: number; arrival: string; art: string; status: string;
+  id: string; world_id: string; world_name: string; quantity: number; arrival: string; art: string; edition: string; status: string;
   player_id: string | null; show_name: number; public_name: string | null; email: string | null;
   payment_ref: string | null; net_cents: number | null; cost_cents: number; tracking: string | null; note: string | null;
   created_at: number; updated_at: number; paid_at: number | null; shipped_at: number | null;
@@ -55,7 +55,7 @@ export interface CardOrderAdmin extends CardOrderPublic {
 export interface CardDeps {
   mana: ManaLedger;
   /** The world as it is now (null = gone). */
-  world: (id: string) => { id: string; name: string; resolvedAt: number } | null;
+  world: (id: string) => { id: string; name: string; resolvedAt: number; solidified?: boolean } | null;
   /** The buyer's character name, if they have one (for the opt-in swell line). */
   nameOf: (playerId: string) => string | null;
   /** Safety check of what will be printed. */
@@ -92,7 +92,7 @@ function readPhoto(v: unknown): { ok: true; jpeg: Buffer; width: number; height:
 function toPublic(r: OrderRow): CardOrderPublic {
   return {
     id: r.id, worldId: r.world_id, worldName: r.world_name, quantity: r.quantity, arrival: r.arrival as CardArrival,
-    art: (r.art ?? "card") as CardArt,
+    art: (r.art ?? "card") as CardArt, edition: (r.edition === "dreamt" ? "dreamt" : "solid") as CardEdition,
     status: r.status as CardOrderStatus, createdAt: r.created_at, paidAt: r.paid_at, shippedAt: r.shipped_at,
   };
 }
@@ -124,6 +124,8 @@ export class CardOrders {
     // M6b: art choice (older rows are the World Index picture)
     const cols = db.prepare("PRAGMA table_info(card_orders)").all() as { name: string }[];
     if (!cols.some((c) => c.name === "art")) db.exec("ALTER TABLE card_orders ADD COLUMN art TEXT NOT NULL DEFAULT 'card'");
+    // M6d: the world's look when ordered (older rows: solid; build-batch --ghost still overrides)
+    if (!cols.some((c) => c.name === "edition")) db.exec("ALTER TABLE card_orders ADD COLUMN edition TEXT NOT NULL DEFAULT 'solid'");
   }
 
   private dropPhoto(id: string): void {
@@ -185,9 +187,10 @@ export class CardOrders {
     const showName = b.showName === true;
     const id = newOrderId();
     this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO card_orders (id, world_id, world_name, quantity, arrival, art, status, player_id, show_name, public_name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`)
-        .run(id, worldId, w.name.slice(0, 60), quantity, arrival, photo?.ok ? "photo" : "card", playerId, showName ? 1 : 0,
+      this.db.prepare(`INSERT INTO card_orders (id, world_id, world_name, quantity, arrival, art, edition, status, player_id, show_name, public_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`)
+        .run(id, worldId, w.name.slice(0, 60), quantity, arrival, photo?.ok ? "photo" : "card", w.solidified === false ? "dreamt" : "solid",
+          playerId, showName ? 1 : 0,
           showName ? this.deps.nameOf(playerId) : null, now, now);
       if (photo?.ok) {
         this.db.prepare("INSERT INTO card_order_photos (order_id, jpeg, width, height, created_at) VALUES (?, ?, ?, ?, ?)")

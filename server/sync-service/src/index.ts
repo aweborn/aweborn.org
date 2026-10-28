@@ -23,6 +23,7 @@ import { isNature } from "../../../shared/sky.js";
 import { RunwayWatch } from "./runway.js";
 import { sendEmail } from "./email.js";
 import { CardOrders, CHECKOUT_BODY_LIMIT } from "./cards.js";
+import { CardSets } from "./card-sets.js";
 import { checkCreation } from "./safety.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
@@ -51,6 +52,7 @@ const cardOrders = new CardOrders(getDb(), {
   },
   email: (to, subject, text) => sendEmail({ to, subject, text, html: `<pre style="font:15px/1.5 system-ui,sans-serif;white-space:pre-wrap">${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</pre>` }),
 });
+const cardSets = new CardSets(getDb(), (id) => rooms.lookupWorld(id) !== null);
 
 // ── HTTP API (health, stats, world lookup) ───────────────────────────
 // CORS for the public HTTP API (GET only). Extra origins (comma-separated)
@@ -644,20 +646,30 @@ function handleManaPublic(req: IncomingMessage, res: ServerResponse): boolean {
  *   POST /api/cards/paid                   Stripe webhook Lambda (Bearer inflow or admin)
  *   GET  /api/admin/cards?status=          admin
  *   POST /api/admin/cards/:id              admin: { status, costDollars?, tracking?, note? }
+ *   GET  /card-sets                        public: curated sets (M6d, card-sets.ts)
+ *   GET/POST /api/admin/card-sets, DELETE /api/admin/card-sets/:id   admin
  */
 async function handleCards(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
   const isPublic = path.startsWith("/cards/orders/");
   const isServer = path.startsWith("/api/cards/");
   const isAdmin = path === "/api/admin/cards" || path.startsWith("/api/admin/cards/");
-  if (!isPublic && !isServer && !isAdmin) return false;
+  const isSets = path === "/card-sets";
+  const isSetsAdmin = path === "/api/admin/card-sets" || path.startsWith("/api/admin/card-sets/");
+  if (!isPublic && !isServer && !isAdmin && !isSets && !isSetsAdmin) return false;
   const cors = corsHeaders(req);
   const json = (status: number, body: unknown) => {
     res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...cors });
     res.end(JSON.stringify(body));
   };
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { ...cors, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Max-Age": "600" });
+    res.writeHead(204, { ...cors, "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Max-Age": "600" });
     res.end();
+    return true;
+  }
+  if (isSets) {
+    if (req.method !== "GET") return (json(405, { error: "method_not_allowed" }), true);
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "public, max-age=300", ...cors });
+    res.end(JSON.stringify({ sets: cardSets.list() }));
     return true;
   }
   if (isPublic) {
@@ -674,6 +686,19 @@ async function handleCards(req: IncomingMessage, res: ServerResponse, path: stri
     return (o ? json(200, { order: o }) : json(404, { error: "not_found" }), true);
   }
   const role = manaRole(req);
+  if (isSetsAdmin) {
+    if (role !== "admin") return (json(MANA_ADMIN_TOKEN ? 401 : 503, { error: MANA_ADMIN_TOKEN ? "unauthorized" : "admin_disabled" }), true);
+    if (path === "/api/admin/card-sets" && req.method === "GET") return (json(200, { sets: cardSets.list() }), true);
+    if (path === "/api/admin/card-sets" && req.method === "POST") {
+      const r = cardSets.upsert(await readJson(req).catch(() => null));
+      return (r.ok ? json(200, { set: r.set }) : json(r.status, { error: r.error, message: r.message }), true);
+    }
+    if (req.method === "DELETE") {
+      const r = cardSets.remove(path.slice("/api/admin/card-sets/".length));
+      return (r.ok ? json(200, { ok: true }) : json(r.status, { error: r.error, message: r.message }), true);
+    }
+    return (json(405, { error: "method_not_allowed" }), true);
+  }
   if (isAdmin) {
     if (role !== "admin") return (json(MANA_ADMIN_TOKEN ? 401 : 503, { error: MANA_ADMIN_TOKEN ? "unauthorized" : "admin_disabled" }), true);
     if (path === "/api/admin/cards" && req.method === "GET") {
@@ -703,7 +728,8 @@ async function handleCards(req: IncomingMessage, res: ServerResponse, path: stri
 // HTTP server (health checks + stats + world lookup + auth)
 const server = createServer((req, res) => {
   const urlPath = req.url?.split("?")[0] ?? "";
-  if (urlPath.startsWith("/cards/orders/") || urlPath.startsWith("/api/cards/") || urlPath.startsWith("/api/admin/cards")) {
+  if (urlPath.startsWith("/cards/orders/") || urlPath.startsWith("/api/cards/") || urlPath.startsWith("/api/admin/cards")
+    || urlPath === "/card-sets" || urlPath.startsWith("/api/admin/card-sets")) {
     handleCards(req, res, urlPath).catch((err: unknown) => {
       console.error("[cards]", err);
       if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
