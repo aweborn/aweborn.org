@@ -34,6 +34,7 @@ export function CreatePanel() {
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [suggestion, setSuggestion] = useState<string | null>(null)
   const [makings, setMakings] = useState<Making[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -101,6 +102,7 @@ export function CreatePanel() {
       if (!text || busy) return
       setBusy(true)
       setError(null)
+      setSuggestion(null)
       try {
         const res = await fetch(`${AUTH_URL}/api/player/create`, {
           method: 'POST',
@@ -108,9 +110,10 @@ export function CreatePanel() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: text }),
         })
-        const j = (await res.json().catch(() => ({}))) as { jobId?: string; message?: string; error?: string }
+        const j = (await res.json().catch(() => ({}))) as { jobId?: string; message?: string; error?: string; suggestion?: string }
         if (!res.ok || !j.jobId) {
           setError(j.message ?? (res.status === 401 ? 'Save your player first to make things.' : 'Something went wrong.'))
+          if (j.suggestion) setSuggestion(j.suggestion)
           return
         }
         setMakings((all) => [...all, { jobId: j.jobId!, prompt: text, progress: 0, status: 'queued' }])
@@ -169,6 +172,21 @@ export function CreatePanel() {
             {busy ? '…' : 'Make'}
           </button>
           {error && <p className="create-error">{error}</p>}
+          {suggestion && (
+            <button
+              id="create-use-suggestion"
+              type="button"
+              className="create-suggestion"
+              onClick={() => {
+                setPrompt(suggestion)
+                setSuggestion(null)
+                setError(null)
+                inputRef.current?.focus()
+              }}
+            >
+              Use this idea →
+            </button>
+          )}
         </form>
       ) : (
         <button

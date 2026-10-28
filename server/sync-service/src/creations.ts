@@ -15,6 +15,7 @@ import { Readable } from "node:stream";
 import type { RoomManager } from "./rooms.js";
 import { getDb } from "./persistence.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
+import { checkCreation, chargeCheck } from "./safety.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 
@@ -85,6 +86,14 @@ export async function startCreation(rooms: RoomManager, playerId: string, prompt
   const ref = `create:${randomUUID()}`;
   const decision = rooms.admission.requestDraw({ playerId, ref, estimate: MODEL_ESTIMATE_MANA, progress: PROVISIONAL_PROGRESS });
   if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
+
+  // Safety before Meshy ever sees it (M1)
+  const safe = await checkCreation(playerId, "make", [text], ref);
+  chargeCheck(rooms.mana, playerId, ref, safe.costUsd);
+  if (!safe.ok) {
+    rooms.mana.release(ref);
+    return json(422, { error: "unsafe", category: safe.category, message: safe.message, suggestion: safe.suggestion || undefined });
+  }
 
   try {
     const jobId = await startJob(ref, playerId, text);

@@ -13,6 +13,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { getDb } from "./persistence.js";
 import { cleanChatText } from "../../../shared/chat.js";
+import { listFlags } from "./safety.js";
 
 export const MAX_MUTES = 500;
 export const REPORT_REASONS = ["harassment", "hate", "sexual", "spam", "personal_info", "other"] as const;
@@ -152,6 +153,7 @@ export function resolveReport(id: number, resolution: string, now = Date.now()):
  * `/api/admin/reports*` (Bearer MANA_ADMIN_TOKEN):
  *   GET  /api/admin/reports?status=open|resolved → { reports }
  *   POST /api/admin/reports/:id/resolve { resolution } → { ok }
+ *   GET  /api/admin/reports/safety → { flags } (creation prompts the safety check blocked, newest first)
  */
 export function handleReportsAdmin(
   req: IncomingMessage,
@@ -185,6 +187,7 @@ export function handleReportsAdmin(
       const status = new URL(req.url ?? "/", "http://x").searchParams.get("status") === "resolved" ? "resolved" : "open";
       return json(200, { reports: listReports(status) });
     }
+    if (path === "/api/admin/reports/safety" && req.method === "GET") return json(200, { flags: listFlags(200) });
     const m = /^\/api\/admin\/reports\/(\d+)\/resolve$/.exec(path);
     if (m && req.method === "POST") {
       const body = (await readJson(req).catch(() => null)) as { resolution?: unknown } | null;

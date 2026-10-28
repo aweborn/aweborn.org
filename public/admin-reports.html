@@ -47,6 +47,7 @@
       <div class="bar" role="group" aria-label="Which reports">
         <button type="button" id="rep-open" aria-pressed="true">Open</button>
         <button type="button" id="rep-resolved" aria-pressed="false">Resolved</button>
+        <button type="button" id="rep-safety" aria-pressed="false">Blocked prompts</button>
       </div>
       <p class="msg" id="rep-msg" role="status"></p>
       <ul id="rep-list"></ul>
@@ -101,9 +102,29 @@
         return li
       }
 
+      function flagRow(f) {
+        const li = el('li')
+        const head = el('div', 'head')
+        head.append(el('span', 'reason', f.category.replace('_', ' ')))
+        head.append(el('span', 'meta', new Date(f.at).toLocaleString() + ' \u00B7 ' + f.surface + ' \u00B7 ' + f.layer + ' \u00B7 by: ' + (f.playerId || '?')))
+        li.append(head)
+        const lines = el('div', 'lines')
+        f.text.split('\n').forEach((t) => lines.append(el('p', null, t)))
+        li.append(lines)
+        return li
+      }
+
       async function load() {
         say('Loading\u2026'); list.replaceChildren()
         try {
+          if (status === 'safety') {
+            const j = await call('/api/admin/reports/safety', 'GET')
+            sessionStorage.setItem('aweborn-admin', tokenEl.value.trim())
+            if (!j.flags.length) { list.append(el('li', 'empty', 'Nothing blocked yet.')); say(''); return }
+            j.flags.forEach((f) => list.append(flagRow(f)))
+            say(j.flags.length + ' blocked (newest first). The planner and Make refused these before any generator saw them.')
+            return
+          }
           const j = await call('/api/admin/reports?status=' + status, 'GET')
           sessionStorage.setItem('aweborn-admin', tokenEl.value.trim())
           if (!j.reports.length) { list.append(el('li', 'empty', status === 'open' ? 'Nothing waiting. \u2728' : 'No resolved reports yet.')); say(''); return }
@@ -112,11 +133,10 @@
         } catch (e) { say(e.message, true) }
       }
 
-      for (const s of ['open', 'resolved']) {
+      for (const s of ['open', 'resolved', 'safety']) {
         $('rep-' + s).addEventListener('click', () => {
           status = s
-          $('rep-open').setAttribute('aria-pressed', String(s === 'open'))
-          $('rep-resolved').setAttribute('aria-pressed', String(s === 'resolved'))
+          for (const o of ['open', 'resolved', 'safety']) $('rep-' + o).setAttribute('aria-pressed', String(s === o))
           load()
         })
       }

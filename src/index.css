@@ -3747,6 +3747,7 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
   border-radius: var(--radius-full);
   animation: rise-in 0.25s var(--ease-out-expo) both;
 }
+.create-form:has(.create-error) { border-radius: 22px; }
 .create-input {
   flex: 1;
   min-width: 0;
@@ -3765,6 +3766,19 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
   font-size: var(--text-xs);
   color: #ffb4a0;
 }
+.create-suggestion {
+  min-height: 44px;
+  margin: 0 8px 4px;
+  padding: 0 16px;
+  font: 600 var(--text-sm) var(--font-body);
+  color: var(--color-accent-secondary);
+  background: rgba(255, 210, 140, 0.1);
+  border: 1px solid rgba(255, 210, 140, 0.35);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.create-suggestion:hover { background: rgba(255, 210, 140, 0.18); }
 .create-makings {
   list-style: none;
   margin: 0;

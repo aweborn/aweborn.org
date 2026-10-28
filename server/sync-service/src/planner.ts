@@ -18,6 +18,7 @@ import { getDb } from "./persistence.js";
 import { startJob } from "./creations.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
 import { estimate, parsePlannerTurn, LIMITS, ASSET_MANA, type Blueprint, type BlueprintDraft } from "../../../shared/blueprint.js";
+import { checkCreation, chargeCheck, type SafetyVerdict } from "./safety.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 
@@ -121,9 +122,10 @@ function loadSession(id: string): Session | undefined {
   const row = db().prepare("SELECT * FROM plan_sessions WHERE id = ?").get(id) as SessionRow | undefined;
   if (!row) return undefined;
   const history: Session["history"] = [];
-  for (const e of db().prepare("SELECT kind, payload FROM plan_events WHERE session_id = ? AND kind IN ('user','turn') ORDER BY seq").all(id) as { kind: string; payload: string }[]) {
+  for (const e of db().prepare("SELECT kind, payload FROM plan_events WHERE session_id = ? AND kind IN ('user','turn','blocked') ORDER BY seq").all(id) as { kind: string; payload: string }[]) {
     const p = JSON.parse(e.payload);
     if (e.kind === "user") history.push({ role: "user", content: p.message });
+    else if (e.kind === "blocked") history.pop(); // a refused request never becomes context
     else history.push({ role: "assistant", content: JSON.stringify({ reply: p.reply, chips: p.chips }) });
   }
   return { id: row.id, playerId: row.player_id, worldId: row.world_id, version: row.version, history, blueprint: row.blueprint ? JSON.parse(row.blueprint) : null };
@@ -221,12 +223,38 @@ export async function planTurn(rooms: RoomManager, playerId: string, body: unkno
       ]);
       parsed = parsePlannerTurn(extractJson(out.content));
     }
+    // Safety before the blueprint is shown (M1): everything the generators would get and the world would display.
+    // Not the player's raw words or the planner's reply: the planner declines gracefully on its own
+    // ("I can't make Mario… two original stone brothers"), and naming what it declined is fine.
+    let blocked: Extract<SafetyVerdict, { ok: false }> | null = null;
+    if (parsed.ok) {
+      const bpd = parsed.value.blueprint;
+      const safe = await checkCreation(playerId, "plan", [
+        bpd.name, bpd.style.artDirection, bpd.lore?.name ?? "", bpd.lore?.text ?? "",
+        ...bpd.assets.map((a) => a.prompt),
+      ], ref);
+      costUsd += safe.costUsd;
+      if (!safe.ok) blocked = safe;
+    }
     const mana = Math.round(costUsd * 100 * 1000) / 1000;
     rooms.mana.settle(ref, mana, `planner ${usedModel}`);
     if (!parsed.ok) {
       logEvent(s.id, "invalid", { errors: parsed.errors, final: true }, { ref, model: usedModel, costMana: mana });
       console.warn(`[plan] ${ref} invalid after repair:`, parsed.errors.join("; "));
       return json(502, { error: "plan_invalid", message: "The planner lost its thread. Try saying it another way." });
+    }
+    if (blocked) {
+      // Answer in the planner's voice; the blueprint stays as it was and the request is dropped from context
+      s.history.pop();
+      const reply = blocked.suggestion
+        ? `I can't make that one here. How about ${blocked.suggestion.replace(/[.!]+$/, "")}?`
+        : "I can't make that one here. What else could live in this world?";
+      const chips = blocked.suggestion ? [blocked.suggestion.slice(0, 60)] : [];
+      logEvent(s.id, "blocked", { category: blocked.category, reply, chips, refused: parsed.value }, { ref, model: usedModel, costMana: mana });
+      return json(200, {
+        sessionId: s.id, version: s.version, reply, chips, blueprint: s.blueprint, model: usedModel, mana,
+        remainingToday: decision.remainingToday, blocked: blocked.category,
+      });
     }
 
     const turn = parsed.value;
@@ -259,7 +287,7 @@ export function planResume(playerId: string, worldId: string, json: Json): void 
   if (!row) return json(200, { session: null });
   const s = getSession(row.id)!;
   const turns: { who: "you" | "planner"; text: string; chips?: string[]; meta?: string }[] = [];
-  for (const e of db().prepare("SELECT kind, model, cost_mana, payload FROM plan_events WHERE session_id = ? AND kind IN ('user','turn') ORDER BY seq").all(s.id) as { kind: string; model: string | null; cost_mana: number | null; payload: string }[]) {
+  for (const e of db().prepare("SELECT kind, model, cost_mana, payload FROM plan_events WHERE session_id = ? AND kind IN ('user','turn','blocked') ORDER BY seq").all(s.id) as { kind: string; model: string | null; cost_mana: number | null; payload: string }[]) {
     const p = JSON.parse(e.payload);
     if (e.kind === "user") turns.push({ who: "you", text: p.message });
     else turns.push({ who: "planner", text: p.reply, chips: p.chips, meta: `${(e.model ?? "").split("/")[1] ?? ""} · ${(e.cost_mana ?? 0).toFixed(1)} mana` });
@@ -288,6 +316,14 @@ export async function planManifest(rooms: RoomManager, playerId: string, body: u
   const only = Array.isArray(b.keys) ? new Set(b.keys.filter((k): k is string => typeof k === "string")) : null;
   const bp = s.blueprint;
   const items: { key: string; jobId?: string; error?: string; message?: string }[] = [];
+  // Safety before Meshy (M1). Blueprints shown since the check landed already passed, so this is usually a cache hit.
+  const toMake = bp.assets.filter((a) => (!only || only.has(a.key)) && (a.kind === "model" || a.kind === "terrain-piece"));
+  if (toMake.length) {
+    const checkRef = `manifest:${s.id}:v${bp.version}`;
+    const safe = await checkCreation(playerId, "manifest", [bp.style.artDirection, ...toMake.map((a) => a.prompt)], checkRef);
+    chargeCheck(rooms.mana, playerId, `${checkRef}:${randomUUID().slice(0, 6)}`, safe.costUsd);
+    if (!safe.ok) return json(422, { error: "unsafe", category: safe.category, message: safe.message });
+  }
   for (const a of bp.assets) {
     if (only && !only.has(a.key)) continue;
     if (a.kind !== "model" && a.kind !== "terrain-piece") {
@@ -329,6 +365,10 @@ export async function planRedo(rooms: RoomManager, playerId: string, body: unkno
   const note = typeof b.note === "string" ? b.note.trim().slice(0, 200) : "";
 
   if (note) {
+    const checkRef = `redo:${s.id}:${asset.key}:${randomUUID().slice(0, 6)}`;
+    const safe = await checkCreation(playerId, "redo", [`${asset.prompt}. ${note}`], checkRef);
+    chargeCheck(rooms.mana, playerId, checkRef, safe.costUsd);
+    if (!safe.ok) return json(422, { error: "unsafe", category: safe.category, message: safe.message });
     asset.prompt = `${asset.prompt.replace(/\.?\s*$/, "")}. ${note}`.slice(0, LIMITS.prompt);
     s.version += 1;
     s.blueprint = { ...s.blueprint, version: s.version };
