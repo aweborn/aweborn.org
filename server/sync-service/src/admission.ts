@@ -22,7 +22,11 @@
  */
 
 import { MANA_CAPS, MANA_PARAMS, baseCap, type PlayerProgress } from "../../../shared/crdt-schema.js";
+import { clampTzOffset, solarFactor } from "../../../shared/sky.js";
 import type { ManaLedger } from "./mana.js";
+
+/** A player's reported timezone may change at most this often (travel is fine; hourly flipping for noon caps isn't). */
+export const TZ_CHANGE_MS = 12 * 3600_000;
 
 export const REPLENISH_MESSAGE = "The world must be replenished…";
 /** Guests explore and build freely; making from thought draws on the shared pool (Alex, 2026-10-20). */
@@ -69,6 +73,27 @@ export class ManaAdmission {
   /** Whether this player's current session is unsaved (anonymous). */
   isGuest(playerId: string): boolean {
     return this.guests.has(playerId);
+  }
+
+  /** playerId → reported UTC offset (minutes east) and when it last changed. Memory only. */
+  private tz = new Map<string, { offset: number; at: number }>();
+
+  /**
+   * The client reports its UTC offset (the `aw_tz` cookie). The first report
+   * counts at once; a different offset is accepted at most every 12 h.
+   */
+  setTimezone(playerId: string, offsetMin: number, at = this.now()): void {
+    const offset = clampTzOffset(offsetMin);
+    const cur = this.tz.get(playerId);
+    if (cur && (cur.offset === offset || at - cur.at < TZ_CHANGE_MS)) return;
+    if (!cur && this.tz.size > 100_000) this.tz.clear(); // crude bound; the next request re-reports
+    this.tz.set(playerId, { offset, at });
+  }
+
+  /** Solar modifier for this player now (1 when they haven't reported a timezone). */
+  solarFor(playerId: string, at = this.now()): number {
+    const t = this.tz.get(playerId);
+    return t ? solarFactor(t.offset, at) : 1;
   }
 
   /** A player's personal cap per 24 h (before solar). Unsaved players get MANA_CAPS.guest (0). */
@@ -125,7 +150,7 @@ export class ManaAdmission {
    * Read-only view for a player's mana tracker: the same numbers admission
    * uses, without holding anything. `available` is what they could draw now.
    */
-  status(playerId: string, progress: PlayerProgress, solar = 1, at = this.now()) {
+  status(playerId: string, progress: PlayerProgress, solar = this.solarFor(playerId), at = this.now()) {
     const cap = this.capFor(playerId, progress, solar);
     const { total, byPlayer } = this.ledger.creationSpendSince(at - MANA_CAPS.windowMs);
     const spent = byPlayer.get(playerId) ?? 0;
@@ -139,6 +164,7 @@ export class ManaAdmission {
       flowSpent: round3(total),
       activePlayers: this.activePlayers(at).length,
       windowMs: MANA_CAPS.windowMs,
+      solar: round3(clamp(solar, 0.9, 1.1)),
     };
   }
 
@@ -151,7 +177,7 @@ export class ManaAdmission {
     if (this.guests.has(req.playerId)) {
       return { ok: false, reason: "sign_in_required", message: SIGN_IN_MESSAGE, remainingToday: 0 };
     }
-    const solar = clamp(req.solar ?? 1, 0.9, 1.1);
+    const solar = clamp(req.solar ?? this.solarFor(req.playerId, at), 0.9, 1.1);
     const cap = this.capFor(req.playerId, req.progress, solar);
     if (cap <= 0) {
       return { ok: false, reason: "not_unlocked", message: "Making with mana opens at chapter 5 (Maker). See the steps in Your journey.", remainingToday: 0 };

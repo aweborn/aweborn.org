@@ -31,6 +31,8 @@ export interface ManaStatus {
   week: { plan: UsageStat; model: UsageStat }
   recent: { at: number; amount: number; kind: 'plan' | 'model'; note: string | null }[]
   pool: { creative: number; available: number }
+  /** Daylight factor on the cap (0.9 at local midnight … 1.1 at local noon) */
+  solar?: number
 }
 
 interface ManaTrackerState {

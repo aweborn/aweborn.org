@@ -27,6 +27,8 @@ import {
   type ManaState,
 } from "../../../shared/crdt-schema.js";
 import { LEVEL_WINDOW_DAYS, poolLevel } from "../../../shared/mana-level.js";
+import { cleanPlayerName } from "../../../shared/names.js";
+import { DEFAULT_NATURE, isNature, type FlowLine, type ManaFlow, type Nature } from "../../../shared/sky.js";
 
 /** How long the 30-day spend total behind `level` is reused before re-querying. */
 const LEVEL_SPEND_TTL_MS = 60_000;
@@ -40,7 +42,7 @@ export type InflowSource = "gift" | "card" | "grant" | "founding" | "other";
 export type LedgerKind = "inflow" | "draw" | "shortfall" | "reserve" | "settle" | "release" | "awe";
 
 export const MANA_FUNCTIONS: readonly ManaFunction[] = ["program", "management", "fundraising"];
-export const MANA_PURPOSES: readonly ManaPurpose[] = ["creations", "research", "cards", "servers", "compensation", "other"];
+export const MANA_PURPOSES: readonly ManaPurpose[] = ["creations", "research", "cards", "servers", "compensation", "refunds", "other"];
 export const INFLOW_SOURCES: readonly InflowSource[] = ["gift", "card", "grant", "founding", "other"];
 
 /** A ledger row as returned to callers (mana, not milli-mana). */
@@ -59,6 +61,12 @@ export interface LedgerEntry {
   playerId: string | null;
   ref: string | null;
   note: string | null;
+  /** Form 990 Part IX nature line (draws). */
+  nature: Nature | null;
+  /** Days a draw is released over as shooting stars (0 = at once). */
+  periodDays: number;
+  /** Opt-in name a giver chose to show (inflows); null for most gifts. */
+  publicName: string | null;
 }
 
 /** What anyone can see (GET /mana/ledger). */
@@ -78,6 +86,8 @@ export interface InflowInput {
   /** External id (Stripe payment intent, grant id…). Makes the call idempotent. */
   ref?: string;
   note?: string;
+  /** A name the giver opted to show in the golden wave. Cleaned like player names; dropped if refused. */
+  publicName?: string;
   at?: number;
 }
 
@@ -88,8 +98,15 @@ export interface DrawInput {
   dollars: number;
   ref?: string;
   note?: string;
+  /** Form 990 Part IX line; defaults by purpose (`DEFAULT_NATURE`). */
+  nature?: Nature;
+  /** Release as shooting stars over this many days (a monthly bill: 30). Default 0. */
+  periodDays?: number;
   at?: number;
 }
+
+/** Longest release period a draw may ask for. */
+export const MAX_PERIOD_DAYS = 366;
 
 export type ReserveResult =
   | { ok: true; ref: string; estimate: number }
@@ -105,6 +122,7 @@ interface Totals {
   drawnBy: Record<ManaFunction, number>;
   drawnByPurpose: Record<ManaPurpose, number>;
   lastDonationAt: number;
+  lastDonorName: string | null;
 }
 
 function zeroTotals(): Totals {
@@ -116,8 +134,9 @@ function zeroTotals(): Totals {
     totalIn: 0,
     shortfall: 0,
     drawnBy: { program: 0, management: 0, fundraising: 0 },
-    drawnByPurpose: { creations: 0, research: 0, cards: 0, servers: 0, compensation: 0, other: 0 },
+    drawnByPurpose: { creations: 0, research: 0, cards: 0, servers: 0, compensation: 0, refunds: 0, other: 0 },
     lastDonationAt: 0,
+    lastDonorName: null,
   };
 }
 
@@ -134,6 +153,9 @@ interface Row {
   player_id: string | null;
   ref: string | null;
   note: string | null;
+  nature: string | null;
+  period_days: number | null;
+  public_name: string | null;
 }
 
 export class ManaLedger {
@@ -168,6 +190,11 @@ export class ManaLedger {
       CREATE TRIGGER IF NOT EXISTS mana_ledger_no_delete BEFORE DELETE ON mana_ledger
         BEGIN SELECT RAISE(ABORT, 'mana_ledger is append-only'); END;
     `);
+    // M4 (2026-10-27): additive columns. ALTER ADD COLUMN never touches existing rows.
+    const cols = new Set((db.prepare("PRAGMA table_info(mana_ledger)").all() as { name: string }[]).map((c) => c.name));
+    if (!cols.has("nature")) db.exec("ALTER TABLE mana_ledger ADD COLUMN nature TEXT");
+    if (!cols.has("period_days")) db.exec("ALTER TABLE mana_ledger ADD COLUMN period_days REAL");
+    if (!cols.has("public_name")) db.exec("ALTER TABLE mana_ledger ADD COLUMN public_name TEXT");
     this.replay();
   }
 
@@ -191,6 +218,7 @@ export class ManaLedger {
       params: { ...MANA_PARAMS },
       lastDonationAt: t.lastDonationAt,
       level: poolLevel(toMana(t.creative), this.spend30d()),
+      lastDonorName: t.lastDonorName,
     };
   }
 
@@ -239,8 +267,74 @@ export class ManaLedger {
         fn: e.fn,
         purpose: e.purpose,
         note: e.kind === "inflow" ? null : e.note,
+        nature: e.nature,
+        periodDays: e.periodDays,
+        publicName: e.publicName,
       };
     });
+  }
+
+  /**
+   * Today's outflow for the shooting stars (GET /mana/flow): every draw,
+   * settle and shortfall that releases in `[now − windowMs, now]`, grouped by
+   * function · purpose · nature. A draw with a period is spread evenly over
+   * it (a monthly server bill is a steady drizzle, not one fireball).
+   */
+  flow(now = Date.now(), windowMs = 86_400_000): ManaFlow {
+    const from = now - windowMs;
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM mana_ledger
+          WHERE kind IN ('draw','settle','shortfall') AND at <= ?
+            AND at >= ? - COALESCE(period_days, 0) * 86400000`,
+      )
+      .all(now, from) as Row[];
+    const lines = new Map<string, FlowLine & { mm: number }>();
+    let shortfallMm = 0;
+    for (const r of rows) {
+      const periodMs = Math.max(0, r.period_days ?? 0) * 86_400_000;
+      const end = r.at + periodMs;
+      const released = periodMs > 0
+        ? (r.amount_mm * Math.max(0, Math.min(end, now) - Math.max(r.at, from))) / periodMs
+        : r.at >= from ? r.amount_mm : 0;
+      if (!(released > 0)) continue;
+      if (r.kind === "shortfall") {
+        shortfallMm += released;
+        continue;
+      }
+      const fn = (r.fn ?? "program") as ManaFunction;
+      const purpose = (r.purpose ?? "other") as ManaPurpose;
+      const nature: Nature = isNature(r.nature) ? r.nature : DEFAULT_NATURE[purpose] ?? "other";
+      const key = `${fn}|${purpose}|${nature}`;
+      const l = lines.get(key) ?? { fn, purpose, nature, amount: 0, count: 0, mm: 0 };
+      l.mm += released;
+      l.count += 1;
+      lines.set(key, l);
+    }
+    return {
+      at: now,
+      windowMs,
+      lines: [...lines.values()]
+        .map(({ mm, ...l }) => ({ ...l, amount: round3(toMana(mm)) }))
+        .filter((l) => l.amount > 0)
+        .sort((a, b) => b.amount - a.amount),
+      shortfall: round3(toMana(shortfallMm)),
+    };
+  }
+
+  /**
+   * Private early warning (Phase 05 "Budget Shortfall"): days the non-creative
+   * money lasts at the last 90 days' average overhead. Infinity when there
+   * was no overhead yet. Refunds aren't overhead.
+   */
+  runway(now = Date.now()): { days: number; monthlyOverhead: number; reserve: number } {
+    const since = now - 90 * 86_400_000;
+    const row = this.db
+      .prepare("SELECT COALESCE(SUM(amount_mm), 0) AS mm FROM mana_ledger WHERE kind = 'draw' AND purpose != 'refunds' AND at >= ?")
+      .get(since) as { mm: number };
+    const monthly = toMana(row.mm) / 3;
+    const reserve = Math.max(0, toMana(this.t.pool - this.t.creative));
+    return { days: monthly > 0 ? (reserve / monthly) * 30 : Infinity, monthlyOverhead: round3(monthly), reserve: round3(reserve) };
   }
 
   onChange(fn: (state: ManaState) => void): () => void {
@@ -260,6 +354,7 @@ export class ManaLedger {
     if (base > input.netDollars) throw new Error("creative base can't exceed the net amount");
     const amountMm = toMm(input.netDollars * MANA_PARAMS.K);
     const creativeMm = toMm(base * MANA_PARAMS.K * MANA_PARAMS.alpha);
+    const named = input.publicName !== undefined ? cleanPlayerName(input.publicName) : null;
     return this.append({
       kind: "inflow",
       amountMm,
@@ -268,8 +363,48 @@ export class ManaLedger {
       restricted,
       ref: input.ref,
       note: input.note,
+      publicName: named?.ok ? named.name : undefined,
       at: input.at,
     });
+  }
+
+  /**
+   * A gift went back to its giver (Stripe refund) or was lost in a dispute.
+   * Recorded as a labeled draw (Alex, 2026-10-27: "refunds as labeled draws"),
+   * so the money leaves in the open like any other outflow; the high-water
+   * line and the Frontier never move back. Bounded by the gift: the total
+   * refunded against `giftRef` can't exceed what that gift brought in, so a
+   * leaked webhook key can't drain the pool.
+   */
+  recordRefund(input: { giftRef: string; refundRef: string; dollars: number; dispute?: boolean; at?: number }):
+    | { ok: true; draw: LedgerEntry; shortfall: LedgerEntry | null }
+    | { ok: false; reason: "unknown_gift" | "exceeds_gift" | "duplicate" } {
+    assertDollars(input.dollars);
+    const gift = this.db
+      .prepare("SELECT amount_mm FROM mana_ledger WHERE kind = 'inflow' AND ref = ?")
+      .get(input.giftRef) as { amount_mm: number } | undefined;
+    if (!gift) return { ok: false, reason: "unknown_gift" };
+    const prefix = `refund:${input.giftRef}:`;
+    if (this.db.prepare("SELECT 1 FROM mana_ledger WHERE kind = 'draw' AND ref = ?").get(prefix + input.refundRef)) {
+      return { ok: false, reason: "duplicate" };
+    }
+    const prior = this.db
+      .prepare("SELECT COALESCE(SUM(amount_mm), 0) AS mm FROM mana_ledger WHERE kind = 'draw' AND purpose = 'refunds' AND substr(ref, 1, ?) = ?")
+      .get(prefix.length, prefix) as { mm: number };
+    if (prior.mm >= gift.amount_mm) return { ok: false, reason: "exceeds_gift" };
+    // Stripe refunds the gross; the gift was booked net of fees. Clamp to what's left of
+    // the gift (the kept fee stays a cost of fundraising, not tracked separately yet).
+    const dollars = Math.min(input.dollars, (gift.amount_mm - prior.mm) / MM / MANA_PARAMS.K);
+    const r = this.recordDraw({
+      purpose: "refunds",
+      fn: "fundraising",
+      nature: "refund",
+      dollars,
+      ref: prefix + input.refundRef,
+      note: input.dispute ? "gift lost in a payment dispute" : "gift refunded to the giver",
+      at: input.at,
+    });
+    return r ? { ok: true, ...r } : { ok: false, reason: "duplicate" };
   }
 
   /** Awe pushes the high-water line (and so the Frontier) outward. Never touches pool or creative. */
@@ -290,9 +425,13 @@ export class ManaLedger {
     if (!MANA_PURPOSES.includes(input.purpose)) throw new Error(`unknown purpose ${input.purpose}`);
     if (!MANA_FUNCTIONS.includes(input.fn)) throw new Error(`unknown function ${input.fn}`);
     assertDollars(input.dollars);
+    if (input.nature !== undefined && !isNature(input.nature)) throw new Error(`unknown nature ${input.nature}`);
+    const periodDays = input.periodDays ?? 0;
+    if (!Number.isFinite(periodDays) || periodDays < 0 || periodDays > MAX_PERIOD_DAYS) throw new Error(`periodDays must be 0…${MAX_PERIOD_DAYS}`);
+    const nature = input.nature ?? DEFAULT_NATURE[input.purpose];
     const amountMm = toMm(input.dollars * MANA_PARAMS.K);
     const run = this.db.transaction(() => {
-      const draw = this.append({ kind: "draw", amountMm, creativeMm: 0, fn: input.fn, purpose: input.purpose, ref: input.ref, note: input.note, at: input.at });
+      const draw = this.append({ kind: "draw", amountMm, creativeMm: 0, fn: input.fn, purpose: input.purpose, ref: input.ref, note: input.note, nature, periodDays, at: input.at });
       if (!draw) return null;
       const gap = this.t.creative - Math.max(0, this.t.pool);
       const shortfall = gap > 0
@@ -304,6 +443,8 @@ export class ManaLedger {
             purpose: input.purpose,
             ref: input.ref,
             note: `creative share covered part of ${input.purpose}`,
+            nature,
+            periodDays,
             at: input.at,
           })
         : null;
@@ -453,7 +594,10 @@ export class ManaLedger {
         t.pool += a;
         t.highWater += a;
         t.totalIn += a;
-        if (row.source === "gift") t.lastDonationAt = Math.max(t.lastDonationAt, row.at);
+        if (row.source === "gift" && row.at >= t.lastDonationAt) {
+          t.lastDonationAt = row.at;
+          t.lastDonorName = row.public_name ?? null;
+        }
         break;
       case "draw":
         t.pool -= a;
@@ -507,6 +651,9 @@ export class ManaLedger {
     playerId?: string | null;
     ref?: string;
     note?: string;
+    nature?: Nature;
+    periodDays?: number;
+    publicName?: string;
     at?: number;
   }): LedgerEntry | null {
     const at = e.at ?? Date.now();
@@ -514,10 +661,10 @@ export class ManaLedger {
     try {
       const info = this.db
         .prepare(
-          `INSERT INTO mana_ledger (at, kind, amount_mm, creative_mm, source, restricted, fn, purpose, player_id, ref, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO mana_ledger (at, kind, amount_mm, creative_mm, source, restricted, fn, purpose, player_id, ref, note, nature, period_days, public_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(at, e.kind, e.amountMm, e.creativeMm, e.source ?? null, e.restricted ? 1 : 0, e.fn ?? null, e.purpose ?? null, e.playerId ?? null, e.ref ?? null, e.note ?? null);
+        .run(at, e.kind, e.amountMm, e.creativeMm, e.source ?? null, e.restricted ? 1 : 0, e.fn ?? null, e.purpose ?? null, e.playerId ?? null, e.ref ?? null, e.note ?? null, e.nature ?? null, e.periodDays || null, e.publicName ?? null);
       id = Number(info.lastInsertRowid);
     } catch (err) {
       if ((err as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE") return null;
@@ -559,5 +706,10 @@ function rowToEntry(r: Row): LedgerEntry {
     playerId: r.player_id,
     ref: r.ref,
     note: r.note,
+    nature: isNature(r.nature) ? r.nature : null,
+    periodDays: r.period_days ?? 0,
+    publicName: r.public_name ?? null,
   };
 }
+
+const round3 = (x: number) => Math.round(x * 1000) / 1000;

@@ -208,16 +208,28 @@ function SuccessScreen({ onClose }: { onClose: () => void }) {
 // ============================================
 // Main DonationModal
 // ============================================
+/**
+ * Opt-in donor name (Rough Draft M4). Off until the `aweborn-website`
+ * CloudFormation stack with the new checkout Lambda (which forwards
+ * `displayName` to Stripe metadata) is applied; the old Lambda would
+ * silently drop the name. Flip with VITE_DONOR_NAMES=1.
+ */
+const DONOR_NAMES_LIVE = import.meta.env.VITE_DONOR_NAMES === '1'
+
 export function DonationModal({ isOpen, onClose }: DonationModalProps) {
   const [step, setStep] = useState<ModalStep>('amount')
   const [selectedAmount, setSelectedAmount] = useState<number | null>(2500)
   const [customAmount, setCustomAmount] = useState('')
+  const [showName, setShowName] = useState(false)
+  const [displayName, setDisplayName] = useState('')
   const { clientSecret, loading, error, createPaymentIntent, reset, clearError } = usePaymentIntent()
 
   const handleFullClose = useCallback(() => {
     setStep('amount')
     setSelectedAmount(2500)
     setCustomAmount('')
+    setShowName(false)
+    setDisplayName('')
     reset()
     onClose()
   }, [onClose, reset])
@@ -257,7 +269,7 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
   const handleContinueToPayment = async () => {
     const cents = getAmountInCents()
     if (cents < 100) return // Minimum 100 mana ($1)
-    await createPaymentIntent(cents)
+    await createPaymentIntent(cents, DONOR_NAMES_LIVE && showName ? displayName : undefined)
     // Step transition happens via useEffect-like check below
   }
 
@@ -319,6 +331,40 @@ export function DonationModal({ isOpen, onClose }: DonationModalProps) {
                 onChange={handleCustomChange}
               />
             </div>
+
+            {/* Opt-in public name (off by default) */}
+            {DONOR_NAMES_LIVE && (
+            <div className="donor-name-optin">
+              <label className="donor-name-check" htmlFor="donor-name-toggle">
+                <input
+                  id="donor-name-toggle"
+                  type="checkbox"
+                  checked={showName}
+                  onChange={(e) => setShowName(e.target.checked)}
+                />
+                <span>Show my name in the golden wave</span>
+              </label>
+              {showName && (
+                <>
+                  <input
+                    id="donor-name-input"
+                    className="donor-name-input"
+                    type="text"
+                    maxLength={20}
+                    autoComplete="nickname"
+                    placeholder="Name or nickname"
+                    aria-label="Name to show"
+                    aria-describedby="donor-name-hint"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                  />
+                  <p className="donor-name-hint" id="donor-name-hint">
+                    Everyone in the universe sees it, and it’s listed on the public ledger. Up to 20 characters.
+                  </p>
+                </>
+              )}
+            </div>
+            )}
 
             {/* Error display */}
             {error && (

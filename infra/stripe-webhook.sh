@@ -5,6 +5,8 @@
 #                                    # payment_intent.succeeded and saves its signing secret to
 #                                    # ~/keys/AWEBORN_STRIPE_WEBHOOK_SECRET.txt (Stripe shows it only once)
 #   infra/stripe-webhook.sh status   # lists the account's webhook endpoints (no secrets)
+#   infra/stripe-webhook.sh events   # sets the existing endpoint's events to $EVENTS below
+#                                    # (M4, 2026-10-27: refunds + lost disputes become labeled draws)
 #
 # Uses the Stripe key in ~/keys/AWEBORN_STRIPE_SECRET_KEY.txt (sent via a 0600
 # curl config file, never on the command line). The endpoint URL comes from the
@@ -27,6 +29,16 @@ WORK="$(mktemp -d)"; chmod 700 "$WORK"; trap 'rm -rf "$WORK"' EXIT
 printf 'user = "%s:"\n' "$(tr -d '[:space:]' < "$KEY_FILE")" > "$WORK/curl.cfg"; chmod 600 "$WORK/curl.cfg"
 stripe() { curl -sS -K "$WORK/curl.cfg" "$@"; }
 
+# Everything the aweborn-stripe-webhook Lambda handles.
+EVENTS=(payment_intent.succeeded charge.updated charge.refunded charge.dispute.funds_withdrawn)
+args=(); for e in "${EVENTS[@]}"; do args+=(-d "enabled_events[]=$e"); done   # bash 3.2-safe (macOS)
+endpoint_url() {
+  local api
+  api="$(aws cloudformation describe-stacks --stack-name aweborn-website --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" --output text)"
+  [[ "$api" == https://* ]] || { echo "no ApiEndpoint output on aweborn-website" >&2; exit 1; }
+  echo "$api/stripe-webhook"
+}
+
 case "${1:-}" in
   status)
     stripe https://api.stripe.com/v1/webhook_endpoints | jq -r '.data[] | "\(.id)  \(.status)  \(.url)  \(.enabled_events | join(","))"'
@@ -41,7 +53,7 @@ case "${1:-}" in
     fi
     resp="$(stripe https://api.stripe.com/v1/webhook_endpoints \
       -d url="$url" \
-      -d "enabled_events[]=payment_intent.succeeded" \
+      "${args[@]}" \
       -d description="Aweborn donations → mana ledger (aweborn-stripe-webhook Lambda)")"
     secret="$(jq -r '.secret // empty' <<<"$resp")"
     [[ "$secret" == whsec_* ]] || { echo "Stripe error: $(jq -c '.error // .' <<<"$resp")" >&2; exit 1; }
@@ -49,5 +61,12 @@ case "${1:-}" in
     echo "Created $(jq -r .id <<<"$resp") → $url (livemode=$(jq -r .livemode <<<"$resp"))"
     echo "Signing secret saved to $OUT. Next: infra/set-stack-key.sh stripe-webhook"
     ;;
-  *) echo "usage: $0 create|status" >&2; exit 1 ;;
+  events)
+    url="$(endpoint_url)"
+    id="$(stripe https://api.stripe.com/v1/webhook_endpoints | jq -r --arg u "$url" '.data[] | select(.url == $u) | .id')"
+    [[ "$id" == we_* ]] || { echo "no Stripe endpoint for $url (run: $0 create)" >&2; exit 1; }
+    resp="$(stripe "https://api.stripe.com/v1/webhook_endpoints/$id" "${args[@]}")"
+    echo "$id → $(jq -r '(.enabled_events // []) | join(",")' <<<"$resp")"
+    ;;
+  *) echo "usage: $0 create|status|events" >&2; exit 1 ;;
 esac

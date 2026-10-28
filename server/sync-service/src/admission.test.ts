@@ -130,3 +130,20 @@ test("the same ref can't be held twice", () => {
   const d = adm.requestDraw({ playerId: "p1", ref: "r1", estimate: 5, progress: maker });
   assert.equal(!d.ok && d.reason, "duplicate");
 });
+
+test("solar: a reported timezone moves the cap within ±10 %, changes at most every 12 h", () => {
+  const { adm, tick } = setup();
+  assert.equal(adm.solarFor("p1"), 1, "no timezone yet → neutral");
+  // The fake clock starts at 1_800_000_000_000 (≈ 08:00 UTC): pick offsets for local noon and midnight
+  const utcMin = Math.floor(1_800_000_000_000 / 60_000) % 1440;
+  const noon = 720 - utcMin;
+  adm.setTimezone("p1", noon);
+  assert.ok(Math.abs(adm.solarFor("p1") - 1.1) < 1e-6);
+  assert.ok(Math.abs(adm.status("p1", maker).cap - MANA_CAPS.maker * 1.1) < 0.01);
+  adm.setTimezone("p1", noon + 720); // flip to midnight right away: ignored
+  assert.ok(Math.abs(adm.solarFor("p1") - 1.1) < 1e-6);
+  tick(13 * 3600_000);
+  adm.setTimezone("p1", noon + 720 - 13 * 60); // later, a real move is accepted
+  assert.ok(adm.solarFor("p1") < 1.0);
+  assert.ok(adm.status("p1", maker).cap >= MANA_CAPS.maker * 0.9 - 0.01);
+});

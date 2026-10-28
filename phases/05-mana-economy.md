@@ -174,9 +174,9 @@ Frontier
 ### Donation → Mana Pipeline (Extend Lambda)
 - `[x]` On `payment_intent.succeeded`: `m = K · net_amount` → pool + highWater; `α · m` → creative; ledger (via VPS API) (2026-10-16, code: new Lambda `aweborn-stripe-webhook` in `infra/cloudformation.yml`, Stripe signature check, net from the balance transaction, `metadata.kind = donation` only, live mode only, idempotent on the payment intent id; narrow `MANA_INFLOW_TOKEN` that can only record gifts; `infra/stripe-webhook.sh`; e2e-tested locally against a real sync-service + mock Stripe. **Setup done by Alex 2026-10-17** (all 5 steps; the Lambda's log group appears on its first invocation). First real gift pending)
 - `[ ]` Card orders: full net → pool, creative only after production + shipping (Phase 08: tag `metadata.kind = card`, pass `creativeBaseDollars`; needs the admin token or a card-scoped one)
-- `[ ]` Refunds / disputes (`charge.refunded`, `charge.dispute.funds_withdrawn`): money going back out; decide how the ledger shows it (a labeled draw vs a negative inflow) with the CPA
+- `[x]` Refunds / disputes (`charge.refunded`, `charge.dispute.funds_withdrawn`): money going back out. **Labeled draw** (Alex, 2026-10-27; CPA to confirm): `ManaLedger.recordRefund` writes purpose `refunds`, function fundraising, nature `refund`, ref `refund:<gift>:<refund>`, clamped to what's left of the gift's net (Stripe refunds gross; the kept fee isn't tracked); the gift's creative half stays creative (a refund draws on the pool). `POST /api/mana/refund` (inflow token can call it); webhook Lambda handles both events (2026-10-27, M4: **infra not applied yet**, Alex)
 - `[x]` VPS recalculates `frontierRadius`, broadcasts the expansion, triggers the solidification wave for everyone online (2026-10-17: the ledger already publishes `frontierRadius` + `lastDonationAt` into the Universe CRDT; clients start the wave when `lastDonationAt` rises; no new message type)
-- `[ ]` Opt-in donor recognition in the wave ("A wave of light from ★ name" or "a generous soul"). No other donor perks
+- `[~]` Opt-in donor recognition in the wave ("A wave of light from ★ name" or "a generous soul"). No other donor perks. 2026-10-27 (M4): checkbox + name (≤ 20) in the gift modal → checkout Lambda `metadata[display_name]` → webhook `publicName` → ledger (cleaned with the name filter; refused names dropped) → `mana.lastDonorName` → wave banner; shown in `/mana/ledger`. **Off in prod** (`VITE_DONOR_NAMES`) until Alex applies the stack; Privacy + giving say "switching on soon"
 - `[ ]` Product-agnostic so [Phase 08](./08-nfc-trading-cards.md) card-order surplus flows in as ordinary gifts
 - `[-]` ~~`donationMultiplier` 24 h afterglow~~ retired: the flow follows the pool automatically
 
@@ -232,13 +232,13 @@ Frontier
 ### Budget Shortfall (disclosed shrink)
 - `[x]` Behavior decided (Alex, 2026-10-14): bills always get paid; when a non-creative draw exceeds `pool − creative`, the **creative share shrinks by the gap**, in the open. No hidden clip, no loan bookkeeping
 - `[x]` Disclosed in advance: giving page ("If money ever runs short") + one Terms sentence (2026-10-14)
-- `[ ]` Ledger entry `kind: shortfall` (amount, category covered) + its own shooting star (tap: "the creative share covered $X of servers / compensation …")
-- `[ ]` Early warning, **private only** (2026-10-16): runway = (pool − creative) ÷ avg monthly overhead; < 90 days → email Alex. **No in-game decay** (Alex worried it would happen constantly early on; agreed: players can't fix it and a dim world reads as dying). The disclosed shortfall star stays, kept small and calm
+- `[x]` Ledger entry `kind: shortfall` (amount, category covered) + its own shooting star (tap: "the creative share covered $X of servers / compensation …") (ledger entry since 2026-10-16; small calm star + legend row 2026-10-27, M4)
+- `[x]` Early warning, **private only** (2026-10-16): runway = (pool − creative) ÷ avg monthly overhead; < 90 days → email Alex. (2026-10-27, M4: [`runway.ts`](../server/sync-service/src/runway.ts) `RunwayWatch`, checks every 6 h over the last 90 days of non-refund draws, emails `RUNWAY_ALERT_TO` (default hello@) at most weekly, `alert_log` table) **No in-game decay** (Alex worried it would happen constantly early on; agreed: players can't fix it and a dim world reads as dying). The disclosed shortfall star stays, kept small and calm
 
 ### Solar Cycle
-- `[ ]` Create `src/systems/SolarCycle.ts`: local solar position from browser timezone (+ sunrise/sunset)
-- `[ ]` Visual: warmer/vivid by day, cooler/deeper at night
-- `[ ]` Personal-cap modifier 0.9–1.1×, sinusoidal (client reports timezone; server clamps to the range)
+- `[~]` Create `src/systems/SolarCycle.ts`: local solar position from browser timezone (+ sunrise/sunset). 2026-10-27 (M4): in [`shared/sky.ts`](../shared/sky.ts) (`localHour`, `sunHeight`, `solarFactor`) + [`src/stores/skyStore.ts`](../src/stores/skyStore.ts); a sinusoid on local clock time (no location, so no real sunrise/sunset)
+- `[x]` Visual: warmer/vivid by day, cooler/deeper at night (`SolarLights` in `Environment.tsx`: ambient/key light + fog lerp)
+- `[x]` Personal-cap modifier 0.9–1.1×, sinusoidal (client reports timezone; server clamps to the range). `aw_tz` cookie → `ManaAdmission.setTimezone` (memory only, one change per 12 h); `status().solar` shown in the mana panel
 
 ### Mana Costs
 - `[x]` Cost of each manifestation = real compute cost × `K`: **[MANA_COSTS.md](../MANA_COSTS.md)** (2026-10-14, list prices; full object 60, quick object 30, image 7, 30 s music 6, Maker tutorials ≈ 102, a whole new world ≈ 368)
@@ -246,7 +246,7 @@ Frontier
 - `[-]` ~~Old ROADMAP fixed costs (gravity 500, avatar trail 50, …)~~ retired
 
 ### Mana Visualization
-- `[ ]` Pool level affects universe ambience:
+- `[x]` Pool level affects universe ambience (2026-10-27, M4: `BAND_LOOK` in `Environment.tsx`: star count/brightness/saturation, clouds, particles; `PortalAurora` when critical):
   - High (>80%): bright stars, rich nebulae, ambient particles
   - Medium (30-80%): baseline
   - Low (<30%): dim, sparse, desaturated
@@ -276,13 +276,13 @@ Frontier
 
 **Pay, the standard way:** salaries aren't a color of their own. Compensation is a *nature* (Form 990 lines for officers' compensation, other salaries and wages, payroll taxes and benefits) and is **allocated across the functions by time spent** (e.g. Alex's hours building the game → program; bookkeeping → management & general). Stars show **one combined "Compensation" line** (wages + benefits + payroll taxes, all people), released smoothly over the month. Individual pay is never shown. (Officer compensation does appear on a filed Form 990, so this is no less private than the law already requires.) Servers are allocated between program and management & general by a documented method; the CPA signs off on the allocation keys.
 
-- `[ ]` Star size ∝ log(amount); above a rate cap, small draws merge into fewer, bigger stars (a busy month is a meteor shower, not a blizzard)
-- `[ ]` Tap / hover a star → "Servers · 42 mana · today"; a legend in the HUD; the World Index or a new panel lists today's draws by category
-- `[ ]` Non-player draws come from the ledger (admin entry or statement import), then are **released as stars spread over their period**: the same smoothing that keeps the pool display calm
+- `[x]` Star size ∝ log(amount); above a rate cap, small draws merge into fewer, bigger stars (a busy month is a meteor shower, not a blizzard) (2026-10-27, M4: `starSize`; drizzle merges to ≈ 1 star per 6 s; [`ShootingStars.tsx`](../src/effects/ShootingStars.tsx) pool of 12)
+- `[x]` Tap / hover a star → "Servers · 42 mana · today"; a legend in the HUD; the World Index or a new panel lists today's draws by category (2026-10-27, M4: 44 px pick radius → `StarCaption`; rare stars auto-caption; legend = "Stars leaving the universe · 24 h" in the mana panel)
+- `[x]` Non-player draws come from the ledger (admin entry or statement import), then are **released as stars spread over their period**: the same smoothing that keeps the pool display calm (2026-10-27, M4: `period_days` on draws, public `GET /mana/flow` = last 24 h released per function·purpose·nature, cached 30 s, polled every 5 min. A bill shows fully after its first day)
 - `[ ]` **Inflows swell the universe:** gifts → golden wave (existing); **an in-game card purchase → the universe swells** (golden breath + a beam that lights the card's world; opt-in name like donors: "★ Alex brought a card of Origin into the world")
-- `[ ]` Same categories and colors on the [giving page](../public/giving.html) when live numbers ship
+- `[x]` Same categories and colors on the [giving page](../public/giving.html) when live numbers ship (2026-10-27: "The living sky" section + `/mana/flow` link)
 - `[x]` People pay → **combined "Compensation" line, allocated across functions by time** (Alex, 2026-10-14: combine or make it financially relevant)
-- `[ ]` Ledger fields: `function` (program / management & general / fundraising), `nature` (Form 990 Part IX line), `purpose` (creations, research, cards, gameplay servers…), allocation key for shared costs
+- `[~]` Ledger fields: `function` (program / management & general / fundraising), `nature` (Form 990 Part IX line), `purpose` (creations, research, cards, gameplay servers…), allocation key for shared costs (2026-10-27: `nature` + `period_days` + `public_name` columns added (additive ALTER); natures = Form 990 Part IX lines in `NATURES`, CPA to confirm; **allocation key not yet**: split a shared bill into two draws for now)
 - `[ ]` Year-end: the star ledger rolls up straight into Form 990 Part IX (or 990-EZ / 990-N while small)
 
 ## Acceptance Criteria
@@ -297,7 +297,7 @@ Frontier
 - [ ] Awe events grant XP and high-water reach, never pool mana *(deferred: after the first community)*
 - [x] Mana draws are server-validated and ledgered
 - [x] Ghost creation is free and requires no server validation (Option C)
-- [ ] Universe ambience changes based on pool level *(deferred; see the 2026-10-16 flag: drive it from creative flow vs demand, not the raw treasury)*
+- [x] Universe ambience changes based on pool level (audio M2, visuals M4; driven by creative share vs recent demand per the 2026-10-16 flag)
 
 ## Files Changed
 
@@ -311,6 +311,11 @@ Frontier
 | `server/sync-service/src/awe.ts` | MODIFY | Wire the stubbed hook to XP + reach |
 | `infra/cloudformation.yml` | MODIFY | Extend Lambda for the mana pipeline |
 | `phases/assets/mana_pool_chart.py` | NEW | Illustrative pool simulation + chart |
+| `shared/sky.ts` | NEW | Solar factor, Form 990 functions/natures, flow types (M4) |
+| `server/sync-service/src/runway.ts` | NEW | Private runway email (M4) |
+| `src/stores/skyStore.ts` | NEW | Sun, band, flow poll, star queue (M4) |
+| `src/effects/ShootingStars.tsx` | NEW | Shooting stars (M4) |
+| `src/components/StarCaption.tsx` | NEW | Star tap caption (M4) |
 
 ## Session Log
 
@@ -356,3 +361,4 @@ Frontier
 | 2026-10-27 | **Rough Draft GOAL reopens the rest of 05 (Alex; see [ROUGH_DRAFT.md](./ROUGH_DRAFT.md)).** Decisions: **awe = the character's experience (XP); awe is NOT linked to the high-water line / Frontier reach** (only gifts move it). *Deviation from ROADMAP (Awe section + System Rules "awe generation"), ROADMAP not edited.* Default numbers approved (agent proposes, tune after playtests). Universe audio = procedural WebAudio. Refunds/disputes = labeled draws for now. Card price $9. | M2 audio, M3 awe/levels, M4 living sky |
 | 2026-10-27 | **M2 audio shipped.** Server: `mana.level` (creative ÷ max(3,000, 30-day creation draw); 30-day spend cached 60 s). Client: procedural WebAudio engine ([`src/audio/`](../src/audio/)): band-driven ambience, wave sweep + hum, creation inhale/exhale by band, sighting bell + reveal arpeggio, warp charge + crack, approach hum, UI ticks; mute + volume in ••• More and the gear panel. Verified with real taps at 4 sizes (meters, not ears). Details in the ROUGH_DRAFT log. M4 reuses `poolBand` for the sky. | Alex listens; M3 |
 | 2026-10-27 | **M3 awe = XP + levels shipped** (Rough Draft). Server [`progress.ts`](../server/sync-service/src/progress.ts) (`progress` + `xp_event`; first visits ×2 with company, sightings, reactions to your worlds, creations, flight distance; skill reports limited to client skills, 1 per 3 s, distance clamped by elapsed time). Shared [`progress.ts`](../shared/progress.ts): 12 skills, mastery = 3 uses, 7 chapters, breadth gate, `CHAPTER_UNLOCKS`. Real progress now drives `base(level)` caps in every draw (`PROVISIONAL_PROGRESS` removed). Client: Your journey (desktop Level chip, touch ••• More row), level/chapter toast, soft leash ([`leash.ts`](../src/systems/leash.ts), spec option b), warp + "Warp here" gated at chapter 7 (cards/links/teleports never yanked). **Awe does not move the high-water line** (Alex deviation; `recordAweReach` left unused). Existing players were seeded at chapter 5 (Maker), so they're leashed to the Frontier until they finish chapter 6. Privacy updated. Checked with real taps at 390×844, 360×740, 844×390, 1440×900 (puppeteer-core). 67 shared + 68 sync tests. | M4 living sky. Open for Alex: unsaved players can't reach warp (making needs sign-in); legacy players at Maker + leashed; XP numbers |
+| 2026-10-27 | **M4 living sky shipped** (Rough Draft). **Solar:** `aw_tz` cookie → server (memory only, 1 change / 12 h) → cap × 0.9–1.1 by local hour; sky warms by day ([`shared/sky.ts`](../shared/sky.ts), `SolarLights`). **Pool look:** `BAND_LOOK` per band + Portal aurora when critical. **Shooting stars:** creations in real time (from `drawnByPurpose.creations`), shortfall stars, bills from new public `GET /mana/flow` (draws carry `nature` + `period_days`, released smoothly; merged to ≈ 1 star / 6 s); colour = Form 990 function, tap/hover caption = purpose · amount · Part IX line; legend in the mana panel. **Refunds = labeled draws** (`recordRefund`, `POST /api/mana/refund`, webhook handles `charge.refunded` + `charge.dispute.funds_withdrawn`). **Runway email** (`RunwayWatch`, < 90 days, weekly max). **Donor names:** modal opt-in → checkout metadata → ledger `public_name` → wave banner, **gated off in prod** until the stack is applied. Lambdas compacted to stay under CloudFormation's 4,096-char inline limit. Giving ("The living sky") + Privacy (time-zone cookie, opt-in name) updated. The dev ledger is append-only (UPDATE trigger), so the legend was checked with injected flow. Real checks (puppeteer-core) at 390×844, 360×740, 844×390, 1440×900; no console errors. 71 shared + 77 sync tests. | Alex: apply the `aweborn-website` stack, `infra/stripe-webhook.sh events`, then `VITE_DONOR_NAMES=1` in `.env.production`; CPA: natures + refund function. Next: M5 |

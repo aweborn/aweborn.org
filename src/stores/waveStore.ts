@@ -134,7 +134,13 @@ export function startWaveWatcher(): void {
       return
     }
     if (m.lastDonationAt > lastGiftAt) {
-      useWaveStore.getState().trigger({ fromRadius: lastRadius, toRadius: m.frontierRadius })
+      // Opt-in donor names (M4): only when the giver chose to show one.
+      const name = m.lastDonorName?.trim()
+      useWaveStore.getState().trigger({
+        fromRadius: lastRadius,
+        toRadius: m.frontierRadius,
+        message: name ? `A wave of light from ★ ${name}` : undefined,
+      })
     }
     lastGiftAt = Math.max(lastGiftAt, m.lastDonationAt)
     lastRadius = m.frontierRadius

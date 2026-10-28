@@ -19,6 +19,9 @@ import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-crea
 import { listMutes, setMute, fileReport, handleReportsAdmin, isPlayerId } from "./moderation.js";
 import { CLIENT_SKILLS, type Skill } from "../../../shared/progress.js";
 import type { ProgressDelta } from "./progress.js";
+import { isNature } from "../../../shared/sky.js";
+import { RunwayWatch } from "./runway.js";
+import { sendEmail } from "./email.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest"]);
@@ -31,6 +34,9 @@ initDb();
 const auth = await initAuth(getDb());
 const authHandler = auth ? toNodeHandler(auth) : null;
 const rooms = new RoomManager();
+
+// Private runway warning (M4): email when the non-creative money would last < 90 days.
+new RunwayWatch(getDb(), rooms.mana, sendEmail, process.env.RUNWAY_ALERT_TO ?? "hello@aweborn.org").start();
 
 // ── HTTP API (health, stats, world lookup) ───────────────────────────
 // CORS for the public HTTP API (GET only). Extra origins (comma-separated)
@@ -212,6 +218,9 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   if (!session?.playerId) return json(401, { error: "no_session" });
   const accountId = session.userId;
   rooms.admission.setGuest(session.playerId, session.isAnonymous);
+  // Solar cycle (M4): the client keeps its UTC offset in the `aw_tz` cookie; admission clamps the effect to ±10 %.
+  const tz = /(?:^|;\s*)aw_tz=(-?\d{1,4})(?:;|$)/.exec(req.headers.cookie ?? "");
+  if (tz) rooms.admission.setTimezone(session.playerId, Number(tz[1]));
   const path = req.url?.split("?")[0];
 
   if (path === "/api/player/me" && req.method === "GET") {
@@ -447,13 +456,17 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
  * Mana (Phase 05). Public, read-only:
  *   GET /mana                          ManaState (pool, creative, highWater, frontierRadius, draws by function/purpose…)
  *   GET /mana/ledger?limit=50&before=  public ledger rows, newest first (no donors, players or refs)
+ *   GET /mana/flow                     today's outflow by function · purpose · Form 990 nature (shooting stars, M4)
  * Admin / server-to-server (Authorization: Bearer $MANA_ADMIN_TOKEN; 503 if unset):
- *   POST /api/mana/inflow  { source, netDollars, creativeBaseDollars?, restricted?, ref?, note?, at? }
- *   POST /api/mana/draw    { purpose, fn, dollars, ref?, note?, at? }   (not creations: those reserve → settle)
- *   Both are idempotent on `ref` (200 { duplicate: true } on a retry).
+ *   POST /api/mana/inflow  { source, netDollars, creativeBaseDollars?, restricted?, ref?, note?, publicName?, at? }
+ *   POST /api/mana/draw    { purpose, fn, dollars, nature?, periodDays?, ref?, note?, at? }   (not creations: those reserve → settle)
+ *   POST /api/mana/refund  { giftRef, refundRef, dollars, dispute? }   a gift going back: a labeled draw, bounded by the gift
+ *   All are idempotent on their ref (200 { duplicate: true } on a retry).
  * Donation webhook (Authorization: Bearer $MANA_INFLOW_TOKEN): the Stripe Lambda's
  * narrow key. Only POST /api/mana/inflow with `source: "gift"`, a `ref`, no
- * creative override and no note: a leaked copy can't draw money or fake a grant.
+ * creative override and no note (an opt-in `publicName` is allowed), and
+ * POST /api/mana/refund (which can't exceed the gift it names): a leaked copy
+ * can't draw money freely or fake a grant.
  */
 const MANA_ADMIN_TOKEN = process.env.MANA_ADMIN_TOKEN ?? "";
 const MANA_INFLOW_TOKEN = process.env.MANA_INFLOW_TOKEN ?? "";
@@ -484,10 +497,11 @@ async function handleManaAdmin(req: IncomingMessage, res: ServerResponse, path: 
   if (!b) return json(400, { error: "bad_json" });
   if (role === "inflow") {
     const narrow =
-      path === "/api/mana/inflow" &&
-      b.source === "gift" &&
-      typeof b.ref === "string" && b.ref.length > 0 &&
-      b.creativeBaseDollars === undefined && b.restricted === undefined && b.note === undefined;
+      (path === "/api/mana/inflow" &&
+        b.source === "gift" &&
+        typeof b.ref === "string" && b.ref.length > 0 &&
+        b.creativeBaseDollars === undefined && b.restricted === undefined && b.note === undefined) ||
+      path === "/api/mana/refund";
     if (!narrow) return json(403, { error: "forbidden" });
   }
   const str = (v: unknown) => (typeof v === "string" && v.length <= 500 ? v : undefined);
@@ -504,6 +518,7 @@ async function handleManaAdmin(req: IncomingMessage, res: ServerResponse, path: 
         restricted: b.restricted === true,
         ref: str(b.ref),
         note: str(b.note),
+        publicName: typeof b.publicName === "string" && b.publicName.trim() ? b.publicName.slice(0, 60) : undefined,
         at: num(b.at),
       });
       return json(200, e ? { entry: e, state: rooms.mana.state() } : { duplicate: true });
@@ -515,8 +530,27 @@ async function handleManaAdmin(req: IncomingMessage, res: ServerResponse, path: 
       if (purpose === "creations" || !MANA_PURPOSES.includes(purpose) || !MANA_FUNCTIONS.includes(fn) || dollars === undefined) {
         return json(400, { error: "bad_request" });
       }
-      const r = rooms.mana.recordDraw({ purpose, fn, dollars, ref: str(b.ref), note: str(b.note), at: num(b.at) });
+      if (b.nature !== undefined && !isNature(b.nature)) return json(400, { error: "bad_request", message: "unknown nature" });
+      const r = rooms.mana.recordDraw({
+        purpose,
+        fn,
+        dollars,
+        nature: isNature(b.nature) ? b.nature : undefined,
+        periodDays: num(b.periodDays),
+        ref: str(b.ref),
+        note: str(b.note),
+        at: num(b.at),
+      });
       return json(200, r ? { ...r, state: rooms.mana.state() } : { duplicate: true });
+    }
+    if (path === "/api/mana/refund") {
+      const giftRef = str(b.giftRef);
+      const refundRef = str(b.refundRef);
+      const dollars = num(b.dollars);
+      if (!giftRef || !refundRef || dollars === undefined || !(dollars > 0)) return json(400, { error: "bad_request" });
+      const r = rooms.mana.recordRefund({ giftRef, refundRef, dollars, dispute: b.dispute === true, at: num(b.at) });
+      if (!r.ok) return r.reason === "duplicate" ? json(200, { duplicate: true }) : json(409, { error: r.reason });
+      return json(200, { draw: r.draw, shortfall: r.shortfall, state: rooms.mana.state() });
     }
   } catch (err) {
     return json(400, { error: "bad_request", message: (err as Error).message });
@@ -524,9 +558,12 @@ async function handleManaAdmin(req: IncomingMessage, res: ServerResponse, path: 
   return json(404, { error: "not_found" });
 }
 
+/** /mana/flow is computed from the ledger; reuse it briefly (it's public). */
+let flowCache: { at: number; body: string } | null = null;
+
 function handleManaPublic(req: IncomingMessage, res: ServerResponse): boolean {
   const url = new URL(req.url ?? "/", "http://x");
-  if (url.pathname !== "/mana" && url.pathname !== "/mana/ledger") return false;
+  if (url.pathname !== "/mana" && url.pathname !== "/mana/ledger" && url.pathname !== "/mana/flow") return false;
   const headers = { "Content-Type": "application/json", "Cache-Control": "public, max-age=10", ...corsHeaders(req) };
   if (req.method === "OPTIONS") {
     res.writeHead(204, { ...corsHeaders(req), "Access-Control-Allow-Methods": "GET" });
@@ -541,6 +578,10 @@ function handleManaPublic(req: IncomingMessage, res: ServerResponse): boolean {
   res.writeHead(200, headers);
   if (url.pathname === "/mana") {
     res.end(JSON.stringify(rooms.mana.state()));
+  } else if (url.pathname === "/mana/flow") {
+    const now = Date.now();
+    if (!flowCache || now - flowCache.at > 30_000) flowCache = { at: now, body: JSON.stringify(rooms.mana.flow(now)) };
+    res.end(flowCache.body);
   } else {
     const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get("limit") ?? "50", 10) || 50));
     const before = parseInt(url.searchParams.get("before") ?? "", 10);

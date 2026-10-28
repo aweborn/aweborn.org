@@ -40,6 +40,7 @@ import { touchInputAdapter } from '../systems/TouchInputAdapter'
 import { gamepadInputAdapter } from '../systems/GamepadInputAdapter'
 import { TouchInputAdapter } from '../systems/TouchInputAdapter'
 import { SolidificationWave } from '../effects/SolidificationWave'
+import { ShootingStars } from '../effects/ShootingStars'
 import { useQualityStore, useQualityTier } from '../stores/qualityStore'
 import { matchesBinding } from '../stores/keybindingStore'
 import {
@@ -416,6 +417,9 @@ function UniverseView({ onPortalActivate, playerColor }: { onPortalActivate: () 
 
       {/* Living Frontier edge + the golden wave on new gifts (Phase 05) */}
       <SolidificationWave />
+
+      {/* Every mana leaving the pool leaves as a shooting star (Phase 05 / M4) */}
+      <ShootingStars />
     </>
   )
 }

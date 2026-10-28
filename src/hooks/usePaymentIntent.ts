@@ -15,7 +15,7 @@ export function usePaymentIntent() {
     error: null,
   })
 
-  const createPaymentIntent = useCallback(async (amountInCents: number) => {
+  const createPaymentIntent = useCallback(async (amountInCents: number, displayName?: string) => {
     if (!API_ENDPOINT) {
       setState({
         clientSecret: null,
@@ -27,6 +27,9 @@ export function usePaymentIntent() {
 
     setState({ clientSecret: null, loading: true, error: null })
 
+    // Opt-in only: the name shown in the golden wave + public ledger.
+    const name = displayName?.trim().slice(0, 20)
+
     try {
       const response = await fetch(`${API_ENDPOINT}/create-payment-intent`, {
         method: 'POST',
@@ -34,6 +37,7 @@ export function usePaymentIntent() {
         body: JSON.stringify({
           amount: amountInCents,
           currency: 'usd',
+          ...(name ? { displayName: name } : {}),
         }),
       })
 

@@ -198,16 +198,11 @@ Resources:
       Code:
         ZipFile: |
           const https = require('https');
-
-          const ALLOWED_ORIGINS = [
-            'https://aweborn.org',
-            'https://www.aweborn.org'
-          ];
+          const ALLOWED_ORIGINS = ['https://aweborn.org', 'https://www.aweborn.org'];
 
           function corsHeaders(origin) {
-            const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
             return {
-              'Access-Control-Allow-Origin': allowed,
+              'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
               'Access-Control-Allow-Headers': 'Content-Type',
               'Access-Control-Allow-Methods': 'POST, OPTIONS',
               'Content-Type': 'application/json'
@@ -217,30 +212,14 @@ Resources:
           function stripeRequest(path, data, apiKey) {
             return new Promise((resolve, reject) => {
               const postData = new URLSearchParams(data).toString();
-              const options = {
-                hostname: 'api.stripe.com',
-                port: 443,
-                path: path,
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${apiKey}`,
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                  'Content-Length': Buffer.byteLength(postData)
-                }
-              };
-
-              const req = https.request(options, (res) => {
+              const req = https.request({
+                hostname: 'api.stripe.com', port: 443, path, method: 'POST',
+                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(postData) }
+              }, (res) => {
                 let body = '';
                 res.on('data', (chunk) => body += chunk);
-                res.on('end', () => {
-                  try {
-                    resolve(JSON.parse(body));
-                  } catch (e) {
-                    reject(new Error('Failed to parse Stripe response'));
-                  }
-                });
+                res.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(new Error('Failed to parse Stripe response')); } });
               });
-
               req.on('error', reject);
               req.write(postData);
               req.end();
@@ -248,92 +227,54 @@ Resources:
           }
 
           exports.handler = async (event) => {
-            const origin = event.headers?.origin || '';
-            const headers = corsHeaders(origin);
+            const headers = corsHeaders(event.headers?.origin || '');
             const path = event.requestContext?.http?.path || '';
-
-            // Handle CORS preflight
-            if (event.requestContext?.http?.method === 'OPTIONS') {
-              return { statusCode: 200, headers, body: '' };
-            }
+            const out = (statusCode, obj) => ({ statusCode, headers, body: JSON.stringify(obj) });
+            if (event.requestContext?.http?.method === 'OPTIONS') return { statusCode: 200, headers, body: '' };
 
             try {
               const body = JSON.parse(event.body || '{}');
               const amount = parseInt(body.amount, 10);
               const currency = body.currency || 'usd';
+              if (!amount || amount < 100) return out(400, { error: 'Minimum donation is $1.00' });
+              // Opt-in name for the golden wave (the server cleans it again); omitted = anonymous.
+              const name = typeof body.displayName === 'string' ? body.displayName.trim().slice(0, 20) : '';
+              const meta = (prefix) => {
+                const m = { [prefix + '[source]']: 'aweborn.org', [prefix + '[kind]']: 'donation' };
+                if (name) m[prefix + '[display_name]'] = name;
+                return m;
+              };
 
-              if (!amount || amount < 100) {
-                return {
-                  statusCode: 400,
-                  headers,
-                  body: JSON.stringify({ error: 'Minimum donation is $1.00' })
-                };
-              }
-
-              // --- Route: Create PaymentIntent (embedded Elements flow) ---
+              // Embedded Elements flow
               if (path.endsWith('/create-payment-intent')) {
-                const paymentIntent = await stripeRequest('/v1/payment_intents', {
-                  'amount': amount.toString(),
-                  'currency': currency,
+                const pi = await stripeRequest('/v1/payment_intents', {
+                  amount: amount.toString(), currency,
                   'automatic_payment_methods[enabled]': 'true',
-                  'description': 'Donation to Aweborn',
-                  'metadata[source]': 'aweborn.org',
-                  'metadata[kind]': 'donation'
+                  description: 'Donation to Aweborn',
+                  ...meta('metadata')
                 }, process.env.STRIPE_SECRET_KEY);
-
-                if (paymentIntent.error) {
-                  console.error('Stripe error:', paymentIntent.error);
-                  return {
-                    statusCode: 500,
-                    headers,
-                    body: JSON.stringify({ error: 'Failed to initialize payment' })
-                  };
-                }
-
-                return {
-                  statusCode: 200,
-                  headers,
-                  body: JSON.stringify({ clientSecret: paymentIntent.client_secret })
-                };
+                if (pi.error) { console.error('Stripe error:', pi.error); return out(500, { error: 'Failed to initialize payment' }); }
+                return out(200, { clientSecret: pi.client_secret });
               }
 
-              // --- Route: Create Checkout Session (redirect fallback) ---
+              // Checkout Session (redirect fallback)
               const siteUrl = process.env.SITE_URL || 'https://aweborn.org';
-
               const session = await stripeRequest('/v1/checkout/sessions', {
-                'mode': 'payment',
+                mode: 'payment',
                 'line_items[0][price_data][currency]': currency,
                 'line_items[0][price_data][product_data][name]': 'Donation to Aweborn',
                 'line_items[0][price_data][unit_amount]': amount.toString(),
                 'line_items[0][quantity]': '1',
-                'success_url': `${siteUrl}?donation=success`,
-                'cancel_url': `${siteUrl}?donation=cancelled`,
-                'submit_type': 'donate',
-                'payment_intent_data[metadata][source]': 'aweborn.org',
-                'payment_intent_data[metadata][kind]': 'donation'
+                success_url: `${siteUrl}?donation=success`,
+                cancel_url: `${siteUrl}?donation=cancelled`,
+                submit_type: 'donate',
+                ...meta('payment_intent_data[metadata]')
               }, process.env.STRIPE_SECRET_KEY);
-
-              if (session.error) {
-                console.error('Stripe error:', session.error);
-                return {
-                  statusCode: 500,
-                  headers,
-                  body: JSON.stringify({ error: 'Failed to create checkout session' })
-                };
-              }
-
-              return {
-                statusCode: 200,
-                headers,
-                body: JSON.stringify({ url: session.url })
-              };
+              if (session.error) { console.error('Stripe error:', session.error); return out(500, { error: 'Failed to create checkout session' }); }
+              return out(200, { url: session.url });
             } catch (err) {
               console.error('Handler error:', err);
-              return {
-                statusCode: 500,
-                headers,
-                body: JSON.stringify({ error: 'Internal server error' })
-              };
+              return out(500, { error: 'Internal server error' });
             }
           };
 
@@ -349,8 +290,11 @@ Resources:
   # Lambda — Stripe webhook → mana ledger (Phase 05)
   # Each live donation (payment_intent.succeeded, metadata kind=donation)
   # becomes a gift in the universe's pool: net of Stripe fees, idempotent on
-  # the payment intent id. Only the amount and date leave Stripe, never the
-  # donor's name or email. Non-2xx → Stripe retries for up to 3 days.
+  # the payment intent id. Only the amount and date leave Stripe (plus a
+  # display name only when the giver opted in to show it in the golden wave),
+  # never the donor's email. Refunds and lost disputes (charge.refunded,
+  # charge.dispute.funds_withdrawn) become labeled draws, bounded by the gift
+  # (M4, 2026-10-27). Non-2xx → Stripe retries for up to 3 days.
   # ============================================
   StripeWebhookRole:
     Type: AWS::IAM::Role
@@ -390,8 +334,8 @@ Resources:
             console.log(statusCode, msg);
             return { statusCode, headers: { 'Content-Type': 'text/plain' }, body: msg };
           };
+          const ledger = (path, body) => fetch(process.env.SYNC_URL + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.MANA_INFLOW_TOKEN }, body: JSON.stringify(body) });
 
-          // Stripe-Signature: t=<unix>,v1=<hex hmac of "t.body">[,v1=...]
           function verify(raw, header, secret) {
             if (!header || !secret || !secret.startsWith('whsec_') || secret === 'whsec_placeholder') return false;
             let t = null; const sigs = [];
@@ -410,28 +354,23 @@ Resources:
 
           exports.handler = async (event) => {
             const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : (event.body || '');
-            const headers = event.headers || {};
-            if (!verify(raw, headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET)) return reply(400, 'bad signature');
-
-            const evt = JSON.parse(raw);
-            // Some payment methods (e.g. Link) attach the balance transaction (which holds the net after
-            // Stripe's fee) to the charge a minute or more AFTER payment_intent.succeeded. Stripe signals
-            // that with charge.updated (previous_attributes.balance_transaction: null -> txn_...), so we
-            // record on whichever event arrives with the net available. The ledger dedupes on ref.
-            let piId;
-            if (evt.type === 'payment_intent.succeeded') {
-              piId = evt.data.object.id;
-            } else if (evt.type === 'charge.updated') {
-              const ch = evt.data.object;
-              const prev = evt.data.previous_attributes || {};
-              if (!ch.payment_intent || !('balance_transaction' in prev) || !ch.balance_transaction) return reply(200, 'ignored charge.updated');
-              piId = ch.payment_intent;
-            } else {
-              return reply(200, 'ignored ' + evt.type);
+            if (!verify(raw, (event.headers || {})['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET)) return reply(400, 'bad signature');
+            const evt = JSON.parse(raw), o = evt.data.object, t = evt.type, prev = evt.data.previous_attributes || {};
+            if (!evt.livemode && process.env.ALLOW_TEST_EVENTS !== 'true') return reply(200, 'test mode ' + t);
+            // Refund / lost dispute: a labeled draw, bounded by the gift on the server.
+            if (t === 'charge.refunded' || t === 'charge.dispute.funds_withdrawn') {
+              const d = t !== 'charge.refunded', cents = d ? o.amount : o.amount_refunded - (prev.amount_refunded || 0);
+              if (!o.payment_intent || !(cents > 0)) return reply(200, 'ignored ' + t);
+              const res = await ledger('/api/mana/refund', { giftRef: o.payment_intent, refundRef: d ? o.id : o.id + ':' + o.amount_refunded, dollars: cents / 100, dispute: d });
+              const text = await res.text();
+              return reply(res.ok || res.status === 409 ? 200 : 502, t + ' ' + res.status + ' ' + text.slice(0, 120));
             }
-            if (!evt.livemode && process.env.ALLOW_TEST_EVENTS !== 'true') return reply(200, 'test mode, not recorded ' + piId);
+            // Link etc. attach the net after payment_intent.succeeded; charge.updated says when.
+            let piId;
+            if (t === 'payment_intent.succeeded') piId = o.id;
+            else if (t === 'charge.updated' && o.payment_intent && 'balance_transaction' in prev && o.balance_transaction) piId = o.payment_intent;
+            else return reply(200, 'ignored ' + t);
 
-            // Net after Stripe's fee lives on the charge's balance transaction.
             const r = await fetch(STRIPE_API + '/v1/payment_intents/' + encodeURIComponent(piId) + '?expand[]=latest_charge.balance_transaction', {
               headers: { Authorization: 'Bearer ' + process.env.STRIPE_SECRET_KEY }
             });
@@ -439,15 +378,12 @@ Resources:
             if (!r.ok || !pi.id) return reply(503, 'could not load payment intent ' + piId);
             if (!pi.metadata || pi.metadata.source !== 'aweborn.org' || pi.metadata.kind !== 'donation') return reply(200, 'not a donation ' + pi.id);
             const bt = pi.latest_charge && pi.latest_charge.balance_transaction;
-            // Not attached yet: 503 makes Stripe retry, and charge.updated will also fire when it is.
             if (!bt || typeof bt.net !== 'number') return reply(503, 'balance transaction not ready ' + pi.id);
             if (bt.currency !== 'usd') return reply(500, 'unexpected settlement currency ' + bt.currency);
 
-            const res = await fetch(process.env.SYNC_URL + '/api/mana/inflow', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.MANA_INFLOW_TOKEN },
-              body: JSON.stringify({ source: 'gift', netDollars: bt.net / 100, ref: pi.id, at: pi.created * 1000 })
-            });
+            const body = { source: 'gift', netDollars: bt.net / 100, ref: pi.id, at: pi.created * 1000 };
+            if (pi.metadata.display_name) body.publicName = pi.metadata.display_name;
+            const res = await ledger('/api/mana/inflow', body);
             const text = await res.text();
             if (!res.ok) return reply(502, 'ledger refused ' + res.status + ' ' + text.slice(0, 200));
             return reply(200, (text.includes('"duplicate"') ? 'already recorded ' : 'recorded ') + pi.id + ' net $' + (bt.net / 100).toFixed(2));

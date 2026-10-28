@@ -153,10 +153,16 @@ export interface ManaState {
    * Optional: older servers and cached docs don't have it.
    */
   level?: number;
+  /**
+   * The name the latest giver chose to show in the golden wave, or null
+   * (most gifts stay anonymous; opt-in only, M4). Optional for older docs.
+   */
+  lastDonorName?: string | null;
 }
 
 export type ManaFunction = "program" | "management" | "fundraising";
-export type ManaPurpose = "creations" | "research" | "cards" | "servers" | "compensation" | "other";
+/** `refunds`: a gift returned to its giver (or a lost dispute), recorded as a labeled draw (Alex, 2026-10-27). */
+export type ManaPurpose = "creations" | "research" | "cards" | "servers" | "compensation" | "refunds" | "other";
 
 /** Public mana constants (Phase 05, decided 2026-10-14). */
 export const MANA_PARAMS = {

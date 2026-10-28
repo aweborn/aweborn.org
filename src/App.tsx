@@ -28,6 +28,8 @@ import { startLocationPersistence } from './stores/locationStore'
 import { startWaveWatcher } from './stores/waveStore'
 import { WaveBanner } from './components/WaveBanner'
 import { startAudio } from './audio/startAudio'
+import { startSky } from './stores/skyStore'
+import { StarCaption } from './components/StarCaption'
 
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
 import { FallbackScene } from './components/FallbackScene'
@@ -87,6 +89,11 @@ export default function App() {
   // Procedural sound (ambience follows the pool; wave, creation, discovery, warp).
   useEffect(() => {
     if (webglSupported) startAudio()
+  }, [webglSupported])
+
+  // Living sky (Phase 05 / M4): solar tint, pool band, shooting stars.
+  useEffect(() => {
+    if (webglSupported) startSky()
   }, [webglSupported])
 
   const handlePortalActivate = useCallback(() => {
@@ -167,6 +174,9 @@ export default function App() {
 
       {/* Solidification wave: recognition line + golden flash */}
       {isLoaded && webglSupported && <WaveBanner />}
+
+      {/* Tap a shooting star: what that mana paid for */}
+      {isLoaded && webglSupported && <StarCaption />}
 
       {/* Donation modal */}
       <DonationModal

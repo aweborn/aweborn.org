@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { useManaTracker, refreshMana, type UsageStat } from '../stores/manaTrackerStore'
 import { useSheet } from '../stores/sheetStore'
 import { openAccount } from './ManaSeal'
 import { subscribePlayer } from '../lib/player'
+import { useSkyStore } from '../stores/skyStore'
+import { FUNCTION_COLORS, FUNCTION_LABELS, NATURES, PURPOSE_LABELS } from '@aweborn/shared/sky'
 
 /** Hold duration (ms) on the place/mana pill inside a world to leave back to space (docs/mobile-ui/SPEC.md). */
 const HOLD_LEAVE_MS = 600
@@ -47,6 +49,7 @@ export function ManaTracker() {
   const worlds = useUniverseStore((s) => s.worlds)
   const isInWorld = activeWorldId !== null
   const worldName = activeWorldId ? (worlds.get(activeWorldId)?.name ?? activeWorldId) : null
+  const skyFlow = useSkyStore((s) => s.flow)
 
   const pillRef = useRef<HTMLButtonElement | null>(null)
   const holdRef = useRef<{ id: number; t0: number; raf: number; fired: boolean } | null>(null)
@@ -194,6 +197,11 @@ export function ManaTracker() {
             You can draw {fmt(status.remaining)} right now
             {status.remaining < status.cap - status.spent - 0.5 ? ' (the world’s flow is the limit)' : ''}. It returns as older draws leave the 24 h window.
           </p>
+          {typeof status.solar === 'number' && Math.abs(status.solar - 1) >= 0.005 && (
+            <p className="mana-note mana-note--solar" id="mana-solar-note">
+              {status.solar > 1 ? '☀' : '☾'} Daylight ×{status.solar.toFixed(2)}: your cap follows your local sun (up to +10 % at noon, −10 % at midnight).
+            </p>
+          )}
 
           <div className="mana-avgs">
             <Avg label="Per planner turn" s={status.week.plan} />
@@ -214,6 +222,43 @@ export function ManaTracker() {
             <span>Makers sharing the flow</span>
             <b>{Math.max(1, status.activePlayers)}</b>
           </div>
+
+          {skyFlow && (skyFlow.lines.length > 0 || skyFlow.shortfall > 0) && (
+            <>
+              <h3>Stars leaving the universe · 24 h</h3>
+              <ul className="sky-legend" id="sky-legend">
+                {[...skyFlow.lines]
+                  .sort((a, b) => b.amount - a.amount)
+                  .slice(0, 6)
+                  .map((l) => (
+                    <li key={`${l.fn}|${l.purpose}|${l.nature}`} title={`${FUNCTION_LABELS[l.fn]} · ${NATURES[l.nature]}`}>
+                      <span className="sky-legend-dot" style={{ '--star-color': FUNCTION_COLORS[l.fn] } as CSSProperties} aria-hidden="true" />
+                      <span className="sky-legend-what">
+                        {PURPOSE_LABELS[l.purpose]}
+                        <i>{NATURES[l.nature].replace(/\s*\(.*\)$/, '')}</i>
+                      </span>
+                      <b>{fmt(l.amount)}</b>
+                    </li>
+                  ))}
+                {skyFlow.shortfall > 0 && (
+                  <li title="The creative share covered bills the rest of the pool couldn't">
+                    <span className="sky-legend-dot sky-legend-dot--shortfall" style={{ '--star-color': FUNCTION_COLORS.program } as CSSProperties} aria-hidden="true" />
+                    <span className="sky-legend-what">
+                      Shortfall
+                      <i>creative share covered bills</i>
+                    </span>
+                    <b>{fmt(skyFlow.shortfall)}</b>
+                  </li>
+                )}
+              </ul>
+              <p className="mana-note">
+                <span className="sky-key" style={{ '--star-color': FUNCTION_COLORS.program } as CSSProperties}>gold</span> programs ·{' '}
+                <span className="sky-key" style={{ '--star-color': FUNCTION_COLORS.management } as CSSProperties}>blue</span> management ·{' '}
+                <span className="sky-key" style={{ '--star-color': FUNCTION_COLORS.fundraising } as CSSProperties}>silver</span> fundraising.{' '}
+                <a href="/giving.html#sky" target="_blank" rel="noopener" id="sky-legend-giving-link">How the sky works</a>
+              </p>
+            </>
+          )}
 
           {status.recent.length > 0 && (
             <>
