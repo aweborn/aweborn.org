@@ -86,11 +86,11 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - name: Shared sim tests + cross-engine replay (Node, Chrome)
+      - name: Shared sim + action-catalog tests, cross-engine replay (Node, Chrome)
         run: |
           npm ci
           (cd server/sync-service && npm ci)
-          node --import ./server/sync-service/node_modules/tsx/dist/esm/index.mjs --test shared/sim/*.test.ts
+          node --import ./server/sync-service/node_modules/tsx/dist/esm/index.mjs --test shared/sim/*.test.ts shared/actions.test.ts
           CHROME="$(command -v google-chrome || command -v google-chrome-stable || true)" node scripts/sim-determinism/run.mjs
 
   deploy-server:
