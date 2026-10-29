@@ -6,6 +6,7 @@ import { useWorldStore } from "../stores/worldStore";
 import { useChatStore, onChatNotice } from "../stores/chatStore";
 import { drainPendingWorldUpdates } from "../lib/offlineCache";
 import { connectivityTier, useNavigatorOnline, usePendingWorlds } from "../hooks/useConnectivity";
+import { useMeshStore } from "../lib/mesh";
 import { adjacentSectorKeys } from "@aweborn/shared/crdt-schema";
 
 /** Don't flash "reconnecting" for blips (boot, a deploy restart, a Wi-Fi hop). */
@@ -100,7 +101,8 @@ export function SyncBridge() {
   // since navigator.onLine === false is reliable. Online shows nothing.
   const online = useNavigatorOnline();
   const pendingWorlds = usePendingWorlds();
-  const tier = connectivityTier(connected, online);
+  const meshPeers = useMeshStore((s) => s.peers);
+  const tier = connectivityTier(connected, online, meshPeers);
   const [showOffline, setShowOffline] = useState(false);
   useEffect(() => {
     if (connected) {
@@ -113,7 +115,9 @@ export function SyncBridge() {
 
   const waiting = pendingWorlds === 1 ? "1 world" : `${pendingWorlds} worlds`;
   const message =
-    tier === "solo"
+    tier === "mesh"
+      ? `No internet: playing with ${meshPeers === 1 ? "1 nearby player" : `${meshPeers} nearby players`}. It all syncs when you’re back`
+      : tier === "solo"
       ? pendingWorlds > 0
         ? `Offline: playing solo. Changes in ${waiting} will sync when you’re back`
         : "Offline: playing solo. What you build is saved on this device"

@@ -4581,6 +4581,9 @@ html.touch-ui .plant-open kbd { display: none; }
 /* Solo offline is a steady state, not a wait: a still dot, cooler chip */
 .sync-status[data-tier="solo"] { background: rgba(28, 24, 44, 0.88); border-color: rgba(255, 120, 140, 0.4); }
 .sync-status[data-tier="solo"] .sync-status-dot { background: #ff7a8c; animation: none; }
+/* Local mesh (M7b): playing with phones nearby, no server */
+.sync-status[data-tier="mesh"] { background: rgba(36, 30, 14, 0.88); border-color: rgba(255, 211, 107, 0.45); }
+.sync-status[data-tier="mesh"] .sync-status-dot { background: #ffd36b; animation: none; }
 @media (prefers-reduced-motion: reduce) {
   .plant-open.is-sealed::after, .plant-orb, .plant-orb.is-planted, .sync-status-dot { animation: none; }
 }

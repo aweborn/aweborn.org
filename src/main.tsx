@@ -3,6 +3,10 @@ import './index.css'
 import App from './App'
 import { initOfflineCache } from './lib/offlineCache'
 import { useUniverseStore } from './stores/universeStore'
+import { takeJoinLink } from './lib/mesh'
+
+// A phone camera opened a Play nearby code (/j#<offer>, M7b): the panel joins once the app is up
+takeJoinLink()
 
 // The offline cache lives in IndexedDB (async), so load it before the first render: a cold offline card tap
 // must find its cached worlds just as it did when the cache was synchronous localStorage (M7a, 2026-10-28)

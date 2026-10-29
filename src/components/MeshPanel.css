@@ -1,0 +1,234 @@
+/* ── Play nearby (Phase 06 mesh, M7b) ─────────────────────────────── */
+
+.mesh-panel {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(440px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, rgba(20, 18, 60, 0.94), rgba(8, 8, 32, 0.97));
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  box-shadow: var(--shadow-elevated), inset 0 1px 0 var(--glass-highlight);
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  overflow-y: auto;
+}
+
+.mesh-panel[open] { animation: mesh-in 220ms var(--ease-out-expo); }
+
+/* Scrolling inside the dialog or over the backdrop never scrolls the page behind */
+.mesh-panel:modal { overscroll-behavior: contain; }
+.mesh-panel::backdrop {
+  background: rgba(3, 3, 14, 0.6);
+  backdrop-filter: blur(3px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+@keyframes mesh-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.mesh-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+.mesh-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-md); }
+
+.mesh-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-primary);
+}
+
+.mesh-close {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+.mesh-close:hover { color: var(--color-text-primary); border-color: rgba(255, 255, 255, 0.3); }
+
+.mesh-lead, .mesh-note, .mesh-ok, .mesh-error { margin: 0; font-size: var(--text-sm); line-height: 1.5; }
+.mesh-lead b, .mesh-ok b { color: var(--color-text-primary); font-weight: 600; }
+.mesh-note { color: var(--color-text-tertiary); font-size: var(--text-xs); }
+.mesh-ok { color: var(--color-text-primary); }
+.mesh-ok span { color: #8ff0b0; font-weight: 700; margin-right: 4px; }
+.mesh-error {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: rgba(255, 110, 130, 0.12);
+  border: 1px solid rgba(255, 110, 130, 0.35);
+  color: #ffd0d6;
+}
+
+.mesh-choices { display: grid; gap: var(--space-sm); }
+
+.mesh-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-height: 64px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+.mesh-choice:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(232, 185, 74, 0.45); }
+.mesh-choice-icon { font-size: 1.6rem; line-height: 1; }
+.mesh-choice-text { display: flex; flex-direction: column; gap: 2px; }
+.mesh-choice-title { color: var(--color-text-primary); font-weight: 600; font-size: var(--text-base); }
+.mesh-choice-sub { font-size: var(--text-xs); color: var(--color-text-tertiary); }
+
+.mesh-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); flex-wrap: wrap; }
+
+.mesh-btn {
+  min-height: 44px;
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+  font: 600 var(--text-sm) var(--font-body);
+  cursor: pointer;
+}
+.mesh-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.mesh-btn--primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary));
+  color: #1a1206;
+}
+.mesh-btn--primary:hover { filter: brightness(1.06); background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary)); }
+.mesh-btn--quiet { background: transparent; color: var(--color-text-secondary); }
+
+.mesh-qr { margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-xs); }
+.mesh-qr img, .mesh-qr-blank {
+  width: min(240px, 64vw);
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.08), 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.mesh-link {
+  min-height: 44px;
+  padding: 0 var(--space-sm);
+  border: 0;
+  background: none;
+  color: var(--color-text-tertiary);
+  font: var(--text-xs) var(--font-body);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.mesh-link:hover { color: var(--color-text-primary); }
+
+.mesh-wait { display: flex; align-items: center; justify-content: center; gap: var(--space-sm); min-height: 64px; color: var(--color-text-primary); font-size: var(--text-sm); }
+.mesh-wait--quiet { min-height: 0; color: var(--color-text-tertiary); font-size: var(--text-xs); }
+.mesh-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--color-accent-primary);
+  animation: mesh-spin 0.9s linear infinite;
+}
+@keyframes mesh-spin { to { transform: rotate(360deg); } }
+
+.mesh-scan {
+  position: relative;
+  width: min(300px, 100%);
+  margin: 0 auto;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #000;
+}
+.mesh-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mesh-scan-frame {
+  position: absolute;
+  inset: 16%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+.mesh-scan-problem {
+  position: absolute;
+  inset: auto 0 0;
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(8, 8, 32, 0.85);
+  color: var(--color-text-primary);
+  font-size: var(--text-xs);
+}
+
+.mesh-paste summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+.mesh-paste-form { display: flex; gap: var(--space-sm); align-items: center; flex-wrap: wrap; }
+.mesh-paste-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.mesh-paste-input {
+  flex: 1 1 180px;
+  min-height: 44px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--color-text-primary);
+  font: var(--text-sm) var(--font-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mesh-panel[open] { animation: none; }
+  .mesh-spinner { animation-duration: 2.4s; }
+}
+
+/* Short screens: tighter spacing, smaller QR */
+@media (max-height: 480px) {
+  .mesh-shell { padding: var(--space-md); gap: var(--space-sm); }
+  .mesh-qr img, .mesh-qr-blank { width: min(180px, 40vh); }
+  .mesh-scan { width: min(220px, 52vh); }
+}
+
+/* Landscape phones: the code (or camera) on the left, title, steps and buttons on the right, so nothing scrolls */
+@media (max-height: 480px) and (orientation: landscape) {
+  .mesh-panel { width: min(640px, calc(100vw - 24px)); }
+  .mesh-shell:has(> .mesh-qr, > .mesh-scan) {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: var(--space-lg);
+    row-gap: 0; /* the code spans spare rows; margins instead so empty rows add no height */
+    align-content: center;
+  }
+  .mesh-shell:has(> .mesh-qr, > .mesh-scan) > * { grid-column: 2; margin-bottom: var(--space-sm); }
+  .mesh-shell > .mesh-qr, .mesh-shell > .mesh-scan { grid-column: 1; grid-row: 1 / span 8; align-self: center; margin: 0; }
+  .mesh-shell > .mesh-qr img, .mesh-shell > .mesh-qr .mesh-qr-blank { width: min(200px, calc(100dvh - 110px)); }
+  .mesh-shell > .mesh-scan { width: min(240px, calc(100dvh - 60px)); }
+}

@@ -12,6 +12,7 @@ import { keyCapLabel, useKeybindingStore } from '../stores/keybindingStore'
 import { openCardCheckout, useCardableWorld } from '../hooks/useCardableWorld'
 import { CARD_PRICE_CENTS } from '@aweborn/shared/cards'
 import { formatCardPrice } from '../lib/cardCheckout'
+import { openMeshPanel } from '../lib/mesh'
 
 /**
  * Display settings: a gear under the FPS counter that opens a small glass
@@ -110,6 +111,17 @@ export function DisplaySettings() {
               Get this world&rsquo;s card<span className="display-settings-price">{formatCardPrice(CARD_PRICE_CENTS)}</span>
             </button>
           )}
+          <button
+            id="display-mesh"
+            type="button"
+            className="display-settings-photo"
+            onClick={() => {
+              setOpen(false)
+              openMeshPanel()
+            }}
+          >
+            Play nearby (no internet)
+          </button>
         </div>
       )}
     </div>

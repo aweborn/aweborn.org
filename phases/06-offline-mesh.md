@@ -32,29 +32,29 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - `[x]` Test: load aweborn.org → go offline → app still works *(2026-10-22)*
 
 ### WebRTC P2P (y-webrtc)
-- `[ ]` Install `y-webrtc` and configure alongside the existing WebSocket room protocol (`useCRDT.ts`)
-- `[ ]` Dual provider setup: Yjs doc syncs over both WebSocket AND WebRTC
-- `[ ]` P2P connection management (discover peers on same LAN via signaling)
+- `[~]` Install `y-webrtc` and configure alongside the existing WebSocket room protocol (`useCRDT.ts`) *(M7b deviation: no y-webrtc (it needs a signaling server, which defeats offline). `src/lib/mesh.ts` runs its own `RTCPeerConnection` + negotiated DataChannel next to the room socket)*
+- `[x]` Dual provider setup: Yjs doc syncs over both WebSocket AND WebRTC *(M7b: the active world doc; peer updates carry a `mesh` origin and are never forwarded to the server: each phone uploads only its own queue)*
+- `[~]` P2P connection management (discover peers on same LAN via signaling) *(M7b: QR signaling instead of discovery; star with the host relaying, up to 6 links)*
 - `[ ]` Ephemeral data over DataChannels (avatar positions, voice) — *replaces/augments the current WebSocket presence relay (msg `0x09`) for scale*. **Phase 09:** movement goes over DataChannels as *inputs*, not positions (milestone 9E)
-- `[ ]` Graceful fallback: WebRTC fails → WebSocket only, and vice versa
+- `[x]` Graceful fallback: WebRTC fails → WebSocket only, and vice versa *(M7b: each runs on its own; a failed link shows a retry, the socket keeps going)*
 
 ### QR Code Signaling (QWBP)
-- `[ ]` Install/integrate QWBP library
-- `[ ]` Create `src/components/QRHostPanel.tsx` — Host World flow:
+- `[~]` Install/integrate QWBP library *(M7b deviation: own compact codec `shared/mesh-signal.ts` (ufrag, pwd, fingerprint, ≤4 candidates, worldId), a real Chrome offer packs to 119 bytes; tests in `mesh-signal.test.ts`)*
+- `[x]` Create `src/components/QRHostPanel.tsx` — Host World flow *(M7b: one panel for both sides, `src/components/MeshPanel.tsx`, lazy)*:
   1. Create RTCPeerConnection
   2. Wait for ICE gathering complete
   3. Binary-pack offer via QWBP
   4. Display as QR code on screen
   5. After scanning answer QR → connection established
-- `[ ]` Create `src/components/QRJoinPanel.tsx` — Join World flow:
+- `[x]` Create `src/components/QRJoinPanel.tsx` — Join World flow *(M7b: same `MeshPanel.tsx`; camera via BarcodeDetector, else jsQR; paste fallback)*:
   1. Scan host's QR code (camera API)
   2. Create RTCPeerConnection
   3. Set remote description from scanned offer
   4. Create answer, wait for ICE complete
   5. Display answer as QR code
   6. Host scans → DataChannel opens
-- `[ ]` Two-scan handshake: host displays QR → joiner scans → joiner displays QR → host scans → connected
-- `[ ]` Pipe Yjs CRDT updates through the DataChannel
+- `[x]` Two-scan handshake: host displays QR → joiner scans → joiner displays QR → host scans → connected *(M7b, tested between two browser contexts with the paste path; not yet on two real phones)*
+- `[x]` Pipe Yjs CRDT updates through the DataChannel *(M7b: state vectors on open / world change, then updates; >16 KB split into chunks; presence too)*
 
 ### NFC URL Support (Tap-to-Join)
 
@@ -62,8 +62,8 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 
 - `[ ]` Online mode: `aweborn.org/join/<worldId>` — deep link route
 - `[ ]` Create `src/pages/Join.tsx` — handles join URL, connects to world
-- `[ ]` Offline mode: `aweborn.org/j#<base64-QWBP-offer>` — SDP in URL hash
-- `[ ]` Join page reads `window.location.hash`, extracts SDP, generates answer
+- `[x]` Offline mode: `aweborn.org/j#<base64-QWBP-offer>` — SDP in URL hash *(M7b: the host's QR is `/j#<b64url>`, so a phone camera opens the game and joins)*
+- `[x]` Join page reads `window.location.hash`, extracts SDP, generates answer *(M7b: `takeJoinLink()` in `main.tsx`, no separate page)*
 - `[ ]` Documentation: how to write join URLs to NFC stickers
 - `[ ]` Offline card tap (Phase 08): if `/w/<uuid>` is opened offline, serve cached app and queue a *pending* World Index entry
 
@@ -76,7 +76,7 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - `[ ]` Client sees object smoothly slide into resolved position
 
 ### Tiered Connectivity UI
-- `[~]` Status indicator in HUD showing connectivity tier *(M7a: `SyncBridge` chip shows solo + reconnecting; online shows nothing; mesh tier with M7b)*:
+- `[~]` Status indicator in HUD showing connectivity tier *(M7a: `SyncBridge` chip shows solo + reconnecting; online shows nothing. M7b: yellow "No internet: playing with N nearby players")*:
   - 🟢 Online (WebSocket to VPS)
   - 🟡 Local mesh (WebRTC P2P only)
   - 🔴 Solo offline (local only)
@@ -113,3 +113,4 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 | Date | What was done | Next step |
 |------|--------------|-----------|
 | 2026-10-28 | **Rough Draft M7a.** (1) `offlineCache.ts` moved from localStorage (base64) to IndexedDB (`aweborn-offline` / `kv`, raw `Uint8Array`), keeping the same synchronous API via an in-memory mirror that `initOfflineCache()` loads before the first render (`main.tsx`, open capped at 1.5 s, then `universeStore.hydrateFromOfflineCache()`). Docs are marked dirty and encoded once per 400 ms (before: a full `encodeStateAsUpdate` + base64 into localStorage on every edit) and flushed on pagehide / tab hidden / before a world doc is destroyed; the offline edit queue is written at once. Old localStorage copies move over once and are removed only after IndexedDB commits; if IndexedDB can't open, the same data stays in localStorage. (2) Connectivity tier: `useConnectivity.ts` (online / reconnecting / solo) feeds the `SyncBridge` chip, now an always-mounted polite live region: *Offline: playing solo…* (at once, with “changes in N worlds will sync”) or *Reconnecting…* (after 4 s). **Deviation:** the online tier shows nothing rather than a green dot (the phone HUD is full; silence = fine). (3) **Found + fixed:** Chrome keeps a WebSocket “open” after the network drops, so edits were sent into it and lost instead of queued; `useCRDT` now closes the socket on `offline` and skips reconnect attempts until `online`. Verified locally (puppeteer): migration (legacy key → IndexedDB, localStorage cleared), offline edit → `pending:<id>` in IndexedDB → back online → drained and present on the server for a fresh client; reconnecting chip on a real server stop; chip at 390×844, 360×740, 844×390, 1440×900 with no overlap (moved to 80 px under the world pill). **Known gap:** a socket whose server vanishes without closing TCP (`docker pause`) stays “connected”: there's no heartbeat yet. Privacy updated (cached worlds + offline changes on the device). | M7b: WebRTC peers + QR two-scan host/join (mesh tier in the chip) |
+| 2026-10-28 | **Rough Draft M7b: Play nearby.** ••• More → *Play nearby* (desktop: gear panel). Host shows a QR (`/j#…`), the other phone scans it (camera, or paste) and shows one back, the host scans that: WebRTC DataChannel, no STUN/TURN, so both phones must share a Wi-Fi or hotspot. Over the link: the active world's Y.Doc (state vectors, then updates; host relays between joiners; max 6) and presence. Peer edits are cached locally but never sent to the server or queued; each phone uploads only its own edits, so the server still checks every edit against its author. Deviations: own compact SDP codec (`shared/mesh-signal.ts`) instead of QWBP; no y-webrtc. Privacy: *Playing nearby* paragraph (codes contain local network addresses). Checked: two browser contexts paired via paste, both offline, edits both ways + presence over the link, chip at 390/360/844, panel at 390/360/844/1440 (landscape two-column, no scroll), Esc/backdrop close, Disconnect closes both sides. **Not tested on real phones / a hotspot.** Known gap: a joiner's edit that builds on the host's not-yet-uploaded edits stays pending on the server until the host reconnects. | M7c: reconnect state-vector push, collision nudge + settling shimmer, offline card-tap pending entry, socket heartbeat; two real phones on a hotspot |

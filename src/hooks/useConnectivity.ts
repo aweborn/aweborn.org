@@ -7,13 +7,13 @@ import { pendingWorldCount, subscribePendingWorlds } from "../lib/offlineCache";
  * - online: the room socket to the VPS is up (no chip: silence means all is well)
  * - reconnecting: the browser has a network but the socket is down (deploy restart, Wi-Fi hop)
  * - solo: the browser says there's no network at all; play continues on the device cache
- *
- * The local-mesh tier (WebRTC peers, no VPS) joins this list with M7b.
+ * - mesh: no server, but nearby phones are linked (Play nearby, M7b)
  */
-export type ConnectivityTier = "online" | "reconnecting" | "solo";
+export type ConnectivityTier = "online" | "reconnecting" | "mesh" | "solo";
 
-export function connectivityTier(connected: boolean, online: boolean): ConnectivityTier {
+export function connectivityTier(connected: boolean, online: boolean, meshPeers = 0): ConnectivityTier {
   if (connected) return "online";
+  if (meshPeers > 0) return "mesh";
   return online ? "reconnecting" : "solo";
 }
 

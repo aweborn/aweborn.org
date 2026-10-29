@@ -174,6 +174,12 @@ function createUniverseDoc(onChange: (doc: Y.Doc) => void): Y.Doc {
   return doc;
 }
 
+/** Updates that came from a nearby phone (src/lib/mesh.ts, M7b). Each phone uploads only its own edits, so
+ *  the server checks every edit against the player who made it. */
+function isMeshOrigin(origin: unknown): boolean {
+  return typeof origin === "object" && origin !== null && (origin as { mesh?: unknown }).mesh === true;
+}
+
 function wireWorldDoc(
   worldId: string,
   doc: Y.Doc,
@@ -181,7 +187,7 @@ function wireWorldDoc(
 ): void {
   doc.on("update", (delta: Uint8Array, origin: unknown) => {
     saveWorldDoc(worldId, doc);
-    if (origin !== "remote") {
+    if (origin !== "remote" && !isMeshOrigin(origin)) {
       const s = getState();
       if (s.connected && s._worldDocUpdateHandler) {
         s._worldDocUpdateHandler(worldId, delta);

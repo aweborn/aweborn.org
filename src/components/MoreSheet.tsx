@@ -13,6 +13,7 @@ import { usePhotoStore } from '../stores/photoStore'
 import { openCardCheckout, useCardableWorld } from '../hooks/useCardableWorld'
 import { CARD_PRICE_CENTS } from '@aweborn/shared/cards'
 import { formatCardPrice } from '../lib/cardCheckout'
+import { openMeshPanel, useMeshStore } from '../lib/mesh'
 
 /**
  * ••• More (touch, 2026-10-22): everything a phone needs that isn't a thumb
@@ -36,6 +37,7 @@ export function MoreSheet() {
   const [mods, setMods] = useState(() => ({ ...starModSlots.getState() }))
   const [full, setFull] = useState(isFullscreen)
   const cardWorld = useCardableWorld()
+  const meshPeers = useMeshStore((s) => s.peers)
 
   useEffect(() => {
     if (!open) return
@@ -140,6 +142,16 @@ export function MoreSheet() {
             <span className="more-chev" aria-hidden="true">›</span>
           </button>
         )}
+        <button id="more-mesh" type="button" className="more-row" onClick={() => { setOpen(false); openMeshPanel() }}>
+          <span className="more-icon" aria-hidden="true">📡</span>
+          <span className="more-row-text">
+            <span className="more-row-title">Play nearby</span>
+            <span className="more-row-sub">
+              {meshPeers > 0 ? `Connected with ${meshPeers} nearby` : 'Same world with phones next to you, no internet'}
+            </span>
+          </span>
+          <span className="more-chev" aria-hidden="true">›</span>
+        </button>
 
         <h3 className="more-section">Controls</h3>
         <ul className="more-legend">

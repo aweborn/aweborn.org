@@ -72,6 +72,9 @@ void playerReady.then((player) => {
 /** WebSocket send function, set by the component that owns the sync connection */
 let _wsSend: PresenceSendFn | null = null;
 
+/** Nearby phones over the offline mesh (src/lib/mesh.ts, M7b): the same JSON as the socket */
+let _meshSend: ((payload: Uint8Array) => void) | null = null;
+
 /** BroadcastChannel for local same-browser fallback */
 let _broadcastChannel: BroadcastChannel | null = null;
 let _broadcastTimer: ReturnType<typeof setInterval> | null = null;
@@ -88,7 +91,7 @@ function startPresenceLoop() {
   _broadcastTimer = setInterval(() => {
     if (!_playerResolved) return;
     _broadcastChannel?.postMessage(_localState);
-    if (_wsSend) {
+    if (_wsSend || _meshSend) {
       const wire = {
         ..._localState,
         position: roundVec(_localState.position),
@@ -96,7 +99,8 @@ function startPresenceLoop() {
         ...(_localState.facing ? { facing: { x: r2(_localState.facing.x), z: r2(_localState.facing.z) } } : {}),
       };
       const payload = new TextEncoder().encode(JSON.stringify(wire));
-      _wsSend("presence", payload);
+      _wsSend?.("presence", payload);
+      _meshSend?.(payload);
     }
   }, BROADCAST_INTERVAL_MS);
 
@@ -179,6 +183,11 @@ export function handleWebSocketPresence(data: Uint8Array): void {
  */
 export function setPresenceSender(send: PresenceSendFn | null): void {
   _wsSend = send;
+}
+
+/** Set by the offline mesh while it has open links. */
+export function setMeshPresenceSender(send: ((payload: Uint8Array) => void) | null): void {
+  _meshSend = send;
 }
 
 /**
