@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aweborn cards at your event: a one-page guide | Aweborn</title>
+    <meta name="description" content="How to hand out Aweborn cards at an event: tap a card to a phone and you land inside its world, with no app and no sign-up. What to do before, what to say, and what to try if a tap doesn't work." />
+    <link rel="canonical" href="https://aweborn.org/event-guide.html" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/legal.css" />
+    <style>
+      /* One-page event guide (Rough Draft M6, Phase 08 "Organizations & Events").
+         Portrait phone first; prints on one letter / A4 page. */
+      .guide .updated { margin-bottom: 1.25rem; }
+      .guide h2 { display: flex; align-items: center; gap: 0.6rem; }
+      .guide h2 .n {
+        flex: none;
+        display: inline-grid;
+        place-items: center;
+        inline-size: 1.75rem;
+        block-size: 1.75rem;
+        border-radius: 50%;
+        font-size: 0.9rem;
+        color: #0a0a1e;
+        background: linear-gradient(135deg, var(--accent-soft), var(--accent));
+      }
+
+      .hero { display: grid; gap: 1.25rem; align-items: center; margin-block-end: 0.5rem; }
+      .hero figure { margin: 0; justify-self: center; }
+      .hero img {
+        display: block;
+        inline-size: min(13rem, 62vw);
+        block-size: auto;
+        border-radius: 14px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 40px rgba(232, 185, 74, 0.18);
+        transform: rotate(-3deg);
+        transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .hero figure:hover img { transform: rotate(0deg) scale(1.02); }
+      .hero figcaption { margin-block-start: 0.6rem; text-align: center; font-size: 0.85rem; color: var(--text-3); }
+      @media (min-width: 40rem) {
+        .hero { grid-template-columns: 1fr auto; }
+        .hero figure { grid-column: 2; grid-row: 1; }
+      }
+
+      .steps { list-style: none; padding: 0; margin: 0.75rem 0 0; display: grid; gap: 0.6rem; }
+      .steps li {
+        margin: 0;
+        padding: 0.85rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: rgba(238, 240, 246, 0.03);
+      }
+
+      .say {
+        margin: 0.75rem 0 0;
+        padding: 1rem 1.15rem;
+        border-inline-start: 3px solid var(--accent);
+        border-radius: 0 14px 14px 0;
+        background: rgba(232, 185, 74, 0.08);
+        color: var(--text);
+        font-size: 1.05rem;
+      }
+      .say p { margin: 0; }
+      .say p + p { margin-block-start: 0.6rem; }
+      .say-label { display: block; margin-block-end: 0.35rem; font: 600 0.75rem Outfit, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-soft); }
+
+      .fixes { margin: 0.75rem 0 0; display: grid; gap: 0.5rem; }
+      .fixes div { padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 14px; background: rgba(238, 240, 246, 0.03); }
+      .fixes dt { font-weight: 600; color: var(--text); }
+      .fixes dd { margin: 0.15rem 0 0; }
+
+      .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-block-start: 1.75rem; }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-block-size: 44px;
+        padding: 0 1.15rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        font: 600 0.95rem Inter, system-ui, sans-serif;
+        color: var(--text);
+        background: rgba(238, 240, 246, 0.06);
+        text-decoration: none;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.2s;
+      }
+      .btn:hover { background: rgba(238, 240, 246, 0.12); transform: translateY(-1px); color: var(--text); }
+      .btn.primary { color: #1a1206; border: none; background: linear-gradient(135deg, #ffd27a, #ff9f5a); }
+      .btn.primary:hover { color: #1a1206; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .hero img, .btn { transition: none; }
+        .hero figure:hover img, .btn:hover { transform: none; }
+      }
+
+      /* Paper: black on white, no glass, one page. Redefining the tokens covers every
+         rule that reads them (lede, labels, links), not just the ones listed here. */
+      @media print {
+        @page { margin: 10mm 12mm; }
+        :root {
+          color-scheme: light;
+          --text: #000;
+          --text-2: #222;
+          --text-3: #555;
+          --accent-soft: #7a5a00;
+          --border: #ccc;
+        }
+        body { background: #fff; font-size: 8.6pt; line-height: 1.35; }
+        .legal-header, .actions, footer { display: none; }
+        main { max-width: none; margin: 0; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; animation: none; }
+        h1 { background: none; -webkit-background-clip: initial; background-clip: initial; color: var(--text); font-size: 19pt; }
+        h2 { margin: 0.65rem 0 0.25rem; font-size: 11.5pt; }
+        p { margin: 0.3rem 0; }
+        .guide .updated { margin-block-end: 0.4rem; }
+        .lede { font-size: 10.5pt; }
+        .hero { grid-template-columns: 1fr auto; align-items: start; gap: 1rem; margin: 0; }
+        .hero figure { grid-column: 2; grid-row: 1; }
+        .hero img { inline-size: 24mm; box-shadow: none; transform: none; }
+        .hero figcaption { margin-block-start: 0.2rem; font-size: 7.5pt; }
+        .steps, .fixes { gap: 0.25rem; margin-block-start: 0.3rem; }
+        .steps li, .fixes div { padding: 0.3rem 0.55rem; background: none; border-radius: 8px; }
+        .fixes { grid-template-columns: 1fr 1fr; }
+        .fixes div:last-child { grid-column: 1 / -1; }
+        ul { margin: 0.25rem 0; }
+        li { margin: 0.15rem 0; }
+        .say { margin-block-start: 0.3rem; padding: 0.45rem 0.75rem; background: #f6f1e4; font-size: 9.5pt; }
+        .say p + p { margin-block-start: 0.3rem; }
+        .guide h2 .n { inline-size: 1.3rem; block-size: 1.3rem; font-size: 7.5pt; }
+        section, .steps li, .fixes div { break-inside: avoid; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="legal-header">
+      <a class="legal-brand" href="/" id="guide-home"><img src="/favicon.svg" alt="" width="32" height="32" />Aweborn</a>
+      <nav class="legal-nav" aria-label="Site">
+        <a href="/" id="guide-nav-play">Play</a>
+        <a href="/terms.html#cards" id="guide-nav-terms">Card terms</a>
+      </nav>
+    </header>
+
+    <main class="guide">
+      <h1>Aweborn cards at your event</h1>
+      <p class="updated">A one-page guide for hosts. Keep it on your phone or print it.</p>
+
+      <section class="hero" aria-label="What a card does">
+        <div>
+          <p class="lede">Each card has a tiny chip inside. Tap it to a phone and that person lands <strong>inside the card&rsquo;s world</strong>: no app, no account, no sign-up.</p>
+          <p>Everyone who taps the same card arrives in the same place, so a room full of people ends up exploring, building and talking together within a minute or two.</p>
+        </div>
+        <figure>
+          <img src="/cards/origin-front.webp" width="520" height="708" alt="The Origin card: a glowing golden sun in a purple tunnel, the name Origin, by aweborn, coordinates 0, 0, 0, and a small QR code in the corner." fetchpriority="high" />
+          <figcaption>The Origin card</figcaption>
+        </figure>
+      </section>
+
+      <section aria-labelledby="before">
+        <h2 id="before"><span class="n" aria-hidden="true">1</span>Before the day</h2>
+        <ol class="steps">
+          <li><strong>Get the cards.</strong> Email <a href="mailto:hello@aweborn.org?subject=Cards%20for%20an%20event">hello@aweborn.org</a> with how many, which world (Origin, or one you&rsquo;ve built) and your date. We check, print and mail them (US for now).</li>
+          <li><strong>Test one card</strong> on an iPhone and an Android phone, in the room if you can. If both land in the world, you&rsquo;re set.</li>
+          <li><strong>Check the signal.</strong> The game loads over cellular. Room Wi-Fi helps when a big group taps in at once.</li>
+          <li><strong>Optional: a set.</strong> Several worlds can become a set, and everyone&rsquo;s World Index then shows how many they&rsquo;ve found (&ldquo;3 / 12 discovered&rdquo;). Ask us when you order.</li>
+        </ol>
+      </section>
+
+      <section aria-labelledby="handing">
+        <h2 id="handing"><span class="n" aria-hidden="true">2</span>Handing them out</h2>
+        <div class="say">
+          <span class="say-label">What to say</span>
+          <p>&ldquo;Unlock your phone and hold the card flat against the back: near the top on an iPhone, the middle on most Android phones. Tap the notification if one pops up.&rdquo;</p>
+          <p>&ldquo;Nothing? Open your camera and scan the little QR code in the corner.&rdquo;</p>
+        </div>
+      </section>
+
+      <section aria-labelledby="inside">
+        <h2 id="inside"><span class="n" aria-hidden="true">3</span>Once they&rsquo;re in</h2>
+        <ul>
+          <li><strong>Move:</strong> on a phone, the left stick walks and the right stick looks around. On a computer, the keyboard button lists the keys.</li>
+          <li><strong>Talk:</strong> Chat reaches everyone in the world. Anyone can mute or report someone.</li>
+          <li><strong>Make:</strong> Make &rarr; Library to pick up blocks and shapes and place them.</li>
+          <li><strong>Collect:</strong> every world you find becomes a card in your World Index.</li>
+          <li><strong>Keep it:</strong> More &rarr; Save your player, so it follows you to another device. Playing never needs it.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="fixes">
+        <h2 id="fixes"><span class="n" aria-hidden="true">4</span>If a tap doesn&rsquo;t work</h2>
+        <dl class="fixes">
+          <div><dt>Nothing happens on an iPhone</dt><dd>The screen has to be on and unlocked. iPhone XS or newer. Take off a thick or metal case.</dd></div>
+          <div><dt>Nothing happens on Android</dt><dd>Turn on NFC: open Settings and search &ldquo;NFC&rdquo;.</dd></div>
+          <div><dt>It opens a browser tab</dt><dd>That&rsquo;s right: the game runs in the browser.</dd></div>
+          <div><dt>Slow to load</dt><dd>Weak signal. Join the Wi-Fi or move toward a window; the loading bar shows how far along it is.</dd></div>
+          <div><dt>Still stuck</dt><dd>Scan the QR code, or go to aweborn.org and tap World Index.</dd></div>
+        </dl>
+      </section>
+
+      <section aria-labelledby="after">
+        <h2 id="after"><span class="n" aria-hidden="true">5</span>After the event</h2>
+        <p>The cards keep working. The world stays in the universe, and a tap months later still drops you in. For more cards, email <a href="mailto:hello@aweborn.org?subject=More%20cards">hello@aweborn.org</a>.</p>
+      </section>
+
+      <div class="actions">
+        <button type="button" class="btn primary" id="guide-print">Print this page</button>
+        <a class="btn" href="/" id="guide-play">Try Aweborn now</a>
+      </div>
+    </main>
+
+    <footer>
+      <a href="/terms.html" id="guide-terms">Terms</a> · <a href="/privacy.html" id="guide-privacy">Privacy</a>
+    </footer>
+    <script>
+      document.getElementById('guide-print').addEventListener('click', () => window.print())
+    </script>
+  </body>
+</html>
