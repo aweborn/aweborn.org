@@ -35,7 +35,7 @@
  * client-reported positions; the replay runs on the main thread (bounded by
  * the 30 min cap and per-message size, not in a worker).
  */
-import { stepFlight, newStepInfo, FLIGHT_HZ, type FlightSimState } from "../../../shared/sim/flight.js";
+import { stepFlight, newStepInfo, FLIGHT_HZ, IN, type FlightSimState } from "../../../shared/sim/flight.js";
 import { buildBodies, type BodySource, type SimBody, type SimWorld } from "../../../shared/sim/gravity.js";
 import { decodeInputBundle, decodeReset, decodeResume, encodeCorrection } from "../../../shared/sim/wire.js";
 
@@ -104,6 +104,8 @@ export class SimHost {
   private info = newStepInfo();
   /** Characters whose last confirmed state changed since the last flush(). */
   private dirty = new Set<string>();
+  /** Telemetry (9D): called with each checked state at the end of a bundle (telemetry.ts downsamples). */
+  sampler: ((playerId: string, s: FlightSimState, neutral: boolean, t: number) => void) | null = null;
 
   constructor(
     private worlds: () => Iterable<BodySource>,
@@ -185,7 +187,12 @@ export class SimHost {
     }
     c.lastAt = now;
     c.playerId = playerId;
-    if (playerId) this.remember(playerId, c.state, now);
+    if (playerId) {
+      this.remember(playerId, c.state, now);
+      // Offline replays: the tick happened (credit left) ticks ago
+      const last = frames[frames.length - 1];
+      if (this.sampler && last) this.sampler(playerId, c.state, (last.bits & IN.neutral) !== 0, now - (c.credit * 1000) / FLIGHT_HZ);
+    }
 
     if (over) return this.correct(c);
     if (b.epoch !== c.epoch || !contiguous) return contiguous ? null : this.correct(c);

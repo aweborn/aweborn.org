@@ -762,6 +762,22 @@ const server = createServer((req, res) => {
   if (handleLibrary(req, res)) return;
   if (req.url?.startsWith("/api/admin/") && handleTrashAdmin(req, res, req.url.split("?")[0], MANA_ADMIN_TOKEN, corsHeaders(req))) return;
   if (req.url?.startsWith("/api/admin/") && handleReportsAdmin(req, res, req.url.split("?")[0], MANA_ADMIN_TOKEN, corsHeaders(req), readJson)) return;
+  // Flight telemetry (Phase 09, 9D): GET /api/admin/flight-path?player=<characterId>&from=<ms>&to=<ms> (admin; default last 24 h)
+  if (req.url?.split("?")[0] === "/api/admin/flight-path" && req.method === "GET") {
+    const send = (status: number, body: unknown) => {
+      res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(body));
+    };
+    if (!MANA_ADMIN_TOKEN) return send(503, { error: "admin_disabled" });
+    if (!bearerMatches(req, MANA_ADMIN_TOKEN)) return send(401, { error: "unauthorized" });
+    const q = new URL(req.url, "http://x").searchParams;
+    const player = q.get("player") ?? "";
+    if (!player || player.length > 100) return send(400, { error: "player_required" });
+    const to = Number(q.get("to") ?? Date.now());
+    const from = Number(q.get("from") ?? to - 24 * 3600_000);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return send(400, { error: "bad_range" });
+    return send(200, { player, from, to, points: rooms.telemetry.path(player, from, to) });
+  }
   if (req.url?.startsWith("/api/player/")) {
     const origin = req.headers.origin;
     if (isTrustedOrigin(origin)) {
@@ -847,6 +863,7 @@ const server = createServer((req, res) => {
         status: "ok",
         rooms: roomStats,
         sim: rooms.sim.stats(),
+        telemetry: rooms.telemetry.stats(),
         database: dbStats,
         uptime: process.uptime(),
         memory: process.memoryUsage(),

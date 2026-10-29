@@ -43,6 +43,7 @@ import { listCharacters } from "./identity.js";
 import { isWorldOwnerId, type WorldActor } from "../../../shared/world-policy.js";
 import { SimHost } from "./sim-host.js";
 import { sqliteSimStore } from "./sim-store.js";
+import { FlightTelemetry } from "./telemetry.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -129,10 +130,13 @@ export class RoomManager {
   readonly progress: Progress;
   /** Online flight authority (Phase 09, 9B): the shared sim, stepped per flying socket. */
   readonly sim = new SimHost(() => getAllWorldEntries(this.universeDoc), Date.now, sqliteSimStore(getDb()));
+  /** Downsampled checked flight paths (Phase 09, 9D; admin-only, 14 days). */
+  readonly telemetry = new FlightTelemetry(getDb());
   private frontierCount: { at: number; n: number } | null = null;
 
   constructor() {
     this.universeDoc = initUniverseDoc();
+    this.sim.sampler = (id, s, neutral, t) => this.telemetry.note(id, s, neutral, t);
     this.startFlushTimer();
     this.lastPresenceTick = Date.now();
     this.presenceTimer = setInterval(() => this.presenceTick(), PRESENCE_TICK_MS);
@@ -591,6 +595,7 @@ export class RoomManager {
     // Flush universe
     flushUniverseDoc(this.universeDoc);
     this.sim.flush(); // last confirmed flight states (9C)
+    this.telemetry.flush(); // flight path samples (9D)
 
     // Flush active worlds
     for (const [worldId, room] of this.worldRooms.entries()) {
