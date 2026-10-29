@@ -1,13 +1,14 @@
 /**
  * Online flight authority (9B): honest clients are never corrected; speed
- * hacks, bent physics and teleports are.
+ * hacks, bent physics and teleports are. Offline logs (9C) replay within the
+ * time away and no further.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SimHost } from "./sim-host.js";
 import { stepFlight, initialFlightState, IN, type FlightSimState, type InputFrame } from "../../../shared/sim/flight.js";
 import { buildBodies, type BodySource } from "../../../shared/sim/gravity.js";
-import { encodeInputBundle, encodeReset, decodeCorrection } from "../../../shared/sim/wire.js";
+import { encodeInputBundle, encodeReset, encodeResume, decodeReset, decodeCorrection } from "../../../shared/sim/wire.js";
 
 const T0 = Date.UTC(2026, 9, 28, 12);
 const WORLDS: BodySource[] = [
@@ -125,4 +126,57 @@ test("inputs before any reset, malformed bundles: ignored", () => {
   assert.equal(host.input(key, "p1", c.bundle([thrust])), null);
   assert.equal(host.input(key, "p1", new Uint8Array([1, 2, 3])), null);
   assert.equal(host.stateOf(key), null);
+});
+
+// ── 9C: offline replay ──
+
+function resumeMsg(c: ReturnType<typeof client>, frames: number) {
+  // The client's start state = where the log began (the client's current state before the log)
+  const r = decodeReset(c.reset())!;
+  return encodeResume({ nextSeq: r.nextSeq, frames, state: r.state });
+}
+
+test("offline log within the time away replays without corrections", () => {
+  const { host, key, advance } = setup();
+  const c = client(initialFlightState());
+  assert.equal(host.reset(key, "p1", c.reset()), null);
+  host.drop(key);
+  advance(10_000); // 10 s offline = 600 ticks
+  const k2 = {};
+  assert.equal(host.resume(k2, "p1", resumeMsg(c, 600)), null);
+  for (let i = 0; i < 10; i++) assert.equal(host.input(k2, "p1", c.bundle(Array(60).fill(thrust))), null, `chunk ${i}`);
+  assert.equal(host.stateOf(k2)!.px, c.s.px);
+  assert.equal(host.stats().offlineTicks, 600);
+  assert.equal(host.stats().corrections, 0);
+});
+
+test("offline log claiming more flight than the time away is cut and corrected", () => {
+  const { host, key, advance } = setup();
+  const c = client(initialFlightState());
+  assert.equal(host.reset(key, "p1", c.reset()), null);
+  host.drop(key);
+  advance(2_000); // 2 s away, but the log claims 30 s of flight
+  const k2 = {};
+  host.resume(k2, "p1", resumeMsg(c, 1800));
+  let fixes = 0;
+  for (let i = 0; i < 30; i++) if (host.input(k2, "p1", c.bundle(Array(60).fill(thrust)))) fixes++;
+  assert.ok(fixes >= 1);
+  assert.ok(host.stats().droppedFrames > 1000);
+});
+
+test("last confirmed state survives a restart through the store", () => {
+  const rows = new Map<string, { s: FlightSimState; at: number }>();
+  const store = { load: (id: string) => rows.get(id) ?? null, save: (rs: Array<{ playerId: string; s: FlightSimState; at: number }>) => { for (const r of rs) rows.set(r.playerId, { s: { ...r.s }, at: r.at }); } };
+  let now = T0;
+  const a = new SimHost(() => WORLDS, () => now, store);
+  const c = client(initialFlightState());
+  a.reset({}, "p1", c.reset());
+  a.flush();
+  assert.ok(rows.has("p1"));
+  // After a "deploy": a far-away resume is refused (it isn't a fresh spawn any more)
+  now += 1000;
+  const b = new SimHost(() => WORLDS, () => now, store);
+  const far = encodeResume({ nextSeq: 0, frames: 0, state: { ...initialFlightState(), px: 5000 } });
+  assert.ok(b.resume({}, "p1", far));
+  assert.equal(b.stats().rejectedResets, 1);
 });

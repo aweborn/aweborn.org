@@ -42,6 +42,7 @@ import { WorldAuthority, CreateLimiter } from "./world-authority.js";
 import { listCharacters } from "./identity.js";
 import { isWorldOwnerId, type WorldActor } from "../../../shared/world-policy.js";
 import { SimHost } from "./sim-host.js";
+import { sqliteSimStore } from "./sim-store.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -127,7 +128,7 @@ export class RoomManager {
   /** Awe = experience: XP, skills, chapters (Rough Draft M3). */
   readonly progress: Progress;
   /** Online flight authority (Phase 09, 9B): the shared sim, stepped per flying socket. */
-  readonly sim = new SimHost(() => getAllWorldEntries(this.universeDoc));
+  readonly sim = new SimHost(() => getAllWorldEntries(this.universeDoc), Date.now, sqliteSimStore(getDb()));
   private frontierCount: { at: number; n: number } | null = null;
 
   constructor() {
@@ -545,9 +546,13 @@ export class RoomManager {
           break;
         }
         case "sim-input":
-        case "sim-reset": {
+        case "sim-reset":
+        case "sim-resume": {
           const pid = this.playerIds.get(ws) ?? null;
-          const fix = message.type === "sim-input" ? this.sim.input(ws, pid, message.data) : this.sim.reset(ws, pid, message.data);
+          const fix =
+            message.type === "sim-input" ? this.sim.input(ws, pid, message.data)
+            : message.type === "sim-reset" ? this.sim.reset(ws, pid, message.data)
+            : this.sim.resume(ws, pid, message.data);
           if (fix && ws.readyState === ws.OPEN) ws.send(this.encodeMessage("sim-correct", fix));
           break;
         }
@@ -585,6 +590,7 @@ export class RoomManager {
 
     // Flush universe
     flushUniverseDoc(this.universeDoc);
+    this.sim.flush(); // last confirmed flight states (9C)
 
     // Flush active worlds
     for (const [worldId, room] of this.worldRooms.entries()) {
@@ -1012,6 +1018,7 @@ export class RoomManager {
   //   0x0d = sim-input        (client → server: binary input bundle + predicted state, shared/sim/wire.ts, 9B)
   //   0x0e = sim-correct      (server → client: authoritative state + acked seq, only on disagreement)
   //   0x0f = sim-reset        (client → server: an out-of-sim move — spawn, warp, teleport, world exit)
+  //   0x10 = sim-resume       (client → server: back online; the offline flight log follows, 9C)
 
   private static readonly MSG_TYPES: Record<string, number> = {
     "universe-sync": 0x01,
@@ -1029,6 +1036,7 @@ export class RoomManager {
     "sim-input": 0x0d,
     "sim-correct": 0x0e,
     "sim-reset": 0x0f,
+    "sim-resume": 0x10,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

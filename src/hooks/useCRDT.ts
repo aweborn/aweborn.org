@@ -36,6 +36,8 @@ const MSG_TYPES: Record<string, number> = {
   "sim-input": 0x0d,
   "sim-correct": 0x0e,
   "sim-reset": 0x0f,
+  /** 9C: back online; the offline flight log follows. */
+  "sim-resume": 0x10,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

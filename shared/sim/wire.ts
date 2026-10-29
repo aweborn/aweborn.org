@@ -14,6 +14,9 @@
  *  sim-reset   (client → server: the game moved the player outside the sim:
  *               warp leap, card/link teleport, leaving a world, spawn, resume)
  *    u32 nextSeq · 11 × f64 new state
+ *  sim-resume  (client → server, 0x10, 9C: back online with an offline flight log;
+ *               the log's sim-input / sim-reset messages follow straight after)
+ *    u32 nextSeq · u32 logged frames · 11 × f64 state when the log began
  */
 import type { FlightSimState, InputFrame } from "./flight.js";
 
@@ -23,6 +26,7 @@ const FRAME_BYTES = 4;
 const INPUT_HEADER = 4 + 2 + 1 + 8 + SIM_STATE_DOUBLES * 8;
 const CORRECT_BYTES = 4 + 2 + SIM_STATE_DOUBLES * 8;
 const RESET_BYTES = 4 + SIM_STATE_DOUBLES * 8;
+const RESUME_BYTES = 4 + 4 + SIM_STATE_DOUBLES * 8;
 
 export interface InputBundle {
   firstSeq: number;
@@ -133,4 +137,27 @@ export function decodeReset(data: Uint8Array): SimReset | null {
   const v = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const state = readState(v, 4);
   return state ? { nextSeq: v.getUint32(0, true), state } : null;
+}
+
+export interface SimResume {
+  nextSeq: number;
+  /** Ticks in the offline log that follows (the server grants that much extra time, up to the time it was away). */
+  frames: number;
+  state: FlightSimState;
+}
+
+export function encodeResume(r: SimResume): Uint8Array {
+  const buf = new Uint8Array(RESUME_BYTES);
+  const v = new DataView(buf.buffer);
+  v.setUint32(0, r.nextSeq >>> 0, true);
+  v.setUint32(4, r.frames >>> 0, true);
+  writeState(v, 8, r.state);
+  return buf;
+}
+
+export function decodeResume(data: Uint8Array): SimResume | null {
+  if (data.length !== RESUME_BYTES) return null;
+  const v = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const state = readState(v, 8);
+  return state ? { nextSeq: v.getUint32(0, true), frames: v.getUint32(4, true), state } : null;
 }

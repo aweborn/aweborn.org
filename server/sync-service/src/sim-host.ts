@@ -21,14 +21,23 @@
  * Cost: one step per tick per flying player, against only the bodies within
  * BODY_RADIUS (refreshed each second), so O(players × nearby worlds).
  *
- * Not yet (logged in phases/09): the last confirmed state is in memory only
- * (a deploy forgets it, and then a resume is accepted as a fresh spawn);
- * warp unlock / World-Index checks for warp targets (9C); presence still uses
- * client-reported positions.
+ * Offline replay (9C): back online, the client sends `sim-resume` (start
+ * state + how many ticks it flew offline) and then its offline log as
+ * ordinary `sim-input` / `sim-reset` messages. The server grants those ticks
+ * as a credit, capped by how long it actually was away since the last
+ * confirmed state (+ slack, ≤ 30 min), so an offline log can never hold more
+ * flight than real time allowed. The last confirmed state per character is
+ * kept through a `SimStore` (SQLite: sim-store.ts), so a deploy no longer
+ * forgets it.
+ *
+ * Not yet (logged in phases/09): warp unlock / World-Index checks for warp
+ * targets; sightings derived from the replayed path; presence still uses
+ * client-reported positions; the replay runs on the main thread (bounded by
+ * the 30 min cap and per-message size, not in a worker).
  */
 import { stepFlight, newStepInfo, FLIGHT_HZ, type FlightSimState } from "../../../shared/sim/flight.js";
 import { buildBodies, type BodySource, type SimBody, type SimWorld } from "../../../shared/sim/gravity.js";
-import { decodeInputBundle, decodeReset, encodeCorrection } from "../../../shared/sim/wire.js";
+import { decodeInputBundle, decodeReset, decodeResume, encodeCorrection } from "../../../shared/sim/wire.js";
 
 /** Real-time budget: ticks may run this far ahead of the wall clock (network bunching). */
 const SLACK_TICKS = 30;
@@ -48,6 +57,17 @@ const POS_TOL_PER_FRAME = 0.002;
 const VEL_TOL_PER_FRAME = 0.02;
 const QUAT_TOL = 0.002;
 const LAST_KNOWN_MAX = 20_000;
+/** Offline credit: at most this much flight per resume (30 min), and this much with no known last state (2 min). */
+const MAX_OFFLINE_TICKS = 30 * 60 * FLIGHT_HZ;
+const MAX_UNVERIFIED_TICKS = 2 * 60 * FLIGHT_HZ;
+
+/** Where the last confirmed state per character is kept between restarts. */
+export interface SimStore {
+  load(playerId: string): { s: FlightSimState; at: number } | null;
+  save(rows: Array<{ playerId: string; s: FlightSimState; at: number }>): void;
+}
+
+const MEMORY_ONLY: SimStore = { load: () => null, save: () => {} };
 
 interface Conn {
   state: FlightSimState | null;
@@ -60,6 +80,8 @@ interface Conn {
   bodies: SimBody[];
   bodiesAt: number;
   playerId: string | null;
+  /** Offline-log ticks still allowed beyond real time (9C). */
+  credit: number;
 }
 
 export interface SimHostStats {
@@ -68,6 +90,8 @@ export interface SimHostStats {
   corrections: number;
   droppedFrames: number;
   rejectedResets: number;
+  resumes: number;
+  offlineTicks: number;
 }
 
 export class SimHost {
@@ -76,13 +100,28 @@ export class SimHost {
   private lastKnown = new Map<string, { s: FlightSimState; at: number }>();
   private allBodies: SimBody[] = [];
   private allAt = -Infinity;
-  private counters = { steps: 0, corrections: 0, droppedFrames: 0, rejectedResets: 0 };
+  private counters = { steps: 0, corrections: 0, droppedFrames: 0, rejectedResets: 0, resumes: 0, offlineTicks: 0 };
   private info = newStepInfo();
+  /** Characters whose last confirmed state changed since the last flush(). */
+  private dirty = new Set<string>();
 
   constructor(
     private worlds: () => Iterable<BodySource>,
     private now: () => number = () => Date.now(),
+    private store: SimStore = MEMORY_ONLY,
   ) {}
+
+  /** Write changed last-known states to the store (RoomManager's periodic flush + shutdown). */
+  flush(): void {
+    if (this.dirty.size === 0) return;
+    const rows: Array<{ playerId: string; s: FlightSimState; at: number }> = [];
+    for (const id of this.dirty) {
+      const k = this.lastKnown.get(id);
+      if (k) rows.push({ playerId: id, s: k.s, at: k.at });
+    }
+    this.dirty.clear();
+    this.store.save(rows);
+  }
 
   /** The universe changed (a world was added / moved): rebuild bodies on next use. */
   invalidateWorlds(): void {
@@ -130,13 +169,17 @@ export class SimHost {
     const world: SimWorld = { bodies: this.bodiesFor(c, now), leashRadius: b.leashRadius };
     let over = false;
     for (const f of frames) {
-      if (c.used >= allowed) {
+      if (c.credit > 0) {
+        c.credit--; // offline log ticks (9C): already bounded by the time away
+        this.counters.offlineTicks++;
+      } else if (c.used >= allowed) {
         over = true;
         this.counters.droppedFrames += 1;
         continue;
+      } else {
+        c.used++;
       }
       stepFlight(c.state, f, world, this.info);
-      c.used++;
       c.nextSeq++;
       this.counters.steps++;
     }
@@ -158,20 +201,43 @@ export class SimHost {
   reset(key: object, playerId: string | null, data: Uint8Array): Uint8Array | null {
     const r = decodeReset(data);
     if (!r) return null;
+    return this.start(key, playerId, r.nextSeq, r.state, -1);
+  }
+
+  /**
+   * A `sim-resume` (9C): back online with an offline log of `frames` ticks,
+   * starting from `state`. The log's messages follow on the same socket.
+   */
+  resume(key: object, playerId: string | null, data: Uint8Array): Uint8Array | null {
+    const r = decodeResume(data);
+    if (!r) return null;
+    this.counters.resumes++;
+    return this.start(key, playerId, r.nextSeq, r.state, r.frames);
+  }
+
+  /** Shared by reset/resume: accept the new state if it's plausible, else correct to the last known one. */
+  private start(key: object, playerId: string | null, nextSeq: number, claimed: FlightSimState, offlineFrames: number): Uint8Array | null {
     const now = this.now();
     let c = this.conns.get(key);
     if (!c) {
-      c = { state: null, nextSeq: r.nextSeq, epoch: 0, t0: now, used: 0, lastAt: now, bodies: [], bodiesAt: -Infinity, playerId };
+      c = { state: null, nextSeq, epoch: 0, t0: now, used: 0, lastAt: now, bodies: [], bodiesAt: -Infinity, playerId, credit: 0 };
       this.conns.set(key, c);
     }
     c.playerId = playerId;
-    const s = sanitize(r.state);
-    const ref = c.state ? { s: c.state, at: c.lastAt } : playerId ? this.lastKnown.get(playerId) ?? null : null;
+    const s = sanitize(claimed);
+    const ref = c.state ? { s: c.state, at: c.lastAt } : playerId ? this.known(playerId) : null;
+    if (offlineFrames >= 0) {
+      // Offline time since the last confirmed state, as ticks (+ slack); the log can't hold more than that
+      const away = ref ? Math.floor((Math.max(0, now - ref.at) * FLIGHT_HZ) / 1000) + SLACK_TICKS : MAX_UNVERIFIED_TICKS;
+      c.credit = Math.min(offlineFrames, away, MAX_OFFLINE_TICKS);
+      c.t0 = now;
+      c.used = 0;
+    }
     const ok =
-      !ref || // first state ever seen for this player (in memory): accepted as a spawn
+      !ref || // first state ever seen for this player: accepted as a spawn
       this.nearWorld(s, now) ||
       dist(s, ref.s) <= (HONEST_SPEED * Math.max(0, now - ref.at)) / 1000 + RESET_SLACK;
-    c.nextSeq = r.nextSeq;
+    c.nextSeq = nextSeq;
     c.bodiesAt = -Infinity;
     if (ok) {
       c.state = s;
@@ -192,7 +258,19 @@ export class SimHost {
     return encodeCorrection({ ackSeq: (c.nextSeq - 1) >>> 0, epoch: c.epoch, state: c.state! });
   }
 
+  /** Last confirmed state: memory first, then the store (after a restart). */
+  private known(playerId: string): { s: FlightSimState; at: number } | null {
+    const m = this.lastKnown.get(playerId);
+    if (m) return m;
+    const row = this.store.load(playerId);
+    if (!row) return null;
+    this.remember(playerId, row.s, row.at);
+    this.dirty.delete(playerId);
+    return this.lastKnown.get(playerId) ?? null;
+  }
+
   private remember(playerId: string, s: FlightSimState, at: number): void {
+    this.dirty.add(playerId);
     const prev = this.lastKnown.get(playerId);
     if (prev) {
       Object.assign(prev.s, s);
@@ -201,7 +279,10 @@ export class SimHost {
     }
     if (this.lastKnown.size >= LAST_KNOWN_MAX) {
       const oldest = this.lastKnown.keys().next().value;
-      if (oldest !== undefined) this.lastKnown.delete(oldest);
+      if (oldest !== undefined) {
+        if (this.dirty.has(oldest)) this.flush();
+        this.lastKnown.delete(oldest);
+      }
     }
     this.lastKnown.set(playerId, { s: { ...s }, at });
   }

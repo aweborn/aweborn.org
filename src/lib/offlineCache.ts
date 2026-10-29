@@ -27,6 +27,8 @@ const K_UNIVERSE = 'universe'
 const K_WORLD = 'world:'
 const K_PENDING = 'pending:'
 const K_LRU = 'world-lru'
+/** Offline flight log entries (Phase 09 9C), `flight:<000000n>`; IndexedDB only (memory elsewhere). */
+const K_FLIGHT = 'flight:'
 const MAX_CACHED_WORLDS = 24
 const WRITE_DELAY_MS = 400
 /** Never hold the first render hostage to a stuck IndexedDB open. */
@@ -50,6 +52,8 @@ let universe: Uint8Array | null = null
 const worlds = new Map<string, Uint8Array>()
 let lru: string[] = []
 const pending = new Map<string, Uint8Array>()
+const flight = new Map<number, Uint8Array>()
+let flightNext = 0
 
 // Docs changed since the last write (encoded lazily)
 let dirtyUniverse: Y.Doc | null = null
@@ -187,6 +191,11 @@ function readIdb(d: IDBDatabase): Promise<void> {
       else if (k === K_LRU && Array.isArray(v)) lru = v.filter((x): x is string => typeof x === 'string')
       else if (k.startsWith(K_WORLD) && v instanceof Uint8Array) worlds.set(k.slice(K_WORLD.length), v)
       else if (k.startsWith(K_PENDING) && v instanceof Uint8Array) pending.set(k.slice(K_PENDING.length), v)
+      else if (k.startsWith(K_FLIGHT) && v instanceof Uint8Array) {
+        const n = Number(k.slice(K_FLIGHT.length))
+        flight.set(n, v)
+        flightNext = Math.max(flightNext, n + 1)
+      }
       c.continue()
     }
     tx.oncomplete = () => resolve()
@@ -363,4 +372,25 @@ export function subscribePendingWorlds(cb: () => void): () => void {
 /** Which store is in use (debugging / tests). */
 export function offlineStorageKind(): OfflineStorageKind {
   return kind
+}
+
+const flightKey = (n: number) => K_FLIGHT + String(n).padStart(9, '0')
+
+/** Append one offline flight log entry (src/lib/simLink.ts owns the format). */
+export function appendFlightLog(entry: Uint8Array): void {
+  const n = flightNext++
+  flight.set(n, entry)
+  if (kind === 'idb') void persist([[flightKey(n), entry]], [])
+}
+
+/** The offline flight log, oldest first (survives reloads where IndexedDB works). */
+export function readFlightLog(): Uint8Array[] {
+  return [...flight.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v)
+}
+
+export function clearFlightLog(): void {
+  if (flight.size === 0) return
+  const dels = [...flight.keys()].map(flightKey)
+  flight.clear()
+  if (kind === 'idb') void persist([], dels)
 }
