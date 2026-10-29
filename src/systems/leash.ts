@@ -17,7 +17,6 @@
  * No progress yet (guests, outages, still loading) → no leash.
  */
 
-import type * as THREE from 'three'
 import { ORIGIN_POSITION } from '@aweborn/shared/crdt-schema'
 import { WARP_CHAPTER } from '@aweborn/shared/progress'
 import { useProgressStore } from '../stores/progressStore'
@@ -29,8 +28,7 @@ const EXPLORER_MIN = 1500
 const EXPLORER_EXTRA = 500
 /** Room granted around a place the game put you (link arrival, restored spot). */
 const ARRIVAL_MARGIN = 150
-/** How fast an overshoot eases back (1/s). */
-const EASE = 2.5
+// An overshoot eases back at 2.5/s, applied per sim step (shared/sim/dmath LEASH_EASE_PER_STEP).
 const NOTICE_EVERY_MS = 20_000
 
 let granted = 0
@@ -57,25 +55,12 @@ export function grantLeashTo(p: { x: number; y: number; z: number }): void {
   granted = Math.max(granted, distFromOrigin(p) + ARRIVAL_MARGIN)
 }
 
-/** Once per frame after flight physics. Returns true while it's pulling. */
-export function applyLeash(pos: THREE.Vector3, vel: THREE.Vector3, dt: number): boolean {
-  const R = leashRadius()
-  if (R === null) return false
-  const r = distFromOrigin(pos)
-  if (r <= R || r === 0) return false
-  // Unit vector outward from Origin
-  const ux = (pos.x - ORIGIN_POSITION.x) / r
-  const uy = (pos.y - ORIGIN_POSITION.y) / r
-  const uz = (pos.z - ORIGIN_POSITION.z) / r
-  const out = vel.x * ux + vel.y * uy + vel.z * uz
-  if (out > 0) {
-    vel.x -= ux * out
-    vel.y -= uy * out
-    vel.z -= uz * out
-  }
-  const target = R + (r - R) * Math.exp(-EASE * dt)
-  pos.set(ORIGIN_POSITION.x + ux * target, ORIGIN_POSITION.y + uy * target, ORIGIN_POSITION.z + uz * target)
-
+/**
+ * The pull itself (bleed outward speed, ease the overshoot back) runs inside
+ * the shared flight step (`shared/sim/flight.ts`, Phase 09 9A) with
+ * `leashRadius()` in its SimWorld. Call this when a step reports it pulled.
+ */
+export function noteLeashed(): void {
   const now = Date.now()
   if (now - lastNotice > NOTICE_EVERY_MS) {
     lastNotice = now
@@ -86,5 +71,4 @@ export function applyLeash(pos: THREE.Vector3, vel: THREE.Vector3, dt: number): 
         : 'The Frontier holds you for now. Chapter 6 (Explorer) lets you fly beyond it.',
     )
   }
-  return true
 }

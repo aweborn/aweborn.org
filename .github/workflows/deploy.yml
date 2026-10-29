@@ -71,6 +71,28 @@ jobs:
           echo "Services to deploy: ${list:-<none>}"
           echo "services=$list" >> "$GITHUB_OUTPUT"
 
+  # Phase 09 (9A): the shared flight sim must give bit-identical states in
+  # every engine (client prediction, server authority and offline replay all
+  # run it). Its own job, so a failure shows red without blocking a deploy.
+  # Ubuntu has no JavaScriptCore; run scripts/sim-determinism/run.mjs on a Mac for that.
+  sim-determinism:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Shared sim tests + cross-engine replay (Node, Chrome)
+        run: |
+          npm ci
+          (cd server/sync-service && npm ci)
+          node --import ./server/sync-service/node_modules/tsx/dist/esm/index.mjs --test shared/sim/*.test.ts
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || true)" node scripts/sim-determinism/run.mjs
+
   deploy-server:
     needs: changes
     if: needs.changes.outputs.services != ''

@@ -1,67 +1,43 @@
 /**
  * Headless gravity sanity check for NEUTRAL (gravity-on) flight.
  *
- * Mirrors the physics loop in Scene.tsx + FlightController._updateNeutralMovement
- * (thrust, gravity, approach drag, space drag, speed cap, slingshot impulse) and
- * asserts two game-feel invariants:
+ * Since Phase 09 9A this drives the real shared step (`shared/sim/flight.ts`,
+ * the code the client runs and the server will replay), instead of a copy of
+ * the Scene.tsx + FlightController math. Asserts two game-feel invariants:
  *
  *   1. ESCAPE: from rest at any distance from any body (including the Portal),
  *      holding thrust straight outward always gets the player clear.
  *   2. FLYBY: a fast tangential pass past a world bends the path and leaves the
  *      well (slingshot), instead of being captured.
  *
- * Run: node scripts/sim/gravity-escape.ts
+ * Run: node --import ./server/sync-service/node_modules/tsx/dist/esm/index.mjs scripts/sim/gravity-escape.ts
  */
 import * as THREE from 'three'
-import { gravitySystem } from '../../src/systems/GravitySystem.ts'
+import { stepFlight, initialFlightState, IN, FLIGHT_DT, type FlightSimState } from '../../shared/sim/flight.ts'
+import { buildBodies, type BodySource, type SimWorld } from '../../shared/sim/gravity.ts'
 
-// Keep in sync with FlightController.ts / Scene.tsx
-const NEUTRAL_THRUST_ACCEL = 10.0
-const NEUTRAL_DRAG = 0.15
-const NEUTRAL_MAX_SPEED = 80.0
-const SLINGSHOT_IMPULSE_MULTIPLIER = 0.1
-const DT = 1 / 60
+const NOW = Date.now()
 
-type World = Parameters<typeof gravitySystem.calculate>[2] extends Map<string, infer W> ? W : never
-
-function makeWorld(id: string, x: number, y: number, z: number, playerCount = 0): World {
+function makeWorld(id: string, x: number, y: number, z: number, playerCount = 0): BodySource {
   return {
     id,
     resolvedPosition: { x, y, z },
     playerCount,
-    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 7, // old → max age bonus
-    solidified: true,
-  } as unknown as World
+    createdAt: NOW - 1000 * 60 * 60 * 24 * 7, // old → max age bonus
+  }
 }
 
-function step(pos: THREE.Vector3, vel: THREE.Vector3, worlds: Map<string, World>, thrustDir: THREE.Vector3 | null, slung: { id: string | null }) {
-  const g = gravitySystem.calculate(pos, vel, worlds)
-
-  // Approach drag (Scene.tsx)
-  if (g.approachDragFactor > 0.01 && g.nearestWorldPosition) {
-    const toWorld = g.nearestWorldPosition.clone().sub(pos).normalize()
-    const approachSpeed = vel.dot(toWorld)
-    if (approachSpeed > 0) vel.addScaledVector(toWorld, -approachSpeed * g.approachDragFactor * DT * 2.0)
-  }
-
-  // Slingshot impulse (Scene.tsx), once per pass
-  if (g.slingshotEvent) {
-    if (slung.id !== g.slingshotEvent.worldId) {
-      slung.id = g.slingshotEvent.worldId
-      const { speed, boostFactor } = g.slingshotEvent
-      vel.addScaledVector(vel.clone().normalize(), speed * (boostFactor - 1) * SLINGSHOT_IMPULSE_MULTIPLIER)
-    }
-  } else {
-    slung.id = null
-  }
-
-  // FlightController neutral movement
-  if (thrustDir) vel.addScaledVector(thrustDir, NEUTRAL_THRUST_ACCEL * DT)
-  vel.addScaledVector(g.force, DT)
-  vel.multiplyScalar(Math.pow(1 - NEUTRAL_DRAG, DT))
-  if (vel.length() > NEUTRAL_MAX_SPEED) vel.setLength(NEUTRAL_MAX_SPEED)
-  pos.addScaledVector(vel, DT)
+function simWorld(worlds: BodySource[]): SimWorld {
+  return { bodies: buildBodies(worlds, NOW), leashRadius: null }
 }
+
+/** A state at `pos` facing `dir` (forward is -Z at identity), moving at `vel`. */
+function stateAt(pos: THREE.Vector3, dir: THREE.Vector3, vel = new THREE.Vector3()): FlightSimState {
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir.clone().normalize())
+  return { ...initialFlightState(pos.x, pos.y, pos.z), vx: vel.x, vy: vel.y, vz: vel.z, qx: q.x, qy: q.y, qz: q.z, qw: q.w }
+}
+
+const dist = (s: FlightSimState, c: THREE.Vector3) => Math.hypot(s.px - c.x, s.py - c.y, s.pz - c.z)
 
 let failures = 0
 function check(name: string, ok: boolean, detail: string) {
@@ -70,45 +46,42 @@ function check(name: string, ok: boolean, detail: string) {
 }
 
 // ── 1. Escape from rest, thrusting outward ──
-const bodies: Array<{ label: string; center: THREE.Vector3; worlds: Map<string, World> }> = [
-  { label: 'portal', center: new THREE.Vector3(0, 0, 0), worlds: new Map() },
-  { label: 'world', center: new THREE.Vector3(500, 0, 0), worlds: new Map([['w', makeWorld('w', 500, 0, 0)]]) },
-  { label: 'busy world (6 players)', center: new THREE.Vector3(500, 0, 0), worlds: new Map([['w', makeWorld('w', 500, 0, 0, 6)]]) },
+const bodies: Array<{ label: string; center: THREE.Vector3; world: SimWorld }> = [
+  { label: 'portal', center: new THREE.Vector3(0, 0, 0), world: simWorld([]) },
+  { label: 'world', center: new THREE.Vector3(500, 0, 0), world: simWorld([makeWorld('w', 500, 0, 0)]) },
+  { label: 'busy world (6 players)', center: new THREE.Vector3(500, 0, 0), world: simWorld([makeWorld('w', 500, 0, 0, 6)]) },
 ]
 for (const b of bodies) {
   for (const startDist of [1, 2.5, 5, 10, 20]) {
     const dir = new THREE.Vector3(0.6, 0.3, 0.74).normalize()
-    const pos = b.center.clone().addScaledVector(dir, startDist)
-    const vel = new THREE.Vector3()
-    const slung = { id: null as string | null }
+    const s = stateAt(b.center.clone().addScaledVector(dir, startDist), dir)
     let t = 0
     let escaped = false
     while (t < 30) {
-      step(pos, vel, b.worlds, dir, slung)
-      t += DT
-      if (pos.distanceTo(b.center) > 60) { escaped = true; break }
+      stepFlight(s, { bits: IN.neutral | IN.thrust, yaw: 0, pitch: 0 }, b.world)
+      t += FLIGHT_DT
+      if (dist(s, b.center) > 60) { escaped = true; break }
     }
-    check(`escape ${b.label} from r=${startDist}`, escaped, `t=${t.toFixed(1)}s r=${pos.distanceTo(b.center).toFixed(1)}`)
+    check(`escape ${b.label} from r=${startDist}`, escaped, `t=${t.toFixed(1)}s r=${dist(s, b.center).toFixed(1)}`)
   }
 }
 
 // ── 2. Fast tangential flyby (no thrust) ──
 for (const speed of [20, 35, 60]) {
   const center = new THREE.Vector3(500, 0, 0)
-  const worlds = new Map([['w', makeWorld('w', 500, 0, 0)]])
-  const pos = new THREE.Vector3(500 - 40, 0, 4) // passes ~4 units from the world
-  const vel = new THREE.Vector3(speed, 0, 0)
-  const startDir = vel.clone().normalize()
-  const slung = { id: null as string | null }
+  const world = simWorld([makeWorld('w', 500, 0, 0)])
+  const startDir = new THREE.Vector3(1, 0, 0)
+  const s = stateAt(new THREE.Vector3(500 - 40, 0, 4), startDir, startDir.clone().multiplyScalar(speed)) // passes ~4 units from the world
   let minDist = Infinity
   let t = 0
   while (t < 20) {
-    step(pos, vel, worlds, null, slung)
-    t += DT
-    minDist = Math.min(minDist, pos.distanceTo(center))
-    if (t > 1 && pos.distanceTo(center) > 60) break
+    stepFlight(s, { bits: IN.neutral, yaw: 0, pitch: 0 }, world)
+    t += FLIGHT_DT
+    minDist = Math.min(minDist, dist(s, center))
+    if (t > 1 && dist(s, center) > 60) break
   }
-  const escaped = pos.distanceTo(center) > 60
+  const escaped = dist(s, center) > 60
+  const vel = new THREE.Vector3(s.vx, s.vy, s.vz)
   const deflection = THREE.MathUtils.radToDeg(startDir.angleTo(vel.clone().normalize()))
   check(`flyby at ${speed} u/s`, escaped, `minDist=${minDist.toFixed(1)} deflection=${deflection.toFixed(0)}° exitSpeed=${vel.length().toFixed(1)}`)
 }

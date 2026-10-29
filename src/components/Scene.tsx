@@ -55,19 +55,16 @@ import {
   type HeldAdjustKind,
 } from '../stores/heldItemStore'
 import { progress, useProgressStore } from '../stores/progressStore'
-import { applyLeash } from '../systems/leash'
+import { leashRadius, noteLeashed } from '../systems/leash'
+// Slingshot impulse multiplier (scales the velocity burst on slingshot exit,
+// applied once per pass) now lives in the shared sim; imported for the log line.
+import { SLINGSHOT_IMPULSE_MULTIPLIER } from '@aweborn/shared/sim/flight'
 
 // ── Module-level slingshot visual state ──
 // Shared between FlightSystem (writer) and SlingshotArc/UniverseView (reader)
 // These update every frame in useFrame, so they can't be React props.
 export let _slingshotActive = false
 export let _slingshotWorldPos: THREE.Vector3 | null = null
-
-/**
- * Slingshot impulse multiplier — scales the velocity burst on slingshot exit.
- * Higher = more dramatic speed boost. Applied once per slingshot pass.
- */
-const SLINGSHOT_IMPULSE_MULTIPLIER = .1
 
 interface SceneProps {
   onPortalActivate: () => void
@@ -151,7 +148,6 @@ function FlightSystem() {
   const PHYSICS_DT = 1 / 60
   const MAX_SUBSTEPS = 4 // safety cap to prevent spiral-of-death at very low fps
   const physicsAccumulator = useRef(0)
-  const lastSlingshotWorld = useRef<string | null>(null)
   // Progress (M3): how long thrust / steering has been held, and edges for brake + approach
   const skillHold = useRef({ thrust: 0, steer: 0, brake: false, canEnter: false })
   const prevPos = useRef(new THREE.Vector3())
@@ -177,76 +173,45 @@ function FlightSystem() {
     warpSystem.captureInput()
 
     // ── Fixed-timestep physics accumulator ──
-    // Accumulate frame time, then step physics in fixed increments.
-    // This ensures gravity, thrust, and slingshot behavior is identical
-    // regardless of whether the player is at 30fps or 144fps.
+    // Accumulate frame time, then step the shared deterministic sim
+    // (shared/sim/flight.ts, Phase 09 9A) in fixed 60 Hz ticks: the same
+    // step the server will replay. Gravity, approach drag, the dead zone,
+    // slingshots and the beginner leash all happen inside it.
     physicsAccumulator.current += Math.min(delta, 0.1) // clamp to prevent huge jumps on tab-refocus
     prevPos.current.copy(flightController.position)
     const speedSqBefore = flightController.velocity.lengthSq()
     let substeps = 0
+    const simWorld = gravitySystem.simWorld(worlds, leashRadius())
+    const input = flightController.sampleInput() // actions don't change within a frame
     let gravResult = gravitySystem.calculate(
       flightController.position,
       flightController.velocity,
       worlds,
     )
+    let slingshotImpulse = false
+    let leashed = false
 
     while (physicsAccumulator.current >= PHYSICS_DT && substeps < MAX_SUBSTEPS) {
-      // Recalculate gravity each substep (position changes between steps)
-      gravResult = gravitySystem.calculate(
-        flightController.position,
-        flightController.velocity,
-        worlds,
-      )
-
-      // ── Approach drag (NEUTRAL only) ──
-      // Dampen only the approach component of velocity when heading toward a world.
-      // Preserves tangential speed so slingshot passes still work.
-      if (flightController.isGravityEnabled() && gravResult.approachDragFactor > 0.01 && gravResult.nearestWorldPosition) {
-        const toWorld = gravResult.nearestWorldPosition.clone().sub(flightController.position).normalize()
-        const approachSpeed = flightController.velocity.dot(toWorld)
-        if (approachSpeed > 0) {
-          // Only remove a fraction of the approach component
-          const dampen = approachSpeed * gravResult.approachDragFactor * PHYSICS_DT * 2.0
-          flightController.velocity.addScaledVector(toWorld, -dampen)
-        }
-      }
-
-      // ── Gravity well dead zone (NEUTRAL only) ──
-      // Snap to zero at near-zero speed right at the center,
-      // but ONLY when the player isn't thrusting (so they can escape).
-      const actions = inputManager.getActions()
-      if (flightController.isGravityEnabled() && gravResult.nearestDistance < 2.5 && !actions.thrust) {
-        const speed = flightController.velocity.length()
-        if (speed < 0.5) {
-          flightController.velocity.set(0, 0, 0)
-          gravResult.force.set(0, 0, 0)
-        }
-      }
-
-      // ── Slingshot turn dampening (NEUTRAL only) ──
-      if (gravResult.slingshotEvent && flightController.isGravityEnabled()) {
-        flightController.setSlingshotTurnDampen(1.0)
-      } else {
-        flightController.setSlingshotTurnDampen(0.0)
-      }
-
       // Warp system (uses its own dt-based logic)
       warpSystem.update(PHYSICS_DT, flightController.position, worlds)
 
       // Flight physics (skip if warping — warp system handles position)
       const warpState = warpSystem.getState()
       if (warpState.phase !== 'leaping') {
-        flightController.update(PHYSICS_DT, gravResult.force)
+        const info = flightController.step(input, simWorld)
+        if (info) {
+          gravResult = gravitySystem.resultFrom(info.gravity, simWorld, worlds)
+          slingshotImpulse ||= info.slingshotImpulse
+          leashed ||= info.leashed
+        }
       }
 
       physicsAccumulator.current -= PHYSICS_DT
       substeps++
     }
 
-    // ── Beginner cradle (M3c): a soft leash until warp unlocks ──
-    if (warpSystem.getState().phase !== 'leaping') {
-      applyLeash(flightController.position, flightController.velocity, Math.min(delta, 0.1))
-    }
+    // ── Beginner cradle (M3c): the pull ran in the sim; tell them why ──
+    if (leashed) noteLeashed()
 
     // ── Camera (per-frame for smooth visuals; snap on first frame + after teleports / remote warps) ──
     const teleportSnap = teleportSystem.consumeSnapRequest()
@@ -327,17 +292,11 @@ function FlightSystem() {
       progress.flightFrame(dt, flightController.position, phase === 'leaping' || phase === 'arriving' || teleportSnap || warpSnap, prevPos.current)
     }
 
-    // ── Slingshot event (velocity impulse + VFX + mana hook) ──
+    // ── Slingshot event (VFX + mana hook; the velocity impulse is in the sim, once per pass) ──
     if (gravResult.slingshotEvent && flightController.isGravityEnabled()) {
       const { worldId, speed, boostFactor } = gravResult.slingshotEvent
-
-      // Direct velocity impulse — this is what makes the slingshot FEEL fast.
-      // Only apply once per slingshot (not every substep).
-      if (lastSlingshotWorld.current !== worldId) {
-        lastSlingshotWorld.current = worldId
-        const velDir = flightController.velocity.clone().normalize()
+      if (slingshotImpulse) {
         const impulse = speed * (boostFactor - 1.0) * SLINGSHOT_IMPULSE_MULTIPLIER
-        flightController.velocity.addScaledVector(velDir, impulse)
         console.log(`[SLINGSHOT] world=${worldId} speed=${speed.toFixed(1)} boost=${boostFactor.toFixed(2)}× impulse=+${impulse.toFixed(1)}`)
       }
 
@@ -348,7 +307,6 @@ function FlightSystem() {
       // manaSystem.onSlingshotEvent(gravResult.slingshotEvent)
     } else {
       _slingshotActive = false
-      lastSlingshotWorld.current = null
       // Keep worldPos alive briefly for fade-out (SlingshotArc handles its own fade)
     }
 

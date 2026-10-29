@@ -1,15 +1,17 @@
 /**
  * Aweborn — Gravity System
  *
- * Calculates gravitational attraction from nearby worlds and the
- * Aweborn Portal. Returns a force vector each frame that the
- * FlightController applies to the player's velocity.
+ * Client adapter over the shared gravity in `shared/sim/gravity.ts`
+ * (Phase 09 9A: the same code the server will run). It builds the
+ * `SimWorld` the flight step reads (gravity bodies + beginner leash) and
+ * turns the sim's plain-number result into the THREE-flavored
+ * `GravityResult` the scene uses for hints and visuals.
  *
  * Formula (per ROADMAP):
  *   attraction = G * worldMass / distance²
  *   worldMass  = f(playerCount, objectCount, age)
  *
- * Features:
+ * Features (all in the shared sim now):
  *  - Inverse-square gravity from all nearby worlds
  *  - Aweborn Portal has the strongest fixed pull
  *  - Captured orbit: auto-settle when velocity is low near a world
@@ -18,70 +20,17 @@
 
 import * as THREE from 'three'
 import type { WorldEntry } from '@aweborn/shared/crdt-schema'
-import { ORIGIN_POSITION, ORIGIN_WORLD_ID } from '@aweborn/shared/crdt-schema'
-
-// ── Tuning Constants ─────────────────────────────────────────────────
-
-/**
- * Gravitational constant — controls overall pull strength.
- * This is a game-feel constant, not real physics.
- */
-const G = 10.0
-
-/** Maximum distance at which gravity is calculated (optimization). */
-const GRAVITY_RANGE = 120.0
-
-/** Minimum distance to prevent infinite force at zero distance. */
-const MIN_DISTANCE = 2.0
+import {
+  buildBodies, computeGravity, emptyGravity,
+  type GravityOut, type SimBody, type SimWorld,
+} from '@aweborn/shared/sim/gravity'
 
 /**
- * Maximum gravitational acceleration (units/s²), per body and in total.
- *
- * Invariant: this stays BELOW FlightController's NEUTRAL_THRUST_ACCEL (10),
- * so holding thrust away from any well always escapes it. Without this cap,
- * G=10 produced ~62 u/s² next to the Portal and players got stuck forever.
- * G still shapes how far out the pull is felt; this only caps the core.
+ * World age (gravity mass bonus) is read at minute resolution: the sim must
+ * not see the wall clock tick inside a step, and the server builds the same
+ * view from its own clock (9B). The bonus moves at most 1/1440 per minute.
  */
-const MAX_GRAVITY_ACCEL = 8.0
-
-/**
- * Approach drag range — within this distance, head-on approaches are slowed.
- * Creates the "slowing down as you approach" feel that makes slingshot exits zippier.
- */
-const APPROACH_DRAG_RANGE = 12.0
-
-/**
- * Maximum approach drag strength (0-1). At 1.0, a head-on approach at
- * point-blank range would lose 40% of its velocity per physics step.
- */
-const APPROACH_DRAG_STRENGTH = 0.4
-
-/** Minimum player speed (units/s) to trigger a slingshot boost. */
-const SLINGSHOT_MIN_SPEED = 15.0
-
-/** Maximum distance from a body for slingshot detection. */
-const SLINGSHOT_RANGE = 15.0
-
-/**
- * Fixed mass for the Aweborn Portal (origin).
- * Much higher than any world — strongest pull in the universe.
- */
-const PORTAL_MASS = 25.0
-
-/** Portal position (Origin, the center of the universe). */
-const PORTAL_POSITION = new THREE.Vector3(ORIGIN_POSITION.x, ORIGIN_POSITION.y, ORIGIN_POSITION.z)
-
-/**
- * Calculate world mass from its properties.
- * Active worlds with more players and history pull harder.
- */
-function calculateWorldMass(world: WorldEntry): number {
-  const playerBoost = 1 + world.playerCount * 0.5
-  const ageBonus = Math.min(1 + (Date.now() - world.createdAt) / (1000 * 60 * 60 * 24), 3) // caps at 3x after 2 days
-  //const solidBonus = world.solidified ? 1.5 : 0.8
-
-  return 2.0 * playerBoost * ageBonus
-}
+const SIM_CLOCK_MS = 60_000
 
 // ── Result Types ─────────────────────────────────────────────────────
 
@@ -112,7 +61,6 @@ export interface GravityResult {
   /**
    * Approach drag factor (0-1). How much the player is being slowed
    * by head-on approach to a gravity well. 0 = no drag, 1 = max drag.
-   * Used by FlightController to dampen velocity and by visuals.
    */
   approachDragFactor: number
 }
@@ -120,122 +68,58 @@ export interface GravityResult {
 // ── Gravity System ───────────────────────────────────────────────────
 
 class GravitySystem {
-  /** Temp vectors */
-  private _toWorld = new THREE.Vector3()
-  private _force = new THREE.Vector3()
-  private _totalForce = new THREE.Vector3()
+  private _bodies: SimBody[] = []
+  private _bodiesFor: Map<string, WorldEntry> | null = null
+  private _bodiesAt = -1
+  private _world: SimWorld = { bodies: [], leashRadius: null }
+  private _out: GravityOut = emptyGravity()
 
   /**
-   * Calculate the total gravitational force on the player.
-   *
-   * @param playerPos  Current player position (scene space)
-   * @param playerVel  Current player velocity (for slingshot detection)
-   * @param worlds     All known worlds from the universe CRDT
+   * The sim's view of the universe right now. Bodies are rebuilt only when
+   * the worlds map changes or the sim clock ticks over a minute.
+   */
+  simWorld(worlds: Map<string, WorldEntry>, leashRadius: number | null): SimWorld {
+    const now = Math.floor(Date.now() / SIM_CLOCK_MS) * SIM_CLOCK_MS
+    if (worlds !== this._bodiesFor || now !== this._bodiesAt) {
+      this._bodies = buildBodies(worlds.values(), now)
+      this._bodiesFor = worlds
+      this._bodiesAt = now
+    }
+    if (this._world.bodies !== this._bodies || this._world.leashRadius !== leashRadius) {
+      this._world = { bodies: this._bodies, leashRadius }
+    }
+    return this._world
+  }
+
+  /**
+   * Calculate the total gravitational force on the player (outside the
+   * fixed step: hints and visuals on frames with no physics tick).
    */
   calculate(
     playerPos: THREE.Vector3,
     playerVel: THREE.Vector3,
     worlds: Map<string, WorldEntry>,
   ): GravityResult {
-    this._totalForce.set(0, 0, 0)
+    const world = this.simWorld(worlds, this._world.leashRadius)
+    const g = computeGravity(playerPos.x, playerPos.y, playerPos.z, playerVel.x, playerVel.y, playerVel.z, world.bodies, this._out)
+    return this.resultFrom(g, world, worlds)
+  }
 
-    let nearestWorld: WorldEntry | null = null
-    let nearestDistance = Infinity
-    let nearestWorldPosition: THREE.Vector3 | null = null
-    let orbitTarget: WorldEntry | null = null
-    let slingshotEvent: SlingshotEvent | null = null
-    let approachDragFactor = 0
-
-    // ── Build unified gravity body list ──
-    // Portal is treated as just another body — no special cases.
-    // (Origin is kept out of `worlds` by the store, so it's added only here.)
-    type GravityBody = { id: string; position: THREE.Vector3; mass: number; world: WorldEntry | null }
-    const bodies: GravityBody[] = [
-      { id: ORIGIN_WORLD_ID, position: PORTAL_POSITION, mass: PORTAL_MASS, world: null },
-    ]
-    for (const world of worlds.values()) {
-      if (world.parentWorldId) continue
-      const pos = new THREE.Vector3(world.resolvedPosition.x, world.resolvedPosition.y, world.resolvedPosition.z)
-      bodies.push({ id: world.id, position: pos, mass: calculateWorldMass(world), world })
-    }
-
-    // ── Process all gravity bodies ──
-    const speed = playerVel.length()
-    for (const body of bodies) {
-      this._toWorld.copy(body.position).sub(playerPos)
-      const dist = Math.max(this._toWorld.length(), MIN_DISTANCE)
-
-      // Track nearest body
-      if (dist < nearestDistance) {
-        nearestDistance = dist
-        nearestWorld = body.world
-        nearestWorldPosition = body.position.clone()
-      }
-
-      // Skip if too far
-      if (dist > GRAVITY_RANGE) continue
-
-      const strength = Math.min(G * body.mass / (dist * dist), MAX_GRAVITY_ACCEL)
-
-      // ── Slingshot detection ──
-      // The boost factor is reported via slingshotEvent and applied as a
-      // forward velocity impulse in Scene.tsx. It must NOT scale the inward
-      // pull: doing so (up to ~21×) bent fast passes into the well and trapped them.
-      if (speed > SLINGSHOT_MIN_SPEED && dist < SLINGSHOT_RANGE) {
-        const velDir = playerVel.clone().normalize()
-        const toBodyDir = this._toWorld.clone().normalize()
-        const dot = Math.abs(velDir.dot(toBodyDir))
-        if (dot < 0.5) {
-          const proximity = 1.0 - dist / SLINGSHOT_RANGE
-          const tangentiality = 1.0 - dot / 0.5
-          const speedFactor = Math.min(speed / 15.0, 20.0)
-          const boost = 1.0 + speedFactor * proximity * (0.5 + tangentiality * 0.5)
-          slingshotEvent = { worldId: body.id, speed, boostFactor: boost }
-        }
-      }
-
-      // ── Orbit capture (worlds only) ──
-      if (body.world && speed < 2.0 && dist < 3.0 && dist > 0.8) {
-        orbitTarget = body.world
-        const tangent = new THREE.Vector3()
-          .crossVectors(this._toWorld, new THREE.Vector3(0, 1, 0))
-          .normalize()
-        const orbitStrength = strength * 0.3 * (1 - speed / 2.0)
-        this._totalForce.addScaledVector(tangent, orbitStrength)
-      }
-
-      this._force.copy(this._toWorld).normalize().multiplyScalar(strength)
-      this._totalForce.add(this._force)
-
-      // ── Approach drag ──
-      if (dist < APPROACH_DRAG_RANGE && speed > 1.0) {
-        const velDir = playerVel.clone().normalize()
-        const toDir = this._toWorld.clone().normalize()
-        const headOnDot = velDir.dot(toDir)
-        if (headOnDot > 0.7) {
-          const proximityFactor = 1 - dist / APPROACH_DRAG_RANGE
-          const drag = proximityFactor * headOnDot * APPROACH_DRAG_STRENGTH
-          approachDragFactor = Math.max(approachDragFactor, drag)
-        }
-      }
-    }
-
-    // Cap the combined pull too (overlapping wells must not out-pull thrust)
-    if (this._totalForce.length() > MAX_GRAVITY_ACCEL) {
-      this._totalForce.setLength(MAX_GRAVITY_ACCEL)
-    }
-
-    const inOrbitRange = orbitTarget !== null
-
+  /** The sim's plain-number gravity → the scene's GravityResult. */
+  resultFrom(g: GravityOut, world: SimWorld, worlds: Map<string, WorldEntry>): GravityResult {
+    const nearestBody = g.nearest >= 0 ? world.bodies[g.nearest] : null
+    const orbitTarget = g.orbit >= 0 ? worlds.get(world.bodies[g.orbit].id) ?? null : null
     return {
-      force: this._totalForce.clone(),
-      nearestWorld,
-      nearestDistance,
-      nearestWorldPosition,
-      inOrbitRange,
+      force: new THREE.Vector3(g.fx, g.fy, g.fz),
+      nearestWorld: nearestBody?.isWorld ? worlds.get(nearestBody.id) ?? null : null,
+      nearestDistance: g.nearestDistance,
+      nearestWorldPosition: nearestBody ? new THREE.Vector3(nearestBody.x, nearestBody.y, nearestBody.z) : null,
+      inOrbitRange: orbitTarget !== null,
       orbitTarget,
-      slingshotEvent,
-      approachDragFactor,
+      slingshotEvent: g.slingBody >= 0
+        ? { worldId: world.bodies[g.slingBody].id, speed: g.slingSpeed, boostFactor: g.slingBoost }
+        : null,
+      approachDragFactor: g.approachDrag,
     }
   }
 }
