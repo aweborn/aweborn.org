@@ -29,6 +29,7 @@ import {
   loadWorldDoc,
   saveWorldDoc,
   queueOfflineWorldUpdate,
+  flushOfflineCache,
 } from "../lib/offlineCache";
 
 interface UniverseState {
@@ -78,6 +79,9 @@ interface UniverseState {
   _worldDocUpdateHandler: ((worldId: string, update: Uint8Array) => void) | null;
 
   // ── Actions ──
+
+  /** Cold-start offline: load the cached Universe CRDT (main.tsx, after initOfflineCache, before the first render) */
+  hydrateFromOfflineCache: () => void;
 
   /** Initialize the universe doc from a sync payload */
   applyUniverseUpdate: (update: Uint8Array, isFullSync: boolean) => void;
@@ -189,27 +193,13 @@ function wireWorldDoc(
 }
 
 export const useUniverseStore = create<UniverseState>((set, get) => {
-  // Cold-start offline: hydrate the Universe CRDT from localStorage immediately if cached
-  let initialUniverseDoc: Y.Doc | null = null;
-  let initialWorlds = new Map<string, WorldEntry>();
-  let initialMana: ManaState | null = null;
-  const cachedUniverse = loadUniverseDoc();
-  if (cachedUniverse) {
-    initialUniverseDoc = createUniverseDoc((d) =>
-      set({ worlds: refreshWorlds(d), mana: readMana(d) }),
-    );
-    Y.applyUpdate(initialUniverseDoc, cachedUniverse, "remote");
-    initialWorlds = refreshWorlds(initialUniverseDoc);
-    initialMana = readMana(initialUniverseDoc);
-  }
-
   return {
-    worlds: initialWorlds,
-    mana: initialMana,
+    worlds: new Map<string, WorldEntry>(),
+    mana: null,
     cameraPosition: { x: 0, y: 0, z: 0 },
     currentSector: { sx: 0, sy: 0, sz: 0 },
     subscribedSectors: adjacentSectorKeys({ sx: 0, sy: 0, sz: 0 }),
-    universeDoc: initialUniverseDoc,
+    universeDoc: null,
     activeWorldId: null,
     activeWorldDoc: null,
     playerPosition: { x: 0, y: 2, z: 10 },
@@ -218,6 +208,18 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
     playerSpeed: 0,
     connected: false,
     _worldDocUpdateHandler: null,
+
+    hydrateFromOfflineCache: () => {
+      // The cache is read from IndexedDB asynchronously, so this runs after the store exists (was inline, pre-M7a)
+      if (get().universeDoc) return;
+      const cachedUniverse = loadUniverseDoc();
+      if (!cachedUniverse) return;
+      const doc = createUniverseDoc((d) =>
+        set({ worlds: refreshWorlds(d), mana: readMana(d) }),
+      );
+      Y.applyUpdate(doc, cachedUniverse, "remote");
+      set({ universeDoc: doc, worlds: refreshWorlds(doc), mana: readMana(doc) });
+    },
 
     applyUniverseUpdate: (update, _isFullSync) => {
       let doc = get().universeDoc;
@@ -287,6 +289,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
 
     enterWorld: (worldId) => {
       const prevDoc = get().activeWorldDoc;
+      flushOfflineCache(); // write the previous world's last edits before its doc goes
       prevDoc?.destroy();
 
       const doc = new Y.Doc();
@@ -340,6 +343,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
         return;
       }
       const doc = get().activeWorldDoc;
+      flushOfflineCache();
       doc?.destroy();
       useWorldStore.getState().reset();
       set({ activeWorldId: null, activeWorldDoc: null });

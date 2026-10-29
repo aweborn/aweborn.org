@@ -4552,16 +4552,18 @@ html.touch-ui .plant-open kbd { display: none; }
 }
 .plant-link-btn:hover { background: rgba(255, 255, 255, 0.2); }
 
-/* ── Connection chip (SyncBridge): only while the socket has been down a few seconds ── */
+/* ── Connection chip (SyncBridge): the connectivity tier while not online (Phase 06) ── */
+.sync-status-region { position: fixed; top: 0; left: 0; width: 0; height: 0; pointer-events: none; }
 .sync-status {
   position: fixed;
   left: 50%;
-  top: calc(64px + env(safe-area-inset-top, 0px));
+  top: calc(80px + env(safe-area-inset-top, 0px)); /* under the phone world pill / desktop mana pill */
   transform: translateX(-50%);
   z-index: 60;
   display: flex;
   align-items: center;
   gap: 8px;
+  width: max-content;
   max-width: calc(100vw - 32px);
   padding: 8px 14px;
   font-family: var(--font-body);
@@ -4576,6 +4578,9 @@ html.touch-ui .plant-open kbd { display: none; }
   animation: fade-in 0.3s ease both;
 }
 .sync-status-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #ff9f8a; animation: seal-breathe 1.6s ease-in-out infinite; }
+/* Solo offline is a steady state, not a wait: a still dot, cooler chip */
+.sync-status[data-tier="solo"] { background: rgba(28, 24, 44, 0.88); border-color: rgba(255, 120, 140, 0.4); }
+.sync-status[data-tier="solo"] .sync-status-dot { background: #ff7a8c; animation: none; }
 @media (prefers-reduced-motion: reduce) {
   .plant-open.is-sealed::after, .plant-orb, .plant-orb.is-planted, .sync-status-dot { animation: none; }
 }

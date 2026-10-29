@@ -5,6 +5,7 @@ import { useUniverseStore } from "../stores/universeStore";
 import { useWorldStore } from "../stores/worldStore";
 import { useChatStore, onChatNotice } from "../stores/chatStore";
 import { drainPendingWorldUpdates } from "../lib/offlineCache";
+import { connectivityTier, useNavigatorOnline, usePendingWorlds } from "../hooks/useConnectivity";
 import { adjacentSectorKeys } from "@aweborn/shared/crdt-schema";
 
 /** Don't flash "reconnecting" for blips (boot, a deploy restart, a Wi-Fi hop). */
@@ -95,7 +96,11 @@ export function SyncBridge() {
     return () => setPresenceSender(null);
   }, [send]);
 
-  // Connection chip: only after the socket has been down for a moment
+  // Connection chip: the connectivity tier (Phase 06). Reconnecting waits a moment (blips); solo shows at once,
+  // since navigator.onLine === false is reliable. Online shows nothing.
+  const online = useNavigatorOnline();
+  const pendingWorlds = usePendingWorlds();
+  const tier = connectivityTier(connected, online);
   const [showOffline, setShowOffline] = useState(false);
   useEffect(() => {
     if (connected) {
@@ -106,11 +111,27 @@ export function SyncBridge() {
     return () => clearTimeout(t);
   }, [connected]);
 
-  if (!showOffline) return null;
+  const waiting = pendingWorlds === 1 ? "1 world" : `${pendingWorlds} worlds`;
+  const message =
+    tier === "solo"
+      ? pendingWorlds > 0
+        ? `Offline: playing solo. Changes in ${waiting} will sync when you’re back`
+        : "Offline: playing solo. What you build is saved on this device"
+      : tier === "reconnecting" && showOffline
+        ? pendingWorlds > 0
+          ? `Reconnecting… changes in ${waiting} waiting to sync`
+          : "Reconnecting… others can’t see you right now"
+        : null;
+
+  // The live region stays mounted (empty while online) so a status that appears inside it gets announced
   return (
-    <div id="sync-status" className="sync-status" role="status" aria-live="polite">
-      <span className="sync-status-dot" aria-hidden="true" />
-      Reconnecting… others can’t see you right now
+    <div className="sync-status-region" role="status" aria-live="polite">
+      {message && (
+        <div id="sync-status" className="sync-status" data-tier={tier}>
+          <span className="sync-status-dot" aria-hidden="true" />
+          {message}
+        </div>
+      )}
     </div>
   );
 }

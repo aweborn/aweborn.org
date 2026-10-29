@@ -1,6 +1,6 @@
 # Phase 06: Offline & Mesh Networking
 
-**Status:** `[~]` PWA + cold-start offline shipped (2026-10-22); mesh not started (Rough Draft M7)
+**Status:** `[~]` PWA + cold-start offline shipped (2026-10-22); connectivity chip + IndexedDB shipped (Rough Draft M7a, 2026-10-28); mesh next (M7b)
 **Depends on:** [Phase 02: Multiplayer Core](./02-multiplayer-core.md)
 **ROADMAP reference:** [Offline & Off-Grid Networking](../ROADMAP.md#offline--off-grid-networking)
 **Estimated sessions:** 3-4
@@ -27,8 +27,8 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - `[x]` Create `public/sw.js` — Service Worker for offline caching *(2026-10-22, registered + warmed in `src/main.tsx`)*
 - `[x]` Cache strategy: cache-first for static assets, network-first for API calls *(network-first navigation → cached `/index.html`; cache-first hashed bundles + `<sha256>.glb`)*
 - `[x]` Add `manifest.json` for PWA (installable on mobile) — *shipped as `public/site.webmanifest`*
-- `[~]` Offline detection: `navigator.onLine` + `online`/`offline` events *(only `worldIndexStore` + socket state today; HUD tier indicator is M7)*
-- `[~]` IndexedDB: persist Yjs Y.Doc state locally for offline access *(shipped on **localStorage** in `src/lib/offlineCache.ts`; move to IndexedDB in M7)*
+- `[x]` Offline detection: `navigator.onLine` + `online`/`offline` events *(M7a: `src/hooks/useConnectivity.ts`; `useCRDT` now drops the socket on `offline` so edits queue instead of going into a dead socket)*
+- `[x]` IndexedDB: persist Yjs Y.Doc state locally for offline access *(M7a: `src/lib/offlineCache.ts` on IndexedDB `aweborn-offline`, raw bytes, in-memory mirror so reads stay sync; one-time move from localStorage; localStorage fallback)*
 - `[x]` Test: load aweborn.org → go offline → app still works *(2026-10-22)*
 
 ### WebRTC P2P (y-webrtc)
@@ -76,11 +76,11 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 - `[ ]` Client sees object smoothly slide into resolved position
 
 ### Tiered Connectivity UI
-- `[ ]` Status indicator in HUD showing connectivity tier:
+- `[~]` Status indicator in HUD showing connectivity tier *(M7a: `SyncBridge` chip shows solo + reconnecting; online shows nothing; mesh tier with M7b)*:
   - 🟢 Online (WebSocket to VPS)
   - 🟡 Local mesh (WebRTC P2P only)
   - 🔴 Solo offline (local only)
-- `[ ]` Seamless transitions — no user action needed when connectivity changes
+- `[x]` Seamless transitions — no user action needed when connectivity changes *(M7a: offline → queue in IndexedDB → `online` reconnects and drains it)*
 
 ## Acceptance Criteria
 
@@ -112,4 +112,4 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 
 | Date | What was done | Next step |
 |------|--------------|-----------|
-| — | — | — |
+| 2026-10-28 | **Rough Draft M7a.** (1) `offlineCache.ts` moved from localStorage (base64) to IndexedDB (`aweborn-offline` / `kv`, raw `Uint8Array`), keeping the same synchronous API via an in-memory mirror that `initOfflineCache()` loads before the first render (`main.tsx`, open capped at 1.5 s, then `universeStore.hydrateFromOfflineCache()`). Docs are marked dirty and encoded once per 400 ms (before: a full `encodeStateAsUpdate` + base64 into localStorage on every edit) and flushed on pagehide / tab hidden / before a world doc is destroyed; the offline edit queue is written at once. Old localStorage copies move over once and are removed only after IndexedDB commits; if IndexedDB can't open, the same data stays in localStorage. (2) Connectivity tier: `useConnectivity.ts` (online / reconnecting / solo) feeds the `SyncBridge` chip, now an always-mounted polite live region: *Offline: playing solo…* (at once, with “changes in N worlds will sync”) or *Reconnecting…* (after 4 s). **Deviation:** the online tier shows nothing rather than a green dot (the phone HUD is full; silence = fine). (3) **Found + fixed:** Chrome keeps a WebSocket “open” after the network drops, so edits were sent into it and lost instead of queued; `useCRDT` now closes the socket on `offline` and skips reconnect attempts until `online`. Verified locally (puppeteer): migration (legacy key → IndexedDB, localStorage cleared), offline edit → `pending:<id>` in IndexedDB → back online → drained and present on the server for a fresh client; reconnecting chip on a real server stop; chip at 390×844, 360×740, 844×390, 1440×900 with no overlap (moved to 80 px under the world pill). **Known gap:** a socket whose server vanishes without closing TCP (`docker pause`) stays “connected”: there's no heartbeat yet. Privacy updated (cached worlds + offline changes on the device). | M7b: WebRTC peers + QR two-scan host/join (mesh tier in the chip) |

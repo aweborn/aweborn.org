@@ -182,6 +182,8 @@ export function useSyncConnection(
       if (cancelled || retryTimer) return;
       // In the background, wait for the page to come back (onResume).
       if (document.visibilityState === "hidden") return;
+      // No network at all: the "online" event reconnects (onOnline)
+      if (!navigator.onLine) return;
       const base = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** retries);
       const delay = base * (0.5 + Math.random() * 0.5); // jitter: don't stampede after a deploy
       retries++;
@@ -282,6 +284,20 @@ export function useSyncConnection(
       }
     };
     const onOnline = () => onResume("back online", true); // new network: the old socket is dead
+    // navigator.onLine === false is reliable: drop the socket now (M7a). Otherwise edits keep going into a socket
+    // that died with the network and are lost; with it closed they land in the offline queue (IndexedDB) instead.
+    const onOffline = () => {
+      if (cancelled) return;
+      clearRetry();
+      const old = ws;
+      ws = null;
+      wsRef.current = null;
+      if (old) {
+        old.close();
+        setConnected(false);
+        console.log("[sync] the browser went offline: playing solo until it's back");
+      }
+    };
     const onPageShow = (e: PageTransitionEvent) => {
       if (e.persisted) onResume("restored from bfcache", true);
     };
@@ -291,6 +307,7 @@ export function useSyncConnection(
       connect();
       document.addEventListener("visibilitychange", onVisibility);
       window.addEventListener("online", onOnline);
+      window.addEventListener("offline", onOffline);
       window.addEventListener("pageshow", onPageShow);
     });
 
@@ -299,6 +316,7 @@ export function useSyncConnection(
       clearRetry();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
       window.removeEventListener("pageshow", onPageShow);
       const old = ws;
       ws = null;

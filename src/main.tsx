@@ -1,10 +1,19 @@
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
+import { initOfflineCache } from './lib/offlineCache'
+import { useUniverseStore } from './stores/universeStore'
 
-createRoot(document.getElementById('root')!).render(
-  <App />,
-)
+// The offline cache lives in IndexedDB (async), so load it before the first render: a cold offline card tap
+// must find its cached worlds just as it did when the cache was synchronous localStorage (M7a, 2026-10-28)
+void initOfflineCache()
+  .catch(() => {})
+  .finally(() => {
+    useUniverseStore.getState().hydrateFromOfflineCache()
+    createRoot(document.getElementById('root')!).render(
+      <App />,
+    )
+  })
 
 // <input type="checkbox" switch> (Make panel's "Loop" etc.): native in Safari; polyfilled only where missing
 if (!('switch' in HTMLInputElement.prototype)) void import('./vendor/input-switch-polyfill.js')
