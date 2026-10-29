@@ -44,6 +44,7 @@ import { isWorldOwnerId, type WorldActor } from "../../../shared/world-policy.js
 import { SimHost } from "./sim-host.js";
 import { sqliteSimStore } from "./sim-store.js";
 import { FlightTelemetry } from "./telemetry.js";
+import { Steering, type SteerNotice } from "./steering.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -132,11 +133,14 @@ export class RoomManager {
   readonly sim = new SimHost(() => getAllWorldEntries(this.universeDoc), Date.now, sqliteSimStore(getDb()));
   /** Downsampled checked flight paths (Phase 09, 9D; admin-only, 14 days). */
   readonly telemetry = new FlightTelemetry(getDb());
+  /** One screen steers (M9): which of a player's screens drives; the rest aren't relayed. */
+  readonly steering = new Steering<WebSocket>();
   private frontierCount: { at: number; n: number } | null = null;
 
   constructor() {
     this.universeDoc = initUniverseDoc();
     this.sim.sampler = (id, s, neutral, t) => this.telemetry.note(id, s, neutral, t);
+    this.sim.onActive = (ws, id) => this.sendSteer(this.steering.active(ws as WebSocket, id));
     this.startFlushTimer();
     this.lastPresenceTick = Date.now();
     this.presenceTimer = setInterval(() => this.presenceTick(), PRESENCE_TICK_MS);
@@ -201,6 +205,9 @@ export class RoomManager {
     }
 
     console.log(`[rooms] client joined universe (${sectorKeys.length} sectors)`);
+    // The newest screen of a player steers (M9)
+    const pid = this.playerIds.get(ws);
+    if (pid) this.sendSteer(this.steering.join(ws, pid));
   }
 
   /**
@@ -217,8 +224,17 @@ export class RoomManager {
    * Client leaves the universe room.
    */
   leaveUniverse(ws: WebSocket): void {
-    this.universeClients.delete(ws);
     this.presence.delete(ws);
+    if (!this.universeClients.delete(ws)) return;
+    const pid = this.playerIds.get(ws);
+    if (pid) this.sendSteer(this.steering.leave(ws, pid));
+  }
+
+  /** Tell screens whether they steer (0x11 steer: 1 byte, 1 = driver, 0 = another screen drives). */
+  private sendSteer(notices: SteerNotice<WebSocket>[]): void {
+    for (const [ws, driver] of notices) {
+      if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("steer", Uint8Array.of(driver ? 1 : 0)));
+    }
   }
 
   // ── World Rooms ──────────────────────────────────────────────────
@@ -560,6 +576,12 @@ export class RoomManager {
           if (fix && ws.readyState === ws.OPEN) ws.send(this.encodeMessage("sim-correct", fix));
           break;
         }
+        case "steer": {
+          // "Play here" (M9): only ever moves the controls between one player's own screens
+          const pid = this.playerIds.get(ws);
+          if (pid) this.sendSteer(this.steering.active(ws, pid));
+          break;
+        }
         default:
           console.warn(`[rooms] unknown message type: ${message.type}`);
       }
@@ -854,6 +876,8 @@ export class RoomManager {
   /** Validate and keep a client's latest presence. The payload stays opaque JSON otherwise. */
   private storePresence(sender: WebSocket, data: Uint8Array): void {
     if (data.length === 0 || data.length > PRESENCE_MAX_BYTES) return;
+    // Another screen of this player steers (M9): only the driver is seen by others
+    if (this.steering.isFollower(sender, this.playerIds.get(sender))) return;
     let json: string;
     let p: { position?: { x?: unknown; y?: unknown; z?: unknown }; inWorld?: unknown };
     try {
@@ -1024,6 +1048,8 @@ export class RoomManager {
   //   0x0e = sim-correct      (server → client: authoritative state + acked seq, only on disagreement)
   //   0x0f = sim-reset        (client → server: an out-of-sim move — spawn, warp, teleport, world exit)
   //   0x10 = sim-resume       (client → server: back online; the offline flight log follows, 9C)
+  //   0x11 = steer            (server → client: 1 byte, 1 = this screen steers, 0 = another screen of the player does;
+  //                            client → server: empty, "Play here", M9)
 
   private static readonly MSG_TYPES: Record<string, number> = {
     "universe-sync": 0x01,
@@ -1042,6 +1068,7 @@ export class RoomManager {
     "sim-correct": 0x0e,
     "sim-reset": 0x0f,
     "sim-resume": 0x10,
+    "steer": 0x11,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

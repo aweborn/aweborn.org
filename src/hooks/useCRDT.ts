@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { playerReady } from "../lib/player";
 import { simLink } from "../lib/simLink";
+import { useSteerStore } from "../stores/steerStore";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
@@ -38,6 +39,8 @@ const MSG_TYPES: Record<string, number> = {
   "sim-reset": 0x0f,
   /** 9C: back online; the offline flight log follows. */
   "sim-resume": 0x10,
+  /** M9 one screen steers: server → client, 1 byte (1 = this screen steers, 0 = another screen does). */
+  "steer": 0x11,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -237,6 +240,7 @@ export function useSyncConnection(
         ws = null;
         wsRef.current = null;
         simLink.detach();
+        useSteerStore.getState().setFollower(false);
         setConnected(false);
         console.log("[sync] disconnected from sync-service; reconnecting");
         scheduleReconnect();
@@ -276,6 +280,9 @@ export function useSyncConnection(
             break;
           case "sim-correct":
             simLink.onCorrection(msg.data);
+            break;
+          case "steer":
+            useSteerStore.getState().setFollower(msg.data[0] === 0);
             break;
         }
       });

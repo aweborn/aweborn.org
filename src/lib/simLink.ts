@@ -32,7 +32,7 @@ import {
 } from '@aweborn/shared/sim/wire'
 import { appendFlightLog, readFlightLog, clearFlightLog } from './offlineCache'
 
-type Sender = (type: 'sim-input' | 'sim-reset' | 'sim-resume', data: Uint8Array) => void
+type Sender = (type: 'sim-input' | 'sim-reset' | 'sim-resume' | 'steer', data: Uint8Array) => void
 
 const BUNDLE = 3
 const RING = 256
@@ -90,6 +90,11 @@ class SimLink {
     this.send = null
     this.pending = null
     this.unsentFrom = this.seq // ticks sent into the dying socket are lost (the resume check allows for it)
+  }
+
+  /** One screen steers (M9): "Play here" on a screen another one took over. */
+  claimSteer(): void {
+    this.send?.('steer', new Uint8Array(0))
   }
 
   /** A new socket (or nothing confirmed yet): the next step should open with a reset. */

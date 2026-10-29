@@ -106,6 +106,8 @@ export class SimHost {
   private dirty = new Set<string>();
   /** Telemetry (9D): called with each checked state at the end of a bundle (telemetry.ts downsamples). */
   sampler: ((playerId: string, s: FlightSimState, neutral: boolean, t: number) => void) | null = null;
+  /** One screen steers (M9): called when a bundle carries real (non-idle) input. */
+  onActive: ((key: object, playerId: string) => void) | null = null;
 
   constructor(
     private worlds: () => Iterable<BodySource>,
@@ -170,7 +172,9 @@ export class SimHost {
 
     const world: SimWorld = { bodies: this.bodiesFor(c, now), leashRadius: b.leashRadius };
     let over = false;
+    let flown = false;
     for (const f of frames) {
+      if (!flown && ((f.bits & ~(IN.neutral | IN.autoOrient)) !== 0 || f.yaw !== 0 || f.pitch !== 0)) flown = true;
       if (c.credit > 0) {
         c.credit--; // offline log ticks (9C): already bounded by the time away
         this.counters.offlineTicks++;
@@ -192,6 +196,7 @@ export class SimHost {
       // Offline replays: the tick happened (credit left) ticks ago
       const last = frames[frames.length - 1];
       if (this.sampler && last) this.sampler(playerId, c.state, (last.bits & IN.neutral) !== 0, now - (c.credit * 1000) / FLIGHT_HZ);
+      if (flown && this.onActive) this.onActive(key, playerId);
     }
 
     if (over) return this.correct(c);

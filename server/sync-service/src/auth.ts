@@ -24,6 +24,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { getMigrations } from "better-auth/db/migration";
 import { hashPassword } from "better-auth/crypto";
 import { passkey, getAuthenticatorName } from "@better-auth/passkey";
+import { deviceLink } from "./device-link.js";
 import { codeEmail, emailEnabled, existingAccountEmail, sendEmail, wayInChangedEmail } from "./email.js";
 import {
   absorbAnonymous,
@@ -444,6 +445,12 @@ function buildOptions(db: Database.Database) {
     advanced: {
       // Caddy overwrites X-Forwarded-For with the real client IP.
       ipAddress: { ipAddressHeaders: ["x-forwarded-for"] },
+      // Rough Draft M9 (Safari 7-day cap): with /api/auth/* served from aweborn.org through
+      // CloudFront (infra AuthProxy=true), the cookie must also reach sync.aweborn.org's socket.
+      // Unset = host-only cookies on the auth host, as before.
+      ...(process.env.AUTH_COOKIE_DOMAIN
+        ? { crossSubDomainCookies: { enabled: true, domain: process.env.AUTH_COOKIE_DOMAIN } }
+        : {}),
     },
 
     plugins: [
@@ -537,6 +544,19 @@ function buildOptions(db: Database.Database) {
           }
         },
       }),
+      // QR device linking (Phase 08 I2, Rough Draft M9): a new device gets its own session, same character.
+      deviceLink({
+        activeCharacter: (user, sessionId) =>
+          typeof user.playerId === "string" ? resolveIdentity(user.id, user.playerId, sessionId).playerId : null,
+        setCharacter: (sessionId, playerId) => setSessionCharacter(sessionId, playerId),
+        onLinked: (userId) => {
+          void (async () => {
+            const ctx = await authRef?.$context;
+            const u = (await ctx?.internalAdapter.findUserById(userId)) as RawUser | null | undefined;
+            notify(u, "a new device was linked with a link code");
+          })();
+        },
+      }),
       // The session reports the character this device plays (not the user's
       // home character) plus the account's other characters. Internal hooks
       // (getSessionFromCtx) still see the raw user.
@@ -558,6 +578,8 @@ export type Auth = ReturnType<typeof createAuthFromOptions>;
 function createAuthFromOptions(options: ReturnType<typeof buildOptions>) {
   return betterAuth(options);
 }
+/** The live instance, for plugin callbacks that run after creation (device-link notices). */
+let authRef: Auth | null = null;
 
 /**
  * Create the auth instance and apply any pending schema migrations
@@ -584,7 +606,8 @@ export async function initAuth(db: Database.Database): Promise<Auth | null> {
     await runMigrations();
   }
   initIdentity(db);
-  return createAuthFromOptions(options);
+  authRef = createAuthFromOptions(options);
+  return authRef;
 }
 
 /** The raw session behind a request (user + session ids), or null. */

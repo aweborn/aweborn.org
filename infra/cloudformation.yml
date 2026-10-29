@@ -32,6 +32,18 @@ Parameters:
     Default: ''
     Description: Stripe Price id (price_…) of the $9 card, live mode (M6). Empty = card checkout answers "not on sale yet"
 
+  AuthProxy:
+    Type: String
+    AllowedValues: ['false', 'true']
+    Default: 'false'
+    Description: >
+      Rough Draft M9: serve /api/auth/* from aweborn.org (CloudFront → sync.aweborn.org) so Safari keeps the
+      session cookie past 7 days. With 'true', also set AUTH_COOKIE_DOMAIN=aweborn.org on sync and build the
+      site with VITE_AUTH_URL=https://aweborn.org (see phases/08 log 2026-10-29).
+
+Conditions:
+  UseAuthProxy: !Equals [!Ref AuthProxy, 'true']
+
 Resources:
   # ============================================
   # S3 — Static Site Content Bucket
@@ -120,6 +132,14 @@ Resources:
             OriginAccessControlId: !Ref CloudFrontOAC
             S3OriginConfig:
               OriginAccessIdentity: ''
+          - !If
+            - UseAuthProxy
+            - Id: SyncOrigin
+              DomainName: sync.aweborn.org
+              CustomOriginConfig:
+                OriginProtocolPolicy: https-only
+                OriginSSLProtocols: [TLSv1.2]
+            - !Ref AWS::NoValue
 
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
@@ -133,17 +153,56 @@ Resources:
           CachedMethods:
             - GET
             - HEAD
+          FunctionAssociations: !If
+            - UseAuthProxy
+            - - EventType: viewer-request
+                FunctionARN: !GetAtt SpaRewriteFunction.FunctionMetadata.FunctionARN
+            - !Ref AWS::NoValue
 
-        # SPA routing — serve index.html for 403/404
-        CustomErrorResponses:
-          - ErrorCode: 403
-            ResponseCode: 200
-            ResponsePagePath: /index.html
-            ErrorCachingMinTTL: 300
-          - ErrorCode: 404
-            ResponseCode: 200
-            ResponsePagePath: /index.html
-            ErrorCachingMinTTL: 300
+        # M9 auth proxy: first-party session cookies for Safari (never cached; all cookies, query, headers but Host)
+        CacheBehaviors: !If
+          - UseAuthProxy
+          - - PathPattern: /api/auth/*
+              TargetOriginId: SyncOrigin
+              ViewerProtocolPolicy: https-only
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+              OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # AllViewerExceptHostHeader
+              Compress: true
+              AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+              CachedMethods: [GET, HEAD]
+          - !Ref AWS::NoValue
+
+        # SPA routing — serve index.html for 403/404. With the auth proxy these would also swallow
+        # auth errors, so the SpaRewriteFunction does it on the default behavior instead.
+        CustomErrorResponses: !If
+          - UseAuthProxy
+          - !Ref AWS::NoValue
+          - - ErrorCode: 403
+              ResponseCode: 200
+              ResponsePagePath: /index.html
+              ErrorCachingMinTTL: 300
+            - ErrorCode: 404
+              ResponseCode: 200
+              ResponsePagePath: /index.html
+              ErrorCachingMinTTL: 300
+
+  # M9: SPA fallback as a function (only with the auth proxy): extensionless paths (/w/<id>, /j, /link) → /index.html
+  SpaRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Condition: UseAuthProxy
+    Properties:
+      Name: !Sub '${AWS::StackName}-spa-rewrite'
+      AutoPublish: true
+      FunctionConfig:
+        Comment: SPA routes to index.html (aweborn M9 auth proxy)
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var r = event.request;
+          var last = r.uri.split('/').pop();
+          if (r.uri !== '/' && last.indexOf('.') === -1) r.uri = '/index.html';
+          return r;
+        }
 
   # ============================================
   # Route53 — DNS Records

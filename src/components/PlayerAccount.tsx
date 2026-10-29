@@ -45,6 +45,8 @@ import { SetPassword } from './SetPassword'
 import { OPEN_ACCOUNT_EVENT } from './ManaSeal'
 import { NameField } from './NameField'
 import { useNameStore, displayName, requestNames } from '../stores/nameStore'
+import { DeviceLink } from './DeviceLink'
+import { takePendingLinkCode } from '../lib/deviceLink'
 
 type Busy = null | 'passkey-save' | 'passkey-signin' | 'google' | 'signout' | 'switch' | 'confirm' | `remove-${string}`
 type Tab = 'signin' | 'save'
@@ -102,6 +104,8 @@ export function PlayerAccount() {
   const [tab, setTab] = useState<Tab>(() => (getReturning() ? 'signin' : 'save'))
   /** The panel is open (passkey autofill only runs while it is). */
   const [shown, setShown] = useState(false)
+  /** A code from `/link#<code>` (phone camera): the panel opens on "Play on another device". */
+  const [linkCode, setLinkCode] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const names = useNameStore((s) => s.names)
   useEffect(() => {
@@ -183,6 +187,16 @@ export function PlayerAccount() {
       setStatus({ tone: 'success', text: 'Confirmed. You can change how you sign in for the next 5 minutes.' })
     }
   }, [methods])
+
+  // A camera opened `/link#<code>`: open the panel with the code filled in.
+  useEffect(() => {
+    if (!methods?.enabled || !player || player.isGuest) return
+    const code = takePendingLinkCode()
+    if (!code) return
+    setLinkCode(code)
+    setShown(true)
+    dialogRef.current?.showModal()
+  }, [methods, player])
 
   // Light dismiss fallback for browsers without <dialog closedby> (Safari).
   useEffect(() => {
@@ -704,6 +718,8 @@ export function PlayerAccount() {
               <p className="pa-hint">To use a different player here, sign out first.</p>
             </div>
           )}
+
+          {!confirming && <DeviceLink canRedeem={isAnonymous} initialCode={linkCode} />}
 
           <p className={`pa-status${status ? ` pa-status--${status.tone}` : ''}`} role="status" aria-live="polite">
             {status?.text ?? ''}

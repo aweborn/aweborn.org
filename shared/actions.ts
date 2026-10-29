@@ -42,6 +42,7 @@ export const ACTIONS = {
   "sim.flight_input": { tier: "any_session", via: { ws: "sim-input" }, offline: true, status: "enforced", note: "SimHost: real-time budget, corrections" },
   "sim.reset": { tier: "any_session", via: { ws: "sim-reset" }, offline: true, status: "enforced", note: "near a world or within honest-flier distance" },
   "sim.resume": { tier: "any_session", via: { ws: "sim-resume" }, offline: false, status: "enforced", note: "credit ≤ time away (30 min)" },
+  "sim.steer_here": { tier: "any_session", via: { ws: "steer" }, offline: false, status: "enforced", note: "one screen steers (M9): only between one player's own screens" },
   "sim.interior_input": { tier: "any_session", via: null, offline: true, status: "planned", note: "shared/sim/interior.ts not yet under authority" },
   "sim.warp": { tier: "any_session", via: null, offline: true, status: "planned", note: "warp target in the World Index at that tick" },
   "presence.update": { tier: "any_session", via: { ws: "presence" }, offline: false, status: "enforced", note: "client-reported until server snapshots" },

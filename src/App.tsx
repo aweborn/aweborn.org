@@ -29,6 +29,7 @@ import { startProgress } from './stores/progressStore'
 import { startLocationPersistence } from './stores/locationStore'
 import { startWaveWatcher } from './stores/waveStore'
 import { WaveBanner } from './components/WaveBanner'
+import { SteerBanner } from './components/SteerBanner'
 import { startAudio } from './audio/startAudio'
 import { startSky } from './stores/skyStore'
 import { StarCaption } from './components/StarCaption'
@@ -182,6 +183,9 @@ export default function App() {
 
       {/* Solidification wave: recognition line + golden flash */}
       {isLoaded && webglSupported && <WaveBanner />}
+
+      {/* One screen steers (M9): another screen of this player took over */}
+      {isLoaded && webglSupported && <SteerBanner />}
 
       {/* Tap a shooting star: what that mana paid for */}
       {isLoaded && webglSupported && <StarCaption />}

@@ -864,6 +864,7 @@ const server = createServer((req, res) => {
         rooms: roomStats,
         sim: rooms.sim.stats(),
         telemetry: rooms.telemetry.stats(),
+        steering: rooms.steering.stats(),
         database: dbStats,
         uptime: process.uptime(),
         memory: process.memoryUsage(),
