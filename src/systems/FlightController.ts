@@ -33,9 +33,10 @@ import * as THREE from 'three'
 import { inputManager } from './InputManager'
 import {
   stepFlight, initialFlightState, newStepInfo, quantizeAxis, IN,
-  type InputFrame, type StepInfo,
+  type InputFrame, type StepInfo, type FlightSimState,
 } from '@aweborn/shared/sim/flight'
 import type { SimWorld } from '@aweborn/shared/sim/gravity'
+import { simLink } from '../lib/simLink'
 
 // ── Flight State ─────────────────────────────────────────────────────
 
@@ -107,21 +108,53 @@ class FlightController {
    * One fixed 60 Hz tick (FLIGHT_DT). Returns what the step saw (gravity,
    * slingshot, leash) or null while disabled.
    *
-   * The THREE view is copied in first because warp leaps, teleports and
-   * restores still move the player outside the sim (9B/9C make them inputs).
+   * Warp leaps, teleports, restores and brakes still move the THREE view
+   * outside the sim; such a move is noticed here (the view no longer matches
+   * the last stepped state) and reported to the server as a `sim-reset`
+   * (9B, src/lib/simLink.ts). A server correction rewinds to its state and
+   * replays the inputs it hasn't seen yet.
    */
   step(input: InputFrame, world: SimWorld): StepInfo | null {
     if (!this._enabled) return null
     const s = this._sim
-    s.px = this.position.x; s.py = this.position.y; s.pz = this.position.z
-    s.vx = this.velocity.x; s.vy = this.velocity.y; s.vz = this.velocity.z
-    s.qx = this.quaternion.x; s.qy = this.quaternion.y; s.qz = this.quaternion.z; s.qw = this.quaternion.w
+    const moved =
+      s.px !== this.position.x || s.py !== this.position.y || s.pz !== this.position.z ||
+      s.vx !== this.velocity.x || s.vy !== this.velocity.y || s.vz !== this.velocity.z ||
+      s.qx !== this.quaternion.x || s.qy !== this.quaternion.y || s.qz !== this.quaternion.z || s.qw !== this.quaternion.w
+    const fix = simLink.takeCorrection()
+    if (moved) {
+      s.px = this.position.x; s.py = this.position.y; s.pz = this.position.z
+      s.vx = this.velocity.x; s.vy = this.velocity.y; s.vz = this.velocity.z
+      s.qx = this.quaternion.x; s.qy = this.quaternion.y; s.qz = this.quaternion.z; s.qw = this.quaternion.w
+      s.slingId = null // the server forgets the slingshot pass on a reset too
+      simLink.reset(s)
+    } else if (fix) {
+      this.replay(fix.ackSeq, fix.state, world)
+    } else if (simLink.wantsReset()) {
+      simLink.reset(s)
+    }
     stepFlight(s, input, world, this._info)
+    simLink.record(input, s, world.leashRadius)
     this.position.set(s.px, s.py, s.pz)
     this.velocity.set(s.vx, s.vy, s.vz)
     this.quaternion.set(s.qx, s.qy, s.qz, s.qw)
     this._isActivelyControlling = this._info.activelyControlling
     return this._info
+  }
+
+  /** Rollback: adopt the server's state at `ackSeq`, then re-run the inputs it hasn't seen. */
+  private replay(ackSeq: number, server: FlightSimState, world: SimWorld): void {
+    const s = this._sim
+    const later = simLink.since(ackSeq)
+    Object.assign(s, server, { slingId: s.slingId })
+    if (!later) {
+      simLink.reset(s) // too far behind to replay: start over from the server's word
+      return
+    }
+    const info = newStepInfo()
+    for (const { frame, leash } of later) {
+      stepFlight(s, frame, leash === world.leashRadius ? world : { bodies: world.bodies, leashRadius: leash }, info)
+    }
   }
 
   /** Get a readonly snapshot of the current flight state. */

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { playerReady } from "../lib/player";
+import { simLink } from "../lib/simLink";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
@@ -31,6 +32,10 @@ const MSG_TYPES: Record<string, number> = {
   "presence-batch": 0x0b,
   /** Heartbeat (M7c): client → server, echoed straight back. */
   "ping": 0x0c,
+  /** Online flight authority (Phase 09, 9B; shared/sim/wire.ts, src/lib/simLink.ts). */
+  "sim-input": 0x0d,
+  "sim-correct": 0x0e,
+  "sim-reset": 0x0f,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -218,6 +223,9 @@ export function useSyncConnection(
         lastRx = Date.now();
         pongSeen = false;
         sock.send(encodeMessage("ping", new Uint8Array(0)) as unknown as ArrayBuffer);
+        simLink.attach((type, data) => {
+          if (ws === sock && sock.readyState === WebSocket.OPEN) sock.send(encodeMessage(type, data) as unknown as ArrayBuffer);
+        });
         setConnected(true);
         console.log("[sync] connected to sync-service");
       });
@@ -226,6 +234,7 @@ export function useSyncConnection(
         if (ws !== sock) return; // replaced on purpose (recycle / unmount)
         ws = null;
         wsRef.current = null;
+        simLink.detach();
         setConnected(false);
         console.log("[sync] disconnected from sync-service; reconnecting");
         scheduleReconnect();
@@ -263,6 +272,9 @@ export function useSyncConnection(
           case "chat":
             onChatRef.current?.(msg.worldId, msg.data);
             break;
+          case "sim-correct":
+            simLink.onCorrection(msg.data);
+            break;
         }
       });
     };
@@ -273,6 +285,7 @@ export function useSyncConnection(
       const old = ws;
       ws = null;
       wsRef.current = null;
+      simLink.detach();
       if (old) {
         old.close();
         setConnected(false);
@@ -311,6 +324,7 @@ export function useSyncConnection(
       const old = ws;
       ws = null;
       wsRef.current = null;
+      simLink.detach();
       if (old) {
         old.close();
         setConnected(false);
@@ -354,6 +368,7 @@ export function useSyncConnection(
       ws = null;
       old?.close();
       wsRef.current = null;
+      simLink.detach();
       setConnected(false);
     };
     // Re-connect when sector keys change

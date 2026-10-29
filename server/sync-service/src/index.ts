@@ -846,6 +846,7 @@ const server = createServer((req, res) => {
       JSON.stringify({
         status: "ok",
         rooms: roomStats,
+        sim: rooms.sim.stats(),
         database: dbStats,
         uptime: process.uptime(),
         memory: process.memoryUsage(),

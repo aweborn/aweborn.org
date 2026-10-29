@@ -41,6 +41,7 @@ import { touchesChat } from "./chat-guard.js";
 import { WorldAuthority, CreateLimiter } from "./world-authority.js";
 import { listCharacters } from "./identity.js";
 import { isWorldOwnerId, type WorldActor } from "../../../shared/world-policy.js";
+import { SimHost } from "./sim-host.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -125,6 +126,8 @@ export class RoomManager {
   readonly admission: ManaAdmission;
   /** Awe = experience: XP, skills, chapters (Rough Draft M3). */
   readonly progress: Progress;
+  /** Online flight authority (Phase 09, 9B): the shared sim, stepped per flying socket. */
+  readonly sim = new SimHost(() => getAllWorldEntries(this.universeDoc));
   private frontierCount: { at: number; n: number } | null = null;
 
   constructor() {
@@ -437,6 +440,7 @@ export class RoomManager {
     console.log(
       `[rooms] created world "${name}" (${id}) by ${creator}${parentWorldId ? ` inside ${parentWorldId}` : ""} at (${entry.resolvedPosition.x.toFixed(1)}, ${entry.resolvedPosition.y.toFixed(1)}, ${entry.resolvedPosition.z.toFixed(1)})`
     );
+    this.sim.invalidateWorlds();
     return entry;
   }
 
@@ -540,6 +544,13 @@ export class RoomManager {
           this.storePresence(ws, message.data);
           break;
         }
+        case "sim-input":
+        case "sim-reset": {
+          const pid = this.playerIds.get(ws) ?? null;
+          const fix = message.type === "sim-input" ? this.sim.input(ws, pid, message.data) : this.sim.reset(ws, pid, message.data);
+          if (fix && ws.readyState === ws.OPEN) ws.send(this.encodeMessage("sim-correct", fix));
+          break;
+        }
         default:
           console.warn(`[rooms] unknown message type: ${message.type}`);
       }
@@ -552,6 +563,7 @@ export class RoomManager {
    * Handle a client disconnecting.
    */
   handleDisconnect(ws: WebSocket): void {
+    this.sim.drop(ws);
     // Remove from universe
     this.leaveUniverse(ws);
 
@@ -997,6 +1009,9 @@ export class RoomManager {
   //   0x0a = chat             (client → server: { text }; server → client: { error } | { lines, history? } for space)
   //   0x0b = presence-batch   (server → client: JSON array of presence states, once per tick)
   //   0x0c = ping             (client → server, echoed back empty: heartbeat, M7c)
+  //   0x0d = sim-input        (client → server: binary input bundle + predicted state, shared/sim/wire.ts, 9B)
+  //   0x0e = sim-correct      (server → client: authoritative state + acked seq, only on disagreement)
+  //   0x0f = sim-reset        (client → server: an out-of-sim move — spawn, warp, teleport, world exit)
 
   private static readonly MSG_TYPES: Record<string, number> = {
     "universe-sync": 0x01,
@@ -1011,6 +1026,9 @@ export class RoomManager {
     "chat": 0x0a,
     "presence-batch": 0x0b,
     "ping": 0x0c,
+    "sim-input": 0x0d,
+    "sim-correct": 0x0e,
+    "sim-reset": 0x0f,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
