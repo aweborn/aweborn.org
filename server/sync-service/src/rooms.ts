@@ -104,6 +104,8 @@ export class RoomManager {
 
   /** Authenticated playerId (active character) per socket (from the session cookie at upgrade). */
   private playerIds = new WeakMap<WebSocket, string>();
+  /** Heartbeat (M7c): when each socket's last ping was answered. */
+  private lastPing = new WeakMap<WebSocket, number>();
   /** Account behind a socket, for the World Index. */
   private accountIds = new WeakMap<WebSocket, string>();
   /** Chat send limits, per player. */
@@ -444,11 +446,19 @@ export class RoomManager {
    * Handle an incoming message from a client.
    */
   handleMessage(ws: WebSocket, data: Buffer | ArrayBuffer | Buffer[]): void {
-    const activeId = this.playerIds.get(ws);
-    if (activeId) this.admission.markActive(activeId);
     try {
       const message = this.decodeMessage(data);
       if (!message) return;
+      // Heartbeat (M7c): echo at once so the client can tell a live socket from a zombie. Not activity.
+      if (message.type === "ping") {
+        const now = Date.now();
+        if (now - (this.lastPing.get(ws) ?? 0) < 2000) return; // at most one echo per 2 s per socket
+        this.lastPing.set(ws, now);
+        if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("ping", new Uint8Array(0)));
+        return;
+      }
+      const activeId = this.playerIds.get(ws);
+      if (activeId) this.admission.markActive(activeId);
 
       switch (message.type) {
         case "universe-update": {
@@ -986,6 +996,7 @@ export class RoomManager {
   //   0x08 = leave-world      (client → server: worldId in header)
   //   0x0a = chat             (client → server: { text }; server → client: { error } | { lines, history? } for space)
   //   0x0b = presence-batch   (server → client: JSON array of presence states, once per tick)
+  //   0x0c = ping             (client → server, echoed back empty: heartbeat, M7c)
 
   private static readonly MSG_TYPES: Record<string, number> = {
     "universe-sync": 0x01,
@@ -999,6 +1010,7 @@ export class RoomManager {
     "presence": 0x09,
     "chat": 0x0a,
     "presence-batch": 0x0b,
+    "ping": 0x0c,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

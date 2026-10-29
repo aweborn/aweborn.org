@@ -8,6 +8,9 @@ const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 10_000;
 /** Back in view after this long hidden: assume the socket is a zombie, open a fresh one. */
 const RESUME_RECYCLE_MS = 15_000;
+/** Heartbeat (M7c): a ping this often while visible; this long with nothing at all from the server = a zombie socket. */
+const PING_EVERY_MS = 15_000;
+const SILENT_MAX_MS = 40_000;
 
 // ── Wire Protocol (mirrors server's RoomManager protocol) ────────────
 //
@@ -26,6 +29,8 @@ const MSG_TYPES: Record<string, number> = {
   "chat": 0x0a,
   /** Server → client: JSON array of presence states, once per tick (2026-10-20). */
   "presence-batch": 0x0b,
+  /** Heartbeat (M7c): client → server, echoed straight back. */
+  "ping": 0x0c,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -170,6 +175,12 @@ export function useSyncConnection(
     let retries = 0;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let hiddenAt = 0;
+    // Heartbeat (M7c): a server that vanishes without closing TCP (crash, network path gone) leaves a socket
+    // that still says OPEN, and edits sent into it are lost. The watchdog only arms once this socket has had
+    // a reply to a ping, so a server without ping support (mid-deploy) is never recycled in a loop.
+    let lastRx = 0;
+    let pongSeen = false;
+    let pingTimer: ReturnType<typeof setInterval> | null = null;
 
     const clearRetry = () => {
       if (retryTimer) {
@@ -204,6 +215,9 @@ export function useSyncConnection(
       sock.addEventListener("open", () => {
         if (ws !== sock) return;
         retries = 0;
+        lastRx = Date.now();
+        pongSeen = false;
+        sock.send(encodeMessage("ping", new Uint8Array(0)) as unknown as ArrayBuffer);
         setConnected(true);
         console.log("[sync] connected to sync-service");
       });
@@ -223,8 +237,13 @@ export function useSyncConnection(
 
       sock.addEventListener("message", (event) => {
         if (ws !== sock) return;
+        lastRx = Date.now();
         const msg = decodeMessage(event.data as ArrayBuffer);
         if (!msg) return;
+        if (msg.type === "ping") {
+          pongSeen = true;
+          return;
+        }
 
         switch (msg.type) {
           case "universe-sync":
@@ -302,9 +321,21 @@ export function useSyncConnection(
       if (e.persisted) onResume("restored from bfcache", true);
     };
 
+    const heartbeat = () => {
+      if (cancelled || document.visibilityState === "hidden") return;
+      const sock = ws;
+      if (!sock || sock.readyState !== WebSocket.OPEN) return;
+      if (pongSeen && Date.now() - lastRx > SILENT_MAX_MS) {
+        recycle("no reply from the server");
+        return;
+      }
+      sock.send(encodeMessage("ping", new Uint8Array(0)) as unknown as ArrayBuffer);
+    };
+
     void playerReady.then(() => {
       if (cancelled) return;
       connect();
+      pingTimer = setInterval(heartbeat, PING_EVERY_MS);
       document.addEventListener("visibilitychange", onVisibility);
       window.addEventListener("online", onOnline);
       window.addEventListener("offline", onOffline);
@@ -314,6 +345,7 @@ export function useSyncConnection(
     return () => {
       cancelled = true;
       clearRetry();
+      if (pingTimer) clearInterval(pingTimer);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);

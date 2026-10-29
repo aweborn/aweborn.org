@@ -9,6 +9,7 @@ import {
   type WorldActor,
 } from "../../../shared/world-policy.js";
 import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, parseEditKey, validEditValue } from "../../../shared/terrain-edits.js";
+import { findNudge } from "../../../shared/nudge.js";
 
 /**
  * Server-side world write authority (Rough Draft M1, 2026-10-27).
@@ -32,6 +33,8 @@ export const AUTHORITY_ORIGIN = "authority";
 
 export interface ApplyResult {
   reverted: number;
+  /** New objects moved off another player's object (collision nudge, M7c). */
+  nudged: number;
   /** Object ids / map keys that were reverted (for logs). */
   details: string[];
 }
@@ -127,6 +130,8 @@ export class WorldAuthority {
 
     const fixes: Array<() => void> = [];
     const details: string[] = [];
+    const created: Array<{ id: string; rec: Rec }> = [];
+    let nudges = 0;
 
     for (const id of objIds) {
       const before = this.objects.get(id);
@@ -134,6 +139,7 @@ export class WorldAuthority {
       if (sameValue(before, after)) continue;
       let verdict = judgeObjectChange(actor, before, after);
       if (verdict === "ok" && before === undefined && !allowCreate()) verdict = "revert";
+      if (verdict === "ok" && before === undefined && after) created.push({ id, rec: after });
       if (verdict === "revert") {
         details.push(`object:${id}`);
         fixes.push(() => {
@@ -143,6 +149,25 @@ export class WorldAuthority {
             for (const [k, v] of Object.entries(before)) m.set(k, v);
             this.objectsType.set(id, m);
           }
+        });
+      }
+    }
+
+    // Collision nudge (M7c): a new object on top of another player's moves to the nearest free spot
+    if (created.length) {
+      const others = [...this.objects.values()];
+      const t = Date.now();
+      for (const { id, rec } of created) {
+        const spot = findNudge(rec, others);
+        if (!spot) continue;
+        details.push(`nudge:${id}`);
+        nudges++;
+        fixes.push(() => {
+          const m = this.objectsType.get(id);
+          if (!(m instanceof Y.Map)) return;
+          m.set("nudge", { fx: rec.x, fz: rec.z, t });
+          m.set("x", spot.x);
+          m.set("z", spot.z);
         });
       }
     }
@@ -196,7 +221,7 @@ export class WorldAuthority {
     for (const k of editKeys) this.dirtyEdits.add(k);
     this.acceptDirty();
 
-    return { reverted: fixes.length, details };
+    return { reverted: fixes.length - nudges, nudged: nudges, details };
   }
 }
 

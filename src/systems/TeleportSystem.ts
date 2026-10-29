@@ -48,6 +48,32 @@ const ENTER_DELAY_MS = 700
 
 const LOOKUP_TIMEOUT_MS = 8000
 
+/** Offline card tap (M7c): a world we couldn't look up offline, opened once the phone is back online. */
+const WAITING_TAP_KEY = 'aweborn.waiting-tap'
+/** A saved tap older than this isn't replayed on a later boot (the moment has passed). */
+const WAITING_TAP_MAX_MS = 6 * 60 * 60 * 1000
+
+function saveWaitingTap(worldId: string): void {
+  try {
+    localStorage.setItem(WAITING_TAP_KEY, JSON.stringify({ id: worldId, at: Date.now() }))
+  } catch {
+    /* storage off: it just won't survive a reload */
+  }
+}
+
+function takeWaitingTap(): string | null {
+  try {
+    const raw = localStorage.getItem(WAITING_TAP_KEY)
+    if (!raw) return null
+    localStorage.removeItem(WAITING_TAP_KEY)
+    const v = JSON.parse(raw) as { id?: unknown; at?: unknown }
+    if (typeof v.id !== 'string' || typeof v.at !== 'number' || Date.now() - v.at > WAITING_TAP_MAX_MS) return null
+    return v.id
+  } catch {
+    return null
+  }
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 /** Response of `GET /worlds/:id` (server/sync-service/src/index.ts). */
@@ -194,7 +220,15 @@ class TeleportSystem {
    */
   async handleBootLink(location: Pick<Location, 'pathname'> = window.location): Promise<void> {
     const link = parseTeleportLink(location.pathname)
-    if (!link) return
+    if (!link) {
+      // No link this time: a card tapped while offline earlier may still be waiting
+      const waiting = takeWaitingTap()
+      if (waiting) {
+        if (navigator.onLine) await this.teleportToId(waiting)
+        else this.waitForOnline(waiting)
+      }
+      return
+    }
     window.history.replaceState(null, '', '/')
 
     if (!link.worldId) {
@@ -215,6 +249,17 @@ class TeleportSystem {
     useTeleportStore.setState({ pending: false })
 
     if (!result.ok) {
+      if (result.reason === 'unreachable' && !navigator.onLine) {
+        // Offline and this phone has never seen the world: keep the tap and open it when the network is back
+        this.waitForOnline(worldId)
+        showNotice({
+          kind: 'arrived',
+          title: 'Saved for when you’re online',
+          detail: 'No connection, and this phone hasn’t seen that world yet. It opens by itself once you’re back online.',
+          color: '#e8b94a',
+        })
+        return false
+      }
       showNotice(
         result.reason === 'not_found'
           ? {
@@ -235,8 +280,35 @@ class TeleportSystem {
     return true
   }
 
+  private _waitingFor: string | null = null
+
+  /** Remember an offline tap and replay it on the next `online` event (and on a later boot, within 6 h). */
+  private waitForOnline(worldId: string): void {
+    saveWaitingTap(worldId)
+    if (this._waitingFor) {
+      this._waitingFor = worldId // a newer tap replaces the older one; the listener is already armed
+      return
+    }
+    this._waitingFor = worldId
+    window.addEventListener(
+      'online',
+      () => {
+        // Give the new network a moment (DNS, captive portals) before looking the world up
+        setTimeout(() => {
+          const id = this._waitingFor
+          this._waitingFor = null
+          if (id && takeWaitingTap() === id) void this.teleportToId(id)
+        }, 1500)
+      },
+      { once: true },
+    )
+  }
+
   /** Teleport into an already-resolved world (Origin: to the portal). */
   teleportTo(world: WorldLookup): void {
+    // Arriving anywhere settles an older offline tap (replayed or replaced)
+    this._waitingFor = null
+    takeWaitingTap()
     const store = useUniverseStore.getState()
     if (this._enterTimer) clearTimeout(this._enterTimer)
     if (store.activeWorldId) store.exitWorld(true)

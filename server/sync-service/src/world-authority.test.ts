@@ -195,3 +195,17 @@ test("terrain edits: at most maxPerUpdate cells per update; owner deletes always
   assert.equal(edits(server).size, 0);
 });
 
+
+test("collision nudge (M7c): a new object on another player's spot slides to a free one, everywhere", () => {
+  const { server, client, act, obj } = setup();
+  // a1 (Alice) and b1 (Bob) both sit at (0, 1, 0); Bob places another block there: b1 is his own, a1 isn't
+  assert.equal(act(bob, (d) => addObject(d, "b2", BOB)), 0);
+  const s = obj(server, "b2") as Record<string, unknown>;
+  assert.equal(Math.round(Math.hypot(s.x as number, s.z as number) * 100) / 100, 1);
+  assert.deepEqual({ fx: (s.nudge as { fx: number }).fx, fz: (s.nudge as { fz: number }).fz }, { fx: 0, fz: 0 });
+  assert.equal((obj(client, "b2") as Record<string, unknown>).x, s.x, "the placer sees it move too");
+  // A block next to someone else's (not the same spot) stays put
+  assert.equal(act(bob, (d) => addObject(d, "b3", BOB, { x: -1 })), 0);
+  assert.equal(obj(server, "b3")?.x, -1);
+  assert.equal(obj(server, "b3")?.nudge, undefined);
+});

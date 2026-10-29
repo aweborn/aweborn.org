@@ -99,11 +99,16 @@ function getGeometry(type: string): THREE.BufferGeometry {
 
 // ── Placed Object Mesh ───────────────────────────────────────────────
 
+/** How long a collision-nudged object takes to glide to its new spot (M7c). */
+const NUDGE_SLIDE_S = 0.9
+
 function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worldColor: string; fogFar: number }) {
   const ref = useRef<THREE.Mesh>(null!)
   const groupRef = useRef<THREE.Group>(null!)
   const partMeshRefs = useRef<(THREE.Mesh | null)[]>([])
   const activeLodRef = useRef<0 | 1 | 2>(0)
+  /** Collision nudge slide (M7c): which nudge we're playing and when it started here. */
+  const slideRef = useRef<{ t: number; at: number } | null>(null)
   const [shouldLoad, setShouldLoad] = useState(false)
   const tier = useQualityTier()
   const preparedParts = useModelShapes((s) => (obj.asset ? s.models[obj.asset] : undefined))
@@ -145,6 +150,19 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
       px = p.x
       py = p.y
       pz = p.z
+    } else if (obj.nudge) {
+      const n = obj.nudge
+      // Only a fresh nudge (server clock, so allow some skew) from close by plays; old ones are history
+      if (slideRef.current?.t !== n.t) {
+        const fresh = Math.abs(Date.now() - n.t) < 10_000 && Math.hypot(n.fx - obj.x, n.fz - obj.z) < 8
+        slideRef.current = { t: n.t, at: fresh ? state.clock.elapsedTime : -1 }
+      }
+      const k = slideRef.current.at < 0 ? 1 : (state.clock.elapsedTime - slideRef.current.at) / NUDGE_SLIDE_S
+      if (k < 1) {
+        const e = 1 - (1 - k) ** 3
+        px = n.fx + (obj.x - n.fx) * e
+        pz = n.fz + (obj.z - n.fz) * e
+      }
     }
 
     const dx = state.camera.position.x - px
@@ -182,15 +200,15 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
       target.rotation.x += 0.08
     } else if (obj.type === 'model') {
       // Generated models stand still where they were placed
-      target.position.set(obj.x, obj.y, obj.z)
+      target.position.set(px, py, pz)
       target.rotation.set(0, obj.rotY, 0)
       return
     } else if (placedLook) {
-      target.position.set(obj.x, obj.y, obj.z)
+      target.position.set(px, py, pz)
       target.rotation.set(obj.rotX, obj.rotY, obj.rotZ)
       return
     } else {
-      target.position.set(obj.x, obj.y + Math.sin(state.clock.elapsedTime * 0.5 + obj.x * 0.1) * 0.05, obj.z)
+      target.position.set(px, py + Math.sin(state.clock.elapsedTime * 0.5 + obj.x * 0.1) * 0.05, pz)
       target.rotation.y += 0.003
     }
   })

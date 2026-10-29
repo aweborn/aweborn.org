@@ -324,6 +324,12 @@ export interface PlacedObject {
    * and the kick removed.
    */
   kick?: { vx: number; vy: number; vz: number; t: number };
+  /**
+   * Collision nudge (Phase 06, M7c): the server moved this new object off a spot another player's object
+   * already took (typically two phones that placed things offline). `fx`/`fz` is where it was placed,
+   * `t` the server time (ms); clients slide it from there to x/z once.
+   */
+  nudge?: { fx: number; fz: number; t: number };
 }
 
 /**

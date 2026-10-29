@@ -180,6 +180,23 @@ function isMeshOrigin(origin: unknown): boolean {
   return typeof origin === "object" && origin !== null && (origin as { mesh?: unknown }).mesh === true;
 }
 
+/**
+ * What this doc's own client wrote that `serverState` (a full world-sync) lacks, as an update, or null.
+ * Other clients' structs are excluded (their clocks are set to ours), so a nearby phone's edits are never
+ * uploaded on its behalf. The delete set always rides along; deletes the server already has change nothing.
+ */
+export function ownUnsentEdits(doc: Y.Doc, serverState: Uint8Array): Uint8Array | null {
+  const mine = doc.clientID;
+  const local = Y.decodeStateVector(Y.encodeStateVector(doc));
+  const have = local.get(mine) ?? 0;
+  if (have === 0) return null;
+  const server = Y.decodeStateVector(Y.encodeStateVectorFromUpdate(serverState));
+  const theirs = server.get(mine) ?? 0;
+  if (theirs >= have) return null;
+  local.set(mine, theirs);
+  return Y.encodeStateAsUpdate(doc, Y.encodeStateVector(local));
+}
+
 function wireWorldDoc(
   worldId: string,
   doc: Y.Doc,
@@ -245,7 +262,7 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
       });
     },
 
-    applyWorldUpdate: (worldId, update, _isFullSync) => {
+    applyWorldUpdate: (worldId, update, isFullSync) => {
       const state = get();
 
       // Only apply if this is the active world
@@ -266,6 +283,13 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
 
       if (isNewDoc) {
         useWorldStore.getState().loadFromDoc(doc);
+      }
+
+      // Reconnect push (M7c): edits sent into a socket that was already dead never arrived. The full sync
+      // tells us what the server has; send what this doc's own client wrote beyond that.
+      if (isFullSync && !isNewDoc && state.connected && state._worldDocUpdateHandler) {
+        const gap = ownUnsentEdits(doc, update);
+        if (gap) state._worldDocUpdateHandler(worldId, gap);
       }
     },
 

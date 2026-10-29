@@ -129,6 +129,7 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
       placedBy: (m.get("placedBy") as string) ?? "",
       placedAt: (m.get("placedAt") as number) ?? 0,
       kick: (m.get("kick") as PlacedObject["kick"]) ?? undefined,
+      nudge: (m.get("nudge") as PlacedObject["nudge"]) ?? undefined,
       asset: (m.get("asset") as string) ?? undefined,
       prompt: (m.get("prompt") as string) ?? undefined,
       planKey: (m.get("planKey") as string) ?? undefined,
@@ -534,7 +535,7 @@ export function duplicateObject(
   doc.transact(() => {
     const m = new Y.Map();
     src.forEach((v, k) => {
-      if (k === "kick" || k === "planKey") return;
+      if (k === "kick" || k === "planKey" || k === "nudge") return;
       m.set(k, v);
     });
     m.set("id", id);
