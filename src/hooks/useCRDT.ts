@@ -9,12 +9,12 @@ const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
 /** Reconnect backoff after a dropped socket (doubles per failed try, with jitter). */
 const RECONNECT_MIN_MS = 500;
-const RECONNECT_MAX_MS = 10_000;
+const RECONNECT_MAX_MS = 5_000; // was 10 s: on a metro the signal comes back for short windows (A4, 2026-10-31)
 /** Back in view after this long hidden: assume the socket is a zombie, open a fresh one. */
 const RESUME_RECYCLE_MS = 15_000;
 /** Heartbeat (M7c): a ping this often while visible; this long with nothing at all from the server = a zombie socket. */
-const PING_EVERY_MS = 15_000;
-const SILENT_MAX_MS = 40_000;
+const PING_EVERY_MS = 5_000; // was 15 s / 40 s: a dead socket on flaky cellular is noticed in ~12 s, not ~55 s (A4)
+const SILENT_MAX_MS = 12_000;
 
 // ── Wire Protocol (mirrors server's RoomManager protocol) ────────────
 //
