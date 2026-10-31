@@ -3,6 +3,7 @@ import { playerReady } from "../lib/player";
 import { simLink } from "../lib/simLink";
 import { useSteerStore } from "../stores/steerStore";
 import { setPresenceSocketUp } from "./usePresence";
+import { onMeshSignal, setMeshSignalSender } from "../lib/mesh";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
@@ -42,6 +43,8 @@ const MSG_TYPES: Record<string, number> = {
   "sim-resume": 0x10,
   /** M9 one screen steers: server → client, 1 byte (1 = this screen steers, 0 = another screen does). */
   "steer": 0x11,
+  /** Network-less A2: auto-pairing intros + SDP relay for the mesh (src/lib/mesh.ts). */
+  "mesh-signal": 0x12,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -234,6 +237,11 @@ export function useSyncConnection(
         });
         setConnected(true);
         setPresenceSocketUp(true);
+        setMeshSignalSender((m) => {
+          if (ws === sock && sock.readyState === WebSocket.OPEN) {
+            sock.send(encodeMessage("mesh-signal", new TextEncoder().encode(JSON.stringify(m))) as unknown as ArrayBuffer);
+          }
+        });
         console.log("[sync] connected to sync-service");
       });
 
@@ -244,6 +252,7 @@ export function useSyncConnection(
         simLink.detach();
         useSteerStore.getState().setFollower(false);
         setPresenceSocketUp(false);
+        setMeshSignalSender(null);
         setConnected(false);
         console.log("[sync] disconnected from sync-service; reconnecting");
         scheduleReconnect();
@@ -287,6 +296,9 @@ export function useSyncConnection(
           case "steer":
             useSteerStore.getState().setFollower(msg.data[0] === 0);
             break;
+          case "mesh-signal":
+            void onMeshSignal(msg.data);
+            break;
         }
       });
     };
@@ -299,6 +311,7 @@ export function useSyncConnection(
       wsRef.current = null;
       simLink.detach();
       setPresenceSocketUp(false);
+      setMeshSignalSender(null);
       if (old) {
         old.close();
         setConnected(false);
@@ -339,6 +352,7 @@ export function useSyncConnection(
       wsRef.current = null;
       simLink.detach();
       setPresenceSocketUp(false);
+      setMeshSignalSender(null);
       if (old) {
         old.close();
         setConnected(false);

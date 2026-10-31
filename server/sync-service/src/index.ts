@@ -865,6 +865,7 @@ const server = createServer((req, res) => {
         sim: rooms.sim.stats(),
         telemetry: rooms.telemetry.stats(),
         steering: rooms.steering.stats(),
+        meshIntro: rooms.meshIntro.stats(),
         database: dbStats,
         uptime: process.uptime(),
         memory: process.memoryUsage(),
@@ -898,6 +899,9 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage, identity: Identity | 
   } else {
     console.log("[ws] guest connection (no session)");
   }
+  // Public IP (Caddy overwrites X-Forwarded-For with the real client IP): only for mesh auto-pairing
+  const xff = req.headers["x-forwarded-for"];
+  rooms.setIp(ws, (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim() || req.socket.remoteAddress || "");
 
   if (route.type === "universe") {
     rooms.joinUniverse(ws, route.sectors ?? []);

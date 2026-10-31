@@ -28,6 +28,11 @@ import { teleportSystem } from "../systems/TeleportSystem";
 const T_SV = 1;
 const T_UPDATE = 2;
 const T_PRESENCE = 3;
+/** A peer's presence passed on by the hub (never relayed again). */
+const T_PRESENCE_RELAYED = 4;
+/** First frame on a link: this page's random id, so a second link to the same phone is dropped. */
+const T_HELLO = 5;
+const PAGE_ID = Math.random().toString(36).slice(2, 12);
 const T_CHUNK = 0xff;
 /** Safe message size on every browser's SCTP stack; bigger frames are split. */
 const CHUNK_BYTES = 16 * 1024;
@@ -96,6 +101,10 @@ class MeshLink {
   readonly pc = new RTCPeerConnection({ iceServers: [] });
   readonly dc: RTCDataChannel;
   open = false;
+  /** Auto-paired by the server (A2): the other screen's token. Null for a QR link. */
+  autoPeer: string | null = null;
+  /** The other page's id (T_HELLO). */
+  remoteId: string | null = null;
   /** The world our state vector was last sent for (a received one is answered with ours once). */
   svSentFor: string | null = null;
   timer: ReturnType<typeof setTimeout> | null = null;
@@ -199,8 +208,19 @@ const links = new Set<MeshLink>();
 let pending: MeshLink | null = null;
 
 function handleFrame(link: MeshLink, type: number, worldId: string | null, payload: Uint8Array): void {
-  if (type === T_PRESENCE) {
+  if (type === T_HELLO) {
+    // A reconnecting socket gets a new server token, so the same two phones can be introduced
+    // again while their old link still works: both sides drop the newer link.
+    const id = new TextDecoder().decode(payload).slice(0, 32);
+    for (const l of links) if (l !== link && l.remoteId === id) return onLinkClosed(link);
+    link.remoteId = id;
+    return;
+  }
+  if (type === T_PRESENCE || type === T_PRESENCE_RELAYED) {
     handleWebSocketPresence(payload);
+    // Star (a hub with several phones): pass a peer's own presence on once, so the others see
+    // each other too. Relayed copies are never relayed again (no loops when links form a ring).
+    if (type === T_PRESENCE) for (const l of links) if (l !== link && l.open) l.send(T_PRESENCE_RELAYED, null, payload);
     return;
   }
   const { activeWorldId, activeWorldDoc } = useUniverseStore.getState();
@@ -263,18 +283,23 @@ function onLinkOpen(link: MeshLink): void {
   if (pending === link) pending = null;
   links.add(link);
   startSharing();
+  link.send(T_HELLO, null, new TextEncoder().encode(PAGE_ID));
   sendStateVector(link);
   useMeshStore.setState({ phase: "connected", code: null, error: null, peers: links.size });
 }
 
 function onLinkClosed(link: MeshLink): void {
+  if (link.autoPeer && autoLinks.get(link.autoPeer) === link) autoLinks.delete(link.autoPeer);
   if (pending === link) {
     pending = null;
     link.close();
     fail("Couldn’t connect. Both phones need to be on the same Wi-Fi or hotspot.");
     return;
   }
-  if (!links.delete(link)) return;
+  if (!links.delete(link)) {
+    link.close(); // an auto link that never opened
+    return;
+  }
   link.close();
   if (links.size === 0) stopSharing();
   const s = useMeshStore.getState();
@@ -403,8 +428,81 @@ export function meshLeave(): void {
     links.delete(l);
     l.close();
   }
+  for (const l of autoLinks.values()) l.close();
+  autoLinks.clear();
   stopSharing();
   useMeshStore.setState({ phase: "idle", code: null, error: null, peers: 0 });
+}
+
+// ── Auto-pairing while online (Network-less A2) ──
+//
+// The server introduces screens in the same world on the same public IP
+// (server/sync-service/src/mesh-intro.ts) and relays their SDP over the room
+// socket (0x12 mesh-signal). The newcomer offers to the group's hub. Host
+// candidates only, so a link forms only on one local network, and then
+// survives the internet dropping. Failures stay silent: the server path is
+// still there, and nothing is shown unless a link opens.
+
+type SignalSender = (msg: { t: "sdp"; to: string; kind: "offer" | "answer"; sdp: string }) => void;
+let signalSend: SignalSender | null = null;
+const autoLinks = new Map<string, MeshLink>();
+
+/** useCRDT, on socket open / close. */
+export function setMeshSignalSender(send: SignalSender | null): void {
+  signalSend = send;
+}
+
+function newAutoLink(peer: string): MeshLink | null {
+  const old = autoLinks.get(peer);
+  if (old?.open) return null; // already linked
+  old?.close();
+  if (links.size >= MAX_MESH_PEERS || typeof RTCPeerConnection === "undefined") return null;
+  const link = new MeshLink();
+  link.autoPeer = peer;
+  autoLinks.set(peer, link);
+  arm(link, CONNECT_MS);
+  return link;
+}
+
+async function sendLocal(link: MeshLink, peer: string, kind: "offer" | "answer"): Promise<void> {
+  await gather(link.pc);
+  const sdp = link.pc.localDescription?.sdp;
+  if (autoLinks.get(peer) !== link || !sdp) return;
+  if (parseSdp(sdp, kind).candidates.length === 0) return onLinkClosed(link); // no local network to share
+  signalSend?.({ t: "sdp", to: peer, kind, sdp });
+}
+
+/** useCRDT: a 0x12 mesh-signal from the server. */
+export async function onMeshSignal(data: Uint8Array): Promise<void> {
+  let m: { t?: string; peer?: string; from?: string; kind?: string; sdp?: string };
+  try {
+    m = JSON.parse(new TextDecoder().decode(data));
+  } catch {
+    return;
+  }
+  try {
+    if (m.t === "intro" && typeof m.peer === "string") {
+      const link = newAutoLink(m.peer);
+      if (!link) return;
+      await link.pc.setLocalDescription(await link.pc.createOffer());
+      await sendLocal(link, m.peer, "offer");
+    } else if (m.t === "sdp" && typeof m.from === "string" && typeof m.sdp === "string") {
+      if (m.kind === "offer") {
+        const link = newAutoLink(m.from);
+        if (!link) return;
+        await link.pc.setRemoteDescription({ type: "offer", sdp: m.sdp });
+        await link.pc.setLocalDescription(await link.pc.createAnswer());
+        await sendLocal(link, m.from, "answer");
+      } else if (m.kind === "answer") {
+        const link = autoLinks.get(m.from);
+        if (link && !link.open && link.pc.signalingState === "have-local-offer") {
+          await link.pc.setRemoteDescription({ type: "answer", sdp: m.sdp });
+        }
+      }
+    }
+  } catch {
+    // a bad or stale description: the link times out quietly (arm)
+  }
 }
 
 function readCode(text: string) {

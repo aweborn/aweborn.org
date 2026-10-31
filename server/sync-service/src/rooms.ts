@@ -45,6 +45,7 @@ import { SimHost } from "./sim-host.js";
 import { sqliteSimStore } from "./sim-store.js";
 import { FlightTelemetry } from "./telemetry.js";
 import { Steering, type SteerNotice } from "./steering.js";
+import { MeshIntro, MESH_SIGNAL_MAX_BYTES, type Intro } from "./mesh-intro.js";
 
 const FLUSH_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -135,6 +136,10 @@ export class RoomManager {
   readonly telemetry = new FlightTelemetry(getDb());
   /** One screen steers (M9): which of a player's screens drives; the rest aren't relayed. */
   readonly steering = new Steering<WebSocket>();
+  /** Auto-pairing for the offline mesh (Network-less A2): same world + same public IP. */
+  readonly meshIntro = new MeshIntro<WebSocket>();
+  /** Public IP per socket (Caddy's X-Forwarded-For), for meshIntro only. */
+  private ips = new WeakMap<WebSocket, string>();
   private frontierCount: { at: number; n: number } | null = null;
 
   constructor() {
@@ -225,6 +230,7 @@ export class RoomManager {
    */
   leaveUniverse(ws: WebSocket): void {
     this.presence.delete(ws);
+    this.sendIntros(this.meshIntro.leave(ws));
     if (!this.universeClients.delete(ws)) return;
     const pid = this.playerIds.get(ws);
     if (pid) this.sendSteer(this.steering.leave(ws, pid));
@@ -235,6 +241,34 @@ export class RoomManager {
     for (const [ws, driver] of notices) {
       if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("steer", Uint8Array.of(driver ? 1 : 0)));
     }
+  }
+
+  /** The socket's public IP (index.ts, at upgrade). */
+  setIp(ws: WebSocket, ip: string): void {
+    if (ip) this.ips.set(ws, ip);
+  }
+
+  /** 0x12 mesh-signal { t: "intro", peer }: "offer a mesh link to this screen" (Network-less A2). */
+  private sendIntros(intros: Intro<WebSocket>[]): void {
+    for (const [ws, peer] of intros) {
+      if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("mesh-signal", new TextEncoder().encode(JSON.stringify({ t: "intro", peer }))));
+    }
+  }
+
+  /** Relay one SDP message between two screens of the same (world, IP) group. */
+  private relayMeshSignal(ws: WebSocket, data: Uint8Array): void {
+    if (data.length === 0 || data.length > MESH_SIGNAL_MAX_BYTES) return;
+    let m: { t?: unknown; to?: unknown; kind?: unknown; sdp?: unknown };
+    try {
+      m = JSON.parse(new TextDecoder().decode(data));
+    } catch {
+      return;
+    }
+    if (m?.t !== "sdp" || (m.kind !== "offer" && m.kind !== "answer") || typeof m.sdp !== "string") return;
+    const to = this.meshIntro.relayTarget(ws, m.to);
+    if (!to || to.readyState !== to.OPEN) return;
+    const out = { t: "sdp", from: this.meshIntro.token(ws), kind: m.kind, sdp: m.sdp };
+    to.send(this.encodeMessage("mesh-signal", new TextEncoder().encode(JSON.stringify(out))));
   }
 
   // ── World Rooms ──────────────────────────────────────────────────
@@ -582,6 +616,10 @@ export class RoomManager {
           if (pid) this.sendSteer(this.steering.active(ws, pid));
           break;
         }
+        case "mesh-signal": {
+          this.relayMeshSignal(ws, message.data);
+          break;
+        }
         default:
           console.warn(`[rooms] unknown message type: ${message.type}`);
       }
@@ -891,6 +929,8 @@ export class RoomManager {
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
     const group = typeof p.inWorld === "string" ? p.inWorld : "";
     this.presence.set(sender, { json, x, y, z, group, at: Date.now() });
+    // Same world + same network → introduce for a direct mesh link (A2); O(1) when nothing changed
+    this.sendIntros(this.meshIntro.place(sender, this.ips.get(sender) ?? null, group || null));
   }
 
   /**
@@ -1050,6 +1090,8 @@ export class RoomManager {
   //   0x10 = sim-resume       (client → server: back online; the offline flight log follows, 9C)
   //   0x11 = steer            (server → client: 1 byte, 1 = this screen steers, 0 = another screen of the player does;
   //                            client → server: empty, "Play here", M9)
+  //   0x12 = mesh-signal      (JSON both ways, Network-less A2: server → client { t: "intro", peer } and
+  //                            { t: "sdp", from, kind, sdp }; client → server { t: "sdp", to, kind, sdp })
 
   private static readonly MSG_TYPES: Record<string, number> = {
     "universe-sync": 0x01,
@@ -1069,6 +1111,7 @@ export class RoomManager {
     "sim-reset": 0x0f,
     "sim-resume": 0x10,
     "steer": 0x11,
+    "mesh-signal": 0x12,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
