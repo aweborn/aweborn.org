@@ -10,6 +10,26 @@ import { playerReady } from "../lib/player";
 const BROADCAST_INTERVAL_MS = 100;
 const STALE_TIMEOUT_MS = 3000; // Remove players not heard from in 3s
 
+// ── Flaky networks (Network-less A1, 2026-10-31) ──────────────────────
+// On a metro the signal drops for seconds or minutes. Before, every other
+// player froze and vanished after 3 s. Now a player we stop hearing from keeps
+// gliding along their last velocity (easing out over ~1.5 s, so a guess never
+// runs far), fades, and is kept while it's *our* link that's down:
+//   - no socket and no mesh link: kept up to 2 min (they're probably still there)
+//   - nobody at all heard from for 1.5 s (a zombie socket the heartbeat hasn't
+//     caught yet, or the last other player left): kept up to 30 s
+//   - others still arriving: this one left → the usual 3 s
+// When they're heard again their real position takes over (renderers smooth).
+const QUIET_MS = 300;
+const GLIDE_TAU_S = 1.5;
+const HOLD_LINK_DOWN_MS = 120_000;
+const HOLD_GLOBAL_SILENCE_MS = 30_000;
+const GLOBAL_SILENCE_MS = 1500;
+/** Signal strength shown for a player we haven't heard from (1 = live). */
+const FADE_START_MS = 1000;
+const FADE_FULL_MS = 8000;
+const FADE_MIN = 0.3;
+
 /** 1 cm precision: trims ~40% off every presence payload. */
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const roundVec = (v: Vec3): Vec3 => ({ x: r2(v.x), y: r2(v.y), z: r2(v.z) });
@@ -25,6 +45,49 @@ type PresenceSendFn = (type: string, data: Uint8Array, worldId?: string) => void
 interface PresenceState {
   players: Map<string, PlayerPresence>;
   lastSeen: Map<string, number>;
+  /** The position each player last *reported* (players[id].position may be a glide from it). */
+  reported: Map<string, Vec3>;
+}
+
+/** Our room socket is open (useCRDT). The mesh counts as a link while `_meshSend` is set. */
+let _socketUp = false;
+/** Last time any presence arrived, from anyone. */
+let _lastAnyRx = 0;
+
+export function setPresenceSocketUp(up: boolean): void {
+  _socketUp = up;
+}
+
+/** 1 = live; fades toward 0.3 while a player hasn't been heard from (renderers dim them). */
+export function presenceSignal(id: string, now = Date.now()): number {
+  const seen = _state.lastSeen.get(id);
+  if (seen === undefined) return 1;
+  const quiet = now - seen;
+  if (quiet <= FADE_START_MS) return 1;
+  const t = Math.min(1, (quiet - FADE_START_MS) / (FADE_FULL_MS - FADE_START_MS));
+  return 1 - t * (1 - FADE_MIN);
+}
+
+/** Keep gliding players we stop hearing from (see the note at the top). */
+function glideQuietPlayers(now: number): void {
+  for (const [id, p] of _state.players) {
+    const seen = _state.lastSeen.get(id);
+    const from = _state.reported.get(id);
+    if (seen === undefined || !from || now - seen < QUIET_MS) continue;
+    const v = p.velocity;
+    if (!v || (v.x === 0 && v.y === 0 && v.z === 0)) continue;
+    // Distance covered eases out: ∫ e^(−t/τ) = τ(1 − e^(−t/τ)), so at most τ seconds of velocity
+    const t = (now - seen) / 1000;
+    const s = GLIDE_TAU_S * (1 - Math.exp(-t / GLIDE_TAU_S));
+    // Inside a world, stay on the ground's height (no sinking through terrain)
+    p.position = { x: from.x + v.x * s, y: p.inWorld ? from.y : from.y + v.y * s, z: from.z + v.z * s };
+  }
+}
+
+function holdFor(now: number): number {
+  if (!_socketUp && !_meshSend) return HOLD_LINK_DOWN_MS;
+  if (now - _lastAnyRx > GLOBAL_SILENCE_MS) return HOLD_GLOBAL_SILENCE_MS;
+  return STALE_TIMEOUT_MS;
 }
 
 // Filled in once the player resolves (persistent playerId, or a guest ID).
@@ -36,6 +99,7 @@ let _playerResolved = false;
 const _state: PresenceState = {
   players: new Map(),
   lastSeen: new Map(),
+  reported: new Map(),
 };
 
 const _localState: PlayerPresence = {
@@ -89,6 +153,7 @@ function startPresenceLoop() {
 
   // Broadcast local state at ~20Hz (once the player is known)
   _broadcastTimer = setInterval(() => {
+    glideQuietPlayers(Date.now());
     if (!_playerResolved) return;
     _broadcastChannel?.postMessage(_localState);
     if (_wsSend || _meshSend) {
@@ -104,14 +169,16 @@ function startPresenceLoop() {
     }
   }, BROADCAST_INTERVAL_MS);
 
-  // Clean up stale players every 2 seconds
+  // Clean up stale players every 2 seconds (kept longer while our own link is down)
   _cleanupTimer = setInterval(() => {
     const now = Date.now();
+    const hold = holdFor(now);
     let changed = false;
     for (const [id, lastSeen] of _state.lastSeen) {
-      if (now - lastSeen > STALE_TIMEOUT_MS) {
+      if (now - lastSeen > hold) {
         _state.players.delete(id);
         _state.lastSeen.delete(id);
+        _state.reported.delete(id);
         changed = true;
       }
     }
@@ -149,8 +216,11 @@ function applyPresence(presence: PlayerPresence): void {
   if (!presence || presence.id === _playerId) return;
 
   const isNew = !_state.players.has(presence.id);
+  const now = Date.now();
   _state.players.set(presence.id, presence);
-  _state.lastSeen.set(presence.id, Date.now());
+  _state.lastSeen.set(presence.id, now);
+  _state.reported.set(presence.id, presence.position);
+  _lastAnyRx = now;
 
   // Only notify React on structural changes (join)
   if (isNew) {

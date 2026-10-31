@@ -140,7 +140,8 @@ export default function MeshPanel() {
         ) : (
           <p className="mesh-lead">
             Phones next to each other can play the same world with <b>no internet</b>. Both need to be on the same Wi-Fi or
-            one phone’s hotspot.
+            one phone’s hotspot. On a train or in different networks (cellular and Wi-Fi), turn on <b>Personal Hotspot</b> on
+            one phone and join it from the others: you keep playing together when the signal drops.
           </p>
         )}
         <div className="mesh-choices">

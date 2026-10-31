@@ -1,7 +1,7 @@
 import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { usePresence, getPresenceState } from '../hooks/usePresence'
+import { usePresence, getPresenceState, presenceSignal } from '../hooks/usePresence'
 import { ChatBubble } from './ChatBubble'
 
 /**
@@ -38,6 +38,8 @@ interface PlayerStarData {
 function PlayerStar({ data }: { data: PlayerStarData }) {
   const groupRef = useRef<THREE.Group>(null!)
   const trailRef = useRef<THREE.Points>(null!)
+  const orbMatRef = useRef<THREE.MeshBasicMaterial>(null!)
+  const glowMatRef = useRef<THREE.MeshBasicMaterial>(null!)
 
   const color = useMemo(() => new THREE.Color(data.color), [data.color])
   const trailGeo = useMemo(() => {
@@ -90,6 +92,12 @@ function PlayerStar({ data }: { data: PlayerStarData }) {
     data.position.lerp(data.targetPosition, 0.12)
     groupRef.current.position.copy(data.position)
 
+    // Lost signal (flaky network): dim and shrink a little while we can't hear them
+    const signal = presenceSignal(data.id)
+    if (orbMatRef.current) orbMatRef.current.opacity = 0.9 * signal
+    if (glowMatRef.current) glowMatRef.current.opacity = 0.25 * signal
+    groupRef.current.scale.setScalar(0.7 + 0.3 * signal)
+
     // Update trail
     if (trailRef.current) {
       // Shift trail down
@@ -121,6 +129,7 @@ function PlayerStar({ data }: { data: PlayerStarData }) {
         <mesh>
           <sphereGeometry args={[0.12, 16, 16]} />
           <meshBasicMaterial
+            ref={orbMatRef}
             color={color}
             transparent
             opacity={0.9}
@@ -132,6 +141,7 @@ function PlayerStar({ data }: { data: PlayerStarData }) {
         <mesh>
           <sphereGeometry args={[0.25, 12, 12]} />
           <meshBasicMaterial
+            ref={glowMatRef}
             color={color}
             transparent
             opacity={0.25}

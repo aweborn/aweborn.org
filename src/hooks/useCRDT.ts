@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { playerReady } from "../lib/player";
 import { simLink } from "../lib/simLink";
 import { useSteerStore } from "../stores/steerStore";
+import { setPresenceSocketUp } from "./usePresence";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
@@ -232,6 +233,7 @@ export function useSyncConnection(
           if (ws === sock && sock.readyState === WebSocket.OPEN) sock.send(encodeMessage(type, data) as unknown as ArrayBuffer);
         });
         setConnected(true);
+        setPresenceSocketUp(true);
         console.log("[sync] connected to sync-service");
       });
 
@@ -241,6 +243,7 @@ export function useSyncConnection(
         wsRef.current = null;
         simLink.detach();
         useSteerStore.getState().setFollower(false);
+        setPresenceSocketUp(false);
         setConnected(false);
         console.log("[sync] disconnected from sync-service; reconnecting");
         scheduleReconnect();
@@ -295,6 +298,7 @@ export function useSyncConnection(
       ws = null;
       wsRef.current = null;
       simLink.detach();
+      setPresenceSocketUp(false);
       if (old) {
         old.close();
         setConnected(false);
@@ -334,6 +338,7 @@ export function useSyncConnection(
       ws = null;
       wsRef.current = null;
       simLink.detach();
+      setPresenceSocketUp(false);
       if (old) {
         old.close();
         setConnected(false);
