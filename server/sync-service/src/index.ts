@@ -464,7 +464,8 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   // Life & minds (Phase 07): animate a placed model; give a creation a mind; forget it
   if (path === "/api/player/animate" && req.method === "POST") {
-    return startAnimate(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
+    // Room for the sheet's drawn thumbnail (body check when the server has none)
+    return startAnimate(rooms, session.playerId, accountId, (await readJson(req, 450_000).catch(() => null)) as Record<string, unknown> | null, json);
   }
   if (path === "/api/player/mind" && req.method === "POST") {
     return createMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);

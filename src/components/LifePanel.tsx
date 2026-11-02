@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLifeTarget, closeLife } from '../stores/lifeStore'
-import { cleanLife, GAITS, VOICES, VOICE_IDS, ANIMATE_ESTIMATE, LIFE_LIMITS, type Gait, type ObjectLife, type VoiceId } from '@aweborn/shared/life'
+import { cleanLife, creationTitle, GAITS, VOICES, VOICE_IDS, ANIMATE_ESTIMATE, LIFE_LIMITS, type Gait, type ObjectLife, type VoiceId } from '@aweborn/shared/life'
 import { useWorldStore, setObjectLife, restoreStillAsset } from '../stores/worldStore'
 import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
 import { inputManager } from '../systems/InputManager'
 import { audio } from '../audio/engine'
 import { refreshProgress } from '../stores/progressStore'
+import { libraryThumb } from '../lib/libraryThumbs'
 import './LifePanel.css'
 
 /**
@@ -60,6 +61,20 @@ function LifeDialog({ id }: { id: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [suggestion, setSuggestion] = useState<string | null>(null)
+  /** The body check said it isn't two-legged: offer four legs / Alive, or "Animate anyway". */
+  const [notBiped, setNotBiped] = useState<null | 'quadruped' | 'other'>(null)
+  const [thumb, setThumb] = useState<string | null>(null)
+
+  // A picture of what's being changed (drawn on this device once, shared with the server)
+  const stillFile = obj?.stillAsset ?? obj?.asset
+  useEffect(() => {
+    if (!stillFile || !/^[a-f0-9]{64}\.glb$/.test(stillFile)) return
+    let alive = true
+    void libraryThumb(stillFile.slice(0, 64), stillFile).then((u) => alive && setThumb(u))
+    return () => {
+      alive = false
+    }
+  }, [stillFile])
 
   useEffect(() => {
     const d = ref.current
@@ -122,12 +137,21 @@ function LifeDialog({ id }: { id: string }) {
     return () => clearTimeout(t)
   }, [rig])
 
-  const animate = async () => {
+  const animate = async (force = false) => {
     if (busy || !worldId) return
     setBusy(true)
     setError(null)
+    setNotBiped(null)
     try {
-      const r = await post('/api/player/animate', { worldId, objectId: id, gait, heightM: Math.abs(obj?.scaleY ?? 1.8) })
+      const r = await post('/api/player/animate', {
+        worldId, objectId: id, gait, heightM: Math.abs(obj?.scaleY ?? 1.8),
+        ...(force ? { force: true } : {}),
+        ...(thumb?.startsWith('data:image/png') && thumb.length < 400_000 ? { thumb } : {}),
+      })
+      if (r.status === 422 && r.json.error === 'not_biped') {
+        setNotBiped(r.json.body === 'quadruped' ? 'quadruped' : 'other')
+        return setError(errorText(r.status, r.json))
+      }
       if (!r.ok || typeof r.json.jobId !== 'string') return setError(errorText(r.status, r.json))
       audio.creationStart()
       setRig({ jobId: r.json.jobId, progress: 0 })
@@ -175,14 +199,15 @@ function LifeDialog({ id }: { id: string }) {
     }
   }
 
-  const title = (obj?.mind?.name ?? obj?.prompt ?? 'This creation').replace(/\s+/g, ' ').slice(0, 60)
+  const title = obj?.mind?.name ?? (creationTitle(obj?.prompt) || 'This creation')
   const animated = life.mode === 'animated'
 
   return (
     <dialog ref={ref} id="life-panel" className="life-panel" aria-labelledby="life-title" onClose={onClosed}>
       <div className="life-shell">
         <header className="life-head">
-          <div>
+          {thumb && <img className="life-thumb" src={thumb} alt="" width={56} height={56} />}
+          <div className="life-head-text">
             <h2 id="life-title" className="life-title">Bring it to life</h2>
             <p className="life-sub">{title}</p>
           </div>
@@ -202,6 +227,22 @@ function LifeDialog({ id }: { id: string }) {
               <span>{animated ? 'Animated' : 'Alive'}</span>
             </label>
           </fieldset>
+          {life.mode === 'alive' && obj?.type === 'model' && (
+            <label className="life-switch">
+              <input
+                id="life-four-legs"
+                type="checkbox"
+                role="switch"
+                {...({ switch: '' } as Record<string, string>)}
+                checked={life.legs === 4}
+                onChange={(e) => {
+                  const { legs: _legs, ...rest } = life
+                  write(e.target.checked ? { ...rest, pace, roam, legs: 4 } : { ...rest, pace, roam })
+                }}
+              />
+              Walks on four legs (its legs swing as it roams; free)
+            </label>
+          )}
           {life.mode !== 'still' && (
             <div className="life-sliders">
               <label className="life-slider">
@@ -217,7 +258,7 @@ function LifeDialog({ id }: { id: string }) {
           {obj?.type === 'model' && !animated && (
             <div className="life-rig">
               <p className="life-note">
-                <b>Animate it:</b> give it a skeleton and real movement (walk, idle, talk, a gesture). For creatures with two legs and two arms; takes a couple of minutes.
+                <b>Animate it:</b> give it a skeleton and real movement (walk, idle, talk, a gesture). For creatures with two legs and two arms; takes a couple of minutes. Four-legged animals: switch on <i>Walks on four legs</i> above instead (free).
               </p>
               <fieldset className="life-gaits">
                 <legend>Gait</legend>
@@ -234,21 +275,29 @@ function LifeDialog({ id }: { id: string }) {
                   <span className="life-bar" style={{ width: `${Math.max(4, rig.progress)}%` }} />
                 </div>
               ) : (
-                <button type="button" id="life-animate" className="life-primary" disabled={busy} onClick={animate}>
-                  Animate · holds up to {ANIMATE_ESTIMATE} mana
+                <button type="button" id="life-animate" className="life-primary" disabled={busy} onClick={() => animate(false)}>
+                  {busy ? 'Looking at it…' : `Animate · holds up to ${ANIMATE_ESTIMATE} mana`}
                 </button>
               )}
             </div>
           )}
           {animated && (
-            <p className="life-note">
-              Animated ({GAITS[life.gait ?? 'calm'].label.toLowerCase()} gait).{' '}
+            <div className="life-rig">
+              <p className="life-note">Animated ({GAITS[life.gait ?? 'calm'].label.toLowerCase()} gait). Moving wrong? Undo it for free: the still model comes back and it can still breathe and roam.</p>
               {obj?.stillAsset && (
-                <button type="button" className="life-link" onClick={() => { const doc = useUniverseStore.getState().activeWorldDoc; if (doc) restoreStillAsset(doc, id) }}>
-                  Back to the still model
+                <button
+                  type="button"
+                  id="life-undo-animate"
+                  className="life-secondary"
+                  onClick={() => {
+                    const doc = useUniverseStore.getState().activeWorldDoc
+                    if (doc) restoreStillAsset(doc, id)
+                  }}
+                >
+                  Undo animation
                 </button>
               )}
-            </p>
+            </div>
           )}
         </section>
 
@@ -302,6 +351,18 @@ function LifeDialog({ id }: { id: string }) {
         </section>
 
         {error && <p className="life-error" role="alert">{error}</p>}
+        {notBiped && (
+          <div className="life-row">
+            {notBiped === 'quadruped' ? (
+              <button type="button" id="life-four-legs-offer" className="life-primary" onClick={() => { write({ mode: 'alive', pace, roam: roam || 4, legs: 4 }); if (!roam) setRoam(4); setNotBiped(null); setError(null) }}>
+                Walk on four legs (free)
+              </button>
+            ) : (
+              <button type="button" className="life-secondary" onClick={() => { setMode('alive'); setNotBiped(null); setError(null) }}>Make it Alive (free)</button>
+            )}
+            <button type="button" id="life-animate-anyway" className="life-link" disabled={busy} onClick={() => animate(true)}>Animate anyway</button>
+          </div>
+        )}
         {suggestion && (
           <button type="button" className="life-link" onClick={() => { setWords(suggestion); setSuggestion(null); setError(null) }}>
             Use this idea →

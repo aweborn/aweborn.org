@@ -51,6 +51,8 @@ export interface ObjectLife {
   roam: number;
   /** Animated models: which clip set the rig job asked for. */
   gait?: Gait;
+  /** Alive models that walk on four legs: legs found in the mesh, swung procedurally (shared/quadruped.ts). */
+  legs?: 4;
 }
 
 export const LIFE_LIMITS = { pace: [0.3, 1.6], roam: [0, 24] } as const;
@@ -70,6 +72,7 @@ export function cleanLife(raw: unknown): ObjectLife | null {
     roam: Math.round(clamp(num(r.roam, 0), ...LIFE_LIMITS.roam) * 10) / 10,
   };
   if (isGait(r.gait)) out.gait = r.gait;
+  if (r.legs === 4 && mode !== "animated") out.legs = 4;
   return out;
 }
 
@@ -318,3 +321,20 @@ export function quotePlayer(text: string): string {
     .slice(0, 240);
 }
 
+
+/**
+ * A short name for a creation from its prompt. Planner-made assets carry the world's art
+ * direction around the item ("<style>. A goat … . Style: <style>"), which hid what the
+ * thing actually is (Alex animated a goat thinking it was something else, 2026-11-01).
+ */
+export function creationTitle(prompt: string | undefined, max = 70): string {
+  let p = (prompt ?? "").replace(/\s+/g, " ").trim();
+  const i = p.lastIndexOf(" Style: ");
+  if (i > 0) {
+    const style = p.slice(i + 8).replace(/[.\s]+$/, "");
+    p = p.slice(0, i).trim();
+    if (style && p.startsWith(style)) p = p.slice(style.length).replace(/^[.\s]+/, "");
+  }
+  p = p.replace(/[.\s]+$/, "");
+  return p.length > max ? `${p.slice(0, max - 1).trimEnd()}…` : p;
+}

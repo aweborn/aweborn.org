@@ -28,6 +28,7 @@ import { providerFor, type ProviderJob } from "./providers.js";
 import { isMediaKind, MEDIA_EXT, speakLine } from "./media.js";
 import { cleanAnimateParams } from "./rig.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
+import { MAX_ATTEMPTS, retryDelay, resumeTaskAfter } from "./retry.js";
 import { initLibrary, addToLibrary, addMedia, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -57,6 +58,9 @@ try { db.exec("ALTER TABLE jobs ADD COLUMN creator TEXT"); } catch { /* already 
 try { db.exec("ALTER TABLE jobs ADD COLUMN params TEXT"); } catch { /* already there */ }
 // Pseudonymous research id (Phase 07 Creation Archive): archive entries carry this, never the player id
 try { db.exec("ALTER TABLE jobs ADD COLUMN research_id TEXT"); } catch { /* already there */ }
+// Automatic retries (retry.ts): tries so far, and when the next one may start
+try { db.exec("ALTER TABLE jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
+try { db.exec("ALTER TABLE jobs ADD COLUMN retry_at INTEGER"); } catch { /* already there */ }
 
 /** sync-service's research id shape (`r` + 20 hex); anything else is dropped. */
 const researchIdOf = (v: unknown): string | null => (typeof v === "string" && /^r[0-9a-f]{20}$/.test(v) ? v : null);
@@ -66,6 +70,7 @@ interface JobRow {
   provider_task: string | null; status: string; progress: number;
   asset: string | null; cost_usd: number | null; error: string | null; creator: string | null;
   params: string | null; research_id: string | null;
+  attempts: number; retry_at: number | null;
 }
 
 function update(id: string, fields: Partial<JobRow>): void {
@@ -116,16 +121,26 @@ async function run(id: string): Promise<void> {
     update(id, { status: "complete", progress: 100, asset: out.asset, cost_usd: out.costUsd });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
-    console.error(`[genai] job ${id} failed:`, msg);
-    update(id, { status: "failed", error: msg.slice(0, 500) });
+    const attempt = (row.attempts ?? 0) + 1;
+    const delay = retryDelay(msg, attempt);
+    if (delay !== null) {
+      // Back in the queue under the same id: callers keep seeing it queued (retry.ts)
+      const task = resumeTaskAfter(err, (db.prepare("SELECT provider_task FROM jobs WHERE id = ?").get(id) as { provider_task: string | null }).provider_task);
+      console.warn(`[genai] job ${id} try ${attempt}/${MAX_ATTEMPTS} failed, retrying in ${delay / 1000}s:`, msg);
+      archive({ jobId: id, provider: provider.name, researchId: row.research_id ?? undefined, call: "retry", attempt, error: msg.slice(0, 500), delayMs: delay });
+      update(id, { status: "queued", attempts: attempt, retry_at: Date.now() + delay, provider_task: task, error: msg.slice(0, 500) });
+      return;
+    }
+    console.error(`[genai] job ${id} failed (try ${attempt}):`, msg);
+    update(id, { status: "failed", attempts: attempt, error: msg.slice(0, 500) });
   }
 }
 
 function pumpJobs(): void {
   while (activeJobs.size < MAX_CONCURRENT_JOBS) {
     const rows = db
-      .prepare("SELECT id FROM jobs WHERE status IN ('queued','processing') ORDER BY created_at ASC LIMIT 20")
-      .all() as { id: string }[];
+      .prepare("SELECT id FROM jobs WHERE status IN ('queued','processing') AND (retry_at IS NULL OR retry_at <= ?) ORDER BY created_at ASC LIMIT 20")
+      .all(Date.now()) as { id: string }[];
     const next = rows.find((r) => !activeJobs.has(r.id));
     if (!next) break;
     activeJobs.add(next.id);
@@ -136,12 +151,13 @@ function pumpJobs(): void {
   }
 }
 
-// Resume unfinished jobs after a restart
+// Resume unfinished jobs after a restart, and pick up retries as they come due
 pumpJobs();
+setInterval(pumpJobs, 5_000).unref();
 
 // ── HTTP ─────────────────────────────────────────────────────────────
 const app = express();
-app.use(express.json({ limit: "256kb" }));
+app.use(express.json({ limit: "1mb" })); // /llm may carry a thumbnail for the body check
 
 // genai-service is cluster-internal: sync-service is the only caller and does the authorization.
 // api.aweborn.org still proxies it (health checks), and Caddy always sets X-Forwarded-For, so
@@ -159,6 +175,10 @@ app.get("/health", (_req, res) => {
 
 app.post("/llm", async (req, res) => {
   const { ref, model, messages, json, maxTokens, noReasoning } = req.body ?? {};
+  // Up to 2 small images (data URLs) for vision checks; never archived (only their count)
+  const images = Array.isArray(req.body?.images)
+    ? (req.body.images as unknown[]).filter((u): u is string => typeof u === "string" && /^data:image\/(png|jpeg|webp);base64,/.test(u) && u.length < 600_000).slice(0, 2)
+    : [];
   const researchId = researchIdOf(req.body?.researchId) ?? undefined;
   const okMsgs = Array.isArray(messages) && messages.length > 0 && messages.length <= 80 &&
     messages.every((m: ChatMessage) => ["system", "user", "assistant"].includes(m?.role) && typeof m.content === "string");
@@ -169,8 +189,8 @@ app.post("/llm", async (req, res) => {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 90_000);
   try {
-    const out = await chat({ model, messages, json: !!json, noReasoning: noReasoning === true, maxTokens: typeof maxTokens === "number" ? Math.min(maxTokens, 8000) : undefined }, ac.signal);
-    archive({ kind: "llm", ref, researchId, provider: "openrouter", model: out.model, requested: model, messages, response: out.content, usage: out.usage, costUsd: out.costUsd, latencyMs: out.latencyMs });
+    const out = await chat({ model, messages, json: !!json, noReasoning: noReasoning === true, images, maxTokens: typeof maxTokens === "number" ? Math.min(maxTokens, 8000) : undefined }, ac.signal);
+    archive({ kind: "llm", ref, researchId, provider: "openrouter", model: out.model, requested: model, messages, images: images.length || undefined, response: out.content, usage: out.usage, costUsd: out.costUsd, latencyMs: out.latencyMs });
     res.json({ content: out.content, model: out.model, costUsd: out.costUsd });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
@@ -240,7 +260,7 @@ app.get("/jobs/:id", (req, res) => {
   if (!row) return res.status(404).json({ error: "not_found" });
   res.json({
     jobId: row.id, ref: row.ref, status: row.status, progress: row.progress,
-    asset: row.asset, costUsd: row.cost_usd, error: row.error,
+    asset: row.asset, costUsd: row.cost_usd, error: row.error, attempts: row.attempts,
   });
 });
 

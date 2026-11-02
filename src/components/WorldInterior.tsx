@@ -1,5 +1,6 @@
 import { GhostPreview, WorldTerrain } from './GhostPreview'
 import { useRef, useMemo, useState, useEffect, Component, type ReactNode } from 'react'
+import { serverNow } from '../lib/serverClock'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useWorldStore } from '../stores/worldStore'
@@ -155,7 +156,7 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
     let py = obj.y
     let pz = obj.z
     if (obj.kick) {
-      const p = kickedPosition(obj, useWorldStore.getState().physics, (Date.now() - obj.kick.t) / 1000)
+      const p = kickedPosition(obj, useWorldStore.getState().physics, (serverNow() - obj.kick.t) / 1000)
       px = p.x
       py = p.y
       pz = p.z
@@ -163,7 +164,7 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
       const n = obj.nudge
       // Only a fresh nudge (server clock, so allow some skew) from close by plays; old ones are history
       if (slideRef.current?.t !== n.t) {
-        const fresh = Math.abs(Date.now() - n.t) < 10_000 && Math.hypot(n.fx - obj.x, n.fz - obj.z) < 8
+        const fresh = Math.abs(serverNow() - n.t) < 10_000 && Math.hypot(n.fx - obj.x, n.fz - obj.z) < 8
         slideRef.current = { t: n.t, at: fresh ? state.clock.elapsedTime : -1 }
       }
       const k = slideRef.current.at < 0 ? 1 : (state.clock.elapsedTime - slideRef.current.at) / NUDGE_SLIDE_S

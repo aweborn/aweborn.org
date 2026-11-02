@@ -79,9 +79,13 @@ const meshy: Provider = {
     const headers = { Authorization: `Bearer ${MESHY_KEY}`, "Content-Type": "application/json" };
     let task = job.providerTask;
     let refining = false;
+    /** The finished preview a refine came from (`refine:<refine>:<preview>`; older rows have none). */
+    let preview: string | null = null;
     if (task?.startsWith("refine:")) {
       refining = true;
-      task = task.slice(7);
+      const [refine, from] = task.slice(7).split(":");
+      task = refine;
+      preview = from || null;
     }
     if (!task) {
       // A creature meant to come alive is made in an A-pose: arms clear of the body rig cleanly
@@ -117,9 +121,10 @@ const meshy: Provider = {
         const rj = (await r.json().catch(() => ({}))) as { result?: string; message?: string };
         job.archive({ call: "meshy.refine", status: r.status, response: rj });
         if (!r.ok || !rj.result) throw new Error(`meshy refine failed: ${r.status} ${rj.message ?? ""}`.trim());
+        preview = task;
         task = rj.result;
         refining = true;
-        job.onTask(`refine:${task}`);
+        job.onTask(`refine:${task}:${preview}`);
         continue;
       }
       if (t.status === "SUCCEEDED") {
@@ -131,7 +136,10 @@ const meshy: Provider = {
       }
       if (t.status === "FAILED" || t.status === "CANCELED") {
         job.archive({ call: "meshy.result", task, response: t });
-        throw new Error(`meshy ${t.status.toLowerCase()}: ${t.task_error?.message ?? ""}`.trim());
+        // A failed texture pass retries from the finished shape (retry.ts), not from scratch
+        throw Object.assign(new Error(`meshy ${t.status.toLowerCase()}: ${t.task_error?.message ?? ""}`.trim()), {
+          resumeTask: refining ? preview : null,
+        });
       }
     }
   },

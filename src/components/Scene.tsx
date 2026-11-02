@@ -1,5 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { serverNow } from '../lib/serverClock'
 import { PerformanceMonitor, Preload } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
@@ -723,7 +724,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         const target = kickTarget(s, Array.from(objects.values()).filter((o) => !o.kick))
         if (target) kickObject(doc, target.id, kickVelocity(s.fx, s.fz))
       }
-      const now = Date.now()
+      const now = serverNow()
       for (const o of objects.values()) {
         if (o.kick && now - o.kick.t > KICK_SETTLE_SEC * 1000) {
           settleObject(doc, o.id, kickedPosition(o, useWorldStore.getState().physics, KICK_SETTLE_SEC))

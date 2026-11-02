@@ -11,6 +11,17 @@ export interface LlmRequest {
   model: string; messages: ChatMessage[]; json?: boolean; maxTokens?: number; temperature?: number;
   /** Turn reasoning off: quick replies (minds) where hidden thinking would eat max_tokens and latency. */
   noReasoning?: boolean;
+  /** Images (data URLs) shown with the last user message (e.g. a model's thumbnail for the body check). */
+  images?: string[];
+}
+
+/** The messages as sent: the last user message carries the images, if any. */
+function withImages(messages: ChatMessage[], images: string[] | undefined): unknown[] {
+  if (!images?.length) return messages;
+  const last = messages.map((m) => m.role).lastIndexOf("user");
+  return messages.map((m, i) =>
+    i !== last ? m : { role: m.role, content: [{ type: "text", text: m.content }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))] },
+  );
 }
 export interface LlmResult { content: string; model: string; costUsd: number; usage: unknown; latencyMs: number }
 
@@ -31,7 +42,7 @@ export async function chat(req: LlmRequest, signal?: AbortSignal): Promise<LlmRe
     },
     body: JSON.stringify({
       model: req.model,
-      messages: req.messages,
+      messages: withImages(req.messages, req.images),
       max_tokens: req.maxTokens ?? 2500,
       temperature: req.temperature ?? 0.8,
       ...(req.json ? { response_format: { type: "json_object" } } : {}),

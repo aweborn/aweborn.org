@@ -326,7 +326,7 @@ export interface PlacedObject {
   /** Animated models: the still model it was rigged from (to switch back). */
   stillAsset?: string;
   /** A mind (NPC): the public part of its persona. **Server-written only** (world-policy SERVER_ONLY_OBJECT_KEYS). */
-  mind?: import("./life.js").ObjectMind & { greeting?: string; greetingVoice?: string };
+  mind?: import("./life.js").ObjectMind & { greeting?: string; greetingVoice?: string; sounds?: string[] };
   /**
    * Event-sourced physics (Phase 07): a kick from (x, y, z) at time `t` (ms).
    * Every client simulates the same flight; once settled, x/y/z is updated

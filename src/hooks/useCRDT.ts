@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { playerReady } from "../lib/player";
+import { notePingSent, notePong } from "../lib/serverClock";
 import { simLink } from "../lib/simLink";
 import { useSteerStore } from "../stores/steerStore";
 import { setPresenceSocketUp } from "./usePresence";
@@ -231,6 +232,7 @@ export function useSyncConnection(
         retries = 0;
         lastRx = Date.now();
         pongSeen = false;
+        notePingSent();
         sock.send(encodeMessage("ping", new Uint8Array(0)) as unknown as ArrayBuffer);
         simLink.attach((type, data) => {
           if (ws === sock && sock.readyState === WebSocket.OPEN) sock.send(encodeMessage(type, data) as unknown as ArrayBuffer);
@@ -269,6 +271,7 @@ export function useSyncConnection(
         if (!msg) return;
         if (msg.type === "ping") {
           pongSeen = true;
+          notePong(msg.data);
           return;
         }
 
@@ -371,7 +374,8 @@ export function useSyncConnection(
         recycle("no reply from the server");
         return;
       }
-      sock.send(encodeMessage("ping", new Uint8Array(0)) as unknown as ArrayBuffer);
+      notePingSent();
+        sock.send(encodeMessage("ping", new Uint8Array(0)) as unknown as ArrayBuffer);
     };
 
     void playerReady.then(() => {

@@ -120,6 +120,47 @@ function target(rooms: RoomManager, playerId: string, accountId: string | null, 
 
 // ── Animate ──────────────────────────────────────────────────────────
 
+/** Vision check before spending on a rig (Haiku 5.5 sees images; ≈ $0.0003). */
+const BODY_MODEL = process.env.BODY_MODEL ?? "anthropic/claude-haiku-5.5";
+const BODY_SYSTEM = `You look at a picture of a 3D model and say whether a humanoid skeleton fits it: a body that stands on TWO legs with TWO arms (people, robots, ogres, upright monsters, apes standing). Animals on four legs, birds, fish, snakes, blobs, vehicles, plants and objects do not fit.
+Answer JSON only: {"body": "biped" | "quadruped" | "other", "what": what it is in 2-5 words}`;
+
+export type BodyKind = "biped" | "quadruped" | "other" | "unknown";
+
+/**
+ * Does a humanoid rig fit this model? Meshy's rigging is humanoid-only, but it doesn't
+ * refuse a goat: it rigs the front legs as arms and every clip comes out tangled
+ * (Alex, 2026-11-01). So look at the model's thumbnail first; "unknown" when there's
+ * no thumbnail or the check is down (the player is warned, nothing is blocked).
+ */
+async function bodyCheck(ref: string, playerId: string, sourceGlb: string, clientThumb?: unknown): Promise<{ body: BodyKind; what: string; costUsd: number }> {
+  try {
+    const res = await fetch(`${GENAI_URL}/assets/${sourceGlb.replace(/\.glb$/, ".png")}`, { signal: AbortSignal.timeout(15_000) });
+    let buf = res.ok ? Buffer.from(await res.arrayBuffer()) : null;
+    // No thumbnail on the server yet: the Life sheet sends the one it drew (PNG data URL)
+    if (!buf && typeof clientThumb === "string" && /^data:image\/png;base64,/.test(clientThumb) && clientThumb.length < 400_000) {
+      buf = Buffer.from(clientThumb.slice(clientThumb.indexOf(",") + 1), "base64");
+    }
+    if (!buf || buf.length < 64 || buf.length > 400_000) return { body: "unknown", what: "", costUsd: 0 };
+    const out = await fetch(`${GENAI_URL}/llm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ref, model: BODY_MODEL, json: true, maxTokens: 200, noReasoning: true, researchId: tryResearchId(playerId),
+        images: [`data:image/png;base64,${buf.toString("base64")}`],
+        messages: [{ role: "system", content: BODY_SYSTEM }, { role: "user", content: "Does a humanoid skeleton fit this model?" }],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const j = (await out.json().catch(() => ({}))) as { content?: string; costUsd?: number };
+    const v = parseJson(j.content ?? "") as { body?: string; what?: string } | null;
+    const body: BodyKind = v?.body === "biped" || v?.body === "quadruped" || v?.body === "other" ? v.body : "unknown";
+    return { body, what: typeof v?.what === "string" ? v.what.slice(0, 60) : "", costUsd: j.costUsd ?? 0 };
+  } catch {
+    return { body: "unknown", what: "", costUsd: 0 };
+  }
+}
+
 export async function startAnimate(rooms: RoomManager, playerId: string, accountId: string | null, body: Record<string, unknown> | null, json: Json): Promise<void> {
   const t = target(rooms, playerId, accountId, body, json);
   if (!t) return;
@@ -131,6 +172,24 @@ export async function startAnimate(rooms: RoomManager, playerId: string, account
   const height = typeof body?.heightM === "number" && Number.isFinite(body.heightM) ? body.heightM : Math.abs(Number(t.obj.scaleY) || 1.8);
 
   const ref = `animate:${randomUUID()}`;
+  // Look before paying for a rig: a humanoid skeleton tangles anything that isn't two-legged
+  if (body?.force !== true) {
+    const check = await bodyCheck(`${ref}:body`, playerId, source, body?.thumb);
+    if (check.costUsd > 0) {
+      const mana = Math.round(check.costUsd * 100 * 1000) / 1000;
+      if (rooms.mana.reserve(`${ref}:body`, mana, playerId).ok) rooms.mana.settle(`${ref}:body`, mana, "body check");
+    }
+    if (check.body === "quadruped" || check.body === "other") {
+      const it = check.what ? `This looks like ${/^(a|an|the)\s/i.test(check.what) ? check.what : `a ${check.what}`}` : "This doesn't look two-legged";
+      return json(422, {
+        error: "not_biped", body: check.body, what: check.what,
+        message: check.body === "quadruped"
+          ? `${it}. Skeletons here are for two legs and two arms, so a rig would tangle it. It can walk on its own four legs for free instead.`
+          : `${it}. Skeletons here are for creatures with two legs and two arms, so its moves would come out tangled. It can still breathe, turn and roam for free: choose Alive. Or animate it anyway.`,
+      });
+    }
+  }
+
   const decision = rooms.admission.requestDraw({ playerId, ref, estimate: ANIMATE_ESTIMATE, progress: progressOf(rooms, playerId) });
   if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
   try {
@@ -219,6 +278,14 @@ export const parseJson = (s: string): unknown => {
   return null;
 };
 
+/** Wordless vocal sounds per size (v4 audio tags render the bracketed direction, the rest is the sound). */
+const VOCALS: Record<VoiceSize, string[]> = {
+  giant: ["[long, deep, rumbling groan] Hhhhrrrrmmmmmm...", "[low, slow growl] Grrrrrrrrrr..."],
+  large: ["[deep groan] Hhhrrrmmm...", "[low grumble] Hrrmmph."],
+  human: ["[sighs thoughtfully] Hmmmm...", "[hums softly] Mm-hm."],
+  small: ["[soft giggle] Hee-hee!", "[curious hum] Hmm?"],
+};
+
 /** Size → how the voice line is delivered (v4 audio tags; the client lowers giants further). */
 const DELIVERY: Record<VoiceSize, string> = { small: "", human: "", large: "[slowly] ", giant: "[slowly, deep and rumbling] " };
 
@@ -286,11 +353,22 @@ export async function createMind(rooms: RoomManager, playerId: string, accountId
       }
     }
 
+    // Wordless sounds in its own voice (groans, growls, sighs): ElevenLabs v4 audio tags through
+    // OpenRouter, so creatures sound like themselves with no sound-effects provider (2026-11-01)
+    const sounds: string[] = [];
+    for (const [k, line] of VOCALS[persona.size].entries()) {
+      const v = await tts(`${ref}:vocal${k}`, playerId, line, persona.voice);
+      if (v) {
+        costUsd += v.costUsd;
+        sounds.push(v.asset);
+      }
+    }
+
     const now = Date.now();
     db().prepare(`INSERT INTO minds (object_id, world_id, creator, prompt, persona, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(world_id, object_id) DO UPDATE SET creator = excluded.creator, prompt = excluded.prompt, persona = excluded.persona, updated_at = excluded.updated_at`)
       .run(t.objectId, t.worldId, playerId, words, JSON.stringify(persona), now, now);
-    const mind = { ...publicMind(persona), greeting: persona.greeting, ...(greetingVoice ? { greetingVoice } : {}) };
+    const mind = { ...publicMind(persona), greeting: persona.greeting, ...(greetingVoice ? { greetingVoice } : {}), ...(sounds.length ? { sounds } : {}) };
     rooms.editWorldObject(t.worldId, t.objectId, (m) => {
       m.set("mind", mind);
       // A mind needs a body that at least breathes

@@ -515,7 +515,11 @@ export class RoomManager {
         const now = Date.now();
         if (now - (this.lastPing.get(ws) ?? 0) < 2000) return; // at most one echo per 2 s per socket
         this.lastPing.set(ws, now);
-        if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("ping", new Uint8Array(0)));
+        // The echo carries the server's clock (float64 LE ms): clients estimate their offset from it
+        // (shared/clock.ts), so clock-driven things (roaming creatures, kicks) agree across devices.
+        const t = new Uint8Array(8);
+        new DataView(t.buffer).setFloat64(0, Date.now(), true);
+        if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("ping", t));
         return;
       }
       const activeId = this.playerIds.get(ws);
@@ -1169,7 +1173,7 @@ export class RoomManager {
   //   0x08 = leave-world      (client → server: worldId in header)
   //   0x0a = chat             (client → server: { text }; server → client: { error } | { lines, history? } for space)
   //   0x0b = presence-batch   (server → client: JSON array of presence states, once per tick)
-  //   0x0c = ping             (client → server, echoed back empty: heartbeat, M7c)
+  //   0x0c = ping             (client → server; echoed back with the server's clock, float64 LE ms: heartbeat M7c + clock sync)
   //   0x0d = sim-input        (client → server: binary input bundle + predicted state, shared/sim/wire.ts, 9B)
   //   0x0e = sim-correct      (server → client: authoritative state + acked seq, only on disagreement)
   //   0x0f = sim-reset        (client → server: an out-of-sim move — spawn, warp, teleport, world exit)

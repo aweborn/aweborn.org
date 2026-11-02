@@ -30,6 +30,10 @@ Four research passes (full reports in this folder) plus live spikes against the 
    - *animated*: Meshy remesh → rig → 4 clips, one GLB, ≈ 22 credits = **50 mana hold**. Humanoid/biped only (Meshy's API has no quadruped rig); a 422 tells the player to use *alive* and nothing is drawn.
    Industry pattern: a tiered strategy with a free procedural fallback that works for any mesh (research §2).
 2. **Movement is deterministic from the clock** (`roamPose`): every client walks a creature the same way with zero messages, the same idea as kicks. The server computes the same pose to know who is near a mind.
+   - **Which clock** (Alex asked, 2026-11-01): the **server's**, not each device's. Device clocks are usually NTP-synced within ~0.1 s, but a hand-set or drifting phone can be seconds or minutes out.
+   - Every heartbeat pong now carries the server time. The client estimates its offset NTP-style: `offset = S + rtt/2 − t1`, keeping the lowest-round-trip sample of the last 12, re-measured every 5 min (`shared/clock.ts`, `src/lib/serverClock.ts`).
+   - The error is ≤ rtt/2: tens of ms, i.e. a centimetre or two for a slow creature.
+   - Kicks, nudges and chat freshness use it too (they had the same latent bug).
 3. **Gaits** = four library actions per role (`idle, walk, talk, emote`): heavy / calm / lively / sneaky. *Heavy* is the colossus (pace 0.6). New creatures meant to come alive are generated in **A-pose** (`pose_mode`) so every clip rigs cleanly.
 4. **Minds** follow the hybrid industry pattern (Inworld, ACE, NEO, Generative Agents lessons):
    - Body: deterministic and free.
@@ -48,6 +52,31 @@ Four research passes (full reports in this folder) plus live spikes against the 
    - parsed error codes (402 / 401 quota, 429 concurrency)
    - real per-second pricing
 7. **Creature sounds are synthesized** until real SFX exist: formant groans, footfall thumps detected from the walk clip's foot bones, and giant voices played lower with a low-shelf boost.
+
+## Follow-ups from Alex's first try (2026-11-01, evening)
+
+- **A goat got animated and tangled.** Meshy's rigging doesn't refuse four-legged shapes: it rigged the goat's front legs as arms. Age of the model had nothing to do with it.
+  - Now a **body check** looks at the model's thumbnail first. Haiku 5.5 vision, ≈ $0.00007: the goat came back "quadruped", the colossus "biped".
+  - If it isn't two-legged, the sheet says so and offers *Make it Alive (free)* or *Animate anyway*.
+  - The sheet shows a picture and the real name of the thing: planner prompts carried the world's art direction in front ("Playful chunky mountains…").
+  - **Undo animation** is now a button.
+- **"Could you just make it support four-legged animations?"** Yes, without a new provider. Checks first:
+  - Meshy's API silently ignores any `rig_type` / `body_type` field.
+  - Its animation library is all biped (`/preview/biped/` in every clip URL).
+  - Tripo's quadruped rigs would be another paid dependency.
+
+  So legs are found in the mesh itself (`shared/quadruped.ts`):
+  1. Slice the model bottom-up.
+  2. The first low slice with exactly four blobs gives the feet, and where the blobs merge is the hip line.
+  3. Each lower vertex belongs to the nearest foot's leg. The end that rises higher is the front, and the head is beyond the neck.
+  4. A vertex shader swings the legs about their hips in a trot (diagonal pairs) while it roams, and nods or "grazes" the head while it stands (`src/stores/quadrupedWalk.ts`).
+
+  It's free, works offline, has no skeleton, and works mid-stride. On the goat it found four balanced legs (~2,200 vertices each); refused shapes include a two-legged synthetic animal. The Life sheet has *Walks on four legs*, and the body check offers it for quadrupeds.
+- **Sound effects through OpenRouter only** (Alex: fewer dependencies). Checked the live catalog: OpenRouter has **no sound-effect model that passes zero data retention**.
+  - Lyria 3 music (Google AI Studio), gpt-audio and Gemini TTS are refused.
+  - *Seed Audio 1.0* (ByteDance) makes "speech and other audio", but it's ByteDance (Alex dropped DeepSeek for no-China processing), so it is untested and unused.
+  - What works today: ElevenLabs v4 audio tags render **wordless vocal sounds** (groans, growls, sighs) in a premade voice. Minds now get two such clips in their own voice at creation (≈ $0.002), played instead of the synthesized groan.
+  - For ambient SFX and music: decide between an ElevenLabs key, turning off account-level ZDR for Lyria, or waiting for OpenRouter to add a ZDR sound model.
 
 ## Not yet (and why)
 

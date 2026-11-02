@@ -9,6 +9,7 @@
  */
 
 import type { BlueprintDraft, BlueprintSky } from '@aweborn/shared/blueprint';
+import { serverNow } from "../lib/serverClock";
 import { create } from "zustand";
 import * as Y from "yjs";
 import type {
@@ -342,7 +343,7 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
 export function kickObject(doc: Y.Doc, objectId: string, v: { vx: number; vy: number; vz: number }): void {
   const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
   if (!m || m.get("kick")) return; // already flying
-  m.set("kick", { ...v, t: Date.now() });
+  m.set("kick", { ...v, t: serverNow() });
 }
 
 /** Settle a kick: write the landing spot and clear it. Idempotent (same result on every client). */

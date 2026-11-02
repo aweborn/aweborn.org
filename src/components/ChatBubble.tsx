@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Html } from '@react-three/drei'
+import { serverNow } from '../lib/serverClock'
 import { useWorldStore } from '../stores/worldStore'
 import { useChatStore } from '../stores/chatStore'
 import { useMuteStore } from '../stores/muteStore'
@@ -50,7 +51,7 @@ export function ChatBubble({
 
   useEffect(() => {
     // Lines already old when we get them (history on arrival) get no bubble
-    if (!line || Math.abs(Date.now() - line.t) > 15_000) return
+    if (!line || Math.abs(serverNow() - line.t) > 15_000) return
     const text = prepareChat(line.text)
     if (!text) return
     setShown(text)

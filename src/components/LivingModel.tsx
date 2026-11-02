@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, Suspense, Component, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { serverNow } from '../lib/serverClock'
 import { Html, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
@@ -14,6 +15,8 @@ import { interiorController } from '../systems/InteriorController'
 import { getPresenceState } from '../hooks/usePresence'
 import { ChatBubble } from './ChatBubble'
 import { groan, footstep, speak, type CreatureSize } from '../audio/creature'
+import { quadrupedPlan, walkingMaterial, type LegUniforms } from '../stores/quadrupedWalk'
+import { trot } from '@aweborn/shared/quadruped'
 
 /**
  * A creation that's alive (Phase 07 Life & minds).
@@ -205,6 +208,58 @@ function StillParts({ asset }: { asset: string }) {
   return null
 }
 
+// ── The still model, walking on four legs ────────────────────────────
+
+/**
+ * Legs found in the mesh swing in a trot about their hips while it roams; the head
+ * nods (and now and then dips, as if grazing) while it stands. Falls back to the
+ * plain still model when no four legs are found.
+ */
+function FourLegged({ asset, life, body, h }: { asset: string; life: ObjectLife; body: React.MutableRefObject<Body>; h: number }) {
+  const tier = useQualityTier()
+  const parts = useModelShapes((s) => s.models[asset])
+  const proxy = useModelShapes((s) => s.proxies[asset])
+  const gltf = useGLTF(assetUrl(asset))
+  useEffect(() => prepareModelAsset(asset, gltf.scene, tier.modelMaxTris), [asset, gltf.scene, tier.modelMaxTris])
+  const u = useMemo<LegUniforms>(() => ({ uLegA: { value: new THREE.Vector4() }, uHeadA: { value: 0 } }), [])
+  const rig = useMemo(() => {
+    if (!parts) return null
+    const plan = quadrupedPlan(asset, parts)
+    if (!plan) return null
+    return { plan, materials: parts.map((p) => walkingMaterial(p.material, plan, u)) }
+  }, [asset, parts, u])
+  useEffect(() => () => rig?.materials.forEach((m) => m.dispose()), [rig])
+  const phase = useRef(0)
+  const amp = useRef(0)
+  const graze = useRef({ until: 0, next: performance.now() + 6000 + Math.random() * 8000 })
+
+  useFrame((state, delta) => {
+    if (!rig) return
+    const b = body.current
+    // Stride from leg length: the swing advances with distance walked
+    const legLen = Math.max(0.05, (rig.plan.legTop - rig.plan.floor) * h)
+    const speed = walkSpeed(h, life.pace)
+    amp.current += ((b.moving ? 0.42 : 0) - amp.current) * Math.min(1, delta * 4)
+    if (b.moving) phase.current += (delta * speed * Math.PI) / (legLen * 1.1)
+    const [a, bb, c, d] = trot(phase.current, amp.current)
+    u.uLegA.value.set(a, bb, c, d)
+    // Head: a slow look about; standing still it sometimes dips its head as if grazing
+    const now = performance.now()
+    const g = graze.current
+    if (!b.moving && now > g.next) {
+      g.until = now + 2500 + Math.random() * 2500
+      g.next = g.until + 7000 + Math.random() * 12000
+    }
+    const want = b.moving ? 0.06 * Math.sin(phase.current * 2) : now < g.until ? -0.55 : 0.08 * Math.sin(state.clock.elapsedTime * 0.6)
+    u.uHeadA.value += (want - u.uHeadA.value) * Math.min(1, delta * 2.5)
+  })
+
+  if (parts && rig) return <>{parts.map((p, i) => <mesh key={i} geometry={p.lod0} material={rig.materials[i]} />)}</>
+  if (parts) return <>{parts.map((p, i) => <mesh key={i} geometry={p.lod0} material={p.material} />)}</>
+  if (proxy) return <mesh geometry={proxy}><meshLambertMaterial vertexColors /></mesh>
+  return null
+}
+
 // ── A mind's face to the world ───────────────────────────────────────
 
 function MindLayer({ obj, body, pos }: { obj: PlacedObject; body: React.MutableRefObject<Body>; pos: React.MutableRefObject<THREE.Vector3> }) {
@@ -221,7 +276,7 @@ function MindLayer({ obj, body, pos }: { obj: PlacedObject; body: React.MutableR
 
   // A new line from its mind: turn to whoever it answers, play the clip, speak
   useEffect(() => {
-    if (!line || Math.abs(Date.now() - line.t) > 15_000 || played.current === line.t) return
+    if (!line || Math.abs(serverNow() - line.t) > 15_000 || played.current === line.t) return
     played.current = line.t
     const b = body.current
     if (line.anim) b.cue = line.anim
@@ -286,7 +341,7 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
 
   useFrame((state, delta) => {
     if (!life || !outer.current) return
-    const now = Date.now()
+    const now = serverNow() // the server's clock: every player sees the creature in the same place
     const t = state.clock.elapsedTime
     const b = body.current
     // Where it is: home + its deterministic roam
@@ -350,7 +405,7 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
         const nod = talking ? 0.025 * Math.sin(t * 9) : 0
         inner.current.scale.set(1 - k * 0.5, 1 + k + nod, 1 - k * 0.5)
         inner.current.rotation.z = 0.02 * Math.sin(t * breathe * 0.5 + seed * 3)
-        inner.current.rotation.x = r.moving ? 0.035 * Math.sin(t * speed * 4) : 0
+        inner.current.rotation.x = r.moving && life.legs !== 4 ? 0.035 * Math.sin(t * speed * 4) : 0
         inner.current.position.y = r.moving ? 0.015 * Math.abs(Math.sin(t * speed * 4)) : 0
       } else {
         inner.current.scale.set(1, 1, 1)
@@ -361,8 +416,12 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
 
     // Sounds: an occasional groan from big things when someone is near; footfalls for still-model walkers
     const pn = performance.now()
-    if ((size === 'giant' || size === 'large') && d < 40 && pn > nextGroan.current && pn > b.talkUntil) {
-      groan(x, y + h * 0.3, z, size, seed)
+    const vocals = obj.mind?.sounds
+    if ((size === 'giant' || size === 'large' || vocals?.length) && d < 40 && pn > nextGroan.current && pn > b.talkUntil) {
+      // Its own voice's groans/sighs when its mind made some; else a synthesized groan
+      const clip = vocals?.length ? vocals[Math.floor(Math.random() * vocals.length)] : null
+      if (clip && /^[a-f0-9]{64}\.(mp3|wav)$/.test(clip)) void speak(`${AUTH_URL}/assets/${clip}`, x, y + h * 0.3, z, size)
+      else groan(x, y + h * 0.3, z, size, seed)
       nextGroan.current = pn + (18_000 + Math.random() * 25_000) / life.pace
     }
     if (life.mode === 'alive' && r.moving && d < 40) {
@@ -384,7 +443,13 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
           {near && (
             <Boundary fallback={<StillFallback asset={obj.stillAsset ?? obj.asset} />}>
               <Suspense fallback={<ProxyOnly asset={obj.asset} />}>
-                {life.mode === 'animated' ? <AnimatedRig asset={obj.asset} life={life} body={body} dist={dist} weight={Math.min(1, h / 6)} /> : <StillParts asset={obj.asset} />}
+                {life.mode === 'animated' ? (
+                  <AnimatedRig asset={obj.asset} life={life} body={body} dist={dist} weight={Math.min(1, h / 6)} />
+                ) : life.legs === 4 ? (
+                  <FourLegged asset={obj.asset} life={life} body={body} h={h} />
+                ) : (
+                  <StillParts asset={obj.asset} />
+                )}
               </Suspense>
             </Boundary>
           )}

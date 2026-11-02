@@ -76,6 +76,7 @@ test("creating a mind compiles a persona, checks it, speaks the greeting and wri
   const obj = (doc.getMap("objects").get("obj-colossus") as Y.Map<unknown>).toJSON();
   assert.equal(obj.mind.name, "Kal'gor");
   assert.equal(obj.mind.greetingVoice, "b".repeat(64) + ".mp3");
+  assert.equal(obj.mind.sounds.length, 2, "a giant gets a groan and a growl in its own voice");
   assert.equal(obj.life.mode, "alive", "a mind gets a breathing body");
   assert.equal(obj.life.pace, 0.6, "giants move slowly");
   // Someone else can't give it a mind

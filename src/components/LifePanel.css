@@ -27,6 +27,8 @@
 
 .life-shell { display: flex; flex-direction: column; gap: var(--space-md); padding: var(--space-lg); }
 .life-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-md); }
+.life-head-text { flex: 1; min-width: 0; }
+.life-thumb { flex: none; width: 56px; height: 56px; border-radius: var(--radius-md); object-fit: cover; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-border); }
 .life-title {
   margin: 0;
   font-family: var(--font-display);

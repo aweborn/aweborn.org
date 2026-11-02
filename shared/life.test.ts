@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   cleanLife, cleanPersona, cleanReply, quotePlayer, roamPose, walkSpeed, GAITS, ANIM_ROLES, VOICE_IDS, isVoiceId,
-  publicMind, npcSender, isNpcSender, hash32,
+  publicMind, npcSender, isNpcSender, hash32, creationTitle,
 } from "./life.ts";
 
 test("life settings are cleaned and clamped", () => {
@@ -11,6 +11,8 @@ test("life settings are cleaned and clamped", () => {
   assert.deepEqual(cleanLife({ mode: "alive" }), { mode: "alive", pace: 1, roam: 0 });
   assert.deepEqual(cleanLife({ mode: "animated", pace: 9, roam: -3, gait: "heavy" }), { mode: "animated", pace: 1.6, roam: 0, gait: "heavy" });
   assert.deepEqual(cleanLife({ mode: "alive", pace: 0.01, roam: 500, gait: "nope" }), { mode: "alive", pace: 0.3, roam: 24 });
+  assert.deepEqual(cleanLife({ mode: "alive", legs: 4 }), { mode: "alive", pace: 1, roam: 0, legs: 4 });
+  assert.equal(cleanLife({ mode: "animated", legs: 4 })!.legs, undefined, "a rig has its own legs");
 });
 
 test("every gait asks for one action per role", () => {
@@ -85,3 +87,14 @@ test("player words are quoted as data", () => {
   assert.ok(!isNpcSender("124154"));
 });
 
+
+test("a creation's title drops the planner's art direction around it", () => {
+  const style = "Playful chunky mountains with rounded peaks, bright clear daylight, and friendly low-poly forms.";
+  assert.equal(
+    creationTitle(`${style} One small friendly mountain goat with short horns. Style: ${style}`),
+    "One small friendly mountain goat with short horns",
+  );
+  assert.equal(creationTitle("a mossy stone lantern"), "a mossy stone lantern");
+  assert.equal(creationTitle("x".repeat(100), 10), "xxxxxxxxx…");
+  assert.equal(creationTitle(undefined), "");
+});
