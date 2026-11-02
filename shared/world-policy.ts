@@ -30,6 +30,13 @@ export type GuardedWorldMap = (typeof GUARDED_WORLD_MAPS)[number];
 /** Meta keys nobody but the server writes. */
 export const SERVER_ONLY_META_KEYS: ReadonlySet<string> = new Set(["creator", "coCreators", "createdAt", "parentWorldId", "solidified"]);
 
+/**
+ * Object keys nobody but the server writes: a creation's **mind** (NPC persona summary,
+ * Phase 07 Life & minds) is compiled and safety-checked server-side, so a client may
+ * neither set, change nor copy it (deleting the whole object is still fine).
+ */
+export const SERVER_ONLY_OBJECT_KEYS: ReadonlySet<string> = new Set(["mind"]);
+
 /** Most co-creators a world can name. */
 export const MAX_CO_CREATORS = 24;
 
@@ -134,6 +141,7 @@ export function judgeObjectChange(actor: WorldActor, before: Rec | undefined, af
   if (before === undefined && after === undefined) return "ok";
   if (before === undefined) {
     // Create
+    if (after && [...SERVER_ONLY_OBJECT_KEYS].some((k) => after[k] !== undefined)) return "revert";
     return after && canPlaceAs(actor, after.placedBy) && isSaneObject(after) ? "ok" : "revert";
   }
   if (after === undefined) {
@@ -146,6 +154,7 @@ export function judgeObjectChange(actor: WorldActor, before: Rec | undefined, af
   if (keys.length === 0) return "ok";
   // Nobody rewrites who placed a thing (or when): that would launder ownership.
   if (keys.includes("placedBy") || keys.includes("id")) return "revert";
+  if (keys.some((k) => SERVER_ONLY_OBJECT_KEYS.has(k))) return "revert";
   if (canEditObject(actor, before)) return "ok";
   return isKickChange(before, after) ? "ok" : "revert";
 }

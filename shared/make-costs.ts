@@ -38,18 +38,18 @@ export function clampSeconds(kind: "sound" | "music", s: unknown): number {
  * Mana held for one making. Numbers (MANA_COSTS.md, 2026-10):
  *   model  Meshy preview + texture ≈ $0.60          → 60
  *   image  ≈ $0.02–0.07 a picture                   → 7
- *   sound  ElevenLabs SFX ≈ $0.01                   → 1
+ *   sound  ElevenLabs SFX $0.12 / min of audio      → 0.2 a second (+1)
  *   music  ElevenLabs Music ≈ $0.15 / min           → 0.25 a second (+1)
- *   voice  ElevenLabs Flash TTS ≈ $0.05 / 1k chars  → 0.005 a character (+0.5)
+ *   voice  ElevenLabs v4 Turbo via OpenRouter, $0.04 / 1k chars → 0.004 a character (+0.5)
  *   lore   one short LLM call + safety              → 2
  */
 export function makeEstimate(kind: MakeKind, opts: { seconds?: number; chars?: number } = {}): number {
   switch (kind) {
     case "model": return 60;
     case "image": return 7;
-    case "sound": return 1;
+    case "sound": return Math.ceil(clampSeconds("sound", opts.seconds) * 0.2) + 1;
     case "music": return Math.ceil(clampSeconds("music", opts.seconds) * 0.25) + 1;
-    case "voice": return Math.round((0.5 + clamp(opts.chars ?? VOICE_MAX_CHARS, 1, VOICE_MAX_CHARS) * 0.005) * 10) / 10;
+    case "voice": return Math.round((0.5 + clamp(opts.chars ?? VOICE_MAX_CHARS, 1, VOICE_MAX_CHARS) * 0.004) * 10) / 10;
     case "lore": return 2;
   }
 }

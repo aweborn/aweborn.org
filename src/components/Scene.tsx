@@ -20,6 +20,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useWorldStore, kickObject, settleObject, moveObject, duplicateObject, recolorObject } from '../stores/worldStore'
 import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
+import { cleanLife } from '@aweborn/shared/life'
 import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
 import { usePlannerStore } from '../stores/plannerStore'
 import { usePhotoStore } from '../stores/photoStore'
@@ -435,7 +436,12 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     const out: Box[] = []
     for (const o of solid) {
       // Generated models collide with their actual shape; until it loads, they don't block
-      if (o.type === 'model') out.push(...(modelColliders(o, shapes) ?? []))
+      // A roaming creature isn't at its home spot, so it doesn't block there (Life & minds)
+      if (o.type === 'model') {
+        const life = cleanLife(o.life)
+        if (life && life.mode !== 'still' && life.roam > 0) continue
+        out.push(...(modelColliders(o, shapes) ?? []))
+      }
       else out.push(...collidersFor([o]))
     }
     return [...out, ...real, ...ghost]

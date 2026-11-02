@@ -18,6 +18,15 @@ import { RETURN_PORTAL_XZ, type WorldEntry } from '@aweborn/shared/crdt-schema'
 import { useHeldItemStore, computePlacementTarget, computeTerrainTarget } from '../stores/heldItemStore'
 import { interiorController } from '../systems/InteriorController'
 import { PictureObject, SoundObject, SignObject, WorldSound, SpatialListener } from './MediaObjects'
+import { LivingModel } from './LivingModel'
+import { cleanLife } from '@aweborn/shared/life'
+
+/** A generated model that breathes, roams or is animated (Phase 07 Life & minds), or has a mind. */
+const isLiving = (o: PlacedObject): boolean => {
+  if (o.type !== 'model' || !o.asset || o.kick) return false
+  const l = cleanLife(o.life)
+  return (!!l && l.mode !== 'still') || !!o.mind
+}
 
 /** A model that fails to load must not take the whole scene down: show a wireframe stand-in instead. */
 class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -631,7 +640,8 @@ export function WorldInterior() {
   // Worlds are small and the camera can fly far above them, so fog only touches the extreme distance (any nearer turned the terrain dark from altitude)
   const fogColor = useMemo(() => new THREE.Color(worldColor).multiplyScalar(0.15), [worldColor])
   const objectList = useMemo(() => Array.from(objects.values()), [objects])
-  const hasSounds = useMemo(() => objectList.some((o) => o.type === 'sound'), [objectList])
+  // Living creations groan, step and speak too (Life & minds)
+  const hasSounds = useMemo(() => objectList.some((o) => o.type === 'sound' || isLiving(o)), [objectList])
 
   if (!activeWorldId || !loaded) return null
 
@@ -655,6 +665,8 @@ export function WorldInterior() {
           <SoundObject key={obj.id} obj={obj} fogFar={atmo?.fogFar ?? 200} />
         ) : obj.type === 'sign' ? (
           <SignObject key={obj.id} obj={obj} fogFar={atmo?.fogFar ?? 200} />
+        ) : isLiving(obj) ? (
+          <LivingModel key={obj.id} obj={obj} fogFar={atmo?.fogFar ?? 200} />
         ) : (
           <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} fogFar={atmo?.fogFar ?? 200} />
         ),

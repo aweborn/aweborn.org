@@ -31,6 +31,10 @@ Provider-agnostic: the table below is keyed by **what the player makes**, so we 
 | Music loop | Lyria 2 on Vertex ($0.06 / 30 s) (ElevenLabs Music $0.15 / min) | 30 s | $0.06 | **6** |
 | Sound effect | ElevenLabs SFX (≈ $0.12 / min) | ~5 s | ≈ $0.01 | **1** |
 | Voice / narration | Gemini 2.5 Flash TTS ($10 / M audio tokens, ~25 tokens/s) (ElevenLabs $0.05–0.10 / min) | 1 min | ≈ $0.015 | **1.5** |
+| Voice line (2026-11-01, live) | ElevenLabs v4 Turbo via OpenRouter TTS, $0.04 / 1k chars (69 chars measured $0.00276) | 200 chars | $0.008 | **0.8** |
+| Animate a model (2026-11-01, live) | Meshy remesh 5 + rig 5 + 4 clips × 3 = 22 credits | one rig | ≈ $0.44 | **44** (hold 50) |
+| Give it a mind (2026-11-01, live) | persona (Sonnet 5.5) + safety ×2 + spoken greeting | once | ≈ $0.011 | **≈ 1.1** (hold 6) |
+| A mind's reply (2026-11-01, live) | Haiku 5.5 ($0.10 / $0.50 per M, reasoning off) + safety + voice line | one line | ≈ $0.0002 text, ≈ $0.007 spoken | **0.02 / ≈ 0.7** (hold 1, the speaker pays) |
 
 Meshy credits are bought on a subscription ($20 / month for 1,000 credits on Pro, about $0.02 per credit; bigger plans and packs bring it toward $0.012). We price at **$0.02** until our plan says otherwise.
 
@@ -46,6 +50,7 @@ Meshy credits are bought on a subscription ($20 / month for 1,000 credits on Pro
 | **A whole new world** | planner (5.6), lore (2), voxel terrain (0), 5 full objects (300), 4 textures (28), 2 min music (24), 1 min ambience (12), 1 min voice (1.5), small calls ×12 (2.4) | **≈ 376** | ≈ $3.76 |
 | **…with a Meshy terrain piece** | + 1 island / mesa (60) | **≈ 436** | ≈ $4.36 |
 | **A character** | 1 full object (60), voice line (0.5), name + backstory (2) | **≈ 63** | ≈ $0.63 |
+| **A living character** (2026-11-01) | 1 full object in A-pose (60) + animate (44) + mind (1.1) | **≈ 105** | ≈ $1.05; then ≈ 0.7 mana per spoken reply, paid by whoever talks to it |
 
 ## What this means for the pool (founding gift)
 

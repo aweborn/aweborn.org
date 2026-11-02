@@ -367,6 +367,23 @@ function bakeLiteMaterial(
   return lite
 }
 
+const skinnedLiteCache = new Map<THREE.Material, THREE.MeshLambertMaterial>()
+
+/**
+ * The same single-texture Lambert bake for an animated (skinned) model's
+ * material. No vertex colours: rigged meshes don't carry the baked shading the
+ * decimated statics do (and a missing colour attribute would draw black).
+ * Lambert skins on its own (no flag since r129). Cached per source material.
+ */
+export function skinnedLiteMaterial(rawMat: THREE.Material | undefined, hasUv: boolean): THREE.MeshLambertMaterial {
+  if (rawMat && skinnedLiteCache.has(rawMat)) return skinnedLiteCache.get(rawMat)!
+  const lite = bakeLiteMaterial(rawMat, hasUv, new Map())
+  lite.vertexColors = false
+  lite.needsUpdate = true
+  if (rawMat) skinnedLiteCache.set(rawMat, lite)
+  return lite
+}
+
 function simplifyIndices(
   srcIndices: Uint32Array,
   posWorld: Float32Array,

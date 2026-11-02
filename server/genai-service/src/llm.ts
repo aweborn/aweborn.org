@@ -7,7 +7,11 @@
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string }
-export interface LlmRequest { model: string; messages: ChatMessage[]; json?: boolean; maxTokens?: number; temperature?: number }
+export interface LlmRequest {
+  model: string; messages: ChatMessage[]; json?: boolean; maxTokens?: number; temperature?: number;
+  /** Turn reasoning off: quick replies (minds) where hidden thinking would eat max_tokens and latency. */
+  noReasoning?: boolean;
+}
 export interface LlmResult { content: string; model: string; costUsd: number; usage: unknown; latencyMs: number }
 
 export const llmConfigured = () => !!process.env.OPENROUTER_API_KEY;
@@ -31,6 +35,7 @@ export async function chat(req: LlmRequest, signal?: AbortSignal): Promise<LlmRe
       max_tokens: req.maxTokens ?? 2500,
       temperature: req.temperature ?? 0.8,
       ...(req.json ? { response_format: { type: "json_object" } } : {}),
+      ...(req.noReasoning ? { reasoning: { enabled: false } } : {}),
       usage: { include: true },
     }),
   });

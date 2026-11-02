@@ -319,6 +319,15 @@ export interface PlacedObject {
   /** Signs: the lore text. */
   text?: string;
   /**
+   * Life (Phase 07 Life & minds, shared/life.ts): still | alive (procedural breathing, turning,
+   * roaming) | animated (`asset` is a rigged GLB with idle/walk/talk/emote clips). Placer/owners edit it.
+   */
+  life?: import("./life.js").ObjectLife;
+  /** Animated models: the still model it was rigged from (to switch back). */
+  stillAsset?: string;
+  /** A mind (NPC): the public part of its persona. **Server-written only** (world-policy SERVER_ONLY_OBJECT_KEYS). */
+  mind?: import("./life.js").ObjectMind & { greeting?: string; greetingVoice?: string };
+  /**
    * Event-sourced physics (Phase 07): a kick from (x, y, z) at time `t` (ms).
    * Every client simulates the same flight; once settled, x/y/z is updated
    * and the kick removed.
@@ -348,6 +357,10 @@ export interface ChatMessage {
   sender: string;
   text: string;
   t: number;
+  /** A mind's line (sender `npc:<objectId>`, server-written): its spoken clip, body clip and who it answers. */
+  voice?: string;
+  anim?: "talk" | "emote";
+  to?: string;
 }
 
 // ── Player Presence (Awareness Protocol) ─────────────────────────────

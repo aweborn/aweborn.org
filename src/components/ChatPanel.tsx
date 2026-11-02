@@ -6,6 +6,7 @@ import { usePresence } from '../hooks/usePresence'
 import { matchesBinding, keyCapLabel, useKeybindingStore } from '../stores/keybindingStore'
 import { CHAT_MAX_CHARS, prepareChat } from '@aweborn/shared/chat'
 import { useNameStore, requestNames, displayName } from '../stores/nameStore'
+import { isNpcSender, NPC_SENDER_PREFIX } from '@aweborn/shared/life'
 import { useMuteStore } from '../stores/muteStore'
 
 /** Lines older than this fade out of the corner while you're not typing. */
@@ -118,6 +119,16 @@ export function ChatPanel() {
         )}
         {shown.map((m) => {
           const mine = m.sender === playerId
+          // A mind (NPC) speaking: its name from the creation, warm, not a player to mute or report here
+          if (isNpcSender(m.sender)) {
+            const mind = useWorldStore.getState().objects.get(m.sender.slice(NPC_SENDER_PREFIX.length))?.mind
+            return (
+              <p key={m.key} className="chat-line chat-line--mind">
+                <span className="chat-name chat-name--mind">{mind?.name ?? 'Someone'}</span>
+                <span className="chat-text">{m.text}</span>
+              </p>
+            )
+          }
           return (
             <p key={m.key} className="chat-line">
               {mine || !open ? (

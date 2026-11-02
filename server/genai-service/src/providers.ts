@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { isMediaKind, mediaProvider } from "./media.js";
+import { animateProvider } from "./rig.js";
 
 export interface ProviderJob {
   id: string;
@@ -83,7 +84,10 @@ const meshy: Provider = {
       task = task.slice(7);
     }
     if (!task) {
-      const body = { mode: "preview", prompt: job.prompt };
+      // A creature meant to come alive is made in an A-pose: arms clear of the body rig cleanly
+      // (arms-down models rig, but raised-arm clips stretch the skin; Lost colossus, 2026-11-01)
+      const pose = job.params?.pose === "a-pose" ? { pose_mode: "a-pose" } : {};
+      const body = { mode: "preview", prompt: job.prompt, ...pose };
       job.archive({ call: "meshy.create", request: body });
       const res = await fetch(MESHY_BASE, { method: "POST", headers, body: JSON.stringify(body) });
       const json = (await res.json().catch(() => ({}))) as { result?: string; message?: string };
@@ -149,6 +153,7 @@ const stub: Provider = {
 
 export function providerFor(kind: string): Provider {
   if (isMediaKind(kind)) return mediaProvider(kind);
+  if (kind === "animate") return animateProvider();
   if (kind !== "model") throw new Error(`unsupported kind: ${kind}`);
   return MESHY_KEY ? meshy : stub;
 }

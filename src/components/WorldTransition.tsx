@@ -41,8 +41,9 @@ export function WorldTransition() {
   const distinctAssets = useMemo(() => {
     const s = new Set<string>()
     objects.forEach((o) => {
-      // Pictures/sounds also carry `asset`, but they stream in on approach — not a load gate
-      if (o.type === 'model' && o.asset) s.add(o.asset)
+      // Pictures/sounds also carry `asset`, but they stream in on approach — not a load gate.
+      // Animated (rigged) models stream in near too and never decimate (Life & minds).
+      if (o.type === 'model' && o.asset && o.life?.mode !== 'animated') s.add(o.asset)
     })
     return [...s]
   }, [objects])

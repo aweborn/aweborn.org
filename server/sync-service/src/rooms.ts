@@ -40,7 +40,7 @@ import { prepareChat, cleanChatText, ChatLimiter, CHAT_HISTORY, CHAT_MAX_BYTES }
 import { touchesChat } from "./chat-guard.js";
 import { WorldAuthority, CreateLimiter } from "./world-authority.js";
 import { listCharacters } from "./identity.js";
-import { isWorldOwnerId, type WorldActor } from "../../../shared/world-policy.js";
+import { isWorldOwnerId, canEditObject, type WorldActor } from "../../../shared/world-policy.js";
 import { SimHost } from "./sim-host.js";
 import { sqliteSimStore } from "./sim-store.js";
 import { FlightTelemetry } from "./telemetry.js";
@@ -141,6 +141,8 @@ export class RoomManager {
   /** Public IP per socket (Caddy's X-Forwarded-For), for meshIntro only. */
   private ips = new WeakMap<WebSocket, string>();
   private frontierCount: { at: number; n: number } | null = null;
+  /** Minds (NPCs, Phase 07) listen to world chat: set by index.ts. */
+  onWorldChat: ((worldId: string, playerId: string, text: string, at: { x: number; y: number; z: number } | null) => void) | null = null;
 
   constructor() {
     this.universeDoc = initUniverseDoc();
@@ -758,21 +760,103 @@ export class RoomManager {
     this.universeDoc.transact(() => {
       worldMap.set(key, value);
     }, "server");
+    this.withWorldDoc(worldId, (doc) => doc.getMap("meta").set(key, value));
+    return true;
+  }
+
+  /**
+   * Run `fn` on a world's doc as the server: the live room's doc (so every
+   * client gets the change at once), or the saved copy, written back after.
+   * Server writes never pass through the authority. Null if the world has no doc.
+   */
+  withWorldDoc<T>(worldId: string, fn: (doc: Y.Doc) => T): T | null {
     const room = this.worldRooms.get(worldId);
     if (room) {
-      room.doc.transact(() => {
-        room.doc.getMap("meta").set(key, value);
-      }, "server");
-    } else {
-      const saved = loadDoc(worldId);
-      if (saved) {
-        const doc = new Y.Doc();
-        Y.applyUpdate(doc, saved);
-        doc.getMap("meta").set(key, value);
-        saveDoc(worldId, Y.encodeStateAsUpdate(doc), "world", this.getWorldEntry(worldId)?.sector);
-        doc.destroy();
-      }
+      let out!: T;
+      room.doc.transact(() => { out = fn(room.doc); }, "server");
+      return out;
     }
+    const saved = loadDoc(worldId);
+    if (!saved) return null;
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, saved);
+    const out = fn(doc);
+    saveDoc(worldId, Y.encodeStateAsUpdate(doc), "world", this.getWorldEntry(worldId)?.sector);
+    doc.destroy();
+    return out;
+  }
+
+  /** One placed object, as plain JSON (live room or saved doc), or null. */
+  readWorldObject(worldId: string, objectId: string): Record<string, unknown> | null {
+    const room = this.worldRooms.get(worldId);
+    const read = (doc: Y.Doc) => {
+      const v = doc.getMap("objects").get(objectId);
+      return v instanceof Y.Map ? (v.toJSON() as Record<string, unknown>) : null;
+    };
+    if (room) return read(room.doc);
+    const saved = loadDoc(worldId);
+    if (!saved) return null;
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, saved);
+    const out = read(doc);
+    doc.destroy();
+    return out;
+  }
+
+  /** Server-only edit of one placed object (life, minds: Phase 07). False if it isn't there. */
+  editWorldObject(worldId: string, objectId: string, fn: (m: Y.Map<unknown>) => void): boolean {
+    return this.withWorldDoc(worldId, (doc) => {
+      const m = doc.getMap("objects").get(objectId);
+      if (!(m instanceof Y.Map)) return false;
+      fn(m);
+      return true;
+    }) ?? false;
+  }
+
+  /** May this character (or another on the same account) edit this object? Placer, creator or builders. */
+  mayEditObject(worldId: string, playerId: string, accountId: string | null, obj: Record<string, unknown>): boolean {
+    const w = this.getWorldEntry(worldId);
+    if (!w) return false;
+    const roles = { creator: w.creator, coCreators: w.coCreators };
+    const chars = accountId ? listCharacters(accountId).map((c) => c.id) : [playerId];
+    if (!chars.includes(playerId)) chars.push(playerId);
+    const owner = chars.some((id) => isWorldOwnerId(id, roles));
+    return canEditObject({ id: playerId, owner }, obj) || chars.some((id) => obj.placedBy === id);
+  }
+
+  /** The live doc of a loaded world room (minds read it to find who is near). */
+  liveWorldDoc(worldId: string): Y.Doc | null {
+    return this.worldRooms.get(worldId)?.doc ?? null;
+  }
+
+  /** Where each player in a world stands right now (from presence), by player id. */
+  playersInWorld(worldId: string): Map<string, { x: number; y: number; z: number }> {
+    const out = new Map<string, { x: number; y: number; z: number }>();
+    const room = this.worldRooms.get(worldId);
+    if (!room) return out;
+    for (const ws of room.clients) {
+      const id = this.playerIds.get(ws);
+      const p = this.presence.get(ws);
+      if (id && p && p.group === worldId) out.set(id, { x: p.x, y: p.y, z: p.z });
+    }
+    return out;
+  }
+
+  /**
+   * A server-written line in a world's chat log (a mind speaking): archived like any
+   * line, and carries the optional voice clip / body clip / addressee.
+   */
+  pushWorldChat(worldId: string, line: { sender: string; text: string; voice?: string; anim?: string; to?: string }): boolean {
+    const room = this.worldRooms.get(worldId);
+    if (!room) return false;
+    const now = Date.now();
+    this.archiveChat(worldId, line.sender, line.text, now);
+    room.doc.transact(() => {
+      const chat = room.doc.getArray("chat");
+      chat.push([{ ...line, t: now }]);
+      const over = chat.length - CHAT_HISTORY;
+      if (over > 0) chat.delete(0, over);
+    }, "server");
     return true;
   }
 
@@ -1065,6 +1149,8 @@ export class RoomManager {
       const over = chat.length - CHAT_HISTORY;
       if (over > 0) chat.delete(0, over);
     }, "server");
+    const p = this.presence.get(ws);
+    this.onWorldChat?.(worldId!, playerId, text, p && p.group === worldId ? { x: p.x, y: p.y, z: p.z } : null);
   }
 
   // ── Wire Protocol ────────────────────────────────────────────────

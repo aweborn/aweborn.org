@@ -6793,6 +6793,29 @@ html.touch-ui #journey-chip { display: none; }
   cursor: pointer;
 }
 .make-loop input:focus-visible { outline: 2px solid var(--color-accent-secondary); outline-offset: 4px; }
+/* Voice picker (Make → Voice, 2026-11-01): one of the premade voices */
+.make-voice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+.make-voice select {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 16px;
+  text-overflow: ellipsis;
+}
 .make-hold {
   width: 100%;
   margin: 0;

@@ -8,13 +8,14 @@
  *            2.6 Flash: the account enforces zero data retention, which rules
  *            out Gemini image endpoints today), re-encoded to WebP ≤ 1024 px → <sha>.webp
  *   sound  → ElevenLabs sound effects (loopable)                  → <sha>.mp3
- *   music  → ElevenLabs Music                                     → <sha>.mp3
- *   voice  → ElevenLabs text-to-speech                            → <sha>.mp3
+ *   music  → ElevenLabs Music (instrumental unless asked)         → <sha>.mp3
+ *   voice  → OpenRouter TTS: ElevenLabs v4 Turbo, premade voices  → <sha>.mp3
+ *            (2026-11-01: works under zero data retention, so voice no longer waits on a key)
  *
  * Without a key each kind falls back to a stub that makes a real file
  * locally (a gradient card with the prompt; a synthesized WAV), so the whole
  * loop (mana, jobs, placing, positional playback) works in dev and before
- * Alex adds ELEVENLABS_API_KEY. Stubs cost 0.
+ * Alex adds ELEVENLABS_API_KEY (sound + music). Stubs cost 0.
  */
 import { createHash } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
@@ -25,18 +26,24 @@ import type { Provider, ProviderJob } from "./providers.js";
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY ?? "";
 const IMAGE_MODEL = process.env.IMAGE_MODEL || "microsoft/mai-image-2.6-flash";
 const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY ?? "";
-const ELEVEN_VOICE = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 const ELEVEN = "https://api.elevenlabs.io/v1";
+/** Set explicitly: the API's own defaults lag (research 2026-11-01). */
+const ELEVEN_SFX_MODEL = process.env.ELEVENLABS_SFX_MODEL || "eleven_text_to_sound_v2";
+/** Empty = the API default (music_v1); set e.g. music_v2_5 once confirmed on the account. */
+const ELEVEN_MUSIC_MODEL = process.env.ELEVENLABS_MUSIC_MODEL || "";
+/** OpenRouter TTS model (premade ElevenLabs voices, audio tags). */
+const VOICE_MODEL = process.env.VOICE_MODEL || "elevenlabs/eleven-v4-turbo";
 
-/** List prices (MANA_COSTS.md) used when a provider doesn't report cost. */
+/** List prices (MANA_COSTS.md, re-checked 2026-11-01) used when a provider doesn't report cost. */
 export const MEDIA_USD = {
   /** MAI Image 2.6 Flash measured $0.0195 (2026-10-27); used only if OpenRouter reports no cost */
   image: 0.02,
-  sound: 0.01,
+  /** ElevenLabs sound effects: $0.12 / min of audio (API pricing, USD-billed plans) */
+  soundPerSecond: 0.12 / 60,
   /** ElevenLabs Music ≈ $0.15 / min */
   musicPerSecond: 0.15 / 60,
-  /** ElevenLabs Flash TTS ≈ $0.05 / 1k chars */
-  voicePerChar: 0.00005,
+  /** ElevenLabs v4 Turbo via OpenRouter: $0.04 / 1k chars (measured $0.00276 for 69 chars) */
+  voicePerChar: 0.00004,
 } as const;
 
 export type MediaKind = "image" | "sound" | "music" | "voice";
@@ -48,6 +55,8 @@ export interface MediaParams {
   seconds?: number;
   /** Sounds: make it loop seamlessly (ambience). */
   loop?: boolean;
+  /** Voice: a premade voice name (shared/life.ts VOICES). */
+  voice?: string;
 }
 
 export const MEDIA_EXT: Record<string, string> = { webp: "image/webp", mp3: "audio/mpeg", wav: "audio/wav", png: "image/png" };
@@ -135,6 +144,19 @@ const stubImage: Provider = {
 
 // ── Audio (ElevenLabs) ───────────────────────────────────────────────
 
+/** ElevenLabs error body → a short reason (2026 shape: { detail: { code, message } }; 422 = list). */
+function elevenReason(status: number, text: string): string {
+  try {
+    const d = (JSON.parse(text) as { detail?: unknown }).detail;
+    if (d && typeof d === "object" && !Array.isArray(d)) {
+      const { code, type, message } = d as { code?: string; type?: string; message?: string };
+      return `${code ?? type ?? status}: ${message ?? ""}`.trim();
+    }
+    if (Array.isArray(d)) return `validation: ${JSON.stringify(d).slice(0, 200)}`;
+  } catch { /* not JSON */ }
+  return text.slice(0, 200);
+}
+
 async function elevenPost(job: ProviderJob, call: string, path: string, body: Record<string, unknown>): Promise<Buffer> {
   job.archive({ call, request: { path, ...body } });
   job.onProgress(15);
@@ -145,17 +167,21 @@ async function elevenPost(job: ProviderJob, call: string, path: string, body: Re
     signal: AbortSignal.timeout(240_000),
   });
   if (!res.ok) {
-    const text = (await res.text().catch(() => "")).slice(0, 400);
-    job.archive({ call, status: res.status, error: text });
-    throw new Error(`elevenlabs ${res.status}: ${text}`.trim());
+    const text = (await res.text().catch(() => "")).slice(0, 600);
+    job.archive({ call, status: res.status, error: text, requestId: res.headers.get("request-id") });
+    // 401 quota_exceeded (old) / 402 insufficient_credits (new) / 429 concurrent_limit_exceeded: nothing is billed
+    throw new Error(`elevenlabs ${res.status} ${elevenReason(res.status, text)}`.trim());
   }
   const buf = Buffer.from(await res.arrayBuffer());
-  job.archive({ call, status: res.status, bytes: buf.length });
+  job.archive({ call, status: res.status, bytes: buf.length, requestId: res.headers.get("request-id") });
   if (buf.length > 30 * 1024 * 1024) throw new Error("audio too large");
   return buf;
 }
 
-function elevenProvider(kind: Exclude<MediaKind, "image">): Provider {
+/** Music without words unless the prompt asks for them (ElevenLabs sings by default). */
+const wantsVocals = (prompt: string) => /\b(vocals?|voice|sing(s|ing|er)?|lyrics?|choir|chant(s|ing)?|song with words)\b/i.test(prompt);
+
+function elevenProvider(kind: "sound" | "music"): Provider {
   return {
     name: `elevenlabs-${kind}`,
     async generate(job) {
@@ -164,19 +190,76 @@ function elevenProvider(kind: Exclude<MediaKind, "image">): Provider {
       let buf: Buffer;
       let costUsd: number;
       if (kind === "sound") {
-        buf = await elevenPost(job, "eleven.sfx", "/sound-generation", { text: job.prompt, duration_seconds: seconds, loop: !!p.loop, prompt_influence: 0.4 });
-        costUsd = MEDIA_USD.sound;
-      } else if (kind === "music") {
-        buf = await elevenPost(job, "eleven.music", "/music", { prompt: job.prompt, music_length_ms: seconds * 1000 });
-        costUsd = MEDIA_USD.musicPerSecond * seconds;
+        buf = await elevenPost(job, "eleven.sfx", "/sound-generation?output_format=mp3_44100_128", {
+          text: job.prompt, duration_seconds: seconds, loop: !!p.loop, prompt_influence: 0.4, model_id: ELEVEN_SFX_MODEL,
+        });
+        costUsd = MEDIA_USD.soundPerSecond * seconds;
       } else {
-        buf = await elevenPost(job, "eleven.tts", `/text-to-speech/${ELEVEN_VOICE}`, { text: job.prompt, model_id: "eleven_flash_v2_5" });
-        costUsd = MEDIA_USD.voicePerChar * job.prompt.length;
+        buf = await elevenPost(job, "eleven.music", "/music?output_format=mp3_44100_128", {
+          prompt: job.prompt, music_length_ms: seconds * 1000, force_instrumental: !wantsVocals(job.prompt),
+          ...(ELEVEN_MUSIC_MODEL ? { model_id: ELEVEN_MUSIC_MODEL } : {}),
+        });
+        costUsd = MEDIA_USD.musicPerSecond * seconds;
       }
       return { asset: store(buf, "mp3", job.assetDir), costUsd };
     },
   };
 }
+
+// ── Voice (text-to-speech) ───────────────────────────────────────────
+
+/** OpenRouter voice names (premade ElevenLabs voices; shared/life.ts VOICES has the palette). */
+const VOICE_NAME = /^[a-z]{2,16}$/;
+
+export interface SpeechResult { buf: Buffer; costUsd: number; model: string }
+
+/**
+ * Text-to-speech through OpenRouter (`POST /api/v1/audio/speech`): ElevenLabs v4 Turbo with
+ * the premade voices, which passes the account's zero-data-retention rule (checked
+ * 2026-11-01; OpenRouter's Gemini/OpenAI audio models don't). Audio tags like [whispers]
+ * or [slowly] work. Billed $0.04 per 1,000 characters.
+ */
+export async function openrouterSpeech(text: string, voice: string, archive: (e: Record<string, unknown>) => void): Promise<SpeechResult> {
+  const v = VOICE_NAME.test(voice) ? voice : "george";
+  const body = { model: VOICE_MODEL, input: text, voice: v, response_format: "mp3" };
+  archive({ call: "tts.create", request: body });
+  const res = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${OPENROUTER_KEY}`, "Content-Type": "application/json", "X-Title": "Aweborn" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok || !(res.headers.get("content-type") ?? "").startsWith("audio/")) {
+    const err = (await res.text().catch(() => "")).slice(0, 400);
+    archive({ call: "tts.result", status: res.status, error: err });
+    throw new Error(`tts failed: ${res.status} ${err}`.trim());
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  const costUsd = Math.round(MEDIA_USD.voicePerChar * text.length * 1e6) / 1e6;
+  archive({ call: "tts.result", status: res.status, bytes: buf.length, generation: res.headers.get("x-generation-id"), costUsd });
+  if (buf.length > 10 * 1024 * 1024) throw new Error("audio too large");
+  return { buf, costUsd, model: VOICE_MODEL };
+}
+
+/** Synchronous voice line for minds (NPC replies): stored content-addressed, returns the file name. */
+export async function speakLine(text: string, voice: string, assetDir: string, archive: (e: Record<string, unknown>) => void): Promise<{ asset: string; costUsd: number }> {
+  if (!OPENROUTER_KEY) {
+    archive({ call: "stub.voice", request: { text, voice } });
+    return { asset: store(wav(synthStub("voice", text, 4)), "wav", assetDir), costUsd: 0 };
+  }
+  const out = await openrouterSpeech(text, voice, archive);
+  return { asset: store(out.buf, "mp3", assetDir), costUsd: out.costUsd };
+}
+
+const voiceProvider: Provider = {
+  name: "openrouter-voice",
+  async generate(job) {
+    const p = (job.params ?? {}) as MediaParams;
+    job.onProgress(15);
+    const out = await openrouterSpeech(job.prompt, typeof p.voice === "string" ? p.voice : "george", job.archive);
+    return { asset: store(out.buf, "mp3", job.assetDir), costUsd: out.costUsd };
+  },
+};
 
 // ── Stub audio: a small synth that writes a real WAV ─────────────────
 
@@ -250,5 +333,7 @@ function stubAudio(kind: Exclude<MediaKind, "image">): Provider {
 
 export function mediaProvider(kind: MediaKind): Provider {
   if (kind === "image") return OPENROUTER_KEY ? openrouterImage : stubImage;
+  // Voice goes through OpenRouter (works today); sound + music need the ElevenLabs key
+  if (kind === "voice") return OPENROUTER_KEY ? voiceProvider : stubAudio(kind);
   return ELEVEN_KEY ? elevenProvider(kind) : stubAudio(kind);
 }

@@ -209,3 +209,19 @@ test("collision nudge (M7c): a new object on another player's spot slides to a f
   assert.equal(obj(server, "b3")?.x, -1);
   assert.equal(obj(server, "b3")?.nudge, undefined);
 });
+
+test("a creation's mind is server-only: owners can't set, change or copy it, but may still delete the object", () => {
+  const { server, act, obj } = setup();
+  // Server gives a1 a mind (minds.ts)
+  server.transact(() => (server.getMap("objects").get("a1") as Y.Map<unknown>).set("mind", { name: "Kal", voice: "brian", size: "giant", spoken: true }), "server");
+  // Even the creator can't rewrite it…
+  assert.equal(act(alice, (d) => (d.getMap("objects").get("a1") as Y.Map<unknown>).set("mind", { name: "Evil", voice: "bill", size: "human", spoken: true })), 1);
+  assert.equal((obj(server, "a1")?.mind as { name: string }).name, "Kal");
+  // …or create (duplicate) an object carrying one
+  assert.equal(act(alice, (d) => addObject(d, "dup", ALICE, { mind: { name: "Kal" } })), 1);
+  assert.equal(obj(server, "dup"), undefined);
+  // …but life settings stay theirs, and so does deleting it
+  assert.equal(act(alice, (d) => (d.getMap("objects").get("a1") as Y.Map<unknown>).set("life", { mode: "alive", pace: 0.6, roam: 4 })), 0);
+  assert.equal(act(alice, (d) => d.getMap("objects").delete("a1")), 0);
+  assert.equal(obj(server, "a1"), undefined);
+});

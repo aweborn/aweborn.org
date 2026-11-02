@@ -20,6 +20,7 @@ import type { PlayerProgress } from "../../../shared/crdt-schema.js";
 import { checkCreation, chargeCheck, SAFETY_MODEL } from "./safety.js";
 import { tryResearchId } from "./research.js";
 import { isMakeKind, makeEstimate, clampSeconds, MAKE_SKILL, VOICE_MAX_CHARS, type MakeKind } from "../../../shared/make-costs.js";
+import { isVoiceId } from "../../../shared/life.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 
@@ -86,8 +87,8 @@ export function manaStatus(rooms: RoomManager, playerId: string, json: Json, gue
   });
 }
 
-/** Body of POST /api/player/create. Media fields are ignored for models. */
-export interface CreateRequest { prompt?: unknown; kind?: unknown; seconds?: unknown; loop?: unknown }
+/** Body of POST /api/player/create. Media fields are ignored for models. `alive`: a model meant to come alive (A-pose). */
+export interface CreateRequest { prompt?: unknown; kind?: unknown; seconds?: unknown; loop?: unknown; voice?: unknown; alive?: unknown }
 
 export async function startCreation(rooms: RoomManager, playerId: string, body: CreateRequest | null, json: Json): Promise<void> {
   let kind: Exclude<MakeKind, "lore"> = "model";
@@ -98,9 +99,11 @@ export async function startCreation(rooms: RoomManager, playerId: string, body: 
   const max = kind === "voice" ? VOICE_MAX_CHARS : 600;
   const text = typeof body?.prompt === "string" ? body.prompt.trim().slice(0, max) : "";
   if (!text) return json(400, { error: "empty_prompt" });
-  const params: Record<string, number | boolean> = {};
+  const params: Record<string, number | boolean | string> = {};
   if (kind === "sound" || kind === "music") params.seconds = clampSeconds(kind, body?.seconds);
   if (kind === "sound") params.loop = body?.loop === true;
+  if (kind === "voice" && isVoiceId(body?.voice)) params.voice = body.voice;
+  if (kind === "model" && body?.alive === true) params.pose = "a-pose";
   const estimate = makeEstimate(kind, { seconds: params.seconds as number | undefined, chars: text.length });
 
   const ref = `create:${randomUUID()}`;
@@ -130,7 +133,7 @@ export async function startCreation(rooms: RoomManager, playerId: string, body: 
  * settles or releases it. Throws if genai is unreachable (caller releases).
  */
 export async function startJob(
-  ref: string, playerId: string, prompt: string, kind: Exclude<MakeKind, "lore"> = "model", params?: Record<string, number | boolean>,
+  ref: string, playerId: string, prompt: string, kind: Exclude<MakeKind, "lore"> | "animate" = "model", params?: Record<string, unknown>,
 ): Promise<string> {
   const res = await fetch(`${GENAI_URL}/jobs`, {
     method: "POST",
@@ -139,11 +142,18 @@ export async function startJob(
   });
   const body = (await res.json()) as { jobId?: string };
   if (!res.ok || !body.jobId) throw new Error(`genai ${res.status}`);
-  creations.set(body.jobId, { ref, playerId, settled: false, kind });
+  creations.set(body.jobId, { ref, playerId, settled: false, kind: kind === "animate" ? "model" : kind });
   return body.jobId;
 }
 
 interface JobView { status: string; progress: number; asset: string | null; costUsd: number | null; error: string | null }
+
+/** Called once when a job settles (minds.ts applies a finished rig to its object; a failure tells it too). */
+type DoneHook = (jobId: string, outcome: { ok: true; asset: string } | { ok: false; error: string }) => void;
+const doneHooks: DoneHook[] = [];
+export function onCreationDone(fn: DoneHook): void {
+  doneHooks.push(fn);
+}
 
 /** Settle a finished job's hold (or release a failed one's). Idempotent per job. */
 function reconcile(rooms: RoomManager, jobId: string, c: Creation, j: JobView): void {
@@ -154,10 +164,20 @@ function reconcile(rooms: RoomManager, jobId: string, c: Creation, j: JobView): 
     rooms.mana.settle(c.ref, mana, kind);
     creations.markSettled(jobId);
     rooms.progress.creation(c.playerId, mana, jobId, MAKE_SKILL[kind]);
+    if (j.asset) for (const h of doneHooks) h(jobId, { ok: true, asset: j.asset });
   } else if (j.status === "failed") {
     rooms.mana.release(c.ref); // failed generations draw nothing
     creations.markSettled(jobId);
+    for (const h of doneHooks) h(jobId, { ok: false, error: j.error ?? "" });
   }
+}
+
+/** What to tell the maker when a job fails (rigging refuses shapes it can't find a body in). */
+export function failureMessage(error: string | null): string {
+  if (error && /rigging 422|pose estimation|not.*humanoid/i.test(error)) {
+    return "That shape couldn't be given a skeleton (it needs two legs and two arms). It can still breathe and roam: try Alive. Nothing was drawn.";
+  }
+  return "The making didn't take. Nothing was drawn.";
 }
 
 export async function creationStatus(rooms: RoomManager, playerId: string, jobId: string, json: Json): Promise<void> {
@@ -172,7 +192,7 @@ export async function creationStatus(rooms: RoomManager, playerId: string, jobId
     kind: c.kind ?? "model",
     progress: j.progress,
     asset: j.status === "complete" ? j.asset : undefined,
-    error: j.status === "failed" ? "The making didn't take. Nothing was drawn." : undefined,
+    error: j.status === "failed" ? failureMessage(j.error) : undefined,
   });
 }
 

@@ -8,11 +8,13 @@ import {
 import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
 import { useKeybindingStore, keyCapLabel } from '../stores/keybindingStore'
+import { openLife } from '../stores/lifeStore'
 
 /**
  * Held-item HUD bar: shows the item currently in your hand (from the Library)
  * or the world object you're carrying (GRAB / G), with quick controls to
  * rotate (⟲ / ⟳), resize (− / +), recolor, duplicate (⧉), delete (🗑), place, or put it away (×).
+ * Carried models also get ✦: bring it to life (Phase 07 Life & minds, LifePanel).
  */
 export function HeldItemBar() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
@@ -48,6 +50,18 @@ export function HeldItemBar() {
               />
               <span className="held-color-dot" style={{ background: currentColor }} aria-hidden="true" />
             </label>
+          )}
+          {carriedObj?.type === 'model' && (
+            <button
+              id="held-life-btn"
+              type="button"
+              className="held-tool-btn held-tool-btn--life"
+              onClick={() => openLife(carryingId)}
+              aria-label="Bring it to life"
+              title="Bring it to life: breathe, roam, animate, give it a mind"
+            >
+              ✦
+            </button>
           )}
           <button
             id="held-duplicate-btn"

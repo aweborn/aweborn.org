@@ -16,6 +16,7 @@ import { OPEN_GIVE_EVENT } from './stores/hudPrefsStore'
 import { SyncBridge } from './components/SyncBridge'
 import { PlantWorldPanel } from './components/PlantWorldPanel'
 import { TouchDock } from './components/TouchDock'
+import { LifePanel } from './components/LifePanel'
 import { TeleportToast } from './components/TeleportToast'
 import { OnboardingHint } from './components/OnboardingHint'
 import { teleportSystem } from './systems/TeleportSystem'
@@ -166,6 +167,7 @@ export default function App() {
           <ManaTracker />
           <LibraryPanel />
           <HeldItemBar />
+          <LifePanel />
           <ChatPanel />
           <PlayerActions />
           <PlantWorldPanel />

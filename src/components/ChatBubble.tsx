@@ -35,10 +35,13 @@ export function ChatBubble({
   playerId,
   height = 2.15,
   source = 'world',
+  size = 9,
 }: {
   playerId: string
   height?: number
   source?: 'world' | 'space'
+  /** World bubbles' distanceFactor (bigger for giant minds whose bubble sits in a scaled group). */
+  size?: number
 }) {
   const worldLine = useWorldStore((s) => (source === 'world' ? latestFrom(s.chat, playerId) : null))
   const spaceLine = useChatStore((s) => (source === 'space' ? latestFrom(s.space, playerId) : null))
@@ -61,7 +64,7 @@ export function ChatBubble({
     <Html
       position={[0, height, 0]}
       center
-      distanceFactor={source === 'world' ? 9 : undefined}
+      distanceFactor={source === 'world' ? size : undefined}
       zIndexRange={[20, 0]}
       style={{ pointerEvents: 'none' }}
     >

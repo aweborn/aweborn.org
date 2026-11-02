@@ -5,12 +5,13 @@
  * reserve → settle) and calls this service on the private network:
  *
  *   POST /jobs            { ref, kind, prompt, params?, researchId? }  → { jobId }
- *                         kind: model | image | sound | music | voice (media.ts)
+ *                         kind: model | image | sound | music | voice (media.ts) | animate (rig.ts)
  *   GET  /jobs/:id        → { status, progress, asset, costUsd, error }
  *   GET  /assets/:file    → the generated file (GLB, WebP, MP3, WAV); 302 to the CDN once it is in S3
  *   GET  /library?q=      → the asset library (every file ever made), newest first
  *   POST /llm             { ref, model, messages, json?, researchId? } → { content, model, costUsd }
  *                         (OpenRouter; synchronous; caller validates the output)
+ *   POST /tts             { ref, text, voice, researchId? } → { asset, costUsd } (a mind's spoken line)
  *
  * `researchId` (sync-service research.ts) labels archive entries instead of the player id.
  *
@@ -24,7 +25,8 @@ import { mkdirSync, createReadStream, existsSync, appendFileSync, writeFileSync 
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { providerFor, type ProviderJob } from "./providers.js";
-import { isMediaKind, MEDIA_EXT } from "./media.js";
+import { isMediaKind, MEDIA_EXT, speakLine } from "./media.js";
+import { cleanAnimateParams } from "./rig.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
 import { initLibrary, addToLibrary, addMedia, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
 
@@ -106,8 +108,10 @@ async function run(id: string): Promise<void> {
   try {
     update(id, { status: "processing" });
     const out = await provider.generate(job);
-    // Shrink + upload first: the game loads the web copy the moment the job completes
-    const entry = { file: out.asset, kind: row.kind, prompt: row.prompt, provider: provider.name, jobId: id, ref: row.ref, creator: row.creator };
+    // Shrink + upload first: the game loads the web copy the moment the job completes.
+    // An animated model is a model (with a skeleton + clips) in the library.
+    const libKind = row.kind === "animate" ? "model" : row.kind;
+    const entry = { file: out.asset, kind: libKind, prompt: row.prompt, provider: provider.name, jobId: id, ref: row.ref, creator: row.creator };
     await (isMediaKind(row.kind) ? addMedia(db, ASSET_DIR, entry) : addToLibrary(db, ASSET_DIR, entry));
     update(id, { status: "complete", progress: 100, asset: out.asset, cost_usd: out.costUsd });
   } catch (err) {
@@ -149,12 +153,12 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", (_req, res) => {
-  const providers = Object.fromEntries(["model", "image", "sound", "music", "voice"].map((k) => [k, providerFor(k).name]));
+  const providers = Object.fromEntries(["model", "image", "sound", "music", "voice", "animate"].map((k) => [k, providerFor(k).name]));
   res.json({ status: "ok", service: "genai-service", providers: { ...providers, llm: llmConfigured() ? "openrouter" : "none" }, library: s3Enabled() ? "s3" : "local" });
 });
 
 app.post("/llm", async (req, res) => {
-  const { ref, model, messages, json, maxTokens } = req.body ?? {};
+  const { ref, model, messages, json, maxTokens, noReasoning } = req.body ?? {};
   const researchId = researchIdOf(req.body?.researchId) ?? undefined;
   const okMsgs = Array.isArray(messages) && messages.length > 0 && messages.length <= 80 &&
     messages.every((m: ChatMessage) => ["system", "user", "assistant"].includes(m?.role) && typeof m.content === "string");
@@ -165,7 +169,7 @@ app.post("/llm", async (req, res) => {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 90_000);
   try {
-    const out = await chat({ model, messages, json: !!json, maxTokens: typeof maxTokens === "number" ? Math.min(maxTokens, 8000) : undefined }, ac.signal);
+    const out = await chat({ model, messages, json: !!json, noReasoning: noReasoning === true, maxTokens: typeof maxTokens === "number" ? Math.min(maxTokens, 8000) : undefined }, ac.signal);
     archive({ kind: "llm", ref, researchId, provider: "openrouter", model: out.model, requested: model, messages, response: out.content, usage: out.usage, costUsd: out.costUsd, latencyMs: out.latencyMs });
     res.json({ content: out.content, model: out.model, costUsd: out.costUsd });
   } catch (err) {
@@ -178,20 +182,48 @@ app.post("/llm", async (req, res) => {
   }
 });
 
+/**
+ * POST /tts { ref, text, voice, researchId? } → { asset, costUsd }
+ * A mind's spoken line (NPC replies): synchronous, short, content-addressed (the same line in
+ * the same voice is one file). Catalogued as `npc-voice` so it never fills the Library shelves.
+ */
+app.post("/tts", async (req, res) => {
+  const { ref, text, voice } = req.body ?? {};
+  const researchId = researchIdOf(req.body?.researchId) ?? undefined;
+  if (typeof ref !== "string" || !ref || typeof text !== "string" || !text.trim() || text.length > 600 || typeof voice !== "string") {
+    return res.status(400).json({ error: "bad_request" });
+  }
+  try {
+    const out = await speakLine(text.trim(), voice, ASSET_DIR, (e) => archive({ kind: "tts", ref, researchId, ...e }));
+    await addMedia(db, ASSET_DIR, { file: out.asset, kind: "npc-voice", prompt: text.trim().slice(0, 300), provider: "openrouter-voice", jobId: ref, ref, creator: null });
+    res.json({ asset: out.asset, costUsd: out.costUsd });
+  } catch (err) {
+    const msg = (err as Error).message ?? String(err);
+    console.error(`[genai] tts ${ref} failed:`, msg);
+    res.status(502).json({ error: "tts_failed", message: msg.slice(0, 300) });
+  }
+});
+
 app.post("/jobs", (req, res) => {
   const { ref, kind, prompt, creator, params } = req.body ?? {};
-  if (typeof ref !== "string" || !ref || (kind !== "model" && !isMediaKind(kind)) || typeof prompt !== "string") {
+  if (typeof ref !== "string" || !ref || (kind !== "model" && kind !== "animate" && !isMediaKind(kind)) || typeof prompt !== "string") {
     return res.status(400).json({ error: "bad_request" });
   }
   const clean = prompt.trim().slice(0, kind === "voice" ? 1200 : 600);
   if (!clean) return res.status(400).json({ error: "empty_prompt" });
   const existing = db.prepare("SELECT id FROM jobs WHERE ref = ?").get(ref) as { id: string } | undefined;
   if (existing) return res.json({ jobId: existing.id });
-  // Only the known options, as plain numbers/booleans
-  const p: Record<string, number | boolean> = {};
-  if (params && typeof params === "object") {
+  // Only the known options, as plain numbers/booleans/short names
+  let p: Record<string, unknown> = {};
+  if (kind === "animate") {
+    const a = cleanAnimateParams(params);
+    if (!a) return res.status(400).json({ error: "bad_params" });
+    p = { ...a };
+  } else if (params && typeof params === "object") {
     if (typeof params.seconds === "number" && Number.isFinite(params.seconds)) p.seconds = params.seconds;
     if (typeof params.loop === "boolean") p.loop = params.loop;
+    if (typeof params.voice === "string" && /^[a-z]{2,16}$/.test(params.voice)) p.voice = params.voice;
+    if (params.pose === "a-pose") p.pose = "a-pose";
   }
   const id = randomUUID();
   const now = Date.now();

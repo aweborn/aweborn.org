@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
-import { placeMedia, placeModel, setWorldSound, useWorldStore } from '../stores/worldStore'
+import { placeMedia, placeModel, setObjectLife, setWorldSound, useWorldStore } from '../stores/worldStore'
+import { VOICES, VOICE_IDS, type VoiceId } from '@aweborn/shared/life'
+import { openLife } from '../stores/lifeStore'
 import { placeOnTerrain } from '../stores/worldVoxels'
 import { interiorController } from '../systems/InteriorController'
 import { AUTH_URL, getPlayerSnapshot, subscribePlayer } from '../lib/player'
@@ -40,6 +42,8 @@ interface Making {
   message?: string
   /** Sounds/music, once made: offered as the world's own sound. */
   asset?: string
+  /** Objects made to come alive (A-pose): placed breathing, then the Life sheet opens. */
+  alive?: boolean
 }
 
 const KINDS: { kind: MakeKind; label: string; icon: string; placeholder: string }[] = [
@@ -84,6 +88,8 @@ export function CreatePanel() {
   const [soundSeconds, setSoundSeconds] = useState<number>(8)
   const [musicSeconds, setMusicSeconds] = useState<number>(MUSIC_SECONDS.default)
   const [loop, setLoop] = useState(true)
+  const [alive, setAlive] = useState(false)
+  const [voice, setVoice] = useState<VoiceId>('george')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [suggestion, setSuggestion] = useState<string | null>(null)
@@ -139,7 +145,11 @@ export function CreatePanel() {
             if (doc) {
               if (m.kind === 'model') {
                 const s = interiorController.state
-                placeModel(doc, j.asset, m.prompt, { x: s.x + s.fx * 2.5, y: 0.5, z: s.z + s.fz * 2.5 }, playerId)
+                const id = placeModel(doc, j.asset, m.prompt, { x: s.x + s.fx * 2.5, y: 0.5, z: s.z + s.fz * 2.5 }, playerId)
+                if (m.alive) {
+                  setObjectLife(doc, id, { mode: 'alive', pace: 1, roam: 0 })
+                  openLife(id)
+                }
               } else {
                 const { pos, rotY } = spotAhead(3.5, m.kind === 'image' ? 0 : 1.6)
                 if (m.kind === 'image') placeMedia(doc, { type: 'picture', asset: j.asset, prompt: m.prompt }, pos, playerId, rotY)
@@ -209,6 +219,8 @@ export function CreatePanel() {
         const body: Record<string, unknown> = { prompt: text, kind }
         if (kind === 'sound') Object.assign(body, { seconds: soundSeconds, loop })
         if (kind === 'music') body.seconds = musicSeconds
+        if (kind === 'voice') body.voice = voice
+        if (kind === 'model' && alive) body.alive = true
         const res = await fetch(`${AUTH_URL}/api/player/create`, {
           method: 'POST',
           credentials: 'include',
@@ -220,7 +232,7 @@ export function CreatePanel() {
         const k = kind as Making['kind']
         setMakings((all) => [
           ...all,
-          { jobId: j.jobId!, kind: k, prompt: text, loop: k === 'music' ? true : k === 'voice' ? false : loop, progress: 0, status: 'queued' },
+          { jobId: j.jobId!, kind: k, prompt: text, loop: k === 'music' ? true : k === 'voice' ? false : loop, progress: 0, status: 'queued', alive: k === 'model' && alive },
         ])
         audio.creationStart()
         setPrompt('')
@@ -231,7 +243,7 @@ export function CreatePanel() {
         setBusy(false)
       }
     },
-    [prompt, busy, kind, soundSeconds, musicSeconds, loop, meta?.name, playerId, setOpen],
+    [prompt, busy, kind, soundSeconds, musicSeconds, loop, alive, voice, meta?.name, playerId, setOpen],
   )
 
   const makeWorldSound = (m: Making) => {
@@ -344,6 +356,33 @@ export function CreatePanel() {
                   Loop while near
                 </label>
               )}
+            </div>
+          )}
+          {kind === 'model' && (
+            <div className="make-options">
+              <label className="make-loop">
+                <input
+                  id="make-alive"
+                  type="checkbox"
+                  role="switch"
+                  {...({ switch: '' } as Record<string, string>)}
+                  checked={alive}
+                  onChange={(e) => setAlive(e.target.checked)}
+                />
+                A creature that comes alive
+              </label>
+            </div>
+          )}
+          {kind === 'voice' && (
+            <div className="make-options">
+              <label className="make-voice">
+                Voice
+                <select id="make-voice" value={voice} onChange={(e) => setVoice(e.target.value as VoiceId)}>
+                  {VOICE_IDS.map((v) => (
+                    <option key={v} value={v}>{v[0].toUpperCase() + v.slice(1)}: {VOICES[v]}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           )}
           <p className="make-hold" id="make-hold">

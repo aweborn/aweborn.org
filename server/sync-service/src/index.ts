@@ -12,6 +12,7 @@ import { cleanPlayerName } from "../../../shared/names.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
+import { MindHost, startAnimate, createMind, forgetMind } from "./minds.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore } from "./planner.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
@@ -27,7 +28,8 @@ import { CardSets } from "./card-sets.js";
 import { checkCreation } from "./safety.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
-const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit"]);
+const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit",
+  "/api/player/animate", "/api/player/mind", "/api/player/mind/forget"]);
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -37,6 +39,9 @@ initDb();
 const auth = await initAuth(getDb());
 const authHandler = auth ? toNodeHandler(auth) : null;
 const rooms = new RoomManager();
+// Minds (Phase 07 Life & minds): placed creations that hear world chat and answer
+const minds = new MindHost(rooms);
+rooms.onWorldChat = (worldId, playerId, text, at) => minds.heard(worldId, playerId, text, at);
 
 // Private runway warning (M4): email when the non-creative money would last < 90 days.
 new RunwayWatch(getDb(), rooms.mana, sendEmail, process.env.RUNWAY_ALERT_TO ?? "hello@aweborn.org").start();
@@ -456,6 +461,16 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   if (path === "/api/player/create" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as CreateRequest | null;
     return startCreation(rooms, session.playerId, body, json);
+  }
+  // Life & minds (Phase 07): animate a placed model; give a creation a mind; forget it
+  if (path === "/api/player/animate" && req.method === "POST") {
+    return startAnimate(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
+  }
+  if (path === "/api/player/mind" && req.method === "POST") {
+    return createMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
+  }
+  if (path === "/api/player/mind/forget" && req.method === "POST") {
+    return forgetMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
   }
   if (path === "/api/player/lore" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { prompt?: unknown; subject?: unknown } | null;

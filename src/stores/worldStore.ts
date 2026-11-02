@@ -137,6 +137,10 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
       loop: (m.get("loop") as boolean) ?? undefined,
       volume: (m.get("volume") as number) ?? undefined,
       text: (m.get("text") as string) ?? undefined,
+      // Life & minds (Phase 07): plain JSON values; life is re-cleaned where it's used
+      life: (m.get("life") as PlacedObject["life"]) ?? undefined,
+      stillAsset: (m.get("stillAsset") as string) ?? undefined,
+      mind: (m.get("mind") as PlacedObject["mind"]) ?? undefined,
     });
   });
   return objects;
@@ -228,6 +232,10 @@ function readChat(doc: Y.Doc): ChatMessage[] {
       sender: (msg.sender as string) ?? "",
       text: (msg.text as string) ?? "",
       t: (msg.t as number) ?? 0,
+      // A mind's line: its voice clip, body clip, who it answers
+      ...(typeof msg.voice === "string" && /^[a-f0-9]{64}\.(mp3|wav)$/.test(msg.voice) ? { voice: msg.voice } : {}),
+      ...(msg.anim === "talk" || msg.anim === "emote" ? { anim: msg.anim } : {}),
+      ...(typeof msg.to === "string" ? { to: msg.to } : {}),
     });
   }
   return messages;
@@ -535,7 +543,8 @@ export function duplicateObject(
   doc.transact(() => {
     const m = new Y.Map();
     src.forEach((v, k) => {
-      if (k === "kick" || k === "planKey" || k === "nudge") return;
+      // A mind is one character (server-only); the copy gets the body and its life, not the persona
+      if (k === "kick" || k === "planKey" || k === "nudge" || k === "mind") return;
       m.set(k, v);
     });
     m.set("id", id);
@@ -560,5 +569,34 @@ export function replaceModelAsset(doc: Y.Doc, objectId: string, asset: string, p
   doc.transact(() => {
     m.set("asset", asset);
     m.set("prompt", prompt.slice(0, 600));
+  });
+}
+
+/**
+ * Life settings for a placed creation (Phase 07 Life & minds): still / alive / animated,
+ * pace and roam radius. Free and local; the placer or world owners may change it.
+ */
+export function setObjectLife(doc: Y.Doc, id: string, life: import("@aweborn/shared/life").ObjectLife | null): void {
+  const m = doc.getMap("objects").get(id) as Y.Map<unknown> | undefined;
+  if (!m) return;
+  doc.transact(() => {
+    if (life) m.set("life", life);
+    else m.delete("life");
+  });
+}
+
+/** Animated → back to its still model (the rigged one stays in the library). */
+export function restoreStillAsset(doc: Y.Doc, id: string): void {
+  const m = doc.getMap("objects").get(id) as Y.Map<unknown> | undefined;
+  const still = m?.get("stillAsset");
+  if (!m || typeof still !== "string") return;
+  doc.transact(() => {
+    m.set("asset", still);
+    m.delete("stillAsset");
+    const life = m.get("life") as { mode?: string; gait?: string } | undefined;
+    if (life?.mode === "animated") {
+      const { gait: _gait, ...rest } = life;
+      m.set("life", { ...rest, mode: "alive" });
+    }
   });
 }
