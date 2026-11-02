@@ -8,7 +8,7 @@
  *                         kind: model | image | sound | music | voice (media.ts) | animate (rig.ts)
  *   GET  /jobs/:id        → { status, progress, asset, costUsd, error }
  *   GET  /assets/:file    → the generated file (GLB, WebP, MP3, WAV); 302 to the CDN once it is in S3
- *   GET  /library?q=      → the asset library (every file ever made), newest first
+ *   GET  /library?q=&kind= → the asset library (every file ever made), newest first; kind = model (default) or e.g. sound,music,voice
  *   POST /llm             { ref, model, messages, json?, researchId? } → { content, model, costUsd }
  *                         (OpenRouter; synchronous; caller validates the output)
  *   POST /tts             { ref, text, voice, researchId? } → { asset, costUsd } (a mind's spoken line)
@@ -279,8 +279,10 @@ app.get("/jobs/:id", (req, res) => {
 app.get("/library", (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.slice(0, 80) : "";
   const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
-  const kind = typeof req.query.kind === "string" && (req.query.kind === "model" || isMediaKind(req.query.kind)) ? req.query.kind : "model";
-  res.json({ assets: listLibrary(db, q, limit, kind), cdn: CDN_URL || null });
+  // One kind or a few, comma-separated (?kind=sound,music,voice); anything unknown is dropped, nothing left = models
+  const raw = typeof req.query.kind === "string" ? req.query.kind.split(",").slice(0, 5) : [];
+  const kinds = [...new Set(raw.filter((k) => k === "model" || isMediaKind(k)))];
+  res.json({ assets: listLibrary(db, q, limit, kinds.length ? kinds : "model"), cdn: CDN_URL || null });
 });
 
 // Trash + shared thumbnails (sync-service checks who may call these). Removal never deletes; only purge does.

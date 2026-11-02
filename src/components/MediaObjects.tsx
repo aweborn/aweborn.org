@@ -6,6 +6,7 @@ import type { PlacedObject } from '@aweborn/shared/crdt-schema'
 import { AUTH_URL } from '../lib/player'
 import { audio } from '../audio/engine'
 import { interiorController } from '../systems/InteriorController'
+import { SOUND_COLORS, defaultLoop } from '../lib/soundKinds'
 
 /**
  * Media objects (Rough Draft M5): what pictures, sounds and lore look like
@@ -98,9 +99,8 @@ export function PictureObject({ obj, fogFar }: { obj: PlacedObject; fogFar: numb
 
 // ── Sound ────────────────────────────────────────────────────────────
 
-const ORB_GEO = new THREE.IcosahedronGeometry(0.22, 2)
-const RING_GEO = new THREE.TorusGeometry(0.36, 0.018, 8, 48)
-const SOUND_COLORS = { sound: '#7fe3ff', music: '#c59bff', voice: '#ffc37a' } as const
+export const ORB_GEO = new THREE.IcosahedronGeometry(0.22, 2)
+export const RING_GEO = new THREE.TorusGeometry(0.36, 0.018, 8, 48)
 /** Loops play within this many units, and stop a little beyond (no flapping at the edge). */
 const EARSHOT = 34
 /** One-shots play when you come this close, then rest. */
@@ -111,7 +111,7 @@ export function SoundObject({ obj, fogFar }: { obj: PlacedObject; fogFar: number
   const group = useRef<THREE.Group>(null!)
   const ring = useRef<THREE.Mesh>(null!)
   const kind = obj.media ?? 'sound'
-  const loop = obj.loop ?? kind !== 'voice'
+  const loop = obj.loop ?? defaultLoop(kind)
   const color = SOUND_COLORS[kind]
   const voice = useRef<{ src: AudioBufferSourceNode; gain: GainNode; panner: PannerNode } | null>(null)
   const clip = useRef<AudioBuffer | null>(null)
@@ -210,6 +210,13 @@ export function SoundObject({ obj, fogFar }: { obj: PlacedObject; fogFar: number
       })
     }
     if (!clip.current) return
+    // Carried or moved while sounding: the sound goes with the orb
+    const p = voice.current?.panner
+    if (p?.positionX && (p.positionX.value !== obj.x || p.positionY.value !== y || p.positionZ.value !== obj.z)) {
+      p.positionX.value = obj.x
+      p.positionY.value = y
+      p.positionZ.value = obj.z
+    }
     if (loop) {
       if (d < EARSHOT && !voice.current) start()
       else if (d > EARSHOT + 6 && voice.current) stop()

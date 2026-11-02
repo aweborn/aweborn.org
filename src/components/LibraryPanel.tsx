@@ -10,6 +10,8 @@ import { useSheet } from '../stores/sheetStore'
 import { useHeldItemStore } from '../stores/heldItemStore'
 import { useOwnsCurrentWorld } from '../lib/worldActor'
 import { MakeTabs } from './MakeTabs'
+import { audio } from '../audio/engine'
+import { SOUND_COLORS, SOUND_LABELS, defaultLoop, isSoundMedia } from '../lib/soundKinds'
 import {
   STANDARD_BLOCKS, SHAPES, SHAPE_COLORS, SHAPE_SIZE, cleanColor,
   type LibraryBlock,
@@ -20,6 +22,9 @@ import {
  *  - Blocks: terrain-style blocks (this world's own, plus the standard set), snapped to the grid
  *  - Shapes: cubes, rings, cones … in any color and size
  *  - Made: every model anyone has made, searchable
+ *  - Sounds: every sound, music and voice anyone has made, searchable; tap the
+ *    tile to hear it, Hold to place more orbs with it (the words it was made
+ *    from travel with each one, read-only: MadeFromPanel)
  * And for the world's creators, a fourth: Terrain (dig the ground, fill it with
  * the world's own blocks; Rough Draft M5d).
  * Everything placed from the Library is free (blocks and shapes never touch the
@@ -39,8 +44,10 @@ interface Asset {
 
 const STARTING_SIZE = 3 // meters, longest side
 
-type Tab = 'blocks' | 'shapes' | 'made' | 'terrain'
-const TABS: ReadonlyArray<readonly [Tab, string]> = [['blocks', 'Blocks'], ['shapes', 'Shapes'], ['made', 'Made']]
+type Tab = 'blocks' | 'shapes' | 'made' | 'sounds' | 'terrain'
+const TABS: ReadonlyArray<readonly [Tab, string]> = [['blocks', 'Blocks'], ['shapes', 'Shapes'], ['made', 'Made'], ['sounds', 'Sounds']]
+/** The shelves that search the server's library, and which kinds each one asks for. */
+const SEARCH_KINDS: Partial<Record<Tab, string>> = { made: 'model', sounds: 'sound,music,voice' }
 const TABS_WITH_TERRAIN: ReadonlyArray<readonly [Tab, string]> = [...TABS, ['terrain', 'Terrain']]
 const PREFS_KEY = 'aweborn-library-prefs'
 
@@ -50,7 +57,7 @@ function loadPrefs(): { color: string; size: number; tab: Tab } {
     return {
       color: cleanColor(p.color, SHAPE_COLORS[5]),
       size: Math.min(SHAPE_SIZE.max, Math.max(SHAPE_SIZE.min, Number(p.size) || SHAPE_SIZE.start)),
-      tab: p.tab === 'shapes' || p.tab === 'made' || p.tab === 'terrain' ? p.tab : 'blocks',
+      tab: p.tab === 'shapes' || p.tab === 'made' || p.tab === 'sounds' || p.tab === 'terrain' ? p.tab : 'blocks',
     }
   } catch {
     return { color: SHAPE_COLORS[5], size: SHAPE_SIZE.start, tab: 'blocks' }
@@ -193,17 +200,23 @@ export function LibraryPanel() {
     return () => window.removeEventListener('keydown', onKey)
   }, [activeWorldId, setOpen])
 
-  // Search as you type (debounced). Only the Made shelf needs the network: Blocks and Shapes work offline.
+  // Search as you type (debounced). Only Made and Sounds need the network: Blocks and Shapes work offline.
+  const searchKind = SEARCH_KINDS[tab]
+  // Switching between Made and Sounds: don't show the other shelf's results while the new ones load
   useEffect(() => {
-    if (!open || tab !== 'made') return
+    setAssets([])
+    setError(null)
+  }, [searchKind])
+  useEffect(() => {
+    if (!open || !searchKind) return
     setLoading(true)
     const ctrl = new AbortController()
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`${AUTH_URL}/library?q=${encodeURIComponent(q.trim())}&limit=60`, { signal: ctrl.signal })
+        const res = await fetch(`${AUTH_URL}/library?q=${encodeURIComponent(q.trim())}&limit=60&kind=${searchKind}`, { signal: ctrl.signal })
         if (!res.ok) throw new Error('bad')
         const j = (await res.json()) as { assets: Asset[] }
-        setAssets(j.assets.filter((a) => a.kind === 'model'))
+        setAssets(j.assets.filter((a) => (searchKind === 'model' ? a.kind === 'model' : isSoundMedia(a.kind))))
         setError(null)
       } catch (err) {
         if ((err as Error).name !== 'AbortError') setError('The library is resting right now. Try again soon.')
@@ -215,14 +228,69 @@ export function LibraryPanel() {
       clearTimeout(t)
       ctrl.abort()
     }
-  }, [open, q, tab])
+  }, [open, q, searchKind])
 
   // Keyboard moves between shelves keep focus on the tabs (no jump into the search box)
   const keyNav = useRef(false)
   useEffect(() => {
     if (keyNav.current) { keyNav.current = false; return }
-    if (open && tab === 'made') setTimeout(() => inputRef.current?.focus(), 0)
+    if (open && SEARCH_KINDS[tab]) setTimeout(() => inputRef.current?.focus(), 0)
   }, [open, tab])
+
+  // Sounds shelf: tap a tile to hear it (through the world bus, so mute and volume apply); tap again to stop
+  const [hearing, setHearing] = useState<string | null>(null)
+  const preview = useRef<{ sha: string; src?: AudioBufferSourceNode; gain?: GainNode } | null>(null)
+  const stopHearing = useCallback(() => {
+    const p = preview.current
+    preview.current = null
+    setHearing(null)
+    if (!p?.src || !p.gain) return
+    const t = p.gain.context.currentTime
+    p.gain.gain.setTargetAtTime(0, t, 0.05)
+    try {
+      p.src.stop(t + 0.2)
+    } catch {
+      /* already stopped */
+    }
+  }, [])
+  const hear = useCallback(
+    async (a: Asset) => {
+      const again = preview.current?.sha === a.sha
+      stopHearing()
+      if (again) return
+      const bus = audio.worldBus()
+      if (!bus || !audio.audibleNow) return setError('Sound is off. Turn it on (or tap the world once), then try again.')
+      const mine = { sha: a.sha } as NonNullable<typeof preview.current>
+      preview.current = mine
+      setHearing(a.sha)
+      const buf = await audio.loadClip(`${AUTH_URL}/assets/${a.file}`)
+      if (preview.current !== mine) return // stopped or switched while loading
+      if (!buf) {
+        stopHearing()
+        return setError("Couldn't load that sound. Try again soon.")
+      }
+      const gain = bus.ctx.createGain()
+      gain.gain.value = 0.8
+      const src = bus.ctx.createBufferSource()
+      src.buffer = buf
+      src.connect(gain).connect(bus.input)
+      src.onended = () => {
+        if (preview.current === mine) {
+          preview.current = null
+          setHearing(null)
+        }
+      }
+      src.start()
+      mine.src = src
+      mine.gain = gain
+    },
+    [stopHearing],
+  )
+  // Closing the Library or leaving the shelf stops the preview
+  useEffect(() => {
+    if (!open || tab !== 'sounds') stopHearing()
+  }, [open, tab, stopHearing])
+  useEffect(() => stopHearing, [stopHearing])
 
   const equip = useHeldItemStore((s) => s.equip)
   const heldItem = useHeldItemStore((s) => s.item)
@@ -239,6 +307,17 @@ export function LibraryPanel() {
       setOpen(false)
     },
     [equip, setOpen],
+  )
+
+  const selectSound = useCallback(
+    (a: Asset) => {
+      if (!isSoundMedia(a.kind)) return
+      stopHearing()
+      equip({ kind: 'sound', sha: a.sha, file: a.file, prompt: a.prompt, media: a.kind, loop: defaultLoop(a.kind) })
+      setPlaced(a.sha)
+      setOpen(false)
+    },
+    [equip, setOpen, stopHearing],
   )
 
   const selectBlock = useCallback(
@@ -536,6 +615,67 @@ export function LibraryPanel() {
         })}
         {!loading && !assets.length && !error && <li className="planner-empty">Nothing here yet. Make something, and it lands here for everyone.</li>}
       </ul>
+        </div>
+      )}
+
+      {tab === 'sounds' && (
+        <div className="library-made" id="library-sounds" role="tabpanel" aria-labelledby="library-tab-sounds">
+          <form className="planner-form" onSubmit={(e) => e.preventDefault()}>
+            <input
+              ref={inputRef}
+              id="library-sound-search"
+              className="planner-input"
+              placeholder="Search every sound anyone has made…"
+              aria-label="Search the sounds"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </form>
+          {error && <p className="planner-error">{error}</p>}
+          <ul className="library-list">
+            {assets.map((a) => {
+              if (!isSoundMedia(a.kind)) return null
+              const isHeld = heldItem?.kind === 'sound' && heldItem.sha === a.sha
+              const on = hearing === a.sha
+              return (
+                <li key={a.sha} className="library-item">
+                  <button
+                    type="button"
+                    className={`library-thumb library-listen${on ? ' is-on' : ''}`}
+                    style={{ background: SOUND_COLORS[a.kind] }}
+                    aria-label={on ? `Stop ${a.prompt}` : `Listen to ${a.prompt}`}
+                    aria-pressed={on}
+                    title={on ? 'Stop' : 'Listen'}
+                    onClick={() => void hear(a)}
+                  >
+                    {on ? '■' : '▶'}
+                  </button>
+                  <p className="library-prompt">{a.prompt}</p>
+                  <span className="library-meta">
+                    {SOUND_LABELS[a.kind]} · {a.creator ? `by maker ${a.creator} · ` : ''}{new Date(a.created_at).toLocaleDateString()}
+                  </span>
+                  <button type="button" className="planner-chip library-place" onClick={() => selectSound(a)}>
+                    {isHeld || placed === a.sha ? 'In hand ✓' : 'Hold'}
+                  </button>
+                  {myMaker && a.creator === myMaker &&
+                    (confirming === a.sha ? (
+                      <button type="button" className="planner-chip library-remove" onClick={() => remove(a)} onBlur={() => setConfirming(null)} autoFocus>
+                        Remove for everyone?
+                      </button>
+                    ) : (
+                      <button type="button" className="planner-chip library-remove" aria-label={`Remove ${a.prompt}`} title="Remove" onClick={() => setConfirming(a.sha)}>
+                        ✕
+                      </button>
+                    ))}
+                </li>
+              )
+            })}
+            {!loading && !assets.length && !error && (
+              <li className="planner-empty">No sounds yet. Make one in ✦ Create (Sound, Music or Voice), and it lands here for everyone.</li>
+            )}
+          </ul>
+          <p className="library-hint">Tap a tile to hear it. Hold puts it in your hand: walk and tap PLACE to set down an orb that plays it.</p>
         </div>
       )}
     </aside>

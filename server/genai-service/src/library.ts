@@ -261,11 +261,16 @@ export async function backfill(db: DatabaseSync, assetDir: string, dataDir: stri
   if (pending.length) console.log(`[library] backfilled ${pending.length} files to s3`);
 }
 
-/** `kind` defaults to models so existing callers (the model library) never see pictures/sounds. */
-export function listLibrary(db: DatabaseSync, q: string, limit: number, kind = "model"): LibraryAsset[] {
+/**
+ * `kind` defaults to models so existing callers (the model library) never see pictures/sounds.
+ * Several kinds at once (the Library's Sounds shelf asks for sound + music + voice) come newest first together.
+ */
+export function listLibrary(db: DatabaseSync, q: string, limit: number, kind: string | readonly string[] = "model"): LibraryAsset[] {
   const like = `%${q.replace(/[%_]/g, "")}%`;
+  const kinds = typeof kind === "string" ? [kind] : kind.length ? [...kind] : ["model"];
   return db.prepare(`SELECT sha, file, kind, prompt, provider, bytes, s3, thumb, creator, created_at FROM library
-    WHERE prompt LIKE ? AND kind = ? AND removed_at IS NULL ORDER BY created_at DESC LIMIT ?`).all(like, kind, limit) as unknown as LibraryAsset[];
+    WHERE prompt LIKE ? AND kind IN (${kinds.map(() => "?").join(", ")}) AND removed_at IS NULL ORDER BY created_at DESC LIMIT ?`)
+    .all(like, ...kinds, limit) as unknown as LibraryAsset[];
 }
 
 export function assetFiles(assetDir: string): string[] {

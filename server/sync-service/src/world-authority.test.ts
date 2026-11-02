@@ -225,3 +225,23 @@ test("a creation's mind is server-only: owners can't set, change or copy it, but
   assert.equal(act(alice, (d) => d.getMap("objects").delete("a1")), 0);
   assert.equal(obj(server, "a1"), undefined);
 });
+
+test("a sound keeps the words it was made from: nobody rewrites its prompt or file, but it still moves, copies and deletes", () => {
+  const { server, act, obj } = setup();
+  const sound = { type: "sound", asset: "a".repeat(64) + ".mp3", prompt: "waves on pebbles", media: "sound", loop: true, volume: 0.8 };
+  assert.equal(act(bob, (d) => addObject(d, "s1", BOB, sound)), 0);
+  const s1 = (d: Y.Doc) => d.getMap("objects").get("s1") as Y.Map<unknown>;
+  // Not the placer, not the world's creator, not by changing what it is
+  assert.equal(act(bob, (d) => s1(d).set("prompt", "something else")), 1);
+  assert.equal(act(alice, (d) => s1(d).set("prompt", "something else")), 1);
+  assert.equal(act(bob, (d) => s1(d).set("asset", "b".repeat(64) + ".mp3")), 1);
+  assert.equal(act(bob, (d) => s1(d).set("type", "block")), 1);
+  assert.equal(obj(server, "s1")?.prompt, "waves on pebbles");
+  assert.equal(obj(server, "s1")?.type, "sound");
+  // …but its placer may carry it, copy it (words and all) and delete it
+  assert.equal(act(bob, (d) => s1(d).set("x", 4)), 0);
+  assert.equal(act(bob, (d) => addObject(d, "s2", BOB, { ...sound, x: 6 })), 0);
+  assert.equal(obj(server, "s2")?.prompt, "waves on pebbles");
+  assert.equal(act(bob, (d) => d.getMap("objects").delete("s1")), 0);
+  assert.equal(obj(server, "s1"), undefined);
+});

@@ -51,7 +51,9 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **➡️ NEXT UP (2026-11-01, Life & minds shipped): Alex tries it on prod, then the Studio `/grill-me`.**
+> **➡️ NEXT UP (2026-11-02): Alex's playtest list, one fix at a time.** Fix 1 shipped: carry a sound orb → ✦ shows the words it was made from (read-only, server-enforced), and Library → Sounds places existing sounds like blocks ([Phase 07 log](./07-genai-creation.md#session-log)). Continue with the next item Alex brings; then the Studio `/grill-me` below.
+>
+> **Previous NEXT UP (2026-11-01, Life & minds shipped): Alex tries it on prod, then the Studio `/grill-me`.**
 > - **Shipped:** creations can be still, **alive** (free: breathes, turns to you, roams) or **animated** (Meshy remesh → rig → 4 clips, hold 50 mana), and can get a **mind**: an NPC that answers in world chat with a spoken voice. Make → Voice now works for real (OpenRouter → ElevenLabs v4 Turbo, 21 voices).
 > - **Research + live spikes:** [docs/research/2026-11-life-and-minds](../docs/research/2026-11-life-and-minds/README.md).
 > - **Details:** Phase 07 → [Life & minds](./07-genai-creation.md#life--minds-alex-2026-11-01). The rules / goals / constraints design is in the same file (not built).

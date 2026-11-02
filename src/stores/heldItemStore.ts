@@ -4,6 +4,9 @@
  * you can walk/turn, see a live placement preview in front of you, and tap
  * PLACE (or press V) repeatedly to place it strategically.
  *
+ * Sounds from the Library's Sounds shelf go in your hand the same way: PLACE
+ * sets down another orb carrying that sound and the words it was made from.
+ *
  * Also tracks whether the player is currently carrying an existing world object
  * (`carryingId`), so the touch HUD and held-item bar stay in sync.
  */
@@ -11,15 +14,18 @@ import { create } from 'zustand'
 import { snapToCell, stackedY, type LibraryBlock } from '@aweborn/shared/library'
 import { CHUNK, cellAt } from '@aweborn/shared/voxel'
 import { editKey } from '@aweborn/shared/terrain-edits'
-import { editTerrainCell, placeBlock, placeModel, placeShape, useWorldStore } from './worldStore'
+import { editTerrainCell, placeBlock, placeMedia, placeModel, placeShape, useWorldStore } from './worldStore'
 import { getChunk, placeOnTerrain } from './worldVoxels'
 import { useUniverseStore } from './universeStore'
 import { interiorController } from '../systems/InteriorController'
+import type { SoundMedia } from '../lib/soundKinds'
 
 export type HeldItem =
   | { kind: 'block'; block: LibraryBlock }
   | { kind: 'shape'; shape: { id: string; name: string }; color: string; size: number; rotY: number }
   | { kind: 'model'; sha: string; file: string; prompt: string; size: number; rotY: number }
+  /** A made sound (Library → Sounds): placing it sets down an orb with this file and the words it was made from. */
+  | { kind: 'sound'; sha: string; file: string; prompt: string; media: SoundMedia; loop: boolean }
   /** Terrain editing (M5d, owners): dig a cell out, or fill one with the world's block `block` (1-based, as in the grid). */
   | { kind: 'terrain'; op: 'dig' }
   | { kind: 'terrain'; op: 'fill'; block: number; name: string; color: string }
@@ -50,12 +56,12 @@ export const useHeldItemStore = create<HeldItemState>((set) => ({
   clear: () => set({ item: null }),
   rotateItem: (deltaRad) =>
     set((s) => {
-      if (!s.item || s.item.kind === 'block' || s.item.kind === 'terrain') return s
+      if (!s.item || s.item.kind === 'block' || s.item.kind === 'terrain' || s.item.kind === 'sound') return s
       return { item: { ...s.item, rotY: s.item.rotY + deltaRad } }
     }),
   scaleItem: (factor) =>
     set((s) => {
-      if (!s.item || s.item.kind === 'block' || s.item.kind === 'terrain') return s
+      if (!s.item || s.item.kind === 'block' || s.item.kind === 'terrain' || s.item.kind === 'sound') return s
       const next = Math.min(30, Math.max(0.5, +(s.item.size * factor).toFixed(2)))
       return { item: { ...s.item, size: next } }
     }),
@@ -126,6 +132,7 @@ export function computeTerrainTarget(
  *  - Blocks snap to the terrain grid cell 2 m ahead, lifted to terrain surface
  *    and stacked on top of any blocks already in that column.
  *  - Shapes and models sit in front of the player at feet height.
+ *  - Sounds stand on the ground 3 m ahead and a little to the right (the orb floats above its spot).
  *  - Terrain tools: the cell from `computeTerrainTarget` (or straight ahead if none).
  */
 export function computePlacementTarget(
@@ -150,6 +157,10 @@ export function computePlacementTarget(
     }
     y = stackedY(y, x, z, worldState.objects.values())
     return { x, y, z, scale: 1, rotY: 0 }
+  }
+  if (item.kind === 'sound') {
+    // A small orb: a little off to the right, or the avatar hides it from the camera (as CreatePanel spotAhead)
+    return { x: s.x + s.fx * 3 - s.fz * 1.2, y: s.y, z: s.z + s.fz * 3 + s.fx * 1.2, scale: 1, rotY: 0 }
   }
   if (item.kind === 'shape') {
     const dist = item.size / 2 + 1.5
@@ -199,6 +210,9 @@ export function placeEquippedItem(playerId: string): string | null {
       playerId,
       item.rotY,
     )
+  }
+  if (item.kind === 'sound') {
+    return placeMedia(doc, { type: 'sound', asset: item.file, prompt: item.prompt, media: item.media, loop: item.loop }, { x: pos.x, y: pos.y, z: pos.z }, playerId)
   }
   return placeModel(doc, item.file, item.prompt, { x: pos.x, y: pos.y, z: pos.z }, playerId, {
     scale: item.size,

@@ -18,7 +18,8 @@ import type { BlueprintSky } from '@aweborn/shared/blueprint'
 import { RETURN_PORTAL_XZ, type WorldEntry } from '@aweborn/shared/crdt-schema'
 import { useHeldItemStore, computePlacementTarget, computeTerrainTarget } from '../stores/heldItemStore'
 import { interiorController } from '../systems/InteriorController'
-import { PictureObject, SoundObject, SignObject, WorldSound, SpatialListener } from './MediaObjects'
+import { PictureObject, SoundObject, SignObject, WorldSound, SpatialListener, ORB_GEO, RING_GEO } from './MediaObjects'
+import { SOUND_COLORS } from '../lib/soundKinds'
 import { LivingModel } from './LivingModel'
 import { cleanLife } from '@aweborn/shared/life'
 
@@ -305,6 +306,7 @@ function HeldItemPreview() {
     if (item.kind === 'block') return new THREE.Color(item.block.color)
     if (item.kind === 'shape') return new THREE.Color(item.color)
     if (item.kind === 'terrain') return new THREE.Color(item.op === 'dig' ? '#ff6b7a' : item.color)
+    if (item.kind === 'sound') return new THREE.Color(SOUND_COLORS[item.media])
     return new THREE.Color('#9fe8ff')
   }, [item])
 
@@ -331,6 +333,20 @@ function HeldItemPreview() {
   })
 
   if (!item || carryingId) return null
+
+  if (item.kind === 'sound') {
+    // A see-through orb where the new one will stand (it floats 0.6 above its spot, like the real one)
+    return (
+      <group ref={groupRef}>
+        <mesh geometry={ORB_GEO} position={[0, 0.6, 0]}>
+          <meshBasicMaterial color={color} transparent opacity={0.5} depthWrite={false} />
+        </mesh>
+        <mesh geometry={RING_GEO} position={[0, 0.6, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <meshBasicMaterial color={color} transparent opacity={0.65} depthWrite={false} toneMapped={false} />
+        </mesh>
+      </group>
+    )
+  }
 
   return (
     <group ref={groupRef}>

@@ -37,6 +37,15 @@ export const SERVER_ONLY_META_KEYS: ReadonlySet<string> = new Set(["creator", "c
  */
 export const SERVER_ONLY_OBJECT_KEYS: ReadonlySet<string> = new Set(["mind"]);
 
+/**
+ * Media objects (a picture, a sounding orb, a lore sign) keep what they were made from:
+ * once placed, nobody rewrites their words, file or kind (Alex, 2026-11-02: whoever picks
+ * up a speaker sees the prompt it was manifested with, and can't edit it). Moving, turning,
+ * copying and deleting stay as for any object; a different sound is a new object.
+ */
+export const MEDIA_OBJECT_TYPES: ReadonlySet<string> = new Set(["picture", "sound", "sign"]);
+export const FIXED_MEDIA_KEYS: ReadonlySet<string> = new Set(["type", "prompt", "asset", "media", "text"]);
+
 /** Most co-creators a world can name. */
 export const MAX_CO_CREATORS = 24;
 
@@ -155,6 +164,7 @@ export function judgeObjectChange(actor: WorldActor, before: Rec | undefined, af
   // Nobody rewrites who placed a thing (or when): that would launder ownership.
   if (keys.includes("placedBy") || keys.includes("id")) return "revert";
   if (keys.some((k) => SERVER_ONLY_OBJECT_KEYS.has(k))) return "revert";
+  if (typeof before.type === "string" && MEDIA_OBJECT_TYPES.has(before.type) && keys.some((k) => FIXED_MEDIA_KEYS.has(k))) return "revert";
   if (canEditObject(actor, before)) return "ok";
   return isKickChange(before, after) ? "ok" : "revert";
 }

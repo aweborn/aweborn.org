@@ -9,12 +9,15 @@ import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
 import { useKeybindingStore, keyCapLabel } from '../stores/keybindingStore'
 import { openLife } from '../stores/lifeStore'
+import { openMadeFrom } from '../stores/madeFromStore'
+import { SOUND_COLORS } from '../lib/soundKinds'
 
 /**
  * Held-item HUD bar: shows the item currently in your hand (from the Library)
  * or the world object you're carrying (GRAB / G), with quick controls to
  * rotate (⟲ / ⟳), resize (− / +), recolor, duplicate (⧉), delete (🗑), place, or put it away (×).
  * Carried models also get ✦: bring it to life (Phase 07 Life & minds, LifePanel).
+ * Carried sounds get ✦ too: see the words they were made from (read-only, MadeFromPanel).
  */
 export function HeldItemBar() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
@@ -30,7 +33,8 @@ export function HeldItemBar() {
   if (!activeWorldId || (!item && !carryingId)) return null
 
   if (carryingId) {
-    const canRecolor = carriedObj && carriedObj.type !== 'model'
+    // Pictures, sounds and signs don't take a colour
+    const canRecolor = carriedObj && carriedObj.type !== 'model' && carriedObj.type !== 'sound' && carriedObj.type !== 'picture' && carriedObj.type !== 'sign'
     const currentColor = carriedObj?.color ?? worldColor
     return (
       <div id="held-item-bar" className="held-item-bar" role="region" aria-label="Carried object controls">
@@ -59,6 +63,18 @@ export function HeldItemBar() {
               onClick={() => openLife(carryingId)}
               aria-label="Bring it to life"
               title="Bring it to life: breathe, roam, animate, give it a mind"
+            >
+              ✦
+            </button>
+          )}
+          {carriedObj?.type === 'sound' && (
+            <button
+              id="held-made-from-btn"
+              type="button"
+              className="held-tool-btn held-tool-btn--life"
+              onClick={() => openMadeFrom(carryingId)}
+              aria-label="See what it was made from"
+              title="See the words it was made from"
             >
               ✦
             </button>
@@ -103,14 +119,18 @@ export function HeldItemBar() {
           : item.prompt
 
   const swatchColor =
-    item.kind === 'block' ? item.block.color : item.kind === 'shape' ? item.color : item.kind === 'terrain' ? (item.op === 'dig' ? '#ff6b7a' : item.color) : '#9fe8ff'
+    item.kind === 'block' ? item.block.color
+      : item.kind === 'shape' ? item.color
+        : item.kind === 'terrain' ? (item.op === 'dig' ? '#ff6b7a' : item.color)
+          : item.kind === 'sound' ? SOUND_COLORS[item.media]
+            : '#9fe8ff'
   const action = item.kind === 'terrain' ? (item.op === 'dig' ? 'Dig' : 'Fill') : 'Place'
 
   return (
     <div id="held-item-bar" className="held-item-bar" role="region" aria-label="Item in hand">
       <span className="held-item-swatch" style={{ background: swatchColor }} aria-hidden="true" />
       <span className="held-item-name" title={label}>{label}</span>
-      {item.kind !== 'block' && item.kind !== 'terrain' && (
+      {(item.kind === 'shape' || item.kind === 'model') && (
         <div className="held-item-tools" role="group" aria-label="Adjust held item">
           <button type="button" className="held-tool-btn" onClick={() => triggerHeldAdjust('rotLeft')} aria-label="Rotate left" title="Rotate left (Z)">⟲</button>
           <button type="button" className="held-tool-btn" onClick={() => triggerHeldAdjust('rotRight')} aria-label="Rotate right" title="Rotate right (X)">⟳</button>

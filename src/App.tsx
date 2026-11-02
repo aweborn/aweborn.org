@@ -17,6 +17,7 @@ import { SyncBridge } from './components/SyncBridge'
 import { PlantWorldPanel } from './components/PlantWorldPanel'
 import { TouchDock } from './components/TouchDock'
 import { LifePanel } from './components/LifePanel'
+import { MadeFromPanel } from './components/MadeFromPanel'
 import { TeleportToast } from './components/TeleportToast'
 import { OnboardingHint } from './components/OnboardingHint'
 import { teleportSystem } from './systems/TeleportSystem'
@@ -168,6 +169,7 @@ export default function App() {
           <LibraryPanel />
           <HeldItemBar />
           <LifePanel />
+          <MadeFromPanel />
           <ChatPanel />
           <PlayerActions />
           <PlantWorldPanel />

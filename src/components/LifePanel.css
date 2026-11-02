@@ -175,3 +175,31 @@
 }
 .chat-name--mind { color: #ffb27a; font-style: italic; }
 .held-tool-btn--life { color: #ffb27a; }
+
+/* Made from (a carried sound's words, read-only; MadeFromPanel) */
+.made-from-orb {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  color: rgba(10, 8, 30, 0.85);
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.28);
+}
+.made-from-prompt {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-left: 3px solid #ffb27a;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}

@@ -6887,3 +6887,8 @@ html.touch-ui #journey-chip { display: none; }
   .lore-sign, .create-making-action { animation: none; }
   .make-kind:has(input:checked) { transform: none; }
 }
+
+/* Library → Sounds: the tile is the listen button (∿ colour by kind) */
+.library-listen { display: grid; place-items: center; padding: 0; border: 1px solid rgba(255, 255, 255, 0.25); font: inherit; font-size: 22px; color: rgba(10, 8, 30, 0.8); cursor: pointer; opacity: 0.85; transition: opacity 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease; }
+.library-listen:hover, .library-listen:focus-visible { opacity: 1; transform: translateY(-1px); }
+.library-listen.is-on { opacity: 1; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8), 0 0 18px rgba(255, 255, 255, 0.35); }
