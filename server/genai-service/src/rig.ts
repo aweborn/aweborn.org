@@ -16,12 +16,13 @@
  * (`consumed_credits`) × $0.02; failed tasks are refunded by Meshy.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import type { Provider, ProviderJob } from "./providers.js";
 import { CDN_URL } from "./library.js";
+import { streamToFile } from "./download.js";
 
 const MESHY_KEY = process.env.MESHY_API_KEY ?? "";
 const API = "https://api.meshy.ai/openapi/v1";
@@ -157,11 +158,11 @@ export const meshyAnimate: Provider = {
     credits += t.consumed_credits ?? 3 * p.actions.length;
     const url = t.result?.animation_glb_url;
     if (!url) throw new Error("meshy returned no animated glb");
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`download failed: ${res.status}`);
-    const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.length > 200 * 1024 * 1024) throw new Error("asset too large");
-    const { file, clips } = await finishAnimatedGlb(buf, job.assetDir);
+    // Streamed to disk first (download.ts), then read: rigged models are remeshed to ~30k tris (~10 MB)
+    const got = await streamToFile(url, job.assetDir, "glb", 200 * 1024 * 1024);
+    const raw = join(job.assetDir, got.file);
+    const { file, clips } = await finishAnimatedGlb(new Uint8Array(readFileSync(raw)), job.assetDir);
+    if (got.file !== file) rmSync(raw, { force: true }); // keep only the renamed copy
     job.archive({ call: "animate.stored", file, clips, credits });
     return { asset: file, costUsd: Math.round(credits * USD_PER_CREDIT * 100) / 100 };
   },

@@ -61,6 +61,11 @@ try { db.exec("ALTER TABLE jobs ADD COLUMN research_id TEXT"); } catch { /* alre
 // Automatic retries (retry.ts): tries so far, and when the next one may start
 try { db.exec("ALTER TABLE jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
 try { db.exec("ALTER TABLE jobs ADD COLUMN retry_at INTEGER"); } catch { /* already there */ }
+// Times a run began. A job that kills the whole service (out of memory) never records a failure,
+// so `attempts` alone let it crash-loop the box on every restart (2026-11-01); `starts` stops it.
+try { db.exec("ALTER TABLE jobs ADD COLUMN starts INTEGER NOT NULL DEFAULT 0"); } catch { /* already there */ }
+/** Runs a job may begin before it's given up as one that keeps taking the service down. */
+const MAX_STARTS = MAX_ATTEMPTS + 2;
 
 /** sync-service's research id shape (`r` + 20 hex); anything else is dropped. */
 const researchIdOf = (v: unknown): string | null => (typeof v === "string" && /^r[0-9a-f]{20}$/.test(v) ? v : null);
@@ -99,6 +104,13 @@ const activeJobs = new Set<string>();
 async function run(id: string): Promise<void> {
   const row = db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as unknown as JobRow | undefined;
   if (!row || row.status === "complete" || row.status === "failed") return;
+  const starts = (db.prepare("SELECT starts FROM jobs WHERE id = ?").get(id) as { starts: number | null }).starts ?? 0;
+  if (starts >= MAX_STARTS) {
+    console.error(`[genai] job ${id} started ${starts} times without finishing; giving up`);
+    update(id, { status: "failed", error: "kept stopping the service; given up" });
+    return;
+  }
+  db.prepare("UPDATE jobs SET starts = ? WHERE id = ?").run(starts + 1, id);
   const provider = providerFor(row.kind);
   const job: ProviderJob = {
     id: row.id,

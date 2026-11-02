@@ -15,7 +15,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } fr
 import { createReadStream, readdirSync, existsSync, statSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
-import { ensureOptimizedIsolated, optPath } from "./optimize.js";
+import { ensureOptimizedIsolated, optPath, optSource } from "./optimize.js";
 import type { DatabaseSync } from "node:sqlite";
 
 const BUCKET = process.env.ASSETS_BUCKET ?? "";
@@ -127,7 +127,7 @@ const OPT_MAX_BYTES = 30 * 1024 * 1024;
 export async function syncOptimized(db: DatabaseSync, assetDir: string, file: string): Promise<void> {
   const flag = () => db.prepare("UPDATE library SET opt = 1 WHERE file = ?").run(file);
   if (s3 && (await exists(`models/opt/${file}`))) return void flag();
-  const src = join(assetDir, file);
+  const src = optSource(assetDir, file); // a huge original's Meshy remesh, if any (providers.ts)
   if (!existsSync(src) || statSync(src).size > OPT_MAX_BYTES) return;
   const out = await ensureOptimizedIsolated(assetDir, file);
   if (!out) return;

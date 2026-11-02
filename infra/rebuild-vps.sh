@@ -4,6 +4,9 @@
 # and the Tailnet name (so CI and SSH keep targeting `aweborn-vps`).
 #
 #   infra/rebuild-vps.sh <new-instance-name>        e.g. aweborn-vps-2
+#   infra/rebuild-vps.sh <new-instance-name> <bundle>   also resize, e.g. medium_3_0 (4 GB)
+#
+# Resizing is a rebuild: Lightsail can't change a running instance's bundle.
 #
 # CloudFormation can't replace a named resource under the same name, so the
 # new instance needs a new InstanceName. The stack policy normally forbids
@@ -26,7 +29,9 @@ STACK=aweborn-vps
 TPL=infra/cloudformation-vps.yml
 POLICY=infra/cloudformation-vps.rebuild-policy.json
 NEW="${1:-}"
-[[ "$NEW" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || { echo "usage: $0 <new-instance-name>  (e.g. aweborn-vps-2)" >&2; exit 1; }
+BUNDLE="${2:-}"
+[[ "$NEW" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || { echo "usage: $0 <new-instance-name> [bundle]  (e.g. aweborn-vps-3 medium_3_0)" >&2; exit 1; }
+[[ -z "$BUNDLE" || "$BUNDLE" =~ ^(micro|small|medium)_3_0$ ]] || { echo "bundle must be micro_3_0, small_3_0 or medium_3_0" >&2; exit 1; }
 
 params="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].Parameters' --output json)"
 OLD="$(jq -r 'map(select(.ParameterKey=="InstanceName"))[0].ParameterValue // "aweborn-vps"' <<<"$params")"
@@ -41,12 +46,15 @@ fi
 # Keep every deployed parameter; change only InstanceName.
 tpl_params="$(aws cloudformation get-template-summary --template-body "file://$TPL" --query 'Parameters[].ParameterKey' --output text)"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
-NEW="$NEW" PARAMS="$params" TPL_PARAMS="$tpl_params" python3 - > "$WORK/params.json" <<'PY'
+NEW="$NEW" BUNDLE="$BUNDLE" PARAMS="$params" TPL_PARAMS="$tpl_params" python3 - > "$WORK/params.json" <<'PY'
 import json, os
 deployed = {p["ParameterKey"] for p in json.loads(os.environ["PARAMS"])}
 out = [{"ParameterKey": "InstanceName", "ParameterValue": os.environ["NEW"]}]
+if os.environ["BUNDLE"]:
+    out.append({"ParameterKey": "InstanceBundle", "ParameterValue": os.environ["BUNDLE"]})
+skip = {"InstanceName"} | ({"InstanceBundle"} if os.environ["BUNDLE"] else set())
 out += [{"ParameterKey": k, "UsePreviousValue": True}
-        for k in os.environ["TPL_PARAMS"].split() if k in deployed and k != "InstanceName"]
+        for k in os.environ["TPL_PARAMS"].split() if k in deployed and k not in skip]
 print(json.dumps(out))
 PY
 
@@ -60,7 +68,7 @@ desc="$(aws cloudformation describe-change-set --stack-name "$STACK" --change-se
 aws cloudformation delete-change-set --stack-name "$STACK" --change-set-name "$CS" >/dev/null || true
 [[ "$(jq -r .Status <<<"$desc")" != FAILED ]] || { echo "Change set failed: $(jq -r .StatusReason <<<"$desc")" >&2; exit 1; }
 
-echo "Plan for $STACK ($OLD -> $NEW, Tailnet name stays $TSNAME):"
+echo "Plan for $STACK ($OLD -> $NEW${BUNDLE:+, bundle $BUNDLE}, Tailnet name stays $TSNAME):"
 jq -r '.Changes[].ResourceChange | "  \(.Action) \(.LogicalResourceId) replacement=\(.Replacement // "-")"' <<<"$desc"
 # Only VPSInstance (and the IMDS custom resource that follows it) may be
 # replaced; nothing may be removed.

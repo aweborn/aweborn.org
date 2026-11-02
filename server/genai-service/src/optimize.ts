@@ -25,11 +25,22 @@ export function optPath(assetDir: string, file: string): string {
   return join(assetDir, "opt", file);
 }
 
+/** A small stand-in to build the web copy from (Meshy's remesh of a huge original; providers.ts). */
+export function webSourcePath(assetDir: string, file: string): string {
+  return join(assetDir, "websrc", file);
+}
+
+/** What the web copy is built from: the remeshed stand-in if there is one, else the original. */
+export function optSource(assetDir: string, file: string): string {
+  const w = webSourcePath(assetDir, file);
+  return existsSync(w) ? w : join(assetDir, file);
+}
+
 /** Make assetDir/opt/<file> if missing. Returns its path, or null if it couldn't be made. */
 export async function ensureOptimized(assetDir: string, file: string): Promise<string | null> {
   const out = optPath(assetDir, file);
   if (existsSync(out)) return out;
-  const src = join(assetDir, file);
+  const src = optSource(assetDir, file);
   if (!existsSync(src)) return null;
   try {
     mkdirSync(join(assetDir, "opt"), { recursive: true });

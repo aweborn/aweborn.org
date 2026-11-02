@@ -6,11 +6,11 @@
  * - stub:  no key configured; returns a sample GLB after a short fake wait,
  *          so the whole loop (mana, jobs, client) can be built and tested
  */
-import { createHash } from "node:crypto";
-import { writeFileSync, existsSync } from "node:fs";
+import { writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { isMediaKind, mediaProvider } from "./media.js";
 import { animateProvider } from "./rig.js";
+import { streamToFile } from "./download.js";
 
 export interface ProviderJob {
   id: string;
@@ -53,16 +53,56 @@ const TIMEOUT_MS = 20 * 60 * 1000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Download a GLB and store it under its sha256 (dedupes identical files). */
-async function storeGlb(url: string, assetDir: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`download failed: ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > 200 * 1024 * 1024) throw new Error("asset too large"); // Meshy GLBs can exceed 50 MB
-  const name = createHash("sha256").update(buf).digest("hex") + ".glb";
-  const path = join(assetDir, name);
-  if (!existsSync(path)) writeFileSync(path, buf);
-  return name;
+/** Download a GLB and store it under its sha256 (dedupes identical files), streamed to disk (download.ts). */
+async function storeGlb(url: string, assetDir: string): Promise<{ file: string; bytes: number }> {
+  return streamToFile(url, assetDir, "glb");
+}
+
+/**
+ * Originals above this get their web copy from Meshy instead of from our box: the
+ * optimizer decodes a model many times over in memory (library.ts skips files above
+ * 30 MB), so a 313 MB tree would otherwise reach players at full size.
+ */
+const WEB_SOURCE_OVER_BYTES = 30 * 1024 * 1024;
+/** Triangles in the web copy (matches optimize.ts MAX_TRIANGLES). */
+const WEB_POLYCOUNT = 120_000;
+
+/**
+ * "Optimize while streaming" (Alex, 2026-11-01): mesh simplification needs the whole
+ * mesh, so it can't run on a byte stream; instead Meshy does it on their side.
+ * Remesh the finished model to ~120k triangles, stream that small file down, and keep
+ * it as the source of the web copy (`websrc/<original>.glb`). The original is kept too.
+ * Best effort: on any failure the original stays the only copy (as before).
+ */
+async function webSourceFromMeshy(job: ProviderJob, refineTask: string, original: string): Promise<number> {
+  const headers = { Authorization: `Bearer ${MESHY_KEY}`, "Content-Type": "application/json" };
+  try {
+    const body = { input_task_id: refineTask, target_formats: ["glb"], topology: "triangle", target_polycount: WEB_POLYCOUNT };
+    job.archive({ call: "meshy.remesh-web", request: body });
+    const r = await fetch("https://api.meshy.ai/openapi/v1/remesh", { method: "POST", headers, body: JSON.stringify(body) });
+    const rj = (await r.json().catch(() => ({}))) as { result?: string; message?: string };
+    job.archive({ call: "meshy.remesh-web", status: r.status, response: rj });
+    if (!r.ok || !rj.result) return 0;
+    const started = Date.now();
+    for (;;) {
+      if (Date.now() - started > TIMEOUT_MS) return 0;
+      await sleep(POLL_MS);
+      const res = await fetch(`https://api.meshy.ai/openapi/v1/remesh/${rj.result}`, { headers });
+      if (!res.ok) continue;
+      const t = (await res.json()) as { status: string; model_urls?: { glb?: string }; consumed_credits?: number };
+      if (t.status === "FAILED" || t.status === "CANCELED") return 0;
+      if (t.status !== "SUCCEEDED" || !t.model_urls?.glb) continue;
+      mkdirSync(join(job.assetDir, "websrc"), { recursive: true });
+      const got = await streamToFile(t.model_urls.glb, join(job.assetDir, "websrc"), "glb", 200 * 1024 * 1024);
+      // Named after the original so the optimizer finds it (optimize.ts webSourcePath)
+      renameSync(join(job.assetDir, "websrc", got.file), join(job.assetDir, "websrc", original));
+      job.archive({ call: "meshy.remesh-web.stored", original, bytes: got.bytes, credits: t.consumed_credits ?? null });
+      return (t.consumed_credits ?? 5) * 0.02;
+    }
+  } catch (err) {
+    job.archive({ call: "meshy.remesh-web", error: (err as Error).message });
+    return 0;
+  }
 }
 
 /** Best-effort preview image, stored beside the model as <sha>.png (library thumbnail). */
@@ -136,9 +176,12 @@ const meshy: Provider = {
       if (t.status === "SUCCEEDED") {
         job.archive({ call: "meshy.result", task, response: t });
         if (!t.model_urls?.glb) throw new Error("meshy returned no glb");
-        const asset = await storeGlb(t.model_urls.glb, job.assetDir);
+        const { file: asset, bytes } = await storeGlb(t.model_urls.glb, job.assetDir);
+        job.archive({ call: "meshy.stored", asset, bytes });
         await storeThumb(t.thumbnail_url, asset, job.assetDir);
-        return { asset, costUsd: MESHY_PREVIEW_USD + MESHY_REFINE_USD };
+        // A huge original gets its (small) web copy remeshed by Meshy, not by our box
+        const extra = bytes > WEB_SOURCE_OVER_BYTES && MESHY_KEY ? await webSourceFromMeshy(job, task, asset) : 0;
+        return { asset, costUsd: MESHY_PREVIEW_USD + MESHY_REFINE_USD + (extra || 0) };
       }
       if (t.status === "FAILED" || t.status === "CANCELED") {
         job.archive({ call: "meshy.result", task, response: t });
@@ -161,7 +204,7 @@ const stub: Provider = {
       job.onProgress(p);
       await sleep(800);
     }
-    return { asset: await storeGlb(SAMPLE_GLB, job.assetDir), costUsd: 0 };
+    return { asset: (await storeGlb(SAMPLE_GLB, job.assetDir)).file, costUsd: 0 };
   },
 };
 
