@@ -187,17 +187,7 @@ function LifeDialog({ id }: { id: string }) {
     }
   }
 
-  const forget = async () => {
-    if (busy || !worldId) return
-    setBusy(true)
-    setError(null)
-    try {
-      const r = await post('/api/player/mind/forget', { worldId, objectId: id })
-      if (!r.ok) setError(errorText(r.status, r.json))
-    } finally {
-      setBusy(false)
-    }
-  }
+
 
   const title = obj?.mind?.name ?? (creationTitle(obj?.prompt) || 'This creation')
   const animated = life.mode === 'animated'
@@ -303,7 +293,7 @@ function LifeDialog({ id }: { id: string }) {
 
         <section className="life-section" aria-labelledby="life-mind-h">
           <h3 id="life-mind-h" className="life-h">Mind</h3>
-          {obj?.mind ? (
+          {obj?.mind && (
             <div className="life-mind">
               <p className="life-mind-name">
                 <b>{obj.mind.name}</b>
@@ -311,43 +301,43 @@ function LifeDialog({ id }: { id: string }) {
               </p>
               {obj.mind.greeting && <p className="life-mind-greeting">“{obj.mind.greeting}”</p>}
               <p className="life-note">
-                Players who talk near it (or say its name) get an answer in chat{obj.mind.spoken ? ', spoken aloud' : ''}. Each answer is drawn from the speaker’s mana (about 1).
+                Players who talk near it (or say its name) get an answer in chat{obj.mind.spoken ? ', spoken aloud' : ''}. Each answer is drawn from the speaker’s mana (about 1). A mind is never forgotten: what you add below grows it.
               </p>
-              <button type="button" id="life-forget" className="life-secondary" disabled={busy} onClick={forget}>Forget its mind</button>
             </div>
-          ) : (
-            <form className="life-mind-form" onSubmit={giveMind}>
-              <label className="life-field">
-                <span>Who is it? How does it speak?</span>
-                <textarea
-                  id="life-mind-words"
-                  rows={3}
-                  maxLength={600}
-                  value={words}
-                  placeholder="An ancient lava giant who guards the volcano. Slow, groans, speaks rarely, in riddles."
-                  onChange={(e) => setWords(e.target.value)}
-                />
+          )}
+          <form className="life-mind-form" onSubmit={giveMind}>
+            <label className="life-field">
+              <span>{obj?.mind ? `Tell ${obj.mind.name} more: memories, what it knows, how it speaks` : 'Who is it? How does it speak?'}</span>
+              <textarea
+                id="life-mind-words"
+                rows={3}
+                maxLength={600}
+                value={words}
+                placeholder={obj?.mind ? 'Long ago it loved a star that fell into the volcano. It hums when it is sad.' : 'An ancient lava giant who guards the volcano. Slow, groans, speaks rarely, in riddles.'}
+                onChange={(e) => setWords(e.target.value)}
+              />
+            </label>
+            <div className="life-row">
+              <label className="life-field life-field--grow">
+                <span>Voice</span>
+                <select id="life-voice" value={voice} onChange={(e) => setVoice(e.target.value as VoiceId | '')}>
+                  <option value="">{obj?.mind ? `Keep its voice (${obj.mind.voice})` : 'Let it choose'}</option>
+                  {VOICE_IDS.map((v) => (
+                    <option key={v} value={v}>{v[0].toUpperCase() + v.slice(1)}: {VOICES[v]}</option>
+                  ))}
+                </select>
               </label>
-              <div className="life-row">
-                <label className="life-field life-field--grow">
-                  <span>Voice</span>
-                  <select id="life-voice" value={voice} onChange={(e) => setVoice(e.target.value as VoiceId | '')}>
-                    <option value="">Let it choose</option>
-                    {VOICE_IDS.map((v) => (
-                      <option key={v} value={v}>{v[0].toUpperCase() + v.slice(1)}: {VOICES[v]}</option>
-                    ))}
-                  </select>
-                </label>
+              {!obj?.mind && (
                 <label className="life-switch">
                   <input id="life-spoken" type="checkbox" role="switch" {...({ switch: '' } as Record<string, string>)} checked={spoken} onChange={(e) => setSpoken(e.target.checked)} />
                   Speaks aloud
                 </label>
-              </div>
-              <button type="submit" id="life-mind-submit" className="life-primary" disabled={busy || !words.trim()}>
-                {busy ? '…' : `Give it a mind · holds up to ${MIND_HOLD} mana`}
-              </button>
-            </form>
-          )}
+              )}
+            </div>
+            <button type="submit" id="life-mind-submit" className="life-primary" disabled={busy || !words.trim()}>
+              {busy ? '…' : `${obj?.mind ? 'Add to its mind' : 'Give it a mind'} · holds up to ${MIND_HOLD} mana`}
+            </button>
+          </form>
         </section>
 
         {error && <p className="life-error" role="alert">{error}</p>}

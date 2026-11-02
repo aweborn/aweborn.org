@@ -32,8 +32,10 @@ export interface BodyPlan {
   floor: number;
   /** Middle of the four feet (long-axis coordinate, lateral coordinate). */
   centre: [number, number];
-  /** Feet [long, lateral]: front-left, front-right, back-left, back-right (a leg vertex belongs to the nearest foot). */
+  /** Feet [long, lateral]: front-left, front-right, back-left, back-right. */
   feet: [number, number][];
+  /** Each foot's radius: a vertex below the hips is only that leg's if it's within a few of these of the leg's line. */
+  legR: number[];
   /** Hip pivots [long, lateral] per leg: front-left, front-right, back-left, back-right. */
   hips: [number, number][];
   /** Neck pivot: long-axis coordinate and height; the head is beyond it, above the hips. */
@@ -130,8 +132,11 @@ export function findBodyPlan(pos: ArrayLike<number>): BodyPlan | null {
   const legTop = minY + (top + 1) * sliceH;
   if ((legTop - minY) / ey < 0.12) return null; // stubby: not worth swinging
 
-  // The four feet (long-axis, lateral coordinates)
-  const feet = blobs[footSlice].map((f) => [minL + ((f.gx + 0.5) / GRID) * extL, minT + ((f.gy + 0.5) / GRID) * extT] as [number, number]);
+  // The four feet (long-axis, lateral coordinates) and how thick each is
+  const cellArea = (extL / GRID) * (extT / GRID);
+  const footBlobs = blobs[footSlice];
+  const feet = footBlobs.map((f) => [minL + ((f.gx + 0.5) / GRID) * extL, minT + ((f.gy + 0.5) / GRID) * extT] as [number, number]);
+  const radiusOf = new Map(feet.map((f, i) => [f, Math.sqrt((footBlobs[i].size * cellArea) / Math.PI)]));
   const cL = feet.reduce((m, f) => m + f[0], 0) / 4, cT = feet.reduce((m, f) => m + f[1], 0) / 4;
 
   // Front: the end that rises higher (head, ears, horns)
@@ -148,21 +153,25 @@ export function findBodyPlan(pos: ArrayLike<number>): BodyPlan | null {
   const [f1, f2] = byFront.slice(0, 2).sort((p, q) => q[1] - p[1]);
   const [b1, b2] = byFront.slice(2).sort((p, q) => q[1] - p[1]);
   const named = [f1, f2, b1, b2];
-  // Hip pivots: the centroid of each leg's vertices (nearest foot) just below the hip line
+  const legR = named.map((f) => radiusOf.get(f) ?? 0.02);
+  // Hip pivots: the centroid of each leg's vertices just below the hip line, counting only
+  // those near the leg (above its foot) so a hanging belly doesn't pull the hip inward
   const sum = named.map(() => [0, 0, 0]);
   for (let i = 0; i < n; i++) {
     const y = pos[i * 3 + 1];
     if (y >= legTop || y < legTop - sliceH * 2) continue;
-    const q = nearestFoot(named, pos[i * 3 + L], pos[i * 3 + T]);
-    sum[q][0] += pos[i * 3 + L];
-    sum[q][1] += pos[i * 3 + T];
+    const l = pos[i * 3 + L], t = pos[i * 3 + T];
+    const q = nearestFoot(named, l, t);
+    if (Math.hypot(l - named[q][0], t - named[q][1]) > legR[q] * 3) continue;
+    sum[q][0] += l;
+    sum[q][1] += t;
     sum[q][2]++;
   }
   const hips = named.map((f, q) => (sum[q][2] ? [sum[q][0] / sum[q][2], sum[q][1] / sum[q][2]] : [f[0], f[1]]) as [number, number]);
   // The neck: at the front legs, a third of the way up the body above the hips
   const frontEnd = (hips[0][0] + hips[1][0]) / 2;
   const neck: [number, number] = [frontEnd, legTop + (maxY - legTop) * 0.35];
-  return { axis, front, legTop, floor: minY, centre: [cL, cT], feet: named, hips, neck };
+  return { axis, front, legTop, floor: minY, centre: [cL, cT], feet: named, legR, hips, neck };
 }
 
 function nearestFoot(feet: [number, number][], l: number, t: number): number {
@@ -177,10 +186,37 @@ function nearestFoot(feet: [number, number][], l: number, t: number): number {
   return best;
 }
 
+/**
+ * Which leg (0–3) a point below the hips belongs to, or -1 for the body: it must be close to
+ * the leg's line (foot → hip) at its height. A belly or chest that hangs below the hip line
+ * stays body, so it doesn't shear when the legs swing (Alex's goat, 2026-11-01).
+ */
+export function legAt(plan: BodyPlan, l: number, t: number, y: number): number {
+  const k = Math.max(0, Math.min(1, (y - plan.floor) / Math.max(1e-6, plan.legTop - plan.floor)));
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < 4; i++) {
+    const al = plan.feet[i][0] + (plan.hips[i][0] - plan.feet[i][0]) * k;
+    const at = plan.feet[i][1] + (plan.hips[i][1] - plan.feet[i][1]) * k;
+    const d = Math.hypot(l - al, t - at);
+    if (d < bd) {
+      bd = d;
+      best = i;
+    }
+  }
+  // Legs thicken toward the hip; never reach past most of the way to a neighbouring leg
+  let gap = Infinity;
+  for (let j = 0; j < 4; j++) if (j !== best) gap = Math.min(gap, Math.hypot(plan.feet[j][0] - plan.feet[best][0], plan.feet[j][1] - plan.feet[best][1]));
+  const reach = Math.min(plan.legR[best] * (2 + 1.5 * k), gap * 0.45);
+  return bd <= reach ? best : -1;
+}
+
 /** The part of one vertex under a body plan (see PART). */
 export function partOf(plan: BodyPlan, x: number, y: number, z: number): number {
   const l = plan.axis === "x" ? x : z, t = plan.axis === "x" ? z : x;
-  if (y < plan.legTop) return 1 + nearestFoot(plan.feet, l, t);
+  if (y < plan.legTop) {
+    const leg = legAt(plan, l, t, y);
+    return leg < 0 ? PART.body : 1 + leg;
+  }
   if ((l - plan.neck[0]) * plan.front > 0 && y > plan.neck[1]) return PART.head;
   return PART.body;
 }

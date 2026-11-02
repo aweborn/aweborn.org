@@ -9,7 +9,9 @@
  *        An LLM compiles the creator's words into a persona (shared/life.ts Persona), the
  *        safety check reads it, the server keeps it (`minds` table) and writes the public
  *        part into the object (`mind`, a server-only key: world-policy.ts).
- *   POST /api/player/mind/forget { worldId, objectId } → { ok }
+ *        **Cumulative** (Alex, 2026-11-01): a mind is never forgotten. Asking again adds to
+ *        the persona it has (same name, everything already true stays true), every version
+ *        is kept (`mind_versions`), and its memories of players are never deleted.
  *
  * Talking (research: phases/07 Life & minds; Generative Agents / Inworld / ACE lessons):
  * the **body** is deterministic and free (shared/life.ts roamPose: every client walks it
@@ -72,6 +74,10 @@ function db() {
         id INTEGER PRIMARY KEY AUTOINCREMENT, world_id TEXT NOT NULL, object_id TEXT NOT NULL,
         player_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS mind_memory_who ON mind_memory (world_id, object_id, player_id, at);
+      CREATE TABLE IF NOT EXISTS mind_versions (
+        world_id TEXT NOT NULL, object_id TEXT NOT NULL, version INTEGER NOT NULL,
+        player_id TEXT NOT NULL, prompt TEXT NOT NULL, persona TEXT NOT NULL, at INTEGER NOT NULL,
+        PRIMARY KEY (world_id, object_id, version));
       CREATE TABLE IF NOT EXISTS animations (
         job_id TEXT PRIMARY KEY, world_id TEXT NOT NULL, object_id TEXT NOT NULL, gait TEXT NOT NULL,
         player_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'running', created_at INTEGER NOT NULL);`);
@@ -223,7 +229,7 @@ export function applyAnimation(rooms: RoomManager, jobId: string, outcome: { ok:
   if (!ok) console.warn(`[animate] ${row.object_id} in ${row.world_id} is gone; the animated model stays in the library`);
 }
 
-// ── Minds: create / forget ───────────────────────────────────────────
+// ── Minds: create, then grow (never forgotten) ───────────────────────
 
 const VOICE_LIST = Object.entries(VOICES).map(([id, d]) => `${id}: ${d}`).join("\n");
 
@@ -242,14 +248,19 @@ ${VOICE_LIST}
 
 Keep the player's words and intent. Original characters only: no real people, brands or existing franchises; nothing sexual, hateful or gory; no romance or companion framing. A monster can be menacing, but in a way that fits a family game.`;
 
-function personaPrompt(rooms: RoomManager, t: Target, words: string): string {
+function personaPrompt(rooms: RoomManager, t: Target, words: string, existing: Persona | null): string {
   const world = rooms.lookupWorld(t.worldId);
   const what = typeof t.obj.prompt === "string" ? t.obj.prompt.slice(0, 400) : "";
   return [
     `World: ${world?.name ?? "a world"}`,
     what ? `The creation it lives in was made from: "${what}"` : "",
     `Height: about ${Math.round(Math.abs(Number(t.obj.scaleY) || 1.8) * 10) / 10} m`,
-    `The player describes the character: "${words}"`,
+    existing
+      ? `This character already exists. Its persona so far:\n${JSON.stringify(existing)}\n\nThe player adds to it: "${words}"\n` +
+        "Grow the character: keep its name, voice and everything already true, and weave the new words in (new facts, goals, traits, " +
+        "how it speaks). Only change something already there if the new words directly contradict it. Lists may grow up to their limits; " +
+        "merge rather than drop. Write the full updated persona."
+      : `The player describes the character: "${words}"`,
   ].filter(Boolean).join("\n");
 }
 
@@ -322,13 +333,22 @@ export async function createMind(rooms: RoomManager, playerId: string, accountId
       settle("mind safety");
       return json(422, { error: "unsafe", category: inSafe.category, message: inSafe.message, suggestion: inSafe.suggestion || undefined });
     }
+    const existing = loadPersona(t.worldId, t.objectId);
+    const prevMind = (t.obj.mind ?? null) as { greeting?: string; greetingVoice?: string; sounds?: string[] } | null;
     let persona: Persona | null = null;
     for (let attempt = 0; attempt < 2 && !persona; attempt++) {
-      const out = await llm(`${ref}:${attempt}`, playerId, PERSONA_MODEL, PERSONA_SYSTEM, personaPrompt(rooms, t, words), 900);
+      const out = await llm(`${ref}:${attempt}`, playerId, PERSONA_MODEL, PERSONA_SYSTEM, personaPrompt(rooms, t, words, existing), 1400);
       costUsd += out.costUsd;
       persona = cleanPersona(parseJson(out.content));
     }
     if (!persona) throw new Error("persona didn't parse");
+    if (existing) {
+      // Growing, not replacing: it keeps its name and voice unless the player picked a new voice
+      persona.name = existing.name;
+      persona.voice = existing.voice;
+      persona.size = existing.size;
+      persona.spoken = existing.spoken;
+    }
     if (isVoiceId(body?.voice)) persona.voice = body.voice;
     if ((VOICE_SIZES as readonly string[]).includes(body?.size as string)) persona.size = body!.size as VoiceSize;
     if (typeof body?.spoken === "boolean") persona.spoken = body.spoken;
@@ -345,7 +365,9 @@ export async function createMind(rooms: RoomManager, playerId: string, accountId
 
     // The greeting is spoken once and kept (most meetings cost nothing after this)
     let greetingVoice: string | undefined;
-    if (persona.spoken && persona.greeting) {
+    const sameVoice = existing && existing.voice === persona.voice && existing.size === persona.size;
+    if (sameVoice && prevMind?.greetingVoice && prevMind.greeting === persona.greeting) greetingVoice = prevMind.greetingVoice;
+    else if (persona.spoken && persona.greeting) {
       const v = await tts(`${ref}:greeting`, playerId, DELIVERY[persona.size] + persona.greeting, persona.voice);
       if (v) {
         costUsd += v.costUsd;
@@ -355,8 +377,8 @@ export async function createMind(rooms: RoomManager, playerId: string, accountId
 
     // Wordless sounds in its own voice (groans, growls, sighs): ElevenLabs v4 audio tags through
     // OpenRouter, so creatures sound like themselves with no sound-effects provider (2026-11-01)
-    const sounds: string[] = [];
-    for (const [k, line] of VOCALS[persona.size].entries()) {
+    const sounds: string[] = sameVoice && prevMind?.sounds?.length ? [...prevMind.sounds] : [];
+    if (!sounds.length) for (const [k, line] of VOCALS[persona.size].entries()) {
       const v = await tts(`${ref}:vocal${k}`, playerId, line, persona.voice);
       if (v) {
         costUsd += v.costUsd;
@@ -368,6 +390,9 @@ export async function createMind(rooms: RoomManager, playerId: string, accountId
     db().prepare(`INSERT INTO minds (object_id, world_id, creator, prompt, persona, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(world_id, object_id) DO UPDATE SET creator = excluded.creator, prompt = excluded.prompt, persona = excluded.persona, updated_at = excluded.updated_at`)
       .run(t.objectId, t.worldId, playerId, words, JSON.stringify(persona), now, now);
+    const version = ((db().prepare("SELECT MAX(version) AS v FROM mind_versions WHERE world_id = ? AND object_id = ?").get(t.worldId, t.objectId) as { v: number | null }).v ?? 0) + 1;
+    db().prepare("INSERT INTO mind_versions (world_id, object_id, version, player_id, prompt, persona, at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(t.worldId, t.objectId, version, playerId, words, JSON.stringify(persona), now);
     const mind = { ...publicMind(persona), greeting: persona.greeting, ...(greetingVoice ? { greetingVoice } : {}), ...(sounds.length ? { sounds } : {}) };
     rooms.editWorldObject(t.worldId, t.objectId, (m) => {
       m.set("mind", mind);
@@ -377,22 +402,13 @@ export async function createMind(rooms: RoomManager, playerId: string, accountId
     const mana = Math.round(costUsd * 100 * 1000) / 1000;
     rooms.mana.settle(ref, mana, "mind");
     rooms.progress.creation(playerId, mana, ref, "lore");
-    return json(200, { mind, persona: { ...persona }, mana, remainingToday: decision.remainingToday });
+    return json(200, { mind, persona: { ...persona }, version, grew: !!existing, mana, remainingToday: decision.remainingToday });
   } catch (err) {
     if (costUsd > 0) settle("mind failed");
     else rooms.mana.release(ref);
     console.error("[mind] failed:", (err as Error).message);
     return json(503, { error: "genai_unavailable", message: "Minds are resting right now. Try again soon." });
   }
-}
-
-export function forgetMind(rooms: RoomManager, playerId: string, accountId: string | null, body: Record<string, unknown> | null, json: Json): void {
-  const t = target(rooms, playerId, accountId, body, json);
-  if (!t) return;
-  db().prepare("DELETE FROM minds WHERE world_id = ? AND object_id = ?").run(t.worldId, t.objectId);
-  db().prepare("DELETE FROM mind_memory WHERE world_id = ? AND object_id = ?").run(t.worldId, t.objectId);
-  rooms.editWorldObject(t.worldId, t.objectId, (m) => m.delete("mind"));
-  return json(200, { ok: true });
 }
 
 // ── Hearing and replying ─────────────────────────────────────────────

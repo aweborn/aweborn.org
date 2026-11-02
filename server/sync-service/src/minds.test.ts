@@ -125,3 +125,25 @@ test("model JSON with prose around it or a JS-style \\' escape still parses", as
   assert.deepEqual(parseJson('Sure! {"say": "I am not Kal\\\'gor"} done'), { say: "I am not Kal'gor" });
   assert.equal(parseJson('{"say": "cut off'), null);
 });
+
+test("minds are cumulative: asking again grows the same character and keeps every version", async () => {
+  const { rooms, doc } = world();
+  const W2 = W;
+  llmReply = JSON.stringify({ name: "Kal'gor", epithet: "", description: "A colossus.", personality: ["slow"], speech: "", verbosity: "terse",
+    goals: [], knowledge: ["The volcano is called Lost."], boundaries: [], greeting: "Hm.", voice: "brian", size: "giant", spoken: true });
+  await createMind(rooms, "alice", null, { worldId: W2, objectId: "obj-colossus", prompt: "a giant" }, () => {});
+  // The model renames it and picks another voice: growing keeps the name and voice
+  llmReply = JSON.stringify({ name: "Somebody Else", epithet: "keeper of the ash path", description: "A colossus who once loved a star.", personality: ["slow", "wistful"],
+    speech: "", verbosity: "terse", goals: [], knowledge: ["The volcano is called Lost.", "A star fell here long ago."], boundaries: [], greeting: "Hm.", voice: "bill", size: "giant", spoken: true });
+  let out: Record<string, unknown> = {};
+  await createMind(rooms, "alice", null, { worldId: W2, objectId: "obj-colossus", prompt: "it once loved a fallen star" }, (_s, b) => { out = b as Record<string, unknown>; });
+  assert.equal(out.grew, true);
+  const mind = (doc.getMap("objects").get("obj-colossus") as Y.Map<unknown>).toJSON().mind;
+  assert.equal(mind.name, "Kal'gor");
+  assert.equal(mind.voice, "brian");
+  const versions = getDb().prepare("SELECT version, prompt FROM mind_versions WHERE object_id = 'obj-colossus' ORDER BY version").all() as { version: number; prompt: string }[];
+  assert.ok(versions.length >= 2 && versions.at(-1)!.prompt === "it once loved a fallen star");
+  // The prompt the model saw carried the persona so far
+  const { forgetMind } = (await import("./minds.js")) as Record<string, unknown>;
+  assert.equal(forgetMind, undefined, "there is no way to forget a mind");
+});

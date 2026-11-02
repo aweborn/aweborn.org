@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { findBodyPlan, partOf, trot, PART } from "./quadruped.ts";
 
 /** A box-ish animal: a body block on four leg columns, head block up front (+z), points on a lattice. */
-function animal(opts: { stagger?: number; legs?: number } = {}): number[] {
+function animal(opts: { stagger?: number; legs?: number; belly?: boolean } = {}): number[] {
   const pts: number[] = [];
   const box = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, step = 0.012) => {
     for (let x = x0; x <= x1; x += step) for (let y = y0; y <= y1; y += step) for (let z = z0; z <= z1; z += step) pts.push(x, y, z);
@@ -12,6 +12,7 @@ function animal(opts: { stagger?: number; legs?: number } = {}): number[] {
   const legs: [number, number][] = [[0.15, 0.3 + s], [-0.15, 0.3 - s], [0.15, -0.3 - s], [-0.15, -0.3 + s]];
   for (const [x, z] of legs.slice(0, opts.legs ?? 4)) box(x - 0.04, x + 0.04, 0, 0.35, z - 0.04, z + 0.04);
   box(-0.2, 0.2, 0.35, 0.6, -0.4, 0.4); // body
+  if (opts.belly) box(-0.12, 0.12, 0.22, 0.35, -0.15, 0.15); // a belly hanging below the hip line, between the legs
   box(-0.08, 0.08, 0.55, 0.85, 0.35, 0.55); // neck + head, front = +z
   return pts;
 }
@@ -42,4 +43,12 @@ test("a trot moves diagonal pairs together", () => {
   assert.equal(fr, bl);
   assert.equal(fl, -fr);
   assert.deepEqual(trot(1, 0), [0, -0, -0, 0]);
+});
+
+test("a belly hanging below the hip line stays body (it mustn't swing with the legs)", () => {
+  const plan = findBodyPlan(animal({ belly: true }))!;
+  assert.ok(plan);
+  assert.equal(partOf(plan, 0, 0.25, 0), PART.body, "belly centre");
+  assert.equal(partOf(plan, 0.1, 0.25, 0.1), PART.body, "belly edge");
+  assert.notEqual(partOf(plan, 0.15, 0.1, 0.3), PART.body, "the leg itself still swings");
 });

@@ -12,7 +12,7 @@ import { cleanPlayerName } from "../../../shared/names.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
-import { MindHost, startAnimate, createMind, forgetMind } from "./minds.js";
+import { MindHost, startAnimate, createMind } from "./minds.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore } from "./planner.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
@@ -29,7 +29,7 @@ import { checkCreation } from "./safety.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit",
-  "/api/player/animate", "/api/player/mind", "/api/player/mind/forget"]);
+  "/api/player/animate", "/api/player/mind"]);
 
 const PORT = parseInt(process.env.PORT ?? "1234", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -462,16 +462,13 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     const body = (await readJson(req).catch(() => null)) as CreateRequest | null;
     return startCreation(rooms, session.playerId, body, json);
   }
-  // Life & minds (Phase 07): animate a placed model; give a creation a mind; forget it
+  // Life & minds (Phase 07): animate a placed model; give a creation a mind (cumulative: asking again grows it)
   if (path === "/api/player/animate" && req.method === "POST") {
     // Room for the sheet's drawn thumbnail (body check when the server has none)
     return startAnimate(rooms, session.playerId, accountId, (await readJson(req, 450_000).catch(() => null)) as Record<string, unknown> | null, json);
   }
   if (path === "/api/player/mind" && req.method === "POST") {
     return createMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
-  }
-  if (path === "/api/player/mind/forget" && req.method === "POST") {
-    return forgetMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
   }
   if (path === "/api/player/lore" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { prompt?: unknown; subject?: unknown } | null;
