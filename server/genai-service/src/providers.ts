@@ -44,7 +44,12 @@ const MESHY_REFINE_USD = 0.2;
 const MESHY_KEY = process.env.MESHY_API_KEY ?? "";
 const MESHY_BASE = "https://api.meshy.ai/openapi/v2/text-to-3d";
 const POLL_MS = 4000;
-const TIMEOUT_MS = 10 * 60 * 1000;
+/**
+ * Per stage (preview, then refine each get their own clock). Meshy's refine
+ * alone took ~12 min on prod (haze tree, 2026-11-01) and an overall 10 min
+ * budget failed a model Meshy then finished and billed.
+ */
+const TIMEOUT_MS = 20 * 60 * 1000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -100,9 +105,9 @@ const meshy: Provider = {
       task = json.result;
       job.onTask(task);
     }
-    const started = Date.now();
+    let started = Date.now();
     for (;;) {
-      if (Date.now() - started > TIMEOUT_MS) throw new Error("meshy timed out");
+      if (Date.now() - started > TIMEOUT_MS) throw new Error(`meshy ${refining ? "refine" : "preview"} timed out`);
       await sleep(POLL_MS);
       const res = await fetch(`${MESHY_BASE}/${task}`, { headers });
       if (!res.ok) continue; // transient; keep polling until timeout
@@ -124,6 +129,7 @@ const meshy: Provider = {
         preview = task;
         task = rj.result;
         refining = true;
+        started = Date.now(); // the texture pass gets its own clock
         job.onTask(`refine:${task}:${preview}`);
         continue;
       }

@@ -41,6 +41,9 @@ test("resume point: failed task restarts, everything else keeps polling", () => 
   assert.equal(resumeTaskAfter(new Error("meshy failed: boom"), "abc"), null);
   assert.equal(resumeTaskAfter(new Error("meshy animations failed: boom"), "anim:abc"), null);
   assert.equal(resumeTaskAfter(new Error("meshy timed out"), "abc"), "abc");
+  // The haze tree (prod, 2026-11-01): refine outran the clock, then finished at Meshy; keep polling it
+  assert.ok(isRetryable("meshy refine timed out"));
+  assert.equal(resumeTaskAfter(new Error("meshy refine timed out"), "refine:r:p"), "refine:r:p");
   assert.equal(resumeTaskAfter(new Error("download failed: 403"), "refine:r:p"), "refine:r:p");
   assert.equal(resumeTaskAfter(new Error("meshy refine failed: 503"), "prev"), "prev");
   assert.equal(resumeTaskAfter(new Error("meshy rigging 500: x"), "remesh:abc"), "remesh:abc");
