@@ -53,6 +53,8 @@ Every new agent session should follow this sequence:
 
 > **➡️ NEXT UP (2026-11-02): Alex's playtest list, one fix at a time.** Fix 1 shipped: carry a sound orb → ✦ shows the words it was made from (read-only, server-enforced), and Library → Sounds places existing sounds like blocks ([Phase 07 log](./07-genai-creation.md#session-log)). Continue with the next item Alex brings; then the Studio `/grill-me` below.
 >
+> **Parked for a future session (Alex, 2026-11-02, not next):** anonymous-or-named creations, and **age-tiered worlds** (18+ / 13+ / younger, rated from each world's content) replacing the "all-ages" assumptions in the prompts. Notes + open questions: [Phase 07 → Attribution and age tiers](./07-genai-creation.md#attribution-and-age-tiers-alex-2026-11-02-not-built-future-session). Needs a `/grill-me` first.
+>
 > **Previous NEXT UP (2026-11-01, Life & minds shipped): Alex tries it on prod, then the Studio `/grill-me`.**
 > - **Shipped:** creations can be still, **alive** (free: breathes, turns to you, roams) or **animated** (Meshy remesh → rig → 4 clips, hold 50 mana), and can get a **mind**: an NPC that answers in world chat with a spoken voice. Make → Voice now works for real (OpenRouter → ElevenLabs v4 Turbo, 21 voices).
 > - **Research + live spikes:** [docs/research/2026-11-life-and-minds](../docs/research/2026-11-life-and-minds/README.md).
@@ -202,6 +204,8 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 | Multiple servers sharing world sync | New phase? (overlaps Phase 06) | Raised 2026-10-11. Today: one sync-service, single-writer SQLite. Options include server-to-server Yjs replication over the Tailnet, player routing, and data ownership. Needs a design session (`/grill-me`) before any code. Prerequisite: [auto-join](./ops-tailscale-autojoin.md) |
 | **Worlds within worlds (recursive CRDTs)** | Phase 07 / 08 | ✅ **Shipped 2026-10-23:** `WorldEntry.parentWorldId` (unlimited nesting depth; only the active world's `Y.Doc` is loaded), `🌱 Portal` tab inside worlds (`PlantWorldPanel.tsx`), `ChildWorldPortal` glowing orbs on parent terrain (`WorldInterior.tsx`), `exitWorld()` steps back up to the parent world, `/w/<id>` teleports to any depth, and `frontier.ts` solidifies child worlds when their outer-space root world enters the Living Frontier |
 | Backups run every ~3–5 h, not hourly | Ops | Found 2026-10-21: `backup.yml` is scheduled hourly, but GitHub's scheduler actually runs it every ~3–5 h, so HANDOFF's "at most ~1 h of loss" is wrong. Not fixed yet. Options: an in-cluster CronJob, or a backup in sync-service on flush |
+| **Anonymous or named creations** | Phase 07 | Raised 2026-11-02 (Alex): each prompt can be credited to the maker's name or stay anonymous (shown as the research id, maybe). Showing research ids in public lets anyone link one person's anonymous creations to each other. [Notes](./07-genai-creation.md#anonymous-or-named-per-creation) |
+| **Age-tiered worlds (not all-ages)** | Phase 07 / Ops / public pages | Raised 2026-11-02 (Alex): a world becomes 18+ when adults-only content is made in it; a 13+ teen bracket; younger brackets from an AI rating. Everyone can express everything; the tier decides who enters. Today Privacy + RESEARCH.md say 18+ only while the prompts say all-ages. Age checks, COPPA and provider policies are open. [Notes](./07-genai-creation.md#age-tiered-worlds-not-all-ages) |
 
 ---
 
