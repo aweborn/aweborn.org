@@ -53,6 +53,8 @@ Every new agent session should follow this sequence:
 
 > **➡️ NEXT UP (2026-11-02): Alex's playtest list, one fix at a time.** Fix 1 shipped: carry a sound orb → ✦ shows the words it was made from (read-only, server-enforced), and Library → Sounds places existing sounds like blocks ([Phase 07 log](./07-genai-creation.md#session-log)). Continue with the next item Alex brings; then the Studio `/grill-me` below.
 >
+> **Shipped alongside (2026-11-03, parallel session): the story stone.** Every planned world has a standing stone just ahead-left of spawn; tap it to read *How this world was made*: every planner conversation that shaped the world, public to every visitor (past ones included, Alex's call), with authors' character names. Privacy + Terms updated. Details: [Phase 07 → Stateful worlds and portable creations](./07-genai-creation.md#stateful-worlds-and-portable-creations-alex-2026-11-02). **Two standing rules from Alex** recorded there: everything is stateful like real life, and every creation (minds included, with the exact prompts that made them) must be able to come back to life in other worlds. **Portable minds need a `/grill-me`** (not next). Alex to try on prod: enter a planned world → the stone → read.
+>
 > **Parked for a future session (Alex, 2026-11-02, not next):** anonymous-or-named creations, and **age-tiered worlds** (18+ / 13+ / younger, rated from each world's content) replacing the "all-ages" assumptions in the prompts. Notes + open questions: [Phase 07 → Attribution and age tiers](./07-genai-creation.md#attribution-and-age-tiers-alex-2026-11-02-not-built-future-session). Needs a `/grill-me` first.
 >
 > **Previous NEXT UP (2026-11-01, Life & minds shipped): Alex tries it on prod, then the Studio `/grill-me`.**

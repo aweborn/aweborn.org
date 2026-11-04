@@ -16,6 +16,8 @@ import { ManaSeal, useCanChannel } from './ManaSeal'
 import { useOwnsCurrentWorld } from '../lib/worldActor'
 import { audio } from '../audio/engine'
 import { progress, refreshProgress } from '../stores/progressStore'
+import { loadMakingOf } from '../stores/makingOfStore'
+import './MakingOfPanel.css'
 
 /**
  * World Planner panel (Phase 07): talk a world into a blueprint before
@@ -386,6 +388,8 @@ export function PlannerPanel() {
           ...t,
           { who: 'planner', text: j.reply!, chips: j.chips, meta: `${MODEL_LABEL(j.model ?? model)} · ${(j.mana ?? 0).toFixed(1)} mana` },
         ])
+        // The world's story stone carries this conversation for every visitor
+        void loadMakingOf(activeWorldId)
       } catch {
         setError('The planner is resting right now. Try again soon.')
       } finally {
@@ -439,6 +443,9 @@ export function PlannerPanel() {
 
       <div className="planner-log" ref={logRef} aria-live="polite">
         {!turns.length && <p className="planner-empty">What are you dreaming of?</p>}
+        {!turns.length && (
+          <p className="planner-public">📜 This conversation stays with the world: everyone who visits can read it at its story stone.</p>
+        )}
         {turns.map((t, i) => (
           <div key={i} className={`planner-turn planner-turn--${t.who}`}>
             <p>{t.text}</p>

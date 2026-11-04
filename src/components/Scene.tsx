@@ -14,6 +14,7 @@ import { GravityFieldLines } from './GravityFieldLines'
 import { SlingshotArc } from './SlingshotArc'
 import { PortalBeacon } from './PortalBeacon'
 import { WorldInterior } from './WorldInterior'
+import { MakingOfStone } from './MakingOfStone'
 import { useUniverseStore } from '../stores/universeStore'
 import { RETURN_PORTAL_XZ } from '@aweborn/shared/crdt-schema'
 import { canEditHere } from '../lib/worldActor'
@@ -864,6 +865,8 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
 
       {/* World interior — inside a world (shown when entered) */}
       {isInWorld && <WorldInterior />}
+      {/* The story stone: how this world was made, readable by every visitor */}
+      {isInWorld && <MakingOfStone />}
 
       {/* Post-processing (off on Low) */}
       {tier.bloom && (

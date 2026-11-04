@@ -26,6 +26,7 @@ import { sendEmail } from "./email.js";
 import { CardOrders, CHECKOUT_BODY_LIMIT } from "./cards.js";
 import { CardSets } from "./card-sets.js";
 import { checkCreation } from "./safety.js";
+import { handleMakingOf } from "./making-of.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit",
@@ -771,6 +772,8 @@ const server = createServer((req, res) => {
     return;
   }
   if (handleManaPublic(req, res)) return;
+  // How a world was made: its planner conversations, public (the story stone, making-of.ts)
+  if (handleMakingOf(req, res, corsHeaders(req))) return;
   if (handleAssets(req, res)) return;
   if (handleLibrary(req, res)) return;
   if (req.url?.startsWith("/api/admin/") && handleTrashAdmin(req, res, req.url.split("?")[0], MANA_ADMIN_TOKEN, corsHeaders(req))) return;

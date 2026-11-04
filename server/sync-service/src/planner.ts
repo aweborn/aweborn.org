@@ -11,6 +11,9 @@
  * turns) and every turn, raw response and blueprint version is saved
  * (plan_sessions / plan_events) for research replay. The LLM's answer is validated with shared/blueprint.ts; one repair
  * retry inside the same hold if it doesn't parse.
+ *
+ * The conversation is public (Alex, 2026-11-02): everyone who visits the world can read
+ * how it was made at its story stone (making-of.ts reads this same log).
  */
 import { randomUUID } from "node:crypto";
 import type { RoomManager } from "./rooms.js";
@@ -20,6 +23,7 @@ import type { PlayerProgress } from "../../../shared/crdt-schema.js";
 import { estimate, parsePlannerTurn, parseEdit, applyEdit, extractJson, LIMITS, ASSET_MANA, type Blueprint, type BlueprintDraft, type BlueprintEdit } from "../../../shared/blueprint.js";
 import { checkCreation, chargeCheck, type SafetyVerdict } from "./safety.js";
 import { researchIdFor } from "./research.js";
+import { makingOfChanged } from "./making-of.js";
 
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 
@@ -107,6 +111,9 @@ function db() {
 function logEvent(sessionId: string, kind: string, payload: unknown, extra: { ref?: string; model?: string; costMana?: number; version?: number } = {}) {
   db().prepare("INSERT INTO plan_events (session_id, kind, ref, model, cost_mana, version, payload, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
     .run(sessionId, kind, extra.ref ?? null, extra.model ?? null, extra.costMana ?? null, extra.version ?? null, JSON.stringify(payload), Date.now());
+  // The world's story stone reads this log (making-of.ts): show new lines right away
+  const worldId = cache.get(sessionId)?.worldId;
+  if (worldId) makingOfChanged(worldId);
 }
 
 function saveSession(s: Session, created = false) {

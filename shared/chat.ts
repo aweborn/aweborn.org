@@ -28,10 +28,10 @@ const NOT_TEXT = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}\p{Zl}\p{Zp}]/gu;
 /** More than three combining marks in a row is a tower, not a letter. */
 const MARK_TOWER = /(\p{M}{3})\p{M}+/gu;
 
-/** Clean a raw message: a string of at most {@link CHAT_MAX_CHARS} characters, or "" if nothing is left. */
-export function cleanChatText(raw: unknown): string {
+/** Clean a raw message: a string of at most `max` characters ({@link CHAT_MAX_CHARS} for chat), or "" if nothing is left. */
+export function cleanChatText(raw: unknown, max = CHAT_MAX_CHARS): string {
   if (typeof raw !== "string") return "";
-  let s = raw.slice(0, CHAT_MAX_CHARS * 8); // bound the work before anything else
+  let s = raw.slice(0, max * 8); // bound the work before anything else
   s = s.replace(LONE_SURROGATE, "");
   try {
     s = s.normalize("NFC");
@@ -41,7 +41,7 @@ export function cleanChatText(raw: unknown): string {
   s = s.replace(/[\t\n\r\u0085\u2028\u2029]+/g, " ").replace(BAD_FORMAT, "").replace(NOT_TEXT, "");
   s = s.replace(MARK_TOWER, "$1");
   s = s.replace(/\s+/g, " ").trim();
-  return Array.from(s).slice(0, CHAT_MAX_CHARS).join("").trim();
+  return Array.from(s).slice(0, max).join("").trim();
 }
 
 // ── Profanity ────────────────────────────────────────────────────────
@@ -77,8 +77,8 @@ export function maskProfanity(text: string): string {
 }
 
 /** Full pipeline the server applies to every message: clean, then mask. */
-export function prepareChat(raw: unknown): string {
-  return maskProfanity(cleanChatText(raw));
+export function prepareChat(raw: unknown, max = CHAT_MAX_CHARS): string {
+  return maskProfanity(cleanChatText(raw, max));
 }
 
 // ── Rate limiting ────────────────────────────────────────────────────

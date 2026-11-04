@@ -1,0 +1,209 @@
+/* ── How this world was made: the story stone + its sheet (2026-11-02) ─── */
+
+.story-stone-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 166, 255, 0.45);
+  background: rgba(14, 10, 32, 0.84);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 18px rgba(170, 120, 255, 0.25);
+  color: #f4f0ff;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.story-stone-label:hover { border-color: rgba(220, 196, 255, 0.8); }
+.story-stone-label:focus-visible { outline: 2px solid #c9a6ff; outline-offset: 3px; }
+.story-stone-label__name { font-family: var(--font-display); font-size: 13px; font-weight: 700; }
+.story-stone-label__hint { font-size: 11px; color: rgba(225, 214, 255, 0.8); }
+
+/* Phone first: a bottom sheet that leaves the top of the world in view */
+.making-of {
+  position: fixed;
+  inset: auto 0 0 0;
+  margin: 0 auto;
+  width: min(560px, 100vw);
+  max-width: 100vw;
+  height: min(78dvh, 720px);
+  max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--glass-border);
+  border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(170deg, rgba(26, 18, 48, 0.96), rgba(8, 8, 26, 0.97));
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  box-shadow: var(--shadow-elevated), inset 0 1px 0 var(--glass-highlight);
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+.making-of:not([open]) { display: none; }
+.making-of[open] { animation: making-of-up 240ms var(--ease-out-expo); }
+.making-of::backdrop { background: rgba(3, 3, 14, 0.45); }
+@keyframes making-of-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+
+.making-of-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-md) var(--space-sm);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.making-of-glyph { font-size: 26px; line-height: 44px; flex: none; }
+.making-of-head-text { flex: 1; min-width: 0; padding-top: 4px; }
+.making-of-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.making-of-sub { margin: 2px 0 0; font-size: var(--text-sm); color: var(--color-text-tertiary); overflow-wrap: anywhere; }
+.making-of-close {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+.making-of-close:hover { color: var(--color-text-primary); border-color: rgba(255, 255, 255, 0.3); }
+
+.making-of-log {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-sm) var(--space-md) calc(var(--space-lg) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+.making-of-empty { margin: var(--space-lg) 0; text-align: center; color: var(--color-text-tertiary); }
+
+.making-of-session { display: flex; flex-direction: column; gap: 10px; }
+.making-of-session-head {
+  position: sticky;
+  top: calc(-1 * var(--space-sm));
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+  margin: 0 calc(-1 * var(--space-md));
+  padding: 8px var(--space-md);
+  background: rgba(16, 12, 36, 0.92);
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #d9c6ff;
+}
+.making-of-session-meta { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; color: var(--color-text-tertiary); }
+
+.making-of-turn { display: flex; flex-direction: column; gap: 3px; max-width: 88%; }
+.making-of-turn--player { align-self: flex-end; align-items: flex-end; }
+.making-of-turn--planner { align-self: flex-start; align-items: flex-start; }
+.making-of-who { font-size: var(--text-xs); color: var(--color-text-tertiary); }
+.making-of-bubble {
+  margin: 0;
+  padding: 9px 13px;
+  border-radius: 16px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.making-of-turn--player .making-of-bubble { background: rgba(120, 90, 220, 0.32); border-bottom-right-radius: 4px; }
+.making-of-turn--planner .making-of-bubble {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(201, 166, 255, 0.18);
+  border-bottom-left-radius: 4px;
+}
+.making-of-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.making-of-chips li {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px dashed rgba(201, 166, 255, 0.35);
+  font-size: var(--text-xs);
+  color: rgba(225, 214, 255, 0.75);
+}
+.making-of-note {
+  align-self: center;
+  margin: 0;
+  max-width: 92%;
+  text-align: center;
+  font-size: var(--text-xs);
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.making-of-fold { align-self: center; display: flex; flex-direction: column; gap: 6px; max-width: 92%; }
+.making-of-fold > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  font-size: var(--text-xs);
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  list-style: none;
+}
+.making-of-fold > summary::-webkit-details-marker { display: none; }
+.making-of-fold > summary::after { content: ' ▸'; font-style: normal; margin-left: 4px; }
+.making-of-fold[open] > summary::after { content: ' ▾'; }
+.making-of-fold > summary:focus-visible { outline: 2px solid #c9a6ff; outline-offset: 2px; }
+
+/* Landscape phones: use the full short height */
+@media (max-height: 480px) and (orientation: landscape) {
+  .making-of { height: calc(100dvh - env(safe-area-inset-top) - 8px); width: min(620px, 100vw - 32px); }
+}
+
+/* Desktop: a panel on the right, the world (and the stone) still in view */
+@media (min-width: 900px) and (min-height: 560px) {
+  .making-of {
+    inset: 16px 16px 16px auto;
+    margin: 0;
+    width: 440px;
+    height: auto;
+    max-height: none;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+  }
+  .making-of::backdrop { background: transparent; }
+  .making-of[open] { animation-name: making-of-in; }
+  @keyframes making-of-in {
+    from { opacity: 0; transform: translateX(16px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+/* The planner tells its maker the conversation is public (PlannerPanel) */
+.planner-public {
+  margin: 4px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}

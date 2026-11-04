@@ -1,5 +1,6 @@
 import { CreatePanel } from './components/CreatePanel'
 import { PlannerPanel } from './components/PlannerPanel'
+import { MakingOfPanel } from './components/MakingOfPanel'
 import { ManaTracker } from './components/ManaTracker'
 import { LibraryPanel } from './components/LibraryPanel'
 import { HeldItemBar } from './components/HeldItemBar'
@@ -165,6 +166,7 @@ export default function App() {
         <>
           <CreatePanel />
           <PlannerPanel />
+          <MakingOfPanel />
           <ManaTracker />
           <LibraryPanel />
           <HeldItemBar />
