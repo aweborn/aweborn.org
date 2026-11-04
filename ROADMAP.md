@@ -483,7 +483,7 @@ Tap = cycle to next option. Hold = quick-select radial (rendered in-game, no UI 
 | State | What Happens | Feel |
 |-------|-------------|------|
 | **Deep space** | Star drifts at current velocity with very slow deceleration | Floating in an ocean at night |
-| **Approaching a well** | Trajectory bends toward nearby world, faint curved field lines appear, warm audio hum grows | A river current catching your canoe |
+| **Approaching a well** | Trajectory bends toward nearby world, faint curved field lines appear, the world's music grows as the universe music fades | A river current catching your canoe |
 | **Captured orbit** | Star settles into gentle orbit, other orbiting players visible | Sitting on a park bench near a campfire |
 | **Gravitational slingshot** | High-velocity pass — path curves dramatically, speed boost from gravity assist | Skateboarder hitting a halfpipe |
 
@@ -839,14 +839,35 @@ The mana pool is not a hidden number. The entire universe reflects its state thr
 
 *(Percent of what is open: e.g. the creative share relative to 30 days of typical draw. The treasury pool itself is shown smoothed.)*
 
-**Audio** — the universe breathes:
+**Audio** — the universe breathes, and it sings:
 
-| Pool Level | Ambient | Creation Sound |
+*(Music decided 2026-11-03.)* The universe has **music that is always on**: one continuous, generative piece synthesized live in the browser (no files, works offline). The feel is **cosmic and dreamy** (lush evolving synth pads and slow swells, in the spirit of Vangelis, Stellaris and *Hearts of Space*), and the color is **wonder that drifts**: mostly bright and hopeful (Lydian, open fifths), slowly passing through bittersweet minor chords and back, never sitting in one mood. The pool shapes how full it is, but the universe is **never silent**.
+
+| Pool Level | Music | Creation Sound |
 |-----------|---------|---------------|
-| **High** | Warm, full harmonic hum — the universe is alive | Drawing mana to create: a satisfying deep exhale, as if the universe is breathing *through* you |
-| **Medium** | Gentle baseline hum | Standard creation sound |
-| **Low** | Near-silence — occasional distant tone | Creation sound is thinner, more effortful |
-| **Critical** | Silence — the universe is dormant | A strained whisper — creation is possible but the universe is tired |
+| **High** | Lush and full: every layer, bright and wide — the universe is alive | Drawing mana to create: a satisfying deep exhale, as if the universe is breathing *through* you |
+| **Medium** | Calmer: fewer layers, softer swells | Standard creation sound |
+| **Low** | Thin and sparse: a pad and a distant lead | Creation sound is thinner, more effortful |
+| **Critical** | One faint voice — the universe is tired, never dead | A strained whisper — creation is possible but the universe is tired |
+
+The music also follows the player and the sky:
+
+- **Day and night:** the real solar cycle makes it warmer and brighter by day, deeper and more spacious by night.
+- **Flight:** speed opens the sound and adds motion; a warp pulls everything into the charge and lands on a new chord.
+- **Places:** a recognizable **home theme near Origin**; near the **Frontier edge and Ghost worlds** it grows more distant and unresolved.
+- **Company:** other players nearby each add a faint voice to the harmony.
+
+**Every world sings.** Each world is a sound source in space, and what you hear from outside is what plays inside:
+
+- A world nobody has prompted plays **its own version of the universe music, seeded from its ID** (its own key, lead voice and tempo of swells), so every world sounds different as you pass.
+- **The World Planner gives every planned world one music piece** (one long instrumental loop, about 3 minutes), generated at Manifest with the rest of the world; it replaces the seeded music. Owners of older worlds can add one later (planner or Make → Music → *Use as world music*).
+- If the creator sets an **ambient world sound**, it replaces the music, inside and from outside.
+- Flying past, the universe music **crossfades by distance** into the nearest world's music; only the one or two closest worlds play, and generated music downloads only when you get close.
+- Generated music is **instrumental for now**; layered music, lyrics and real clips come with the Studio. Once worlds are age-tiered, players outside a world's tier hear its seeded music instead of explicit music.
+
+**You hear from your avatar.** Positional sound is heard at the player's model, facing the way the model faces (not from the camera). Music and sounds have separate volume sliders.
+
+*Later:* voice chat between players (see Ephemeral P2P Data).
 
 **The Donation Moment — The Solidification Wave:** When someone donates while players are online, the pool swells, the high-water line rises and the Living Frontier physically expands. A **wave of golden light ripples outward from the Aweborn Portal**. Ghost worlds caught in its path **solidify in real time** on the universe map: wireframes fill with color and particles burst. Every player sees and feels it. **The only donor perk is recognition, and it's opt-in:** "A wave of light from ★ Alex" or "A wave of light from ★ a generous soul".
 

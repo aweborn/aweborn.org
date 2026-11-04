@@ -51,7 +51,9 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **➡️ NEXT UP (2026-11-02): Alex's playtest list, one fix at a time.** Fix 1 shipped: carry a sound orb → ✦ shows the words it was made from (read-only, server-enforced), and Library → Sounds places existing sounds like blocks ([Phase 07 log](./07-genai-creation.md#session-log)). Continue with the next item Alex brings; then the Studio `/grill-me` below.
+> **➡️ NEXT UP (2026-11-03): universe & world music, slice 1 (the universe music engine replaces the drone).** Grilled with Alex 2026-11-03: cosmic/dreamy generative synth, Lydian wonder drifting bittersweet, always on, every world sings in space, planner adds one ~3 min instrumental loop per world, ears on the avatar. Decisions + 6 build slices: [Phase 07 → Universe & world music](./07-genai-creation.md#universe--world-music-alex-2026-11-03-grill). The ElevenLabs key **is set** (Alex); older "waiting on `ELEVENLABS_API_KEY`" notes below are stale.
+>
+> **➡️ Previous NEXT UP (2026-11-02): Alex's playtest list, one fix at a time.** Fix 1 shipped: carry a sound orb → ✦ shows the words it was made from (read-only, server-enforced), and Library → Sounds places existing sounds like blocks ([Phase 07 log](./07-genai-creation.md#session-log)). Continue with the next item Alex brings; then the Studio `/grill-me` below.
 >
 > **Shipped alongside (2026-11-03, parallel session): the story stone.** Every planned world has a standing stone just ahead-left of spawn; tap it to read *How this world was made*: every planner conversation that shaped the world, public to every visitor (past ones included, Alex's call), with authors' character names. Privacy + Terms updated. Details: [Phase 07 → Stateful worlds and portable creations](./07-genai-creation.md#stateful-worlds-and-portable-creations-alex-2026-11-02). **Two standing rules from Alex** recorded there: everything is stateful like real life, and every creation (minds included, with the exact prompts that made them) must be able to come back to life in other worlds. **Portable minds need a `/grill-me`** (not next). Alex to try on prod: enter a planned world → the stone → read.
 >
@@ -169,6 +171,7 @@ These were resolved in planning sessions and are codified in [ROADMAP.md](../ROA
 
 | Decision | Resolution | Date |
 |----------|-----------|------|
+| Universe & world music | Always-on generative synth (cosmic/dreamy, Lydian wonder drifting bittersweet), pool shapes it but never silent; every world sings in space (seeded from its ID, or one ~3 min instrumental planner loop; creator ambient sound replaces it); distance crossfade; ears on the avatar; Music/Sounds sliders. ROADMAP audio section rewritten. [Phase 07](./07-genai-creation.md#universe--world-music-alex-2026-11-03-grill) | Nov 3, 2026 |
 | Server architecture | Stateful VPS (Lightsail) for real-time CRDT sync; Lambda for webhooks only | Aug 19, 2026 |
 | Container orchestration | k3s on Ubuntu 22.04 with Caddy DaemonSet for auto-TLS | Aug 20, 2026 |
 | Infrastructure as Code | All AWS resources in CloudFormation templates | Aug 20, 2026 |
