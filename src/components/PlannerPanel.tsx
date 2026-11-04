@@ -3,7 +3,7 @@ import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
 import { refreshMana } from '../stores/manaTrackerStore'
 import type { Blueprint, BlueprintEdit } from '@aweborn/shared/blueprint'
-import { DEFAULT_ASSET_SIZE } from '@aweborn/shared/blueprint'
+import { ASSET_MANA, DEFAULT_ASSET_SIZE } from '@aweborn/shared/blueprint'
 import { usePlannerStore } from '../stores/plannerStore'
 import { setVoxelTerrain, placeModel, replaceModelAsset, useWorldStore } from '../stores/worldStore'
 import { usePresence } from '../hooks/usePresence'
@@ -194,7 +194,11 @@ export function PlannerPanel() {
           if (!res.ok) continue
           const j = (await res.json()) as { status: Making['status']; progress: number; asset?: string; error?: string }
           if (j.status === 'complete' || j.status === 'failed') void refreshMana()
-          if (j.status === 'complete' && j.asset) {
+          if (j.status === 'complete' && j.asset && m.asset.kind === 'music') {
+            // The world's music: the server makes it the world's music for everyone (inside and in space)
+            audio.creationDone()
+            void refreshProgress()
+          } else if (j.status === 'complete' && j.asset) {
             const doc = useUniverseStore.getState().activeWorldDoc
             const at = m.asset.at ?? [m.terrain.size[0] / 2, 0, m.terrain.size[2] / 2]
             const p = placeOnTerrain(m.terrain, at)
@@ -251,7 +255,7 @@ export function PlannerPanel() {
           const byKey = new Map(bp.assets.map((a) => [a.key, a]))
           const latest = new Map(j.session.jobs.map((x) => [x.key, x.jobId]))
           setMakings(
-            [...latest].filter(([key]) => byKey.has(key) && !placed.has(`${bp.id}:${key}`)).map(([key, jobId]): Making => ({
+            [...latest].filter(([key]) => byKey.has(key) && byKey.get(key)!.kind !== 'music' && !placed.has(`${bp.id}:${key}`)).map(([key, jobId]): Making => ({
               key, jobId, status: 'queued', progress: 0, asset: byKey.get(key)!, blueprintId: bp.id, terrain: bp.terrain,
             })),
           )
@@ -319,7 +323,7 @@ export function PlannerPanel() {
     setManifesting(true)
     setError(null)
     try {
-      const modelKeys = keys ?? blueprint.assets.filter((a) => a.kind === 'model' || a.kind === 'terrain-piece').map((a) => a.key)
+      const modelKeys = keys ?? blueprint.assets.filter((a) => a.kind === 'model' || a.kind === 'terrain-piece' || (a.kind === 'music' && ownsWorld)).map((a) => a.key)
       const res = await fetch(`${AUTH_URL}/api/player/plan/manifest`, {
         method: 'POST',
         credentials: 'include',
@@ -354,7 +358,7 @@ export function PlannerPanel() {
     } finally {
       setManifesting(false)
     }
-  }, [blueprint, sessionId, manifesting, activeWorldId])
+  }, [blueprint, sessionId, manifesting, activeWorldId, ownsWorld])
 
   const send = useCallback(
     async (text: string) => {
@@ -503,20 +507,24 @@ export function PlannerPanel() {
           <ul className="planner-assets">
             {blueprint.assets.map((a) => {
               const isModel = a.kind === 'model' || a.kind === 'terrain-piece'
+              const isMusic = a.kind === 'music'
               const placed = placedKeys.has(`${blueprint.id}:${a.key}`)
               const size = Math.max(...(a.size ?? DEFAULT_ASSET_SIZE))
               const name = a.key.replace(/-/g, ' ')
               return (
                 <li key={a.key}>
                   <div className="planner-asset-head">
-                    <strong>{a.key}</strong> <em>{a.kind}{a.quality === 'full' ? ' · full' : ''}{isModel ? ` · ${size.toFixed(1)} m` : ''}{placed ? ' · placed' : ''}</em>
+                    <strong>{a.key}</strong> <em>{isMusic ? '♪ the world’s music · ~3 min' : a.kind}{a.quality === 'full' ? ' · full' : ''}{isModel ? ` · ${size.toFixed(1)} m` : ''}{placed ? ' · placed' : ''}</em>
                   </div>
                   <span>{a.prompt}</span>
                   <div className="planner-asset-tools" role="group" aria-label={`Change ${name}`}>
                     {isModel && !placed && (
                       <button type="button" className="planner-tool" title="Make just this one" aria-label={`Make ${name}`} disabled={manifesting || busy} onClick={() => void manifest([a.key])}>✦</button>
                     )}
-                    {isModel && (
+                    {isMusic && ownsWorld && (
+                      <button type="button" className="planner-tool" title="Make the world’s music" aria-label="Make the world’s music" disabled={manifesting || busy} onClick={() => void manifest([a.key])}>✦</button>
+                    )}
+                    {(isModel || (isMusic && ownsWorld)) && (
                       <button type="button" className="planner-tool" title="Make this one again" aria-label={`Remake ${name}`} onClick={() => { setRedoKey(redoKey === a.key ? null : a.key); setRedoNote(''); setWordKey(null) }}>↻</button>
                     )}
                     {isModel && !placed && (
@@ -526,7 +534,9 @@ export function PlannerPanel() {
                       </>
                     )}
                     <button type="button" className="planner-tool" title="Reword" aria-label={`Reword ${name}`} disabled={editing} onClick={() => { setWordKey(wordKey === a.key ? null : a.key); setWordText(a.prompt); setRedoKey(null) }}>✎</button>
-                    <button type="button" className="planner-tool planner-tool--remove" title={placed ? 'Remove from the plan (what’s placed stays)' : 'Remove from the plan'} aria-label={`Remove ${name} from the plan`} disabled={editing} onClick={() => void edit({ op: 'remove', key: a.key })}>✕</button>
+                    {!isMusic && (
+                      <button type="button" className="planner-tool planner-tool--remove" title={placed ? 'Remove from the plan (what’s placed stays)' : 'Remove from the plan'} aria-label={`Remove ${name} from the plan`} disabled={editing} onClick={() => void edit({ op: 'remove', key: a.key })}>✕</button>
+                    )}
                   </div>
                   {wordKey === a.key && (
                     <form className="planner-redo-form planner-word-form" onSubmit={(e) => { e.preventDefault(); void edit({ op: 'prompt', key: a.key, prompt: wordText }).then((ok) => { if (ok) setWordKey(null) }) }}>
@@ -557,7 +567,7 @@ export function PlannerPanel() {
                         onChange={(e) => setRedoNote(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRedoKey(null) } }}
                       />
-                      <button type="submit" className="planner-redo-go">Remake ✦ 60</button>
+                      <button type="submit" className="planner-redo-go">Remake ✦ {ASSET_MANA[a.kind].quick}</button>
                     </form>
                   )}
                 </li>
@@ -598,7 +608,7 @@ export function PlannerPanel() {
             <li key={`${m.key}-${m.jobId ?? m.status}`} className={`planner-making planner-making--${m.status}`}>
               <span>{m.key.replace(/-/g, ' ')}</span>
               <span className="planner-making-state">
-                {m.status === 'complete' ? 'made ✦' : m.status === 'later' ? 'later' : m.status === 'failed' ? (m.message ?? 'failed') : `${m.progress}%`}
+                {m.status === 'complete' ? (m.asset.kind === 'music' ? 'playing ♪' : 'made ✦') : m.status === 'later' ? 'later' : m.status === 'failed' ? (m.message ?? 'failed') : `${m.progress}%`}
               </span>
               {(m.status === 'queued' || m.status === 'processing') && (
                 <span className="planner-making-bar" style={{ width: `${Math.max(4, m.progress)}%` }} />
@@ -621,7 +631,7 @@ export function PlannerPanel() {
             {!ownsWorld ? 'Terrain: creator only' : terrainShaped ? 'Terrain shaped ✓' : worldTerrain ? 'Reshape terrain' : 'Shape terrain'}
           </button>
           <button id="planner-manifest" className="planner-manifest" type="button" onClick={() => void manifest()} disabled={manifesting || busy}>
-            {manifesting ? 'Manifesting…' : `Make models ✦ ≈${blueprint.estimate.items.reduce((s, i) => s + i.mana, 0)} mana`}
+            {manifesting ? 'Manifesting…' : `${ownsWorld ? 'Make models + music' : 'Make models'} ✦ ≈${blueprint.estimate.items.filter((i) => ownsWorld || blueprint.assets.find((a) => a.key === i.key)?.kind !== 'music').reduce((s, i) => s + i.mana, 0)} mana`}
           </button>
         </div>
       )}

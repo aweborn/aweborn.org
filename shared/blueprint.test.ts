@@ -65,3 +65,25 @@ test("applyEdit prompt, rename, unknown key", () => {
   assert.ok(n.ok && n.value.name === "Moss garden" && n.value.assets.length === 2);
   assert.equal(applyEdit(d, { op: "remove", key: "nope" }).ok, false);
 });
+
+test("every planned world has exactly one music asset, and it can't be removed", async () => {
+  const { ensureWorldMusic, WORLD_MUSIC_KEY, WORLD_MUSIC_SECONDS, ASSET_MANA } = await import("./blueprint.ts");
+  const { makeEstimate } = await import("./make-costs.ts");
+  const d = draft();
+  const before = JSON.stringify(d);
+  const m = ensureWorldMusic(d);
+  assert.equal(JSON.stringify(d), before, "never mutates");
+  const music = m.assets.filter((a) => a.kind === "music");
+  assert.equal(music.length, 1);
+  assert.equal(music[0].key, WORLD_MUSIC_KEY);
+  assert.match(music[0].prompt, /Tea garden/);
+  assert.equal(ensureWorldMusic(m), m, "already has one: unchanged");
+  const two = ensureWorldMusic({ ...m, assets: [...m.assets, { key: "song-2", kind: "music", prompt: "another", quality: "quick" }] });
+  assert.equal(two.assets.filter((a) => a.kind === "music").length, 1);
+  assert.equal(two.assets.find((a) => a.kind === "music")!.key, WORLD_MUSIC_KEY, "keeps the first");
+  const r = applyEdit(m, { op: "remove", key: WORLD_MUSIC_KEY });
+  assert.equal(r.ok, false);
+  const reword = applyEdit(m, { op: "prompt", key: WORLD_MUSIC_KEY, prompt: "soft harp and rain" });
+  assert.ok(reword.ok);
+  assert.equal(ASSET_MANA.music.quick, makeEstimate("music", { seconds: WORLD_MUSIC_SECONDS }));
+});

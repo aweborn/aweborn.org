@@ -148,6 +148,12 @@ export async function startJob(
 
 interface JobView { status: string; progress: number; asset: string | null; costUsd: number | null; error: string | null }
 
+/** Who started a job, for what (planner.ts: a finished world-music job sets the world's music). */
+export function creationOf(jobId: string): { ref: string; playerId: string; kind: string } | undefined {
+  const c = creations.get(jobId);
+  return c ? { ref: c.ref, playerId: c.playerId, kind: c.kind ?? "model" } : undefined;
+}
+
 /** Called once when a job settles (minds.ts applies a finished rig to its object; a failure tells it too). */
 type DoneHook = (jobId: string, outcome: { ok: true; asset: string } | { ok: false; error: string }) => void;
 const doneHooks: DoneHook[] = [];

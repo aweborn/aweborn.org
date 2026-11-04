@@ -280,8 +280,8 @@ class WarpSystem {
         break
     }
 
-    // Sound: rising charge, the crack on release, a hum near worlds (Rough Draft M2).
-    audio.warp(this._phase, this._chargeProgress, this._candidates[0]?.distance ?? Infinity)
+    // Sound: rising charge, the crack on release (Rough Draft M2). Near worlds, their music grows (the music director).
+    audio.warp(this._phase, this._chargeProgress)
   }
 
   /** Get current warp state (for HUD/visuals). */

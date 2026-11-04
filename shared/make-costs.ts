@@ -22,7 +22,7 @@ export const MAKE_SKILL = {
 } as const satisfies Record<MakeKind, string>;
 
 export const SOUND_SECONDS = { min: 1, max: 22, default: 5 } as const;
-export const MUSIC_SECONDS = { min: 10, max: 120, default: 30 } as const;
+export const MUSIC_SECONDS = { min: 10, max: 180, default: 30 } as const; // 180: a world's music (blueprint WORLD_MUSIC_SECONDS)
 /** Voice lines and lore prompts are short on purpose (cost + safety review). */
 export const VOICE_MAX_CHARS = 600;
 

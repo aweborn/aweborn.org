@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
-import { placeMedia, placeModel, setObjectLife, setWorldSound, useWorldStore } from '../stores/worldStore'
+import { placeMedia, placeModel, setObjectLife, setWorldMusic, setWorldSound, useWorldStore } from '../stores/worldStore'
 import { VOICES, VOICE_IDS, type VoiceId } from '@aweborn/shared/life'
 import { openLife } from '../stores/lifeStore'
 import { placeOnTerrain } from '../stores/worldVoxels'
@@ -40,7 +40,7 @@ interface Making {
   progress: number
   status: 'queued' | 'processing' | 'complete' | 'failed'
   message?: string
-  /** Sounds/music, once made: offered as the world's own sound. */
+  /** Sounds/music, once made: a sound is offered as the world's own sound, music as the world's music. */
   asset?: string
   /** Objects made to come alive (A-pose): placed breathing, then the Life sheet opens. */
   alive?: boolean
@@ -249,7 +249,8 @@ export function CreatePanel() {
   const makeWorldSound = (m: Making) => {
     const doc = useUniverseStore.getState().activeWorldDoc
     if (!doc || !m.asset) return
-    setWorldSound(doc, m.asset)
+    if (m.kind === 'music') setWorldMusic(doc, m.asset)
+    else setWorldSound(doc, m.asset)
     setMakings((all) => all.filter((x) => x.jobId !== m.jobId))
   }
 
@@ -268,7 +269,7 @@ export function CreatePanel() {
               </span>
               {m.status === 'complete' && m.asset && canSetWorldSound && (
                 <button type="button" id={`make-world-sound-${m.jobId}`} className="create-making-action" onClick={() => makeWorldSound(m)}>
-                  Make it this world’s sound
+                  {m.kind === 'music' ? 'Use as world music ♪' : 'Make it this world’s sound'}
                 </button>
               )}
               {m.status !== 'failed' && m.status !== 'complete' && (

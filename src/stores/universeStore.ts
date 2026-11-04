@@ -19,6 +19,7 @@ import {
   positionToSector,
   adjacentSectorKeys,
   ORIGIN_WORLD_ID,
+  worldSoundFields,
 } from "@aweborn/shared/crdt-schema";
 import { useWorldStore } from "./worldStore";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
@@ -139,6 +140,7 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     ...(parentWorldId ? { parentWorldId } : {}),
     ...(allowPortals !== undefined ? { allowPortals } : {}),
     ...coCreatorsField(m.get("coCreators")),
+    ...worldSoundFields(m.get("music"), m.get("ambientSound")),
   };
 }
 

@@ -254,6 +254,7 @@ app.post("/jobs", (req, res) => {
   } else if (params && typeof params === "object") {
     if (typeof params.seconds === "number" && Number.isFinite(params.seconds)) p.seconds = params.seconds;
     if (typeof params.loop === "boolean") p.loop = params.loop;
+    if (params.instrumental === true) p.instrumental = true;
     if (typeof params.voice === "string" && /^[a-z]{2,16}$/.test(params.voice)) p.voice = params.voice;
     if (params.pose === "a-pose") p.pose = "a-pose";
   }

@@ -18,7 +18,7 @@ import type {
   PlacedObject,
   ChatMessage,
 } from "@aweborn/shared/crdt-schema";
-import { DEFAULT_PHYSICS } from "@aweborn/shared/crdt-schema";
+import { DEFAULT_PHYSICS, worldSoundFields } from "@aweborn/shared/crdt-schema";
 import { progress } from "./progressStore";
 import { cleanColor } from "@aweborn/shared/library";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
@@ -81,7 +81,6 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
   if (!name) return null;
   const parentWorldId = meta.get("parentWorldId") as string | undefined;
   const allowPortals = meta.get("allowPortals") as boolean | undefined;
-  const ambientSound = meta.get("ambientSound") as string | undefined;
   return {
     name,
     creator: (meta.get("creator") as string) ?? "",
@@ -90,7 +89,7 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
     solidified: (meta.get("solidified") as boolean) ?? false,
     ...(parentWorldId ? { parentWorldId } : {}),
     ...(allowPortals !== undefined ? { allowPortals } : {}),
-    ...(typeof ambientSound === "string" && /^[a-f0-9]{64}\.(mp3|wav)$/.test(ambientSound) ? { ambientSound } : {}),
+    ...worldSoundFields(meta.get("music"), meta.get("ambientSound")),
     ...coCreatorsField(meta.get("coCreators")),
   };
 }
@@ -443,6 +442,13 @@ export function setWorldSound(doc: Y.Doc, asset: string | null): void {
   const meta = doc.getMap("meta");
   if (asset) meta.set("ambientSound", asset);
   else meta.delete("ambientSound");
+}
+
+/** The world's music (2026-11-03): one long loop, heard inside and from space. Owners only, like the world sound. Null clears it. */
+export function setWorldMusic(doc: Y.Doc, asset: string | null): void {
+  const meta = doc.getMap("meta");
+  if (asset) meta.set("music", asset);
+  else meta.delete("music");
 }
 
 /**

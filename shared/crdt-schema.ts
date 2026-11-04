@@ -114,6 +114,14 @@ export interface WorldEntry {
 
   /** Players the creator named as co-creators: they may change anything in the world (Rough Draft M1). Server-written. */
   coCreators?: string[];
+
+  /**
+   * The world's music and ambient sound, mirrored by the server from the world's
+   * own meta so it can sing in space before anyone loads its doc (2026-11-03).
+   * Each is a generated file name (`<sha256>.mp3|wav`). Server-written.
+   */
+  music?: string;
+  ambientSound?: string;
 }
 
 /** Fixed interior XZ coordinates of the Return Portal inside any nested child world (right behind the `(0, 10)` spawn). */
@@ -249,8 +257,21 @@ export interface WorldMeta {
   parentWorldId?: string;
   allowPortals?: boolean;
   coCreators?: string[];
-  /** The world's own sound (Rough Draft M5): a generated sound/music file that loops for everyone inside. */
+  /** The world's own sound (Rough Draft M5): a generated sound/music file that loops for everyone inside. Replaces the music, inside and from space. */
   ambientSound?: string;
+  /** The world's music (2026-11-03): one long instrumental loop, from the planner or Make → Music. Absent = the world's seeded version of the universe music. */
+  music?: string;
+}
+
+/** A generated audio file name, as stored in world meta. */
+export const AUDIO_ASSET_RE = /^[a-f0-9]{64}\.(mp3|wav)$/;
+
+/** `{ music, ambientSound }` from untrusted values: only well-formed file names survive. */
+export function worldSoundFields(music: unknown, ambientSound: unknown): { music?: string; ambientSound?: string } {
+  return {
+    ...(typeof music === "string" && AUDIO_ASSET_RE.test(music) ? { music } : {}),
+    ...(typeof ambientSound === "string" && AUDIO_ASSET_RE.test(ambientSound) ? { ambientSound } : {}),
+  };
 }
 
 /**

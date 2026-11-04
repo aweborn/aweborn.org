@@ -86,7 +86,7 @@ export function DisplaySettings() {
           <div className="display-settings-title">Display</div>
           <QualityControl />
           <div className="display-settings-title display-settings-title--sub">Sound</div>
-          <SoundControl idPrefix="display" label="Volume" />
+          <SoundControl idPrefix="display" label="Mute all" />
           <button
             id="display-photo-mode"
             type="button"

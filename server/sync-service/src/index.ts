@@ -13,7 +13,7 @@ import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
 import { MindHost, startAnimate, createMind } from "./minds.js";
-import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore } from "./planner.js";
+import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore, hookWorldMusic } from "./planner.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
 import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
@@ -40,6 +40,8 @@ initDb();
 const auth = await initAuth(getDb());
 const authHandler = auth ? toNodeHandler(auth) : null;
 const rooms = new RoomManager();
+rooms.sweepWorldSounds();
+hookWorldMusic(rooms);
 // Minds (Phase 07 Life & minds): placed creations that hear world chat and answer
 const minds = new MindHost(rooms);
 rooms.onWorldChat = (worldId, playerId, text, at) => minds.heard(worldId, playerId, text, at);
@@ -480,10 +482,10 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   if (path === "/api/player/plan/models" && req.method === "GET") return plannerModels(json);
   if (path === "/api/player/plan/redo" && req.method === "POST") {
-    return planRedo(rooms, session.playerId, await readJson(req).catch(() => null), json);
+    return planRedo(rooms, session.playerId, await readJson(req).catch(() => null), json, session.userId);
   }
   if (path === "/api/player/plan/manifest" && req.method === "POST") {
-    return planManifest(rooms, session.playerId, await readJson(req).catch(() => null), json);
+    return planManifest(rooms, session.playerId, await readJson(req).catch(() => null), json, session.userId);
   }
   if (path === "/api/player/plan" && req.method === "GET") {
     return planResume(session.playerId, new URL(req.url ?? "/", "http://x").searchParams.get("worldId") ?? "", json);

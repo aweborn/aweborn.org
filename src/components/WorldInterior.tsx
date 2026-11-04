@@ -18,7 +18,7 @@ import type { BlueprintSky } from '@aweborn/shared/blueprint'
 import { RETURN_PORTAL_XZ, type WorldEntry } from '@aweborn/shared/crdt-schema'
 import { useHeldItemStore, computePlacementTarget, computeTerrainTarget } from '../stores/heldItemStore'
 import { interiorController } from '../systems/InteriorController'
-import { PictureObject, SoundObject, SignObject, WorldSound, SpatialListener, ORB_GEO, RING_GEO } from './MediaObjects'
+import { PictureObject, SoundObject, SignObject, ORB_GEO, RING_GEO } from './MediaObjects'
 import { SOUND_COLORS } from '../lib/soundKinds'
 import { LivingModel } from './LivingModel'
 import { cleanLife } from '@aweborn/shared/life'
@@ -658,7 +658,6 @@ export function WorldInterior() {
   const fogColor = useMemo(() => new THREE.Color(worldColor).multiplyScalar(0.15), [worldColor])
   const objectList = useMemo(() => Array.from(objects.values()), [objects])
   // Living creations groan, step and speak too (Life & minds)
-  const hasSounds = useMemo(() => objectList.some((o) => o.type === 'sound' || isLiving(o)), [objectList])
 
   if (!activeWorldId || !loaded) return null
 
@@ -688,8 +687,7 @@ export function WorldInterior() {
           <PlacedObjectMesh key={obj.id} obj={obj} worldColor={worldColor} fogFar={atmo?.fogFar ?? 200} />
         ),
       )}
-      {(hasSounds || meta?.ambientSound) && <SpatialListener />}
-      {meta?.ambientSound && <WorldSound key={meta.ambientSound} asset={meta.ambientSound} />}
+      {/* The world's music / ambient sound and the ears (on your character) live in MusicDriver */}
 
       {/* Nested child worlds planted inside this world */}
       <ChildWorldPortals parentWorldId={activeWorldId} />

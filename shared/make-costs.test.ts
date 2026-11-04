@@ -9,7 +9,7 @@ test("estimates follow MANA_COSTS", () => {
   assert.equal(makeEstimate("sound"), 2); // 5 s default: ceil(1) + 1
   assert.equal(makeEstimate("sound", { seconds: 20 }), 5);
   assert.equal(makeEstimate("music", { seconds: 30 }), 9); // ceil(7.5) + 1
-  assert.equal(makeEstimate("music", { seconds: 9999 }), 31); // clamped to 120 s
+  assert.equal(makeEstimate("music", { seconds: 9999 }), 46); // clamped to 180 s (a world's music)
   assert.equal(makeEstimate("voice", { chars: 100 }), 0.9);
   assert.equal(makeEstimate("voice", { chars: 600 }), 2.9);
   assert.equal(makeEstimate("lore"), 2);

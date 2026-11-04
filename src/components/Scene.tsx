@@ -38,6 +38,7 @@ import { flightController } from '../systems/FlightController'
 import { cameraController } from '../systems/CameraController'
 import { gravitySystem } from '../systems/GravitySystem'
 import { warpSystem } from '../systems/WarpSystem'
+import { MusicDriver } from './MusicDriver'
 import { sceneHints, setPickCamera } from '../systems/tapTargeting'
 import { teleportSystem } from '../systems/TeleportSystem'
 import { starModSlots } from '../systems/StarModSlots'
@@ -848,6 +849,8 @@ function SceneContent({ onPortalActivate }: { onPortalActivate: () => void }) {
 
       {/* World escape handler */}
       <WorldEscapeHandler />
+      {/* The music: always on, every world sings, ears on your character (2026-11-03) */}
+      <MusicDriver />
 
       {/* Interior movement + camera (only when in a world) */}
       {isInWorld && <InteriorSystem playerColor={playerColor} />}

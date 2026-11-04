@@ -313,59 +313,6 @@ export function SignObject({ obj, fogFar }: { obj: PlacedObject; fogFar: number 
   )
 }
 
-// ── The world's own sound + the listener ─────────────────────────────
-
-/** The world's sound (meta.ambientSound): everywhere inside, soft, looping. */
-export function WorldSound({ asset }: { asset: string }) {
-  const node = useRef<{ src: AudioBufferSourceNode; gain: GainNode } | null>(null)
-  const loading = useRef(false)
-
-  useEffect(() => {
-    return () => {
-      const n = node.current
-      node.current = null
-      if (!n) return
-      const t = n.gain.context.currentTime
-      n.gain.gain.setTargetAtTime(0, t, 0.4)
-      try {
-        n.src.stop(t + 1.5)
-      } catch {
-        /* stopped */
-      }
-    }
-  }, [asset])
-
-  // Waits for the first tap (no context before it), then starts once
-  useFrame(() => {
-    if (node.current || loading.current) return
-    const bus = audio.worldBus()
-    if (!bus || !audio.audibleNow) return
-    loading.current = true
-    void audio.loadClip(assetUrl(asset)).then((buf) => {
-      loading.current = false
-      if (!buf || node.current) return
-      const { ctx, input } = bus
-      const gain = ctx.createGain()
-      gain.gain.value = 0
-      gain.gain.setTargetAtTime(0.35, ctx.currentTime, 1.2)
-      const src = ctx.createBufferSource()
-      src.buffer = buf
-      src.loop = true
-      src.connect(gain).connect(input)
-      src.start()
-      node.current = { src, gain }
-    })
-  })
-  return null
-}
-
-const fwd = new THREE.Vector3()
-
-/** Keeps the ears on the camera while a world has anything that sounds. */
-export function SpatialListener() {
-  useFrame(({ camera }) => {
-    camera.getWorldDirection(fwd)
-    audio.setListener(camera.position.x, camera.position.y, camera.position.z, fwd.x, fwd.y, fwd.z)
-  })
-  return null
-}
+// The world's own sound and the ears moved to the music director (src/audio/music/,
+// components/MusicDriver.tsx, 2026-11-03): the ambient sound replaces the world's
+// music inside and from space, and the ears sit on your character, not the camera.

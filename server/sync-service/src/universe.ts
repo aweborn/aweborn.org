@@ -18,6 +18,7 @@ import {
   positionToSector,
   sectorKey,
   ORIGIN_WORLD_ENTRY,
+  worldSoundFields,
 } from "../../../shared/crdt-schema.js";
 import { loadDoc, saveDoc } from "./persistence.js";
 
@@ -157,6 +158,25 @@ export function updatePlayerCount(doc: Y.Doc, worldId: string, count: number): v
   });
 }
 
+// ── World sound mirror (2026-11-03) ─────────────────────────────────
+
+const SOUND_KEYS = ["music", "ambientSound"] as const;
+
+/** Does a world's universe entry disagree with its own meta about its music / ambient sound? */
+export function worldSoundDiffers(entry: Y.Map<unknown>, meta: Y.Map<unknown>): boolean {
+  const want = worldSoundFields(meta.get("music"), meta.get("ambientSound"));
+  return SOUND_KEYS.some((k) => entry.get(k) !== want[k]);
+}
+
+/** Copy the world's music / ambient sound (well-formed file names only) from its meta to its universe entry. */
+export function copyWorldSound(entry: Y.Map<unknown>, meta: Y.Map<unknown>): void {
+  const want = worldSoundFields(meta.get("music"), meta.get("ambientSound"));
+  for (const k of SOUND_KEYS) {
+    if (want[k]) entry.set(k, want[k]);
+    else if (entry.has(k)) entry.delete(k);
+  }
+}
+
 // Mana state: see ManaLedger.state() in mana.ts (server-authoritative).
 
 // ── Internal helpers ─────────────────────────────────────────────────
@@ -192,5 +212,6 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     ...(parentWorldId ? { parentWorldId } : {}),
     ...(allowPortals !== undefined ? { allowPortals } : {}),
     ...coCreatorsField(m.get("coCreators")),
+    ...worldSoundFields(m.get("music"), m.get("ambientSound")),
   };
 }

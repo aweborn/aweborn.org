@@ -4419,13 +4419,16 @@ body:has(#onboarding-hint) .wave-banner { top: calc(env(safe-area-inset-top, 0px
   .display-settings-toggle { transition: none; }
 }
 
-/* ── Sound (Rough Draft M2): mute + volume, shared by the gear panel and ••• More ── */
+/* ── Sound (Rough Draft M2; Music + Sounds 2026-11-03): mute + two volumes, shared by the gear panel and ••• More ── */
 .display-settings-title--sub {
   margin-top: var(--space-md);
   padding-top: var(--space-sm);
   border-top: 1px solid var(--glass-border);
 }
-.sound-row { display: flex; align-items: center; gap: 10px; }
+.sound-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sound-level { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.sound-level-name { flex: none; width: 52px; font-size: 13px; color: var(--color-text-secondary); }
+.sound-level-value { flex: none; width: 48px; text-align: right; }
 .sound-mute {
   flex: none;
   display: grid;

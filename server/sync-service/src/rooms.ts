@@ -20,6 +20,7 @@ import {
   sectorKey,
   ORIGIN_WORLD_ID,
   RETURN_PORTAL_XZ,
+  worldSoundFields,
 } from "../../../shared/crdt-schema.js";
 import {
   initUniverseDoc,
@@ -28,6 +29,8 @@ import {
   getAllWorldEntries,
   updatePlayerCount,
   updateResolvedPosition,
+  worldSoundDiffers,
+  copyWorldSound,
 } from "./universe.js";
 import { saveDoc, loadDoc, listDocIds, getDb } from "./persistence.js";
 import { ManaLedger } from "./mana.js";
@@ -40,7 +43,7 @@ import { prepareChat, cleanChatText, ChatLimiter, CHAT_HISTORY, CHAT_MAX_BYTES }
 import { touchesChat } from "./chat-guard.js";
 import { WorldAuthority, CreateLimiter } from "./world-authority.js";
 import { listCharacters } from "./identity.js";
-import { isWorldOwnerId, canEditObject, type WorldActor } from "../../../shared/world-policy.js";
+import { isWorldOwnerId, canEditObject, coCreatorsField, type WorldActor } from "../../../shared/world-policy.js";
 import { SimHost } from "./sim-host.js";
 import { sqliteSimStore } from "./sim-store.js";
 import { FlightTelemetry } from "./telemetry.js";
@@ -319,6 +322,9 @@ export class RoomManager {
       doc.on("update", (update: Uint8Array, origin: unknown) => {
         this.broadcastWorldUpdate(worldId, update, origin);
       });
+      // The world's music / ambient sound sings in space too: keep its universe entry in step
+      this.mirrorWorldSound(worldId, doc);
+      doc.getMap("meta").observe(() => this.mirrorWorldSound(worldId, doc));
     }
 
     room.clients.add(ws);
@@ -559,6 +565,7 @@ export class RoomManager {
               const authority = new WorldAuthority(doc);
               this.applyWorldUpdate(authority, message.data, ws, message.worldId);
               authority.destroy();
+              this.mirrorWorldSound(message.worldId, doc);
               saveDoc(message.worldId, Y.encodeStateAsUpdate(doc), "world", entry.sector);
             } else {
               console.warn("[rooms] refused offline client write to chat log");
@@ -786,8 +793,63 @@ export class RoomManager {
     Y.applyUpdate(doc, saved);
     const out = fn(doc);
     saveDoc(worldId, Y.encodeStateAsUpdate(doc), "world", this.getWorldEntry(worldId)?.sector);
+    this.mirrorWorldSound(worldId, doc);
     doc.destroy();
     return out;
+  }
+
+  /**
+   * Copy a world's `music` / `ambientSound` from its own meta to its universe
+   * entry (server-written), so every player in space hears it sing without
+   * loading its doc (2026-11-03). Cheap no-op when nothing changed.
+   */
+  mirrorWorldSound(worldId: string, doc: Y.Doc): void {
+    if (worldId === ORIGIN_WORLD_ID) return;
+    const worldMap = this.universeDoc.getMap("worlds").get(worldId) as Y.Map<unknown> | undefined;
+    if (!worldMap) return;
+    const meta = doc.getMap("meta");
+    if (!worldSoundDiffers(worldMap, meta)) return;
+    this.universeDoc.transact(() => copyWorldSound(worldMap, meta), "server");
+  }
+
+  /** Server-only: set (or clear) a world's music, e.g. when its planner music finishes. */
+  setWorldMusic(worldId: string, asset: string | null): boolean {
+    if (worldId === ORIGIN_WORLD_ID) return false;
+    if (asset !== null && !worldSoundFields(asset, null).music) return false;
+    return this.withWorldDoc(worldId, (doc) => {
+      const meta = doc.getMap("meta");
+      if (asset) meta.set("music", asset);
+      else meta.delete("music");
+      return true;
+    }) ?? false;
+  }
+
+  /**
+   * Once per boot: mirror every saved world's sound into the universe (worlds
+   * that got a sound before the mirror existed). Batched so it never blocks.
+   */
+  sweepWorldSounds(batch = 5): void {
+    const ids = [...this.universeDoc.getMap("worlds").keys()].filter((id) => id !== ORIGIN_WORLD_ID);
+    let i = 0;
+    const step = () => {
+      for (const end = Math.min(ids.length, i + batch); i < end; i++) {
+        const id = ids[i];
+        if (this.worldRooms.has(id)) continue; // live rooms mirror themselves
+        const saved = loadDoc(id);
+        if (!saved) continue;
+        const doc = new Y.Doc();
+        try {
+          Y.applyUpdate(doc, saved);
+          this.mirrorWorldSound(id, doc);
+        } catch (err) {
+          console.warn(`[rooms] sound mirror skipped ${id}: ${(err as Error).message}`);
+        } finally {
+          doc.destroy();
+        }
+      }
+      if (i < ids.length) setTimeout(step, 150);
+    };
+    setTimeout(step, 5_000);
   }
 
   /** One placed object, as plain JSON (live room or saved doc), or null. */
@@ -826,6 +888,15 @@ export class RoomManager {
     if (!chars.includes(playerId)) chars.push(playerId);
     const owner = chars.some((id) => isWorldOwnerId(id, roles));
     return canEditObject({ id: playerId, owner }, obj) || chars.some((id) => obj.placedBy === id);
+  }
+
+  /** Is this character (or another on the same account) the world's creator or a co-creator? */
+  isWorldOwner(worldId: string, playerId: string, accountId?: string | null): boolean {
+    const w = this.getWorldEntry(worldId);
+    if (!w) return false;
+    const roles = { creator: w.creator, coCreators: w.coCreators };
+    if (isWorldOwnerId(playerId, roles)) return true;
+    return accountId ? listCharacters(accountId).some((c) => isWorldOwnerId(c.id, roles)) : false;
   }
 
   /** The live doc of a loaded world room (minds read it to find who is near). */
@@ -927,6 +998,7 @@ export class RoomManager {
       createdAt: worldMap.get("createdAt") as number,
       ...(parentWorldId ? { parentWorldId } : {}),
       ...(allowPortals !== undefined ? { allowPortals } : {}),
+      ...coCreatorsField(worldMap.get("coCreators")),
     };
   }
 

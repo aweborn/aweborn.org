@@ -51,12 +51,14 @@ export const MEDIA_KINDS: readonly MediaKind[] = ["image", "sound", "music", "vo
 export const isMediaKind = (k: unknown): k is MediaKind => typeof k === "string" && (MEDIA_KINDS as readonly string[]).includes(k);
 
 export interface MediaParams {
-  /** Seconds (sound 0.5–22, music 10–120). */
+  /** Seconds (sound 0.5–22, music 10–180; 180 = a world's music). */
   seconds?: number;
   /** Sounds: make it loop seamlessly (ambience). */
   loop?: boolean;
   /** Voice: a premade voice name (shared/life.ts VOICES). */
   voice?: string;
+  /** Music: never sing, whatever the prompt says (a world's music: instrumental only, 2026-11-03). */
+  instrumental?: boolean;
 }
 
 export const MEDIA_EXT: Record<string, string> = { webp: "image/webp", mp3: "audio/mpeg", wav: "audio/wav", png: "image/png" };
@@ -70,7 +72,7 @@ function store(buf: Buffer, ext: string, assetDir: string): string {
 
 const clampSeconds = (kind: MediaKind, s: unknown): number => {
   const n = typeof s === "number" && Number.isFinite(s) ? s : kind === "music" ? 30 : 5;
-  return kind === "music" ? Math.max(10, Math.min(120, Math.round(n))) : Math.max(0.5, Math.min(22, n));
+  return kind === "music" ? Math.max(10, Math.min(180, Math.round(n))) : Math.max(0.5, Math.min(22, n));
 };
 
 // ── Image ────────────────────────────────────────────────────────────
@@ -196,7 +198,7 @@ function elevenProvider(kind: "sound" | "music"): Provider {
         costUsd = MEDIA_USD.soundPerSecond * seconds;
       } else {
         buf = await elevenPost(job, "eleven.music", "/music?output_format=mp3_44100_128", {
-          prompt: job.prompt, music_length_ms: seconds * 1000, force_instrumental: !wantsVocals(job.prompt),
+          prompt: job.prompt, music_length_ms: seconds * 1000, force_instrumental: p.instrumental === true || !wantsVocals(job.prompt),
           ...(ELEVEN_MUSIC_MODEL ? { model_id: ELEVEN_MUSIC_MODEL } : {}),
         });
         costUsd = MEDIA_USD.musicPerSecond * seconds;

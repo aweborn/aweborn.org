@@ -29,6 +29,8 @@ Provider-agnostic: the table below is keyed by **what the player makes**, so we 
 | 3D object, quick (Lite + texture) | Meshy-6-Lite (15 credits) | 1 model | ≈ $0.30 | **30** |
 | 3D object / character (full + texture) | Meshy-7 (30 credits; 8K: 35) | 1 model | ≈ $0.60 | **60** |
 | Music loop | Lyria 2 on Vertex ($0.06 / 30 s) (ElevenLabs Music $0.15 / min) | 30 s | $0.06 | **6** |
+| A world's music (2026-11-03, every planned world) | ElevenLabs Music, instrumental (hold = `makeEstimate("music", 180 s)`: 0.25 a second + 1) | 3 min | ≈ $0.45 | **46** |
+| The universe's music + every unprompted world's version | synthesized in the browser (src/audio/music/) | always on | $0 | **0** |
 | Sound effect | ElevenLabs SFX (≈ $0.12 / min) | ~5 s | ≈ $0.01 | **1** |
 | Voice / narration | Gemini 2.5 Flash TTS ($10 / M audio tokens, ~25 tokens/s) (ElevenLabs $0.05–0.10 / min) | 1 min | ≈ $0.015 | **1.5** |
 | Voice line (2026-11-01, live) | ElevenLabs v4 Turbo via OpenRouter TTS, $0.04 / 1k chars (69 chars measured $0.00276) | 200 chars | $0.008 | **0.8** |

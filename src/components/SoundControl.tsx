@@ -4,36 +4,58 @@ import { useAudioSettings } from '../audio/audioSettings'
 import { useUniverseStore } from '../stores/universeStore'
 
 /**
- * Sound: mute + volume, and a line on what the universe sounds like right now
- * (the ambience follows the pool, so "silent" can be the pool, not a bug).
+ * Sound: one mute, and two volumes (Music · Sounds, 2026-11-03), plus a line on
+ * how the music sounds right now (the pool shapes how full it is).
  * Desktop: the gear panel. Touch: ••• More → Settings.
  */
 
 const BAND_NOTE: Record<PoolBand, string> = {
-  high: 'The pool is full: a warm hum fills the universe.',
-  medium: 'The pool is healthy: a gentle hum.',
-  low: 'The pool is low: near-silence, a distant tone now and then.',
-  critical: 'The pool is nearly empty: the universe has gone quiet.',
+  high: 'The pool is full: the music is lush and full.',
+  medium: 'The pool is healthy: the music is calm.',
+  low: 'The pool is low: the music thins to a few voices.',
+  critical: 'The pool is nearly empty: one faint voice still sings.',
+}
+
+function Level({ id, name, value, muted, onChange }: { id: string; name: string; value: number; muted: boolean; onChange: (v: number) => void }) {
+  const pct = Math.round(value * 100)
+  const shown = muted ? 0 : pct
+  const text = muted ? 'Muted' : `${pct}%`
+  return (
+    <div className="sound-level">
+      <label htmlFor={id} className="sound-level-name">{name}</label>
+      <input
+        id={id}
+        className="quality-slider sound-volume"
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={shown}
+        aria-valuetext={text}
+        style={{ '--control-value': `${shown}%` } as CSSProperties}
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+        // Mouse/touch: give the keys back to flight. Keyboard users keep focus.
+        onPointerUp={(e) => e.currentTarget.blur()}
+      />
+      <span className="display-settings-value sound-level-value">{text}</span>
+    </div>
+  )
 }
 
 export function SoundControl({ idPrefix, label: title = 'Sound' }: { idPrefix: string; label?: string }) {
   const muted = useAudioSettings((s) => s.muted)
-  const volume = useAudioSettings((s) => s.volume)
+  const musicVol = useAudioSettings((s) => s.music)
+  const soundsVol = useAudioSettings((s) => s.sounds)
   const setMuted = useAudioSettings((s) => s.setMuted)
-  const setVolume = useAudioSettings((s) => s.setVolume)
+  const setMusic = useAudioSettings((s) => s.setMusic)
+  const setSounds = useAudioSettings((s) => s.setSounds)
   const band = useUniverseStore((s) => (s.mana ? poolBand(s.mana.level ?? poolLevel(s.mana.creative, 0)) : null))
-  const sliderId = `${idPrefix}-sound-volume`
-
-  const pct = muted ? 0 : Math.round(volume * 100)
-  const label = muted ? 'Muted' : `${pct}%`
+  const loud = Math.max(musicVol, soundsVol)
 
   return (
     <div className="sound-control">
-      <div className="display-settings-label">
-        <label htmlFor={sliderId}>{title}</label>
-        <span className="display-settings-value">{label}</span>
-      </div>
-      <div className="sound-row">
+      <div className="display-settings-label sound-head">
+        <span>{title}</span>
         <button
           type="button"
           id={`${idPrefix}-sound-mute`}
@@ -53,27 +75,15 @@ export function SoundControl({ idPrefix, label: title = 'Sound' }: { idPrefix: s
             ) : (
               <>
                 <path d="M15 9a4.2 4.2 0 0 1 0 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" fill="none" />
-                {pct > 50 && <path d="M17.6 6.6a7.6 7.6 0 0 1 0 10.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" fill="none" />}
+                {loud > 0.5 && <path d="M17.6 6.6a7.6 7.6 0 0 1 0 10.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" fill="none" />}
               </>
             )}
           </svg>
         </button>
-        <input
-          id={sliderId}
-          className="quality-slider sound-volume"
-          type="range"
-          min={0}
-          max={100}
-          step={5}
-          value={pct}
-          aria-valuetext={label}
-          style={{ '--control-value': `${pct}%` } as CSSProperties}
-          onChange={(e) => setVolume(Number(e.target.value) / 100)}
-          // Mouse/touch: give the keys back to flight. Keyboard users keep focus.
-          onPointerUp={(e) => e.currentTarget.blur()}
-        />
       </div>
-      <p className="display-settings-note">{band ? BAND_NOTE[band] : 'The universe’s hum follows the pool of mana.'}</p>
+      <Level id={`${idPrefix}-music-volume`} name="Music" value={musicVol} muted={muted} onChange={setMusic} />
+      <Level id={`${idPrefix}-sound-volume`} name="Sounds" value={soundsVol} muted={muted} onChange={setSounds} />
+      <p className="display-settings-note">{band ? BAND_NOTE[band] : 'The universe’s music follows the pool of mana.'}</p>
     </div>
   )
 }

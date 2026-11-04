@@ -75,7 +75,7 @@ export const ASSET_MANA: Record<AssetKind, { quick: number; full: number }> = {
   model: { quick: 60, full: 60 },
   "terrain-piece": { quick: 60, full: 60 },
   texture: { quick: 10, full: 20 },
-  music: { quick: 30, full: 30 },
+  music: { quick: 46, full: 46 }, // the world's music: ~3 min of ElevenLabs Music (makeEstimate("music", 180 s))
   ambience: { quick: 20, full: 20 },
   voice: { quick: 10, full: 10 },
   sfx: { quick: 5, full: 5 },
@@ -84,6 +84,31 @@ export const ASSET_MANA: Record<AssetKind, { quick: number; full: number }> = {
 export function estimate(d: BlueprintDraft, plannerMana: number): Estimate {
   const items = d.assets.map((a) => ({ key: a.key, mana: ASSET_MANA[a.kind][a.quality] }));
   return { items, planner: plannerMana, total: plannerMana + items.reduce((s, i) => s + i.mana, 0) };
+}
+
+// ── The world's music (2026-11-03) ─────────────────────────────────────
+/** Every planned world gets exactly one music asset: one long instrumental loop (Alex: "the world planner will ensure a background music set is generated"). */
+export const WORLD_MUSIC_KEY = "world-music";
+export const WORLD_MUSIC_SECONDS = 180;
+/** Added to the generator prompt for world music: instrumental only until the age-tier grill (Alex, 2026-11-03). */
+export const WORLD_MUSIC_SUFFIX = "Instrumental only: no vocals, no lyrics, no spoken words. One continuous, evolving piece that loops seamlessly as background music";
+
+/**
+ * Exactly one `music` asset: the first the planner wrote (extras dropped), or a
+ * default drawn from the world's name and art direction. Never mutates.
+ */
+export function ensureWorldMusic<T extends BlueprintDraft>(d: T): T {
+  const music = d.assets.filter((a) => a.kind === "music");
+  if (music.length === 1) return d;
+  if (music.length > 1) {
+    const keep = music[0];
+    return { ...d, assets: d.assets.filter((a) => a.kind !== "music" || a === keep) };
+  }
+  let key = WORLD_MUSIC_KEY;
+  while (d.assets.some((a) => a.key === key)) key += "-2";
+  const mood = [d.style.timeOfDay, d.style.lighting].filter(Boolean).join(", ");
+  const prompt = `Atmospheric background music for "${d.name}": ${d.style.artDirection}${mood ? ` (${mood})` : ""}. Slow, spacious and dreamy`.slice(0, LIMITS.prompt);
+  return { ...d, assets: [...d.assets.slice(0, LIMITS.assets - 1), { key, kind: "music", prompt, quality: "quick" }] };
 }
 
 // ── Validation ─────────────────────────────────────────────────────────
@@ -245,6 +270,9 @@ export function applyEdit<T extends BlueprintDraft>(draft: T, edit: BlueprintEdi
   const assets = draft.assets.slice();
   const a = assets[i];
   const warnings: string[] = [];
+  if (edit.op === "remove" && a.kind === "music" && assets.filter((x) => x.kind === "music").length === 1) {
+    return { ok: false, errors: ["Every world keeps its music. Reword it instead."] };
+  }
   if (edit.op === "remove") assets.splice(i, 1);
   else if (edit.op === "prompt") assets[i] = { ...a, prompt: edit.prompt };
   else {

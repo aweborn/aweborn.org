@@ -1,19 +1,22 @@
 import type { PoolBand } from '@aweborn/shared/mana-level'
+import { createMusicKit, type MusicKit } from './music/kit'
+
+export type { MusicKit }
 
 /**
  * Procedural sound (Rough Draft M2; ROADMAP "Mana Is Visible, Audible, and
  * Tangible"). Everything is synthesized with WebAudio, so there are no audio
  * files to download.
  *
- *   Ambience     a bed that follows the pool: warm full hum (high), gentle hum
- *                (medium), near-silence with a distant tone now and then
- *                (low), silence (critical)
+ *   Music        always on, generative (src/audio/music/): the pool shapes how
+ *                full it is (lush … one faint voice), never silent. This file
+ *                owns its bus and the shared reverb; the director plays it.
  *   Wave         a gift: a deep sweep under the golden front, then a warm chord
  *   Creation     an inhale when you ask; an exhale when it arrives (thinner
  *                when the pool is low, a strained whisper when it's critical)
  *   Discovery    a soft bell on a sighting, a rising arpeggio on a reveal
  *   Warp         a rising charge while held, a crack on release
- *   Approach     a warm hum that grows as you near a world (in space)
+ *   Approach     (the world's own music grows as you near it: the director)
  *   UI           a faint tick on buttons
  *
  * Browsers only allow sound after a tap or key press: `unlock()` runs on the
@@ -25,29 +28,9 @@ import type { PoolBand } from '@aweborn/shared/mana-level'
  */
 
 const NOTE = (midi: number) => 440 * 2 ** ((midi - 69) / 12)
-/** A major pentatonic, for distant tones (A3 … A4). */
-const DISTANT = [57, 59, 61, 64, 66, 69]
-
-interface Ambience {
-  /** Fundamental hum (A1 · E2 · A2). */
-  drone: number
-  /** Upper partials (C#3 · E3 · A3): the "warm, full" part. */
-  warmth: number
-  /** Low wind. */
-  air: number
-  cutoff: number
-  /** Occasional distant tone. */
-  tones: boolean
-}
-
-const AMBIENCE: Record<PoolBand, Ambience> = {
-  high: { drone: 0.13, warmth: 0.05, air: 0.03, cutoff: 1400, tones: false },
-  medium: { drone: 0.07, warmth: 0.012, air: 0.018, cutoff: 800, tones: false },
-  low: { drone: 0, warmth: 0, air: 0.006, cutoff: 380, tones: true },
-  critical: { drone: 0, warmth: 0, air: 0, cutoff: 300, tones: false },
-}
 
 type Ctor = typeof AudioContext
+
 
 class AudioEngine {
   private ctx: AudioContext | null = null
@@ -55,23 +38,17 @@ class AudioEngine {
   private sfx!: GainNode
   private echo!: GainNode
   private white!: AudioBuffer
-  private brown!: AudioBuffer
-  private drone!: GainNode
-  private warmth!: GainNode
-  private air!: GainNode
-  private droneFilter!: BiquadFilterNode
-  private hum!: GainNode
+  private kit!: MusicKit
+  private music!: GainNode
 
   private band: PoolBand | null = null
-  private volume = 0.7
+  private musicVolume = 0.6
+  private soundsVolume = 0.7
   private muted = false
   private hidden = false
-  private inSpace = true
   private suspendTimer: number | undefined
-  private toneTimer: number | undefined
   private lastTick = 0
   private lastPhase = 'idle'
-  private lastHum = 0
   private warpVoice: { osc: OscillatorNode; sub: OscillatorNode; filter: BiquadFilterNode; g: GainNode } | null = null
   private analyser: AnalyserNode | null = null
 
@@ -107,9 +84,11 @@ class AudioEngine {
     if (this.ctx && this.ctx.state !== 'running' && this.audible()) void this.ctx.resume().catch(() => {})
   }
 
-  setSettings(muted: boolean, volume: number): void {
+  /** Mute everything, and the two volumes (0…1, perceptual: the engine squares them). */
+  setSettings(muted: boolean, music: number, sounds: number): void {
     this.muted = muted
-    this.volume = volume
+    this.musicVolume = music
+    this.soundsVolume = sounds
     this.apply()
   }
 
@@ -124,9 +103,10 @@ class AudioEngine {
     this.apply()
   }
 
-  setInSpace(inSpace: boolean): void {
-    this.inSpace = inSpace
-    if (!inSpace) this.setHum(0)
+  /** The music bus + shared reverb, or null before the first tap. */
+  musicKit(): MusicKit | null {
+    if (!this.ctx) return null
+    return this.kit
   }
 
   // ── Build ────────────────────────────────────────────────────────
@@ -161,57 +141,14 @@ class AudioEngine {
     this.echo.connect(delay)
     delay.connect(tone)
     tone.connect(fb).connect(delay)
-    tone.connect(this.gain(0.5, this.master))
+    tone.connect(this.gain(0.5, this.sfx)) // the echo follows the Sounds volume
 
     this.white = this.noise(2, false)
-    this.brown = this.noise(4, true)
 
-    // Ambience bed: oscillators run always (cheap); their gains follow the band.
-    const amb = this.gain(1, this.master)
-    this.droneFilter = this.filter('lowpass', 800, 0.4)
-    const breath = this.gain(0.8)
-    const lfo = ctx.createOscillator()
-    lfo.frequency.value = 0.07 // one slow breath every ~14 s
-    lfo.connect(this.gain(0.2, breath.gain))
-    lfo.start()
-    this.drone = this.gain(0, amb)
-    this.droneFilter.connect(breath).connect(this.drone)
-    this.warmth = this.gain(0, this.droneFilter)
-    const fundamentals: [OscillatorType, number, number][] = [
-      ['sine', 55, 0], ['sine', NOTE(40), 0], ['triangle', 110, -4], ['triangle', 110, 5],
-    ]
-    for (const [type, f, detune] of fundamentals) {
-      const o = ctx.createOscillator()
-      o.type = type
-      o.frequency.value = f
-      o.detune.value = detune
-      o.connect(this.droneFilter)
-      o.start()
-    }
-    for (const m of [49, 52, 57]) {
-      const o = ctx.createOscillator()
-      o.frequency.value = NOTE(m)
-      o.connect(this.warmth)
-      o.start()
-    }
-    const wind = ctx.createBufferSource()
-    wind.buffer = this.brown
-    wind.loop = true
-    this.air = this.gain(0, amb)
-    wind.connect(this.filter('bandpass', 420, 0.6)).connect(this.air)
-    wind.start()
-
-    // Approach hum (in space): A3 + E4, soft.
-    this.hum = this.gain(0, this.sfx)
-    const humFilter = this.filter('lowpass', 900, 0.3)
-    humFilter.connect(this.hum)
-    for (const m of [57, 64]) {
-      const o = ctx.createOscillator()
-      o.type = 'triangle'
-      o.frequency.value = NOTE(m)
-      o.connect(humFilter)
-      o.start()
-    }
+    // Music (always on, src/audio/music/): its own bus, one long soft reverb
+    // and a slow echo, shared by every piece however many worlds sing.
+    this.kit = createMusicKit(ctx, this.master)
+    this.music = this.kit.bus
 
     ctx.addEventListener('statechange', () => this.apply())
     this.apply()
@@ -221,17 +158,11 @@ class AudioEngine {
     const ctx = this.ctx
     if (!ctx) return
     const t = ctx.currentTime
-    this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume * this.volume, t, 0.08)
-    const a = AMBIENCE[this.band ?? 'critical']
-    this.drone.gain.setTargetAtTime(a.drone, t, 1.5)
-    this.warmth.gain.setTargetAtTime(a.warmth, t, 1.5)
-    this.air.gain.setTargetAtTime(a.air, t, 1.5)
-    this.droneFilter.frequency.setTargetAtTime(a.cutoff, t, 1.5)
-    if (a.tones) this.scheduleTone()
-    else if (this.toneTimer !== undefined) {
-      clearTimeout(this.toneTimer)
-      this.toneTimer = undefined
-    }
+    this.master.gain.setTargetAtTime(this.muted ? 0 : 1, t, 0.08)
+    this.music.gain.setTargetAtTime(this.musicVolume * this.musicVolume, t, 0.08)
+    const sounds = this.soundsVolume * this.soundsVolume
+    this.sfx.gain.setTargetAtTime(sounds, t, 0.08)
+    this.world?.gain.setTargetAtTime(0.9 * sounds, t, 0.08)
 
     clearTimeout(this.suspendTimer)
     if (this.audible()) {
@@ -245,37 +176,12 @@ class AudioEngine {
   }
 
   private audible(): boolean {
-    return !this.muted && !this.hidden && this.volume > 0
+    return !this.muted && !this.hidden && (this.musicVolume > 0 || this.soundsVolume > 0)
   }
 
   /** The context, only when sound would actually be heard right now. */
   private live(): AudioContext | null {
     return this.ctx && this.ctx.state === 'running' && this.audible() ? this.ctx : null
-  }
-
-  // ── Ambience: distant tones (low pool) ───────────────────────────
-
-  private scheduleTone(): void {
-    if (this.toneTimer !== undefined) return
-    this.toneTimer = window.setTimeout(() => {
-      this.toneTimer = undefined
-      if (this.band !== 'low') return
-      this.distantTone()
-      this.scheduleTone()
-    }, 9000 + Math.random() * 14000)
-  }
-
-  private distantTone(): void {
-    const ctx = this.live()
-    if (!ctx) return
-    const t = ctx.currentTime + 0.05
-    const f = NOTE(DISTANT[Math.floor(Math.random() * DISTANT.length)])
-    const g = this.gain(0, this.filter('lowpass', 1200, 0.5, this.sfx))
-    g.connect(this.echo)
-    g.gain.setValueAtTime(0, t)
-    g.gain.linearRampToValueAtTime(0.03, t + 1.2)
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 6)
-    this.tone('sine', f, t, t + 6.2, g)
   }
 
   // ── The wave ─────────────────────────────────────────────────────
@@ -397,9 +303,9 @@ class AudioEngine {
     ;[72, 74, 76, 79, 81, 84].forEach((m, i) => this.bell(NOTE(m), t + i * 0.085, 0.05, 2.4, 'triangle'))
   }
 
-  // ── Warp + approach (called every physics step from WarpSystem) ──
+  // ── Warp (called every physics step from WarpSystem) ─────────────
 
-  warp(phase: string, charge: number, nearest: number): void {
+  warp(phase: string, charge: number): void {
     const ctx = this.ctx
     const prev = this.lastPhase
     this.lastPhase = phase
@@ -429,14 +335,6 @@ class AudioEngine {
       if (phase === 'leaping' && prev === 'charging') this.crack()
     }
 
-    const near = this.inSpace && phase !== 'leaping' && Number.isFinite(nearest) ? Math.max(0, Math.min(1, (140 - nearest) / 120)) : 0
-    this.setHum(near * near * 0.05)
-  }
-
-  private setHum(target: number): void {
-    if (!this.ctx || Math.abs(target - this.lastHum) < 0.002) return
-    this.lastHum = target
-    this.hum.gain.setTargetAtTime(target, this.ctx.currentTime, 0.4)
   }
 
   private crack(): void {
@@ -464,7 +362,7 @@ class AudioEngine {
   /** The context + an input for positional nodes, or null before the first tap. */
   worldBus(): { ctx: AudioContext; input: GainNode } | null {
     if (!this.ctx) return null
-    if (!this.world) this.world = this.gain(0.9, this.master)
+    if (!this.world) this.world = this.gain(0.9 * this.soundsVolume * this.soundsVolume, this.master)
     return { ctx: this.ctx, input: this.world }
   }
 
@@ -491,8 +389,8 @@ class AudioEngine {
     return p
   }
 
-  /** Put the ears where the camera is (called per frame only while a world has sounds). */
-  setListener(px: number, py: number, pz: number, fx: number, fy: number, fz: number): void {
+  /** Put the ears at the player's character, facing the way it faces (the music director, ~15 times a second). */
+  setListener(px: number, py: number, pz: number, fx: number, fy: number, fz: number, ux = 0, uy = 1, uz = 0): void {
     const ctx = this.ctx
     if (!ctx || ctx.state !== 'running') return
     const l = ctx.listener
@@ -504,13 +402,13 @@ class AudioEngine {
       l.forwardX.setTargetAtTime(fx, t, 0.05)
       l.forwardY.setTargetAtTime(fy, t, 0.05)
       l.forwardZ.setTargetAtTime(fz, t, 0.05)
-      l.upX.value = 0
-      l.upY.value = 1
-      l.upZ.value = 0
+      l.upX.setTargetAtTime(ux, t, 0.05)
+      l.upY.setTargetAtTime(uy, t, 0.05)
+      l.upZ.setTargetAtTime(uz, t, 0.05)
     } else {
       // Older Safari
       l.setPosition(px, py, pz)
-      l.setOrientation(fx, fy, fz, 0, 1, 0)
+      l.setOrientation(fx, fy, fz, ux, uy, uz)
     }
   }
 

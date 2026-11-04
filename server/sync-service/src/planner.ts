@@ -18,9 +18,12 @@
 import { randomUUID } from "node:crypto";
 import type { RoomManager } from "./rooms.js";
 import { getDb } from "./persistence.js";
-import { startJob } from "./creations.js";
+import { startJob, onCreationDone, creationOf } from "./creations.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
-import { estimate, parsePlannerTurn, parseEdit, applyEdit, extractJson, LIMITS, ASSET_MANA, type Blueprint, type BlueprintDraft, type BlueprintEdit } from "../../../shared/blueprint.js";
+import {
+  estimate, parsePlannerTurn, parseEdit, applyEdit, extractJson, ensureWorldMusic, LIMITS, ASSET_MANA, WORLD_MUSIC_SECONDS, WORLD_MUSIC_SUFFIX,
+  type Blueprint, type BlueprintAsset, type BlueprintDraft, type BlueprintEdit,
+} from "../../../shared/blueprint.js";
 import { checkCreation, chargeCheck, type SafetyVerdict } from "./safety.js";
 import { researchIdFor } from "./research.js";
 import { makingOfChanged } from "./making-of.js";
@@ -63,7 +66,8 @@ THE BLUEPRINT
 - sky: how the world is lit and what the horizon looks like, matching timeOfDay and mood. zenith (color overhead) and horizon (color at the edge of the world; distance fog fades to it, so make it a soft, fairly light color even at night, never near-black); fog = meters until the distance has fully faded, 80-300 (a misty world 80-120, a clear one 200-300); sun {color, intensity 0-3, dir [x,y,z] = the direction the light comes FROM, y positive; low y = long dusk shadows}; ambient {color, intensity 0-1.5} fills the shadows (nights and moonlight: cool color, ambient 0.4-0.7, sun intensity 0.4-0.8 as moonlight). Daylight is about sun 1.3 / ambient 0.6. Players must always be able to see the ground.
 - terrain: voxel grid, size [x, y, z] (y is up). The world is BIG: x and z are 4-${LIMITS.world} cells (1 cell = 1 meter) and default to ${LIMITS.world}; y is 4-${LIMITS.grid} (default 16). Keep the default unless the player asks for a small or intimate world, and spread features and assets across the whole footprint (centered on ${LIMITS.world / 2}, ${LIMITS.world / 2}); a hill is radius 8-30, a pond 6-20, a village sits within about 40 cells. The player starts near the center. blocks: 2-6 materials with ids like "grass", "stone". Each block's surface: "smooth" for natural ground (grass, sand, dirt, snow, moss: rolling, soft shapes), "blocks" for built or hard things (bricks, cut stone, ice cubes, a blocky or retro look); if unsure, natural ground is smooth. The ground is a few cells thick everywhere. features place shapes on it: type one of plateau | hill | pond | path | cliff | floating-island; at = [x, y, z] where x, z are grid cells and y is the lift above the ground (usually 0; for floating-island y is the altitude, e.g. 8-14); radius in cells; height in cells (for pond: depth, 1-3); block = a block id. Name a liquid block "water" so it reads as water. Asset at = [x, 0, z]: they sit on the surface there.
 - assets: key (kebab-case, stable), kind one of model | terrain-piece | texture | music | ambience | voice | sfx, prompt (a self-contained generator prompt that already includes the art direction; for models describe ONE object), quality "quick" (default) or "full" (only for hero pieces), at = [x, y, z] in grid cells, optional size [x, y, z] in meters, rotationY in radians.
-- Approximate mana: model 60, terrain-piece 60, music 30, ambience 20, sfx 5.
+- MUSIC: every world has exactly ONE music asset (kind "music", key "world-music"): its background music, one long instrumental piece (about 3 minutes) that loops for everyone inside and is heard from space as players fly past. Write its prompt like a composer's brief that matches the world: mood, tempo, instruments, texture (e.g. "slow, misty ambient: soft felt piano, distant cello swells, wind chimes, lots of space"). Instrumental only: never vocals or lyrics. Keep it across turns; change it only when the world's mood changes or the player asks.
+- Approximate mana: model 60, terrain-piece 60, music 46, ambience 20, sfx 5.
 - Safety: nothing sexual, hateful, or gory; no real people, brands, or copyrighted characters. If asked, gently offer an original alternative.
 
 ANSWER FORMAT
@@ -214,7 +218,7 @@ export async function planTurn(rooms: RoomManager, playerId: string, body: unkno
   };
   try {
     let out = await attempt(ref, messages);
-    let parsed = parsePlannerTurn(extractJson(out.content));
+    let parsed = withMusic(parsePlannerTurn(extractJson(out.content)));
     if (!parsed.ok) {
       logEvent(s.id, "invalid", { errors: parsed.errors }, { ref, model: usedModel });
       out = await attempt(`${ref}:repair`, [
@@ -222,7 +226,7 @@ export async function planTurn(rooms: RoomManager, playerId: string, body: unkno
         { role: "assistant", content: out.content.slice(0, 6000) },
         { role: "user", content: `That answer didn't validate: ${parsed.errors.join("; ")}. Reply again with only the JSON object.` },
       ]);
-      parsed = parsePlannerTurn(extractJson(out.content));
+      parsed = withMusic(parsePlannerTurn(extractJson(out.content)));
     }
     // Safety before the blueprint is shown (M1): everything the generators would get and the world would display.
     // Not the player's raw words or the planner's reply: the planner declines gracefully on its own
@@ -306,19 +310,23 @@ export function planResume(playerId: string, worldId: string, json: Json): void 
  * Manifest: make the current blueprint real. Each model asset gets its own
  * hold + Meshy job (a failed item releases only its share). The client
  * writes the terrain to the World CRDT and places each model as it lands.
- * Other asset kinds (music, ambience, …) wait for their providers.
+ * The world's music (2026-11-03) gets its own hold + ElevenLabs job too;
+ * music is world-level, so only the world's makers may manifest it, and it
+ * becomes the world's music when it finishes (the done hook below), even if
+ * the maker has left. Other asset kinds (ambience, …) wait for their providers.
  *
- *   POST /api/player/plan/manifest { sessionId, keys? } → { version, terrain, items: [{ key, jobId } | { key, error }] }
+ *   POST /api/player/plan/manifest { sessionId, keys? } → { version, terrain, items }
  */
-export async function planManifest(rooms: RoomManager, playerId: string, body: unknown, json: Json): Promise<void> {
+export async function planManifest(rooms: RoomManager, playerId: string, body: unknown, json: Json, accountId?: string | null): Promise<void> {
   const b = (body ?? {}) as { sessionId?: unknown; keys?: unknown };
   const s = typeof b.sessionId === "string" ? getSession(b.sessionId) : undefined;
   if (!s || s.playerId !== playerId || !s.blueprint) return json(404, { error: "not_found" });
   const only = Array.isArray(b.keys) ? new Set(b.keys.filter((k): k is string => typeof k === "string")) : null;
   const bp = s.blueprint;
   const items: { key: string; jobId?: string; error?: string; message?: string }[] = [];
+  const owner = rooms.isWorldOwner(s.worldId, playerId, accountId);
   // Safety before Meshy (M1). Blueprints shown since the check landed already passed, so this is usually a cache hit.
-  const toMake = bp.assets.filter((a) => (!only || only.has(a.key)) && (a.kind === "model" || a.kind === "terrain-piece"));
+  const toMake = bp.assets.filter((a) => (!only || only.has(a.key)) && (isMade(a) || (a.kind === "music" && owner)));
   if (toMake.length) {
     const checkRef = `manifest:${s.id}:v${bp.version}`;
     const safe = await checkCreation(playerId, "manifest", [bp.style.artDirection, ...toMake.map((a) => a.prompt)], checkRef);
@@ -327,7 +335,11 @@ export async function planManifest(rooms: RoomManager, playerId: string, body: u
   }
   for (const a of bp.assets) {
     if (only && !only.has(a.key)) continue;
-    if (a.kind !== "model" && a.kind !== "terrain-piece") {
+    if (a.kind === "music" && !owner) {
+      items.push({ key: a.key, error: "owner_only", message: "Only this world's makers can give it music." });
+      continue;
+    }
+    if (!isMade(a) && a.kind !== "music") {
       items.push({ key: a.key, error: "later", message: `${a.kind} comes later` });
       continue;
     }
@@ -339,8 +351,7 @@ export async function planManifest(rooms: RoomManager, playerId: string, body: u
       continue;
     }
     try {
-      const prompt = `${a.prompt}. Style: ${bp.style.artDirection}`;
-      items.push({ key: a.key, jobId: await startJob(ref, playerId, prompt) });
+      items.push({ key: a.key, jobId: await startAssetJob(ref, playerId, a, a.prompt, bp.style.artDirection) });
     } catch (err) {
       rooms.mana.release(ref);
       items.push({ key: a.key, error: "genai_unavailable", message: (err as Error).message });
@@ -350,19 +361,64 @@ export async function planManifest(rooms: RoomManager, playerId: string, body: u
   json(200, { version: bp.version, terrain: bp.terrain, items });
 }
 
+/** Models and terrain pieces: placed by the client where the blueprint puts them. */
+const isMade = (a: BlueprintAsset) => a.kind === "model" || a.kind === "terrain-piece";
+
+/** One generation for a blueprint asset: a model, or the world's music (~3 min, instrumental). */
+function startAssetJob(ref: string, playerId: string, a: BlueprintAsset, prompt: string, artDirection: string): Promise<string> {
+  if (a.kind === "music") {
+    // genai keeps the first 600 characters: the brief and setting are trimmed, never the instrumental rule
+    const brief = `${prompt.replace(/\.?\s*$/, "")}. Setting: ${artDirection}`.slice(0, 600 - WORLD_MUSIC_SUFFIX.length - 3);
+    return startJob(ref, playerId, `${brief}. ${WORLD_MUSIC_SUFFIX}`, "music", {
+      seconds: WORLD_MUSIC_SECONDS, instrumental: true,
+    });
+  }
+  return startJob(ref, playerId, `${prompt}. Style: ${artDirection}`);
+}
+
+/**
+ * A finished world-music job (from Manifest or a redo) becomes the world's
+ * music: written by the server into the world's meta, mirrored to its universe
+ * entry, so it sings inside and in space. Registered once.
+ */
+let musicHooked = false
+export function hookWorldMusic(rooms: RoomManager): void {
+  if (musicHooked) return;
+  musicHooked = true;
+  onCreationDone((jobId, outcome) => {
+    if (!outcome.ok) return;
+    const c = creationOf(jobId);
+    if (!c || c.kind !== "music") return;
+    const [kind, sessionId] = c.ref.split(":");
+    if (kind !== "manifest" && kind !== "redo") return;
+    const s = sessionId ? getSession(sessionId) : undefined;
+    if (!s) return;
+    // No real provider (a synthesized .wav stand-in): the world keeps its seeded music
+    if (!outcome.asset.endsWith(".mp3")) return;
+    if (rooms.setWorldMusic(s.worldId, outcome.asset)) {
+      logEvent(s.id, "world_music", { jobId, asset: outcome.asset }, { version: s.version });
+      console.log(`[plan] world ${s.worldId} has new music ${outcome.asset}`);
+    }
+  });
+}
+
 /**
  * Redo one item: optionally reword it ("smaller, darker wood"), then one new
  * job. The client swaps the file in place, keeping where it stands. A
  * reworded prompt is a direct edit: new blueprint version, no planner call.
+ * The world's music can be redone too (its makers only).
  *
  *   POST /api/player/plan/redo { sessionId, key, note? } → { version, key, jobId, prompt, blueprint }
  */
-export async function planRedo(rooms: RoomManager, playerId: string, body: unknown, json: Json): Promise<void> {
+export async function planRedo(rooms: RoomManager, playerId: string, body: unknown, json: Json, accountId?: string | null): Promise<void> {
   const b = (body ?? {}) as { sessionId?: unknown; key?: unknown; note?: unknown };
   const s = typeof b.sessionId === "string" ? getSession(b.sessionId) : undefined;
   if (!s || s.playerId !== playerId || !s.blueprint) return json(404, { error: "not_found" });
   const asset = s.blueprint.assets.find((a) => a.key === b.key);
-  if (!asset || (asset.kind !== "model" && asset.kind !== "terrain-piece")) return json(400, { error: "bad_item" });
+  if (!asset || (!isMade(asset) && asset.kind !== "music")) return json(400, { error: "bad_item" });
+  if (asset.kind === "music" && !rooms.isWorldOwner(s.worldId, playerId, accountId)) {
+    return json(403, { error: "owner_only", message: "Only this world's makers can give it music." });
+  }
   const note = typeof b.note === "string" ? b.note.trim().slice(0, 200) : "";
 
   let prompt = asset.prompt;
@@ -381,13 +437,21 @@ export async function planRedo(rooms: RoomManager, playerId: string, body: unkno
   const decision = rooms.admission.requestDraw({ playerId, ref, estimate: ASSET_MANA[asset.kind].quick, progress: progressOf(rooms, playerId) });
   if (!decision.ok) return json(402, { error: decision.reason, message: decision.message, remainingToday: decision.remainingToday });
   try {
-    const jobId = await startJob(ref, playerId, `${prompt}. Style: ${s.blueprint.style.artDirection}`);
+    const jobId = await startAssetJob(ref, playerId, asset, prompt, s.blueprint.style.artDirection);
     logEvent(s.id, "redo", { key: asset.key, note, jobId }, { version: s.version });
     json(200, { version: s.version, key: asset.key, jobId, prompt, blueprint: s.blueprint });
   } catch (err) {
     rooms.mana.release(ref);
     json(503, { error: "genai_unavailable", message: (err as Error).message });
   }
+}
+
+/** Every planner answer carries exactly one music asset for the world. */
+function withMusic<T extends { ok: boolean }>(p: T): T {
+  if (!p.ok) return p;
+  const v = (p as unknown as { value: { blueprint: BlueprintDraft } }).value;
+  v.blueprint = ensureWorldMusic(v.blueprint);
+  return p;
 }
 
 /** New blueprint version from a hand edit or a restore: re-stamped, re-estimated, logged with its blueprint so history can return to it. */
