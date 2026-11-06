@@ -373,17 +373,17 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
     }
     // Ease height and any jump from someone else's move (10 Hz carry writes, a set-down)
     const p0 = pos.current
-    const far = Math.hypot(p0.x - x, p0.z - z) > 4 || shownY.current === null
-    if (mine || far) {
+    const lastY = shownY.current
+    if (mine || lastY === null || Math.hypot(p0.x - x, p0.z - z) > 4) {
       shownY.current = y
     } else {
       const k = 1 - Math.exp(-(held ? 16 : 10) * delta)
-      shownY.current += (y - shownY.current) * k
+      y = lastY + (y - lastY) * k
+      shownY.current = y
       if (held) {
         x = p0.x + (x - p0.x) * k
         z = p0.z + (z - p0.z) * k
       }
-      y = shownY.current
     }
     b.moving = r.moving && !held
     pos.current.set(x, y, z)
