@@ -6,6 +6,7 @@ import { openLife } from '../stores/lifeStore'
 import { placeOnTerrain } from '../stores/worldVoxels'
 import { interiorController } from '../systems/InteriorController'
 import { AUTH_URL, getPlayerSnapshot, subscribePlayer } from '../lib/player'
+import { focusForKeyboard } from '../lib/touchUi'
 import { usePresence } from '../hooks/usePresence'
 import { matchesBinding } from '../stores/keybindingStore'
 import { ManaSeal, useCanChannel } from './ManaSeal'
@@ -123,7 +124,7 @@ export function CreatePanel() {
   }, [activeWorldId, setOpen])
 
   useEffect(() => {
-    if (open && canChannel) setTimeout(() => inputRef.current?.focus(), 0)
+    if (open && canChannel) setTimeout(() => focusForKeyboard(inputRef.current), 0)
   }, [open, canChannel])
 
   // Bumped after every poll round (even failed ones) so the loop always re-arms
@@ -285,8 +286,9 @@ export function CreatePanel() {
         <ManaSeal kind="create" onClose={() => setOpen(false)} />
       ) : open ? (
         <form className="create-form create-form--kinds" onSubmit={submit}>
-          <fieldset className="make-kinds">
-            <legend className="visually-hidden">What to make</legend>
+          {/* A div, not a fieldset: WebKit won't scroll a fieldset sideways, so on a phone the
+              last kinds were out of reach (2026-11-06 playtest) */}
+          <div className="make-kinds" role="radiogroup" aria-label="What to make">
             {KINDS.map((k) => (
               <label key={k.kind} className="make-kind">
                 <input
@@ -299,14 +301,14 @@ export function CreatePanel() {
                     setKind(k.kind)
                     setError(null)
                     setSuggestion(null)
-                    inputRef.current?.focus()
+                    focusForKeyboard(inputRef.current)
                   }}
                 />
                 <span aria-hidden="true" className="make-kind-icon">{k.icon}</span>
                 {k.label}
               </label>
             ))}
-          </fieldset>
+          </div>
           <input
             id="create-prompt"
             ref={inputRef}

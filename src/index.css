@@ -667,6 +667,28 @@ html.touch-ui [contenteditable='true'] {
   user-select: text;
 }
 
+/* iOS Safari zooms the whole page into any text field under 16px when it gets focus,
+   and often stays zoomed after: the sheet then sits half off-screen, tabs at the edge
+   (Terrain) can't be seen and taps land in the wrong place (2026-11-06 playtest, iPhone
+   14: the Library search and the Create prompt were 14px). Every text field on touch is
+   16px or more, whatever its own rule says. */
+html.touch-ui input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+html.touch-ui select,
+html.touch-ui textarea {
+  font-size: max(16px, 1em) !important;
+}
+
+/* Sheet controls that were drawn for a mouse: at least 44 × 44 to the thumb (AGENTS.md rule 2). */
+html.touch-ui .planner-close { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; touch-action: manipulation; }
+html.touch-ui .planner-ghost { min-height: 44px; min-width: 44px; padding: 0 10px; }
+html.touch-ui .planner-chip { min-height: 44px; padding: 0 14px; touch-action: manipulation; }
+html.touch-ui .planner-send { width: 44px; height: 44px; }
+html.touch-ui .library-dot { width: 34px; height: 34px; }
+html.touch-ui .library-swatches { gap: 8px; }
+html.touch-ui .library-color input[type='color'] { width: 44px; height: 44px; }
+html.touch-ui .library-block,
+html.touch-ui .library-shape { min-height: 44px; touch-action: manipulation; }
+
 /* The keyboard map (and key-letter HUD hints) mean nothing on a phone;
    the DRIVE/NEUTRAL label is replaced by the tappable touch toggle. */
 html.touch-ui .hud-keyboard,
@@ -4574,8 +4596,24 @@ body:has(#onboarding-hint) .wave-banner { top: calc(env(safe-area-inset-top, 0px
 }
 /* Touch: Create opens from the dock's 🧱 Make (its pill is hidden below), under the top bar. */
 html.touch-ui .create-panel { top: calc(60px + env(safe-area-inset-top, 0px)); bottom: auto; }
+/* Touch: the form is the sheet. It stops above the thumb buttons and scrolls inside, so the
+   Make button, lengths, voice and switches are never pushed off-screen or under a thumb
+   button (2026-11-06 playtest: buttons in the Make sheet couldn't be reached on an iPhone 14).
+   Jobs in progress go under the form, capped, instead of pushing it down. */
+html.touch-ui .create-panel .create-form {
+  --create-room: calc(100dvh - 60px - 296px - 52px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  max-height: max(180px, var(--create-room));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+html.touch-ui .create-panel:has(.make-tabs) .create-makings { order: 2; max-height: 112px; overflow-y: auto; overscroll-behavior: contain; }
+html.touch-ui .create-panel:has(.make-tabs):has(.create-makings) .create-form { max-height: max(160px, calc(var(--create-room) - 120px)); }
 @media (orientation: landscape) {
   html.touch-ui .create-panel { top: calc(12px + env(safe-area-inset-top, 0px)); width: min(480px, calc(100vw - 380px)); }
+  html.touch-ui .create-panel .create-form {
+    --create-room: calc(100dvh - 12px - 76px - 52px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* ── Plant a world (Create World, 2026-10-21): space only, same slot Create
@@ -5009,7 +5047,13 @@ html.touch-ui .make-tabs {
   padding: 3px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
 }
+html.touch-ui .make-tabs::-webkit-scrollbar { display: none; }
 html.touch-ui .create-panel .make-tabs {
   width: 100%;
   box-sizing: border-box;
@@ -5019,8 +5063,12 @@ html.touch-ui .create-panel .make-tabs {
   border: 1px solid rgba(180, 160, 255, 0.22);
 }
 .make-tab {
-  flex: 1;
-  min-height: 40px;
+  flex: 1 0 auto;
+  min-height: 44px;
+  padding: 0 8px;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  touch-action: manipulation;
   font: inherit;
   font-family: var(--font-body);
   font-size: var(--text-sm);
@@ -5196,8 +5244,34 @@ html.touch-ui .mana-pill-wide { display: none; }
 
 
 /* ── Library shelves: blocks, shapes (offline) + made models ───────── */
-.library-tabs { display: flex; gap: 4px; padding: 3px; background: rgba(255, 255, 255, 0.06); border-radius: 12px; flex: none; }
-.library-tab { flex: 1; font: inherit; font-size: var(--text-sm); font-weight: 600; color: var(--color-text-secondary); background: none; border: none; border-radius: 9px; padding: 6px 0; cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
+/* Tabs share the width when they fit and scroll sideways when they don't (a phone with
+   zoomed text, 6 shelves, a narrow landscape sheet): never clipped (2026-11-06 playtest:
+   Terrain was out of reach on an iPhone 14 and the bar wouldn't scroll). */
+.library-tabs {
+  display: flex; gap: 4px; padding: 3px; background: rgba(255, 255, 255, 0.06); border-radius: 12px; flex: none;
+  min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+.library-tabs::-webkit-scrollbar { display: none; }
+/* More tabs off to one side (useScrollHint): fade that edge, "swipe for more" */
+.library-tabs.has-more-right,
+html.touch-ui .make-tabs.has-more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+}
+.library-tabs.has-more-left:not(.has-more-right),
+html.touch-ui .make-tabs.has-more-left:not(.has-more-right) {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+}
+.library-tabs.has-more-left.has-more-right,
+html.touch-ui .make-tabs.has-more-left.has-more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+}
+.library-tab { flex: 1 0 auto; font: inherit; font-size: var(--text-sm); font-weight: 600; color: var(--color-text-secondary); background: none; border: none; border-radius: 9px; padding: 6px 10px; white-space: nowrap; scroll-snap-align: start; cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
+html.touch-ui .library-tab { min-height: 44px; padding: 0 8px; touch-action: manipulation; }
+html.touch-ui .create-submit { min-height: 44px; }
 .library-tab:hover { color: var(--color-text-primary); }
 .library-tab.is-on { color: var(--color-text-primary); background: rgba(150, 125, 255, 0.35); }
 .library-shelf { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
@@ -6714,6 +6788,13 @@ html.touch-ui #journey-chip { display: none; }
   scrollbar-width: none;
 }
 .make-kinds::-webkit-scrollbar { display: none; }
+/* Phones: the row is wider than the screen; fade its right edge so it reads as "swipe for more" */
+html.touch-ui .make-kinds {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  padding-right: 24px;
+  overscroll-behavior-x: contain;
+}
 .make-kind,
 .make-length {
   position: relative;

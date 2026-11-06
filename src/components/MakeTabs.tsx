@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react'
 import { useSheetStore, type SheetName } from '../stores/sheetStore'
+import { useScrollHint } from '../hooks/useScrollHint'
 
 const TABS: [SheetName, string][] = [
   ['library', '▦ Library'],
@@ -14,8 +16,14 @@ const TABS: [SheetName, string][] = [
  */
 export function MakeTabs({ current }: { current: SheetName }) {
   const setSheet = useSheetStore((s) => s.setSheet)
+  const ref = useRef<HTMLElement>(null)
+  useScrollHint(ref, [current])
+  // The open sheet's tab stays in view when the row scrolls sideways (narrow phones)
+  useEffect(() => {
+    document.getElementById(`make-tab-${current}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [current])
   return (
-    <nav className="make-tabs" role="tablist" aria-label="Make">
+    <nav ref={ref} className="make-tabs" role="tablist" aria-label="Make">
       {TABS.map(([name, label]) => (
         <button
           key={name}

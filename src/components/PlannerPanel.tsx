@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
+import { focusForKeyboard } from '../lib/touchUi'
 import { refreshMana } from '../stores/manaTrackerStore'
 import type { Blueprint, BlueprintEdit } from '@aweborn/shared/blueprint'
 import { ASSET_MANA, DEFAULT_ASSET_SIZE } from '@aweborn/shared/blueprint'
@@ -283,7 +284,7 @@ export function PlannerPanel() {
 
   useEffect(() => {
     if (!open) return
-    setTimeout(() => inputRef.current?.focus(), 0)
+    setTimeout(() => focusForKeyboard(inputRef.current), 0)
     if (models.length) return
     fetch(`${AUTH_URL}/api/player/plan/models`, { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
@@ -398,7 +399,7 @@ export function PlannerPanel() {
         setError('The planner is resting right now. Try again soon.')
       } finally {
         setBusy(false)
-        setTimeout(() => inputRef.current?.focus(), 0)
+        setTimeout(() => focusForKeyboard(inputRef.current), 0)
       }
     },
     [busy, activeWorldId, sessionId, model],
