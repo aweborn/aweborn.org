@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUniverseStore } from '../stores/universeStore'
 import { AUTH_URL } from '../lib/player'
+import { focusForKeyboard } from '../lib/touchUi'
+import { MindList } from './MindPanels'
+import { useScrollHint } from '../hooks/useScrollHint'
+import type { LibraryMind } from '@aweborn/shared/mind-library'
 import { setBlockSurface, useWorldStore } from '../stores/worldStore'
 import { isLiquidBlock } from '@aweborn/shared/voxel'
 import { usePresence } from '../hooks/usePresence'
@@ -44,8 +48,8 @@ interface Asset {
 
 const STARTING_SIZE = 3 // meters, longest side
 
-type Tab = 'blocks' | 'shapes' | 'made' | 'sounds' | 'terrain'
-const TABS: ReadonlyArray<readonly [Tab, string]> = [['blocks', 'Blocks'], ['shapes', 'Shapes'], ['made', 'Made'], ['sounds', 'Sounds']]
+type Tab = 'blocks' | 'shapes' | 'made' | 'minds' | 'sounds' | 'terrain'
+const TABS: ReadonlyArray<readonly [Tab, string]> = [['blocks', 'Blocks'], ['shapes', 'Shapes'], ['made', 'Made'], ['minds', 'Minds'], ['sounds', 'Sounds']]
 /** The shelves that search the server's library, and which kinds each one asks for. */
 const SEARCH_KINDS: Partial<Record<Tab, string>> = { made: 'model', sounds: 'sound,music,voice' }
 const TABS_WITH_TERRAIN: ReadonlyArray<readonly [Tab, string]> = [...TABS, ['terrain', 'Terrain']]
@@ -57,7 +61,7 @@ function loadPrefs(): { color: string; size: number; tab: Tab } {
     return {
       color: cleanColor(p.color, SHAPE_COLORS[5]),
       size: Math.min(SHAPE_SIZE.max, Math.max(SHAPE_SIZE.min, Number(p.size) || SHAPE_SIZE.start)),
-      tab: p.tab === 'shapes' || p.tab === 'made' || p.tab === 'sounds' || p.tab === 'terrain' ? p.tab : 'blocks',
+      tab: p.tab === 'shapes' || p.tab === 'made' || p.tab === 'minds' || p.tab === 'sounds' || p.tab === 'terrain' ? p.tab : 'blocks',
     }
   } catch {
     return { color: SHAPE_COLORS[5], size: SHAPE_SIZE.start, tab: 'blocks' }
@@ -163,6 +167,8 @@ export function LibraryPanel() {
   const worldBlocks: LibraryBlock[] = (worldTerrain?.blocks ?? []).map((b) => ({ id: b.id, name: b.name, color: cleanColor(b.color) }))
   const standardBlocks = STANDARD_BLOCKS.filter((b) => !worldBlocks.some((w) => w.id === b.id))
   const tabs = canTerrain ? TABS_WITH_TERRAIN : TABS
+  const tabsRef = useRef<HTMLElement>(null)
+  useScrollHint(tabsRef, [open, tabs.length])
 
   useEffect(() => {
     if (!playerId) return
@@ -234,7 +240,12 @@ export function LibraryPanel() {
   const keyNav = useRef(false)
   useEffect(() => {
     if (keyNav.current) { keyNav.current = false; return }
-    if (open && SEARCH_KINDS[tab]) setTimeout(() => inputRef.current?.focus(), 0)
+    if (open && SEARCH_KINDS[tab]) setTimeout(() => focusForKeyboard(inputRef.current), 0)
+  }, [open, tab])
+
+  // The chosen shelf's tab stays in view when the tab bar scrolls sideways (narrow phones)
+  useEffect(() => {
+    if (open) document.getElementById(`library-tab-${tab}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
   }, [open, tab])
 
   // Sounds shelf: tap a tile to hear it (through the world bus, so mute and volume apply); tap again to stop
@@ -304,6 +315,18 @@ export function LibraryPanel() {
     (a: Asset) => {
       equip({ kind: 'model', sha: a.sha, file: a.file, prompt: a.prompt, size: STARTING_SIZE, rotY: 0 })
       setPlaced(a.sha)
+      setOpen(false)
+    },
+    [equip, setOpen],
+  )
+
+  // Minds shelf (2026-11-06): hold its body; each one you place gets the saved mind (its own branch)
+  const selectMind = useCallback(
+    (m: LibraryMind) => {
+      const sha = m.body.asset.slice(0, 64)
+      const size = Math.min(30, Math.max(0.3, ...m.body.scale))
+      equip({ kind: 'model', sha, file: m.body.asset, prompt: m.body.prompt ?? m.name, size, rotY: 0, mindId: m.id, mindName: m.name })
+      setPlaced(`mind:${m.id}`)
       setOpen(false)
     },
     [equip, setOpen],
@@ -396,7 +419,7 @@ export function LibraryPanel() {
           ×
         </button>
       </header>
-      <nav className="library-tabs" role="tablist" aria-label="Library shelves" onKeyDown={onTabKey}>
+      <nav ref={tabsRef} className="library-tabs" role="tablist" aria-label="Library shelves" onKeyDown={onTabKey}>
         {tabs.map(([id, label]) => (
           <button
             key={id}
@@ -615,6 +638,17 @@ export function LibraryPanel() {
         })}
         {!loading && !assets.length && !error && <li className="planner-empty">Nothing here yet. Make something, and it lands here for everyone.</li>}
       </ul>
+        </div>
+      )}
+
+      {tab === 'minds' && (
+        <div className="library-made" id="library-minds" role="tabpanel" aria-labelledby="library-tab-minds">
+          <MindList
+            action={{ label: () => 'Hold', run: selectMind }}
+            heldId={heldItem?.kind === 'model' && heldItem.mindId ? heldItem.mindId : placed?.startsWith('mind:') ? placed.slice(5) : null}
+            empty="No saved minds yet. Give a creation a mind (✦ on it), then Save to Library, and it lands here for everyone."
+          />
+          <p className="library-hint">Hold puts its body in your hand; every one you place wakes up with this mind and what it remembers, then grows its own way. To give a mind to something already here, carry it and tap ✦.</p>
         </div>
       )}
 

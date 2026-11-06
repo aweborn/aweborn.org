@@ -12,7 +12,7 @@ import { cleanPlayerName } from "../../../shared/names.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
-import { MindHost, startAnimate, createMind } from "./minds.js";
+import { MindHost, startAnimate, createMind, mindHistory, saveMind, adoptMind, removeSavedMind, mindShelf, handleMindLibrary } from "./minds.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore, hookWorldMusic } from "./planner.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
@@ -473,6 +473,17 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   if (path === "/api/player/mind" && req.method === "POST") {
     return createMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
   }
+  // Minds you keep (2026-11-06): history, save to the Library, give a saved mind, the shelf
+  if (path === "/api/player/mind/history" && req.method === "GET") return mindHistory(rooms, session.playerId, accountId, req, json);
+  if (path === "/api/player/mind/save" && req.method === "POST") {
+    return saveMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
+  }
+  if (path === "/api/player/mind/adopt" && req.method === "POST") {
+    return adoptMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
+  }
+  if (path === "/api/player/minds" && req.method === "GET") return mindShelf(session.playerId, req, json);
+  const mindRm = /^\/api\/player\/mind\/library\/([a-f0-9]{64})\/remove$/.exec(path ?? "");
+  if (mindRm && req.method === "POST") return removeSavedMind(session.playerId, accountId, mindRm[1], json);
   if (path === "/api/player/lore" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { prompt?: unknown; subject?: unknown } | null;
     return writeLore(rooms, session.playerId, body, json);
@@ -776,6 +787,8 @@ const server = createServer((req, res) => {
   if (handleManaPublic(req, res)) return;
   // How a world was made: its planner conversations, public (the story stone, making-of.ts)
   if (handleMakingOf(req, res, corsHeaders(req))) return;
+  // The Library's Minds shelf and a saved mind's history: public, like made models (minds.ts)
+  if (handleMindLibrary(req, res, corsHeaders(req), rooms)) return;
   if (handleAssets(req, res)) return;
   if (handleLibrary(req, res)) return;
   if (req.url?.startsWith("/api/admin/") && handleTrashAdmin(req, res, req.url.split("?")[0], MANA_ADMIN_TOKEN, corsHeaders(req))) return;

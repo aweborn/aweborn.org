@@ -8,6 +8,9 @@ import { inputManager } from '../systems/InputManager'
 import { audio } from '../audio/engine'
 import { refreshProgress } from '../stores/progressStore'
 import { libraryThumb } from '../lib/libraryThumbs'
+import { adoptMind, fetchMindHistory, saveMindToLibrary } from '../lib/minds'
+import { MindHistoryView, MindList } from './MindPanels'
+import type { MindHistory } from '@aweborn/shared/mind-library'
 import './LifePanel.css'
 
 /**
@@ -64,6 +67,14 @@ function LifeDialog({ id }: { id: string }) {
   /** The body check said it isn't two-legged: offer four legs / Alive, or "Animate anyway". */
   const [notBiped, setNotBiped] = useState<null | 'quadruped' | 'other'>(null)
   const [thumb, setThumb] = useState<string | null>(null)
+  // Minds you keep (2026-11-06): its history, saving it, giving it a saved one
+  const [history, setHistory] = useState<MindHistory | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [adopting, setAdopting] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [savedNote, setSavedNote] = useState<string | null>(null)
+  const mindKey = obj?.mind ? `${obj.mind.name}|${obj.mind.greeting ?? ''}|${obj.mind.voice}` : ''
 
   // A picture of what's being changed (drawn on this device once, shared with the server)
   const stillFile = obj?.stillAsset ?? obj?.asset
@@ -75,6 +86,41 @@ function LifeDialog({ id }: { id: string }) {
       alive = false
     }
   }, [stillFile])
+
+  // Its history (re-read whenever the mind changes: grown, given)
+  useEffect(() => {
+    if (!worldId || !mindKey) {
+      setHistory(null)
+      return
+    }
+    let live = true
+    void fetchMindHistory(worldId, id).then((r) => live && setHistory(r.ok ? r.data : null))
+    return () => {
+      live = false
+    }
+  }, [worldId, id, mindKey])
+
+  const saveToLibrary = async () => {
+    if (!worldId || saving) return
+    setSaving(true)
+    setError(null)
+    const r = await saveMindToLibrary(worldId, id)
+    setSaving(false)
+    if (!r.ok) return setError(r.message)
+    setSavedNote(r.data.already ? 'Already in the Library, just as it is now.' : 'Saved to the Library (Make → Library → Minds). Anyone can find it, read how it was written and give it to their own creations.')
+    setHistory((h) => (h ? { ...h, saved: r.data.id } : h))
+  }
+
+  const giveSaved = async (mindId: string) => {
+    if (!worldId || adopting) return
+    setAdopting(mindId)
+    setError(null)
+    const r = await adoptMind(worldId, id, mindId)
+    setAdopting(null)
+    if (!r.ok) return setError(r.message)
+    audio.creationDone()
+    setPicking(false)
+  }
 
   useEffect(() => {
     const d = ref.current
@@ -303,6 +349,44 @@ function LifeDialog({ id }: { id: string }) {
               <p className="life-note">
                 Players who talk near it (or say its name) get an answer in chat{obj.mind.spoken ? ', spoken aloud' : ''}. Each answer is drawn from the speaker’s mana (about 1). A mind is never forgotten: what you add below grows it.
               </p>
+              {history && history.versions.length > 0 && (
+                <div className="life-mind-history">
+                  <button type="button" id="life-mind-history" className="life-secondary" aria-expanded={historyOpen} onClick={() => setHistoryOpen((v) => !v)}>
+                    {historyOpen ? 'Hide its history' : `Its history · ${history.versions.length} ${history.versions.length === 1 ? 'version' : 'versions'}`}
+                  </button>
+                  {historyOpen && <MindHistoryView history={history} />}
+                </div>
+              )}
+              {history?.saved ? (
+                <p className="life-note life-saved">In the Library ✓ (Make → Library → Minds), just as it is now. What you add next can be saved again as a new version.</p>
+              ) : (
+                <button type="button" id="life-mind-save" className="life-secondary" disabled={saving} onClick={() => void saveToLibrary()}>
+                  {saving ? 'Saving…' : 'Save to Library'}
+                </button>
+              )}
+              {savedNote && !history?.saved && <p className="life-note">{savedNote}</p>}
+              {!history?.saved && (
+                <p className="life-note life-fine">Saving publishes it: its name, how it was written (every version and who wrote it) and what it remembers about players, which it only uses when that player talks to it.</p>
+              )}
+            </div>
+          )}
+          {!obj?.mind && (
+            <div className="life-mind-pick">
+              {picking ? (
+                <>
+                  <p className="life-note"><b>Give it a saved mind.</b> It wakes up as that character with what it remembers, then grows its own way here; the saved one stays as it was. Free.</p>
+                  <MindList
+                    action={{ label: () => 'Give', run: (m) => void giveSaved(m.id) }}
+                    busyId={adopting}
+                    empty="No saved minds yet. Give something a mind, then Save to Library."
+                  />
+                  <button type="button" className="life-link" onClick={() => setPicking(false)}>Or describe a new one ↓</button>
+                </>
+              ) : (
+                <button type="button" id="life-mind-pick" className="life-secondary" onClick={() => setPicking(true)}>
+                  Give it a saved mind (free)
+                </button>
+              )}
             </div>
           )}
           <form className="life-mind-form" onSubmit={giveMind}>

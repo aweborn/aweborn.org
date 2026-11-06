@@ -19,11 +19,14 @@ import { getChunk, placeOnTerrain } from './worldVoxels'
 import { useUniverseStore } from './universeStore'
 import { interiorController } from '../systems/InteriorController'
 import type { SoundMedia } from '../lib/soundKinds'
+import { adoptWhenPlaced } from '../lib/minds'
+import { useChatStore } from './chatStore'
 
 export type HeldItem =
   | { kind: 'block'; block: LibraryBlock }
   | { kind: 'shape'; shape: { id: string; name: string }; color: string; size: number; rotY: number }
-  | { kind: 'model'; sha: string; file: string; prompt: string; size: number; rotY: number }
+  /** A made model; from the Minds shelf it also carries a saved mind, given to each one placed (2026-11-06). */
+  | { kind: 'model'; sha: string; file: string; prompt: string; size: number; rotY: number; mindId?: string; mindName?: string }
   /** A made sound (Library → Sounds): placing it sets down an orb with this file and the words it was made from. */
   | { kind: 'sound'; sha: string; file: string; prompt: string; media: SoundMedia; loop: boolean }
   /** Terrain editing (M5d, owners): dig a cell out, or fill one with the world's block `block` (1-based, as in the grid). */
@@ -214,10 +217,19 @@ export function placeEquippedItem(playerId: string): string | null {
   if (item.kind === 'sound') {
     return placeMedia(doc, { type: 'sound', asset: item.file, prompt: item.prompt, media: item.media, loop: item.loop }, { x: pos.x, y: pos.y, z: pos.z }, playerId)
   }
-  return placeModel(doc, item.file, item.prompt, { x: pos.x, y: pos.y, z: pos.z }, playerId, {
+  const id = placeModel(doc, item.file, item.prompt, { x: pos.x, y: pos.y, z: pos.z }, playerId, {
     scale: item.size,
     rotY: item.rotY,
   })
+  // A body from the Minds shelf: once the server has it, it gets the saved mind (its own branch)
+  const worldId = useUniverseStore.getState().activeWorldId
+  if (item.mindId && worldId) {
+    const name = item.mindName ?? 'It'
+    void adoptWhenPlaced(worldId, id, item.mindId).then((r) => {
+      useChatStore.getState().showNotice(r.ok ? `${name} is here, with everything it remembers.` : r.message || `${name}'s mind didn't come along. Try ✦ on it.`)
+    })
+  }
+  return id
 }
 
 export const CARRY_TOGGLE_EVENT = 'aweborn:carry-toggle'

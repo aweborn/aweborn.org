@@ -1,0 +1,85 @@
+/* ── Minds you keep (2026-11-06): Minds shelf, saved-mind picker, a mind's history ── */
+
+.mind-thumb { display: grid; place-items: center; font-size: 22px; color: #ffd8b8; background: linear-gradient(145deg, rgba(217, 98, 43, 0.45), rgba(155, 63, 196, 0.45)); }
+.mind-item .library-prompt b { color: var(--color-text-primary); }
+.mind-item-greeting { color: #ffd8b8; font-style: italic; }
+.mind-item-more {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: #ffb27a;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mind-history-wide { grid-column: 1 / -1; }
+/* In the Life sheet the list sits in a scrolling dialog: let it grow with the page */
+.life-mind-pick .mind-list .library-list { overflow: visible; }
+.life-mind-pick { display: flex; flex-direction: column; gap: var(--space-sm); }
+.life-mind-history { display: flex; flex-direction: column; gap: var(--space-sm); }
+.life-saved { color: #b8f0cf; }
+.life-fine { font-size: var(--text-xs); color: var(--color-text-tertiary); }
+
+.mind-history { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
+.mind-origin b { color: var(--color-text-primary); }
+.mind-versions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.mind-version {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 0;
+}
+.mind-version-head { margin: 0; font-size: var(--text-xs); color: var(--color-text-tertiary); }
+.mind-version-head b { color: #ffb27a; }
+.mind-version-words {
+  margin: 0;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid rgba(255, 170, 110, 0.6);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mind-version-detail { font-size: var(--text-xs); color: var(--color-text-secondary); min-width: 0; }
+.mind-version-detail > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: #ffb27a;
+  list-style: none;
+}
+.mind-version-detail > summary::-webkit-details-marker { display: none; }
+.mind-version-detail > summary::before { content: '▸'; margin-right: 6px; transition: transform 0.15s ease; }
+.mind-version-detail[open] > summary::before { transform: rotate(90deg); }
+.mind-label { margin: 6px 0 4px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255, 200, 160, 0.6); }
+.mind-pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #e8e2ff;
+}
+.mind-persona { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: var(--text-xs); line-height: 1.45; }
+.mind-persona dt { color: var(--color-text-tertiary); }
+.mind-persona dd { margin: 0; color: var(--color-text-primary); overflow-wrap: anywhere; }
+@media (max-width: 380px) {
+  .mind-persona { grid-template-columns: 1fr; }
+  .mind-persona dd { margin-bottom: 4px; }
+}
