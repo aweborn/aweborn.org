@@ -23,7 +23,8 @@ import { useWorldStore, kickObject, settleObject, moveObject, duplicateObject, r
 import { interiorController } from '../systems/InteriorController'
 import { useModelShapes, modelColliders } from '../stores/modelShapes'
 import { cleanLife } from '@aweborn/shared/life'
-import { collidersFor, kickTarget, kickVelocity, kickedPosition, KICK_SETTLE_SEC, type Box } from '@aweborn/shared/sim/interior'
+import { collidersFor, kickTarget, kickVelocity, trajectoryAt, KICK_SETTLE_SEC, KICK_ORPHAN_SEC, type Box } from '@aweborn/shared/sim/interior'
+import { aimAt, kickPath, livePosition, localCarry, roamOffset, roams } from '../stores/livePosition'
 import { usePlannerStore } from '../stores/plannerStore'
 import { usePhotoStore } from '../stores/photoStore'
 import { CARD_PHOTO } from '@aweborn/shared/cards'
@@ -427,7 +428,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   const shapes = useModelShapes((s) => s.shapes)
   // Grab (G): carry the object in front of you; Z / X turn it; G again sets it down
   const [heldId, setHeldId] = useState<string | null>(null)
-  const held = useRef<{ id: string; rotY: number; dist: number; lift: number; lastWrite: number; k: number; base: { x: number; y: number; z: number } } | null>(null)
+  const held = useRef<{ id: string; rotY: number; dist: number; lift: number; lastWrite: number; k: number; base: { x: number; y: number; z: number }; wrote?: { x: number; z: number }; offSince?: number } | null>(null)
   const turnKeys = useRef({ z: false, x: false, r: false, f: false })
   // Dig/fill edits (M5d) change the chunks' colliders
   const editsRev = useTerrainEditsRev((s) => s.rev)
@@ -451,6 +452,14 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- editsRev: chunksAround reads the edit overlay
   }, [objects, ghostVisible, ghostTerrain, voxelTerrain, heldId, shapes, pcx, pcz, editsRev])
 
+  /** Stop carrying (set down, deleted, or the server refused our moves). */
+  const endCarry = () => {
+    held.current = null
+    localCarry.id = null
+    setHeldId(null)
+    useHeldItemStore.getState().setCarryingId(null)
+  }
+
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
@@ -460,27 +469,29 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       const doc = useUniverseStore.getState().activeWorldDoc
       const s = interiorController.state
       if (held.current) {
-        // Set it down where it is now
+        // Set it down where it is now. A roamer's x/z is its home: put the home where its
+        // roam lands it right here, so it walks on from your hands instead of jumping away.
         const o = useWorldStore.getState().objects.get(held.current.id)
         if (doc && o) {
           const p = carryPosition(s, held.current, { scaleY: scaleOf(held.current).y })
-          moveObject(doc, o.id, p, held.current.rotY, scaleOf(held.current))
+          const r = roams(o) ? roamOffset({ ...o, carry: undefined }) : { dx: 0, dz: 0 }
+          moveObject(doc, o.id, { x: p.x - r.dx, y: p.y, z: p.z - r.dz }, held.current.rotY, scaleOf(held.current), null)
           progress.use('arrange')
         }
-        held.current = null
-        setHeldId(null)
-        useHeldItemStore.getState().setCarryingId(null)
+        endCarry()
         return
       }
       const all = Array.from(useWorldStore.getState().objects.values()).filter((o) => !o.kick)
-      // Only what you may edit (yours, or anything in a world you own): the server reverts the rest
-      const target = kickTarget(s, all.filter((o) => canEditHere(o)))
+      // Only what you may edit (yours, or anything in a world you own): the server reverts the rest.
+      // Aim at where things are now (a roaming creature isn't at its home spot).
+      const target = kickTarget(s, all.filter((o) => canEditHere(o)), aimAt)
       if (!target) {
-        if (kickTarget(s, all)) useChatStore.getState().showNotice('That belongs to someone else. You can still kick it.')
+        if (kickTarget(s, all, aimAt)) useChatStore.getState().showNotice('That belongs to someone else. You can still kick it.')
         return
       }
+      const at = livePosition(target, true)
       const half = 0.5 * Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleZ || 1))
-      held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: target.y - s.y, lastWrite: 0, k: Math.min(1, 30 / Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleY || 1), Math.abs(target.scaleZ || 1))), base: { x: target.scaleX || 1, y: target.scaleY || 1, z: target.scaleZ || 1 } }
+      held.current = { id: target.id, rotY: target.rotY ?? 0, dist: half + 1.2, lift: at.y - s.y, lastWrite: 0, k: Math.min(1, 30 / Math.max(Math.abs(target.scaleX || 1), Math.abs(target.scaleY || 1), Math.abs(target.scaleZ || 1))), base: { x: target.scaleX || 1, y: target.scaleY || 1, z: target.scaleZ || 1 } }
       setHeldId(target.id)
       useHeldItemStore.getState().setCarryingId(target.id)
     }
@@ -494,9 +505,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         const h = held.current
         if (kind === 'delete') {
           useWorldStore.getState().removeObject(doc, h.id)
-          held.current = null
-          setHeldId(null)
-          useHeldItemStore.getState().setCarryingId(null)
+          endCarry()
           return
         }
         if (kind === 'duplicate') {
@@ -538,9 +547,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
         e.preventDefault()
         const doc = useUniverseStore.getState().activeWorldDoc
         if (doc) useWorldStore.getState().removeObject(doc, held.current.id)
-        held.current = null
-        setHeldId(null)
-        useHeldItemStore.getState().setCarryingId(null)
+        endCarry()
         return
       }
       if (matchesBinding(e, 'heldRotateLeft')) turnKeys.current.z = true
@@ -575,6 +582,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       window.removeEventListener(HELD_ADJUST_EVENT, onAdjust)
       window.removeEventListener(HELD_RECOLOR_EVENT, onRecolor)
       useHeldItemStore.getState().setCarryingId(null)
+      localCarry.id = null
     }
   }, [playerId])
   const camTarget = useRef(new THREE.Vector3())
@@ -649,8 +657,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
 
     // Kick (N): the object in front of you; 2 CRDT writes per kick
     const doc = useUniverseStore.getState().activeWorldDoc
-    const nonKicked = Array.from(objects.values()).filter((o) => !o.kick)
-    const targetObj = kickTarget(s, nonKicked)
+    const nonKicked = Array.from(objects.values()).filter((o) => !o.kick && o.id !== held.current?.id)
+    const targetObj = kickTarget(s, nonKicked, aimAt)
     const heldStore = useHeldItemStore.getState()
     sceneHints.hasTargetObject = targetObj !== null
     sceneHints.isCarryingObject = held.current !== null
@@ -665,24 +673,36 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       if (scaleExp !== 0) heldStore.scaleItem(Math.exp(scaleExp))
     }
 
-    // Carrying: the object follows in front of you; everyone sees it move (≤ 10 writes/s)
+    // Carrying: the object follows in front of you. You see it every frame (localCarry, drawn from
+    // your own hands at the interpolated pose); everyone else sees ≤ 10 writes/s, smoothed on their side.
     if (doc && held.current) {
       const h = held.current
       const o = objects.get(h.id)
       if (!o) {
-        held.current = null
-        setHeldId(null)
-        heldStore.setCarryingId(null)
+        endCarry()
       } else {
         h.rotY += ((turnKeys.current.x ? 1 : 0) - (turnKeys.current.z ? 1 : 0)) * 1.8 * delta
         const big = Math.max(h.base.x, h.base.y, h.base.z)
         h.k = Math.min(30 / big, Math.max(0.3 / big, h.k * Math.exp(((turnKeys.current.r ? 1 : 0) - (turnKeys.current.f ? 1 : 0)) * 1.0 * delta)))
         h.dist = 0.5 * Math.max(h.base.x, h.base.z) * h.k + 1.2
+        const sc = scaleOf(h)
+        const pose = carryPosition({ x, y, z, fx: s.fx, fz: s.fz }, h, { scaleY: sc.y })
         const now = performance.now()
-        if (now - h.lastWrite > 100) {
-          h.lastWrite = now
-          const sc = scaleOf(h)
-          moveObject(doc, h.id, carryPosition(s, h, { scaleY: sc.y }), h.rotY, sc)
+        // The server refused our moves (it isn't ours after all): it keeps snapping back to where it
+        // was. Let go instead of tugging it back and forth.
+        const live = useWorldStore.getState().objects.get(h.id)
+        const off = !!h.wrote && !!live && Math.hypot(live.x - h.wrote.x, live.z - h.wrote.z) > 2.5
+        h.offSince = off ? h.offSince ?? now : undefined
+        if (h.offSince !== undefined && now - h.offSince > 400) {
+          endCarry()
+          useChatStore.getState().showNotice('You can’t move that one. You can still kick it.')
+        } else {
+          Object.assign(localCarry, { id: h.id, x: pose.x, y: pose.y, z: pose.z, rotY: h.rotY, sx: sc.x, sy: sc.y, sz: sc.z })
+          if (now - h.lastWrite > 100) {
+            h.lastWrite = now
+            h.wrote = { x: pose.x, z: pose.z }
+            moveObject(doc, h.id, pose, h.rotY, sc, playerId ?? 'guest')
+          }
         }
       }
     }
@@ -723,13 +743,22 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
           useUniverseStore.getState().enterWorld(nearestChildWorldId)
           return
         }
-        const target = kickTarget(s, Array.from(objects.values()).filter((o) => !o.kick))
-        if (target) kickObject(doc, target.id, kickVelocity(s.fx, s.fz))
+        // Kick what you see where you see it (a roaming creature flies from where it walks)
+        if (targetObj) kickObject(doc, targetObj.id, kickVelocity(s.fx, s.fz), playerId ?? undefined, roams(targetObj) ? livePosition(targetObj, true) : undefined)
       }
+      // Land kicks: the kicker writes the landing (every client computes the same flight); anyone
+      // else only if the kicker left before doing it. A roamer's home moves so its roam starts
+      // where it landed.
       const now = serverNow()
       for (const o of objects.values()) {
-        if (o.kick && now - o.kick.t > KICK_SETTLE_SEC * 1000) {
-          settleObject(doc, o.id, kickedPosition(o, useWorldStore.getState().physics, KICK_SETTLE_SEC))
+        const k = o.kick
+        if (!k) continue
+        const age = now - k.t
+        const mineToLand = !k.by || k.by === playerId
+        if (age > (mineToLand ? KICK_SETTLE_SEC : KICK_ORPHAN_SEC) * 1000) {
+          const land = trajectoryAt(kickPath(o), KICK_SETTLE_SEC)
+          const r = roams(o) ? roamOffset({ ...o, kick: undefined }, now) : { dx: 0, dz: 0 }
+          settleObject(doc, o.id, { x: land.x - r.dx, y: land.y, z: land.z - r.dz })
         }
       }
     }

@@ -353,7 +353,13 @@ export interface PlacedObject {
    * Every client simulates the same flight; once settled, x/y/z is updated
    * and the kick removed.
    */
-  kick?: { vx: number; vy: number; vz: number; t: number };
+  kick?: { vx: number; vy: number; vz: number; t: number; by?: string };
+  /**
+   * Being carried (grab, 2026-11-06): who holds it and when they last moved it (server ms).
+   * While fresh, every client draws it where the carrier puts it (a roaming creature stops
+   * roaming, nothing turns to face anyone); a stale mark (carrier gone) is ignored.
+   */
+  carry?: { by: string; t: number };
   /**
    * Collision nudge (Phase 06, M7c): the server moved this new object off a spot another player's object
    * already took (typically two phones that placed things offline). `fx`/`fz` is where it was placed,

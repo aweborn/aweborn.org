@@ -248,25 +248,48 @@ export function stepInterior(
 }
 
 // ── Kicked objects (event-sourced physics) ──────────────────────────
+//
+// Revamped 2026-11-06 (playtest: kicked things fell through the floor). The old
+// flight only knew the plane y = 0, so anything kicked on voxel ground (every
+// planned world) sank into the hill under it and came to rest inside the terrain,
+// and it was clamped to the old 40 m room even in bigger worlds. Now the flight
+// collides with the terrain (floors, walls, ledges, caves), with other placed
+// things and with the world's real edge, and the whole trajectory is computed
+// once per kick, so drawing it every frame costs nothing and every client lands
+// it in the same spot.
 
 /** How long a kicked object flies before it is settled (and written back). */
 export const KICK_SETTLE_SEC = 4;
+/** After this long anyone settles a kick (its kicker left before writing the landing). */
+export const KICK_ORPHAN_SEC = KICK_SETTLE_SEC + 3;
 const KICK_SPEED = 7;
 const KICK_LIFT = 3;
 const KICK_REACH = 1.6; // from the player's centre to the object's surface
+/** A kicked thing hops up onto a ledge this high (m) instead of bouncing off it. */
+const KICK_CLIMB = 0.3;
+/** Slower than this (m/s) on the ground = at rest. */
+const KICK_REST_SPEED = 0.05;
+/** Bounces softer than this (m/s) stop. */
+const KICK_MIN_BOUNCE = 0.6;
+/** Cells scanned down a column looking for ground (then the floor y = 0 counts). */
+const KICK_SCAN = 64;
 
 /** Kick velocity for a player facing (fx, fz). */
 export function kickVelocity(fx: number, fz: number): { vx: number; vy: number; vz: number } {
   return { vx: fx * KICK_SPEED, vy: KICK_LIFT, vz: fz * KICK_SPEED };
 }
 
+/** Where a placed thing is right now, when that isn't its x/z (a roaming creature). Default: x/y/z. */
+export type PositionOf = (o: PlacedObject) => { x: number; y: number; z: number };
+
 /** The closest object in front of the player within reach, or null. */
-export function kickTarget(s: InteriorState, objects: Iterable<PlacedObject>): PlacedObject | null {
+export function kickTarget(s: InteriorState, objects: Iterable<PlacedObject>, at?: PositionOf): PlacedObject | null {
   let best: PlacedObject | null = null;
   let bestD = Infinity;
   for (const o of objects) {
-    const dx = o.x - s.x;
-    const dz = o.z - s.z;
+    const p = at ? at(o) : o;
+    const dx = p.x - s.x;
+    const dz = p.z - s.z;
     const r = 0.5 * Math.max(Math.abs(o.scaleX || 1), Math.abs(o.scaleZ || 1));
     const d = Math.sqrt(dx * dx + dz * dz) - r;
     if (d > KICK_REACH || dx * s.fx + dz * s.fz < 0) continue; // out of reach or behind
@@ -276,31 +299,156 @@ export function kickTarget(s: InteriorState, objects: Iterable<PlacedObject>): P
 }
 
 /**
- * Where a kicked object is `elapsed` seconds after the kick. Deterministic
- * fixed-step sim (gravity, drag, ground bounce + friction, interior bounds),
- * so every client lands it in the same spot.
+ * What a kicked thing can hit. Everything here must be the same on every client
+ * (the terrain from the world's CRDT, other objects' plain boxes), never what one
+ * client happens to have loaded.
  */
-export function kickedPosition(o: PlacedObject, physics: PhysicsParams, elapsed: number): { x: number; y: number; z: number } {
+export interface KickWorld {
+  /** Is the 1 m terrain cell with its centre nearest (x, y, z) solid? Omit for flat ground at y = 0. */
+  solid?: (x: number, y: number, z: number) => boolean;
+  /** Half-size of the world's square (default: the classic 40 m room). */
+  halfExtent?: number;
+  /** Other things it bounces off and lands on (not itself). */
+  boxes?: readonly Box[];
+}
+
+/** One sample per fixed step (x, y, z interleaved), from the kick until it settles. */
+export interface KickTrajectory {
+  readonly points: Float64Array;
+  /** Number of steps simulated (points has steps + 1 entries). */
+  readonly steps: number;
+}
+
+/** Top of the highest solid cell in this column that starts below `yCap` (0 = the floor). */
+function groundUnder(solid: KickWorld["solid"], x: number, z: number, yCap: number): number {
+  if (!solid) return 0;
+  const top = Math.floor(yCap);
+  for (let j = top, n = 0; j >= 0 && n < KICK_SCAN; j--, n++) {
+    if (j + 1e-6 >= yCap) continue; // the cell starts at or above the cap: not under it
+    if (solid(x, j + 0.5, z)) return j + 1;
+  }
+  return 0;
+}
+
+/** Highest ground under the footprint (centre + 4 corners, a little inset). */
+function supportUnder(w: KickWorld, x: number, z: number, hx: number, hz: number, yCap: number): number {
+  const ix = hx * 0.98, iz = hz * 0.98;
+  let g = groundUnder(w.solid, x, z, yCap);
+  if (!w.solid) return g;
+  g = Math.max(g, groundUnder(w.solid, x - ix, z - iz, yCap));
+  g = Math.max(g, groundUnder(w.solid, x + ix, z - iz, yCap));
+  g = Math.max(g, groundUnder(w.solid, x - ix, z + iz, yCap));
+  g = Math.max(g, groundUnder(w.solid, x + ix, z + iz, yCap));
+  return g;
+}
+
+function boxHit(x: number, y: number, z: number, hx: number, hy: number, hz: number, b: Box): boolean {
+  return x + hx > b.minX && x - hx < b.maxX && y + hy > b.minY && y - hy < b.maxY && z + hz > b.minZ && z - hz < b.maxZ;
+}
+
+/**
+ * The whole flight of a kicked object: deterministic fixed steps (gravity, drag,
+ * bounces off terrain, walls and other things, ground friction, the world's edge)
+ * until KICK_SETTLE_SEC. Only + - * / floor and sqrt, so every client agrees.
+ */
+export function kickTrajectory(o: PlacedObject, physics: PhysicsParams, world: KickWorld = {}): KickTrajectory {
+  const steps = Math.round(KICK_SETTLE_SEC / INTERIOR_DT);
+  const points = new Float64Array((steps + 1) * 3);
   const k = o.kick;
-  if (!k) return { x: o.x, y: o.y, z: o.z };
-  const half = 0.5 * Math.abs(o.scaleY || 1);
-  let x = o.x, y = o.y, z = o.z, vx = k.vx, vy = k.vy, vz = k.vz;
-  const steps = Math.floor(Math.min(Math.max(elapsed, 0), KICK_SETTLE_SEC) / INTERIOR_DT);
+  let x = o.x, y = o.y, z = o.z;
+  points[0] = x; points[1] = y; points[2] = z;
+  if (!k) {
+    for (let i = 1; i <= steps; i++) { points[i * 3] = x; points[i * 3 + 1] = y; points[i * 3 + 2] = z; }
+    return { points, steps };
+  }
+  const hx = 0.5 * Math.abs(o.scaleX || 1), hy = 0.5 * Math.abs(o.scaleY || 1), hz = 0.5 * Math.abs(o.scaleZ || 1);
+  const edge = world.halfExtent ?? INTERIOR_HALF_EXTENT;
+  const boxes = world.boxes ?? [];
   const dt = INTERIOR_DT;
   const drag = clamp(physics.airResistance, 0, 1);
-  for (let i = 0; i < steps; i++) {
-    vx += physics.gravityX * dt; vy += physics.gravityY * dt; vz += physics.gravityZ * dt;
-    vx *= 1 - drag; vy *= 1 - drag; vz *= 1 - drag;
-    x += vx * dt; y += vy * dt; z += vz * dt;
-    if (y < half) {
-      y = half;
-      vy = -vy * physics.bounceCoefficient;
-      if (vy < 0.5) vy = 0;
-      const f = clamp(1 - physics.friction * 0.2, 0, 1); // ground friction per step
-      vx *= f; vz *= f;
+  const bounce = clamp(physics.bounceCoefficient, 0, 0.95);
+  const rub = clamp(1 - physics.friction * 0.2, 0, 1); // per step on the ground
+  let vx = k.vx, vy = k.vy, vz = k.vz;
+  let resting = false;
+
+  // Where it starts may already be dug into a slope: never count its own column as a wall
+  for (let i = 1; i <= steps; i++) {
+    if (!resting) {
+      vx += physics.gravityX * dt; vy += physics.gravityY * dt; vz += physics.gravityZ * dt;
+      vx *= 1 - drag; vy *= 1 - drag; vz *= 1 - drag;
+
+      // ── Horizontal, one axis at a time: walls bounce it back, low ledges lift it ──
+      for (let axis = 0; axis < 2; axis++) {
+        const v = axis === 0 ? vx : vz;
+        if (v === 0) continue;
+        const nx = axis === 0 ? x + v * dt : x;
+        const nz = axis === 0 ? z : z + v * dt;
+        const bottom = y - hy;
+        const here = supportUnder(world, x, z, hx, hz, bottom + KICK_CLIMB);
+        const there = supportUnder(world, nx, nz, hx, hz, bottom + KICK_CLIMB);
+        let blocked = there > Math.max(bottom + KICK_CLIMB, here) + 1e-9;
+        if (!blocked) for (const b of boxes) if (boxHit(nx, y, nz, hx, hy, hz, b) && b.maxY - bottom > KICK_CLIMB) { blocked = true; break; }
+        if (blocked) {
+          if (axis === 0) vx = -vx * bounce; else vz = -vz * bounce;
+          continue;
+        }
+        x = nx; z = nz;
+        if (there > bottom) y = there + hy; // hopped up a low ledge
+      }
+      // The world's edge is a wall too
+      if (x < -edge + hx) { x = -edge + hx; vx = Math.abs(vx) * bounce; }
+      else if (x > edge - hx) { x = edge - hx; vx = -Math.abs(vx) * bounce; }
+      if (z < -edge + hz) { z = -edge + hz; vz = Math.abs(vz) * bounce; }
+      else if (z > edge - hz) { z = edge - hz; vz = -Math.abs(vz) * bounce; }
+
+      // ── Vertical: land on the highest thing under where it was, bounce, rub ──
+      const prevBottom = y - hy;
+      y += vy * dt;
+      let floor = supportUnder(world, x, z, hx, hz, Math.max(prevBottom, y - hy) + 1e-3);
+      for (const b of boxes) {
+        if (x + hx > b.minX && x - hx < b.maxX && z + hz > b.minZ && z - hz < b.maxZ && b.maxY <= prevBottom + KICK_CLIMB && b.maxY > floor) floor = b.maxY;
+      }
+      let grounded = false;
+      if (y - hy <= floor) {
+        y = floor + hy;
+        if (vy < 0) vy = -vy * bounce;
+        if (vy < KICK_MIN_BOUNCE) vy = 0;
+        grounded = true;
+      } else if (vy > 0) {
+        // Ceilings (a cave roof, something above): stop rising
+        const headCell = Math.floor(y + hy);
+        let hit = !!world.solid && world.solid(x, headCell + 0.5, z) && headCell + 1e-6 >= y - hy;
+        if (!hit) for (const b of boxes) if (boxHit(x, y, z, hx, hy, hz, b)) { hit = true; break; }
+        if (hit) { y -= vy * dt; vy = 0; }
+      }
+      if (grounded && vy === 0) {
+        vx *= rub; vz *= rub;
+        if (Math.sqrt(vx * vx + vz * vz) < KICK_REST_SPEED) { vx = 0; vz = 0; resting = true; }
+      }
     }
-    if (x < -INTERIOR_HALF_EXTENT || x > INTERIOR_HALF_EXTENT) { x = clamp(x, -INTERIOR_HALF_EXTENT, INTERIOR_HALF_EXTENT); vx = -vx * physics.bounceCoefficient; }
-    if (z < -INTERIOR_HALF_EXTENT || z > INTERIOR_HALF_EXTENT) { z = clamp(z, -INTERIOR_HALF_EXTENT, INTERIOR_HALF_EXTENT); vz = -vz * physics.bounceCoefficient; }
+    points[i * 3] = x; points[i * 3 + 1] = y; points[i * 3 + 2] = z;
   }
-  return { x, y, z };
+  return { points, steps };
+}
+
+/** Position `elapsed` seconds into a trajectory, smoothly between steps (120 Hz screens too). */
+export function trajectoryAt(tr: KickTrajectory, elapsed: number): { x: number; y: number; z: number } {
+  const f = clamp(elapsed, 0, KICK_SETTLE_SEC) / INTERIOR_DT;
+  const i = Math.min(tr.steps, Math.floor(f));
+  const j = Math.min(tr.steps, i + 1);
+  const t = f - i;
+  const p = tr.points;
+  return {
+    x: p[i * 3] + (p[j * 3] - p[i * 3]) * t,
+    y: p[i * 3 + 1] + (p[j * 3 + 1] - p[i * 3 + 1]) * t,
+    z: p[i * 3 + 2] + (p[j * 3 + 2] - p[i * 3 + 2]) * t,
+  };
+}
+
+/** Where a kicked object is `elapsed` seconds after the kick (computes the whole flight; cache it for drawing). */
+export function kickedPosition(o: PlacedObject, physics: PhysicsParams, elapsed: number, world: KickWorld = {}): { x: number; y: number; z: number } {
+  if (!o.kick) return { x: o.x, y: o.y, z: o.z };
+  const tr = kickTrajectory(o, physics, world);
+  const i = Math.min(tr.steps, Math.floor(clamp(elapsed, 0, KICK_SETTLE_SEC) / INTERIOR_DT));
+  return { x: tr.points[i * 3], y: tr.points[i * 3 + 1], z: tr.points[i * 3 + 2] };
 }

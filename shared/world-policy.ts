@@ -135,6 +135,13 @@ export function isKickChange(before: Rec, after: Rec): boolean {
     return before.kick === undefined && isLegalKick(after.kick);
   }
   const settleKeys = new Set(["x", "y", "z", "kick"]);
+  // Starting a kick from where it really is (a roaming creature isn't at its home spot):
+  // the same reach as a landing, so it moves nothing further than a kick could
+  if (keys.includes("kick") && keys.every((k) => settleKeys.has(k)) && before.kick === undefined && isLegalKick(after.kick)) {
+    const [bx, by, bz, ax, ay, az] = [before.x, before.y, before.z, after.x, after.y, after.z];
+    if (![bx, by, bz, ax, ay, az].every(finite)) return false;
+    return Math.hypot((ax as number) - (bx as number), (ay as number) - (by as number), (az as number) - (bz as number)) <= KICK_LIMITS.maxSettleDistance;
+  }
   if (keys.every((k) => settleKeys.has(k)) && before.kick !== undefined && after.kick === undefined) {
     const [bx, by, bz, ax, ay, az] = [before.x, before.y, before.z, after.x, after.y, after.z];
     if (![bx, by, bz, ax, ay, az].every(finite)) return false;

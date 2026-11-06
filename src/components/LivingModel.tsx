@@ -5,12 +5,12 @@ import { Html, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import type { PlacedObject } from '@aweborn/shared/crdt-schema'
-import { cleanLife, roamPose, walkSpeed, npcSender, type ObjectLife } from '@aweborn/shared/life'
+import { cleanLife, walkSpeed, npcSender, type ObjectLife } from '@aweborn/shared/life'
 import { AUTH_URL } from '../lib/player'
 import { useModelShapes, prepareModelAsset, registerModelShape, skinnedLiteMaterial } from '../stores/modelShapes'
 import { useQualityTier } from '../stores/qualityStore'
 import { useWorldStore } from '../stores/worldStore'
-import { placeOnTerrain } from '../stores/worldVoxels'
+import { groundAt, isCarried, localCarry, roamOffset } from '../stores/livePosition'
 import { interiorController } from '../systems/InteriorController'
 import { getPresenceState } from '../hooks/usePresence'
 import { ChatBubble } from './ChatBubble'
@@ -103,11 +103,13 @@ function AnimatedRig({ asset, life, body, dist, weight }: { asset: string; life:
     for (const clip of gltf.animations) {
       const role = clip.name as 'idle' | 'walk' | 'talk' | 'emote'
       if (!['idle', 'walk', 'talk', 'emote'].includes(role)) continue
-      // Roaming (game logic) owns the position: pin the hips' sideways drift to its first frame
-      // (Meshy's `_inplace` clips barely drift; others would slide), keep the up-down bob
+      // Roaming (game logic) owns the position: pin the sideways drift of the hips and of any
+      // root above them to the first frame (Meshy's `_inplace` clips barely drift; root motion
+      // on the armature walked the body ahead then snapped it back every loop: the back-and-forth
+      // jitter in the 2026-11-06 playtest), keep the up-down bob
       const c = clip.clone()
       for (const tr of c.tracks) {
-        if (!tr.name.endsWith('.position') || !/hips/i.test(tr.name)) continue
+        if (!tr.name.endsWith('.position') || !/hips|pelvis|root|armature|^scene/i.test(tr.name)) continue
         const v = tr.values
         for (let i = 3; i < v.length; i += 3) {
           v[i] = v[0]
@@ -332,6 +334,9 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
   const pos = useRef(new THREE.Vector3(obj.x, obj.y, obj.z))
   const yaw = useRef(obj.rotY || 0)
   const ground = useRef<{ x: number; z: number; y: number } | null>(null)
+  /** Height it's drawn at: eases between ground samples instead of stepping a whole voxel. */
+  const shownY = useRef<number | null>(null)
+  const scaleRef = useRef<THREE.Group>(null!)
   const nextGroan = useRef(performance.now() + 8000 + Math.random() * 20000)
   const stride = useRef(0)
   const [near, setNear] = useState(false)
@@ -344,27 +349,49 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
     const now = serverNow() // the server's clock: every player sees the creature in the same place
     const t = state.clock.elapsedTime
     const b = body.current
-    // Where it is: home + its deterministic roam
     const speed = walkSpeed(h, life.pace)
-    const r = roamPose(obj.id, life.roam, speed, now, obj.rotY || 0)
+    // Held: in your hands (drawn every frame), or where its carrier puts it. It doesn't
+    // roam or turn to anyone meanwhile, so it no longer fights the hands holding it.
+    const mine = localCarry.id === obj.id
+    const held = mine || isCarried(obj, now)
+    // Where it is: home + its deterministic roam (shared with kick / grab aiming)
+    const r = roamOffset(obj, now)
     let x = obj.x + r.dx
     let z = obj.z + r.dz
     let y = obj.y
-    if (life.roam > 0) {
-      const terrain = useWorldStore.getState().voxelTerrain
+    if (mine) {
+      x = localCarry.x
+      y = localCarry.y
+      z = localCarry.z
+    } else if (!held && life.roam > 0) {
       const g = ground.current
-      if (terrain && (!g || Math.hypot(g.x - x, g.z - z) > 0.5)) {
-        const p = placeOnTerrain(terrain, [x + terrain.size[0] / 2, 0, z + terrain.size[2] / 2])
-        ground.current = { x, z, y: p.y + h / 2 }
+      if (!g || Math.hypot(g.x - x, g.z - z) > 0.25) {
+        const gy = groundAt(x, z)
+        ground.current = gy === null ? null : { x, z, y: gy + h / 2 }
       }
       if (ground.current) y = ground.current.y
-    } else {
-      x = obj.x
-      z = obj.z
     }
-    b.moving = r.moving
+    // Ease height and any jump from someone else's move (10 Hz carry writes, a set-down)
+    const p0 = pos.current
+    const far = Math.hypot(p0.x - x, p0.z - z) > 4 || shownY.current === null
+    if (mine || far) {
+      shownY.current = y
+    } else {
+      const k = 1 - Math.exp(-(held ? 16 : 10) * delta)
+      shownY.current += (y - shownY.current) * k
+      if (held) {
+        x = p0.x + (x - p0.x) * k
+        z = p0.z + (z - p0.z) * k
+      }
+      y = shownY.current
+    }
+    b.moving = r.moving && !held
     pos.current.set(x, y, z)
     outer.current.position.set(x, y, z)
+    if (scaleRef.current) {
+      if (mine) scaleRef.current.scale.set(localCarry.sx, localCarry.sy, localCarry.sz)
+      else scaleRef.current.scale.set(obj.scaleX, obj.scaleY, obj.scaleZ)
+    }
 
     const cam = state.camera.position
     const d = Math.hypot(cam.x - x, cam.y - y, cam.z - z)
@@ -373,8 +400,8 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
     if (!near && d < fogFar + 24) setNear(true)
 
     // Facing: the way it walks; else whoever it's answering; else the nearest player close by
-    let want = r.moving ? r.heading : yaw.current
-    if (!r.moving) {
+    let want = held ? (mine ? localCarry.rotY : obj.rotY || 0) : r.moving ? r.heading : yaw.current
+    if (!r.moving && !held) {
       const me = interiorController.state
       let target: { x: number; z: number } | null = null
       const chat = useWorldStore.getState().chat
@@ -390,9 +417,15 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
         const p = getPresenceState().get(answering.to)
         target = p?.inWorld ? { x: p.position.x, z: p.position.z } : { x: me.x, z: me.z }
       } else if (Math.hypot(me.x - x, me.z - z) < 8 + h) target = { x: me.x, z: me.z }
-      if (target) want = Math.atan2(target.x - x, target.z - z)
+      // Someone standing inside its footprint (reaching to grab it) is no direction at all:
+      // facing them there swung it side to side with every step
+      const reach = 0.5 * Math.max(Math.abs(obj.scaleX || 1), Math.abs(obj.scaleZ || 1)) + 0.4
+      if (target && Math.hypot(target.x - x, target.z - z) > reach) {
+        const a = Math.atan2(target.x - x, target.z - z)
+        if (Math.abs(angleTo(yaw.current, a)) > 0.12) want = a // ~7°: no twitching at small steps
+      }
     }
-    const turnRate = (r.moving ? 2.2 : 0.9) * life.pace
+    const turnRate = held ? 12 : (r.moving ? 2.2 : 0.9) * life.pace
     yaw.current += angleTo(yaw.current, want) * Math.min(1, delta * turnRate)
     outer.current.rotation.set(0, yaw.current, 0)
 
@@ -438,7 +471,7 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
   const s: [number, number, number] = [obj.scaleX, obj.scaleY, obj.scaleZ]
   return (
     <group ref={outer} position={[obj.x, obj.y, obj.z]}>
-      <group scale={s}>
+      <group ref={scaleRef} scale={s}>
         <group ref={inner}>
           {near && (
             <Boundary fallback={<StillFallback asset={obj.stillAsset ?? obj.asset} />}>

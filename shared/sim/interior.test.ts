@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_PHYSICS } from "../crdt-schema.js";
 import {
-  stepInterior, spawnInterior, collidersFor, NO_INPUT, INTERIOR_HALF_EXTENT, kickVelocity, kickedPosition, kickTarget,
+  stepInterior, spawnInterior, collidersFor, NO_INPUT, INTERIOR_HALF_EXTENT, kickVelocity, kickedPosition, kickTarget, kickTrajectory, trajectoryAt, KICK_SETTLE_SEC,
   type InteriorInput, type InteriorState, type Box,
 } from "./interior.js";
 
@@ -107,6 +107,64 @@ test("a kicked object flies forward and settles on the ground, deterministically
   assert.ok(end.z < -2, `z=${end.z}`);
   assert.equal(end.y, 0.5);
   assert.deepEqual(end, kickedPosition(o, DEFAULT_PHYSICS, 4));
+});
+
+// ── Kicks on real ground (2026-11-06: kicked things fell through voxel hills) ──
+const cube = (over: Record<string, unknown> = {}) => ({ id: "k", type: "cube", x: 0, y: 0.5, z: 0, rotX: 0, rotY: 0, rotZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1, material: "", placedBy: "", placedAt: 0, ...over });
+/** A plateau: ground 3 m high everywhere (cells j = 0, 1, 2 solid). */
+const plateau = (x: number, y: number) => (void x, y < 3);
+
+test("a kick on raised ground lands on the ground, never inside it", () => {
+  const o = cube({ y: 3.5, kick: { ...kickVelocity(0, -1), t: 0 } });
+  const tr = kickTrajectory(o, DEFAULT_PHYSICS, { solid: plateau });
+  for (let i = 0; i <= tr.steps; i++) assert.ok(tr.points[i * 3 + 1] >= 3.5 - 1e-9, `step ${i} y=${tr.points[i * 3 + 1]}`);
+  const end = kickedPosition(o, DEFAULT_PHYSICS, KICK_SETTLE_SEC, { solid: plateau });
+  assert.equal(end.y, 3.5);
+  assert.ok(end.z < -2, `z=${end.z}`);
+});
+
+test("a wall of terrain bounces a kick back instead of letting it through", () => {
+  // Flat floor, and a 4 m wall filling every cell with z < -3
+  const wall = (_x: number, y: number, z: number) => z < -3 && y < 4;
+  const o = cube({ kick: { ...kickVelocity(0, -1), t: 0 } });
+  const tr = kickTrajectory(o, DEFAULT_PHYSICS, { solid: wall });
+  for (let i = 0; i <= tr.steps; i++) assert.ok(tr.points[i * 3 + 2] - 0.5 >= -3 - 0.011, `step ${i} z=${tr.points[i * 3 + 2]}`);
+  const end = trajectoryAt(tr, KICK_SETTLE_SEC);
+  assert.equal(end.y, 0.5);
+});
+
+test("a kick hops up a one-step ledge only if it is low, and rests on top", () => {
+  // A 0.25 m lip is climbed (hop), but the ground here is whole cells, so use a box for it
+  const o = cube({ kick: { ...kickVelocity(0, -1), t: 0 } });
+  const lip = { minX: -5, maxX: 5, minY: 0, maxY: 0.25, minZ: -40, maxZ: -1 };
+  const end = kickedPosition(o, DEFAULT_PHYSICS, KICK_SETTLE_SEC, { boxes: [lip] });
+  assert.ok(end.z < -1.5, `z=${end.z}`);
+  assert.ok(Math.abs(end.y - 0.75) < 1e-9, `y=${end.y}`);
+});
+
+test("kicked things stay inside a big world's own edge, not the old 40 m room", () => {
+  const o = cube({ z: -18, kick: { ...kickVelocity(0, -1), t: 0 } });
+  const small = kickedPosition(o, DEFAULT_PHYSICS, KICK_SETTLE_SEC);
+  const big = kickedPosition(o, DEFAULT_PHYSICS, KICK_SETTLE_SEC, { halfExtent: 63.5 });
+  assert.ok(small.z >= -19.5 + 0.5 - 1e-9, `z=${small.z}`);
+  assert.ok(big.z < -20, `z=${big.z}`);
+});
+
+test("a trajectory is the same every time and smooth between steps", () => {
+  const o = cube({ y: 3.5, kick: { vx: 3, vy: 4, vz: -6, t: 0 } });
+  const a = kickTrajectory(o, DEFAULT_PHYSICS, { solid: plateau, halfExtent: 30 });
+  const b = kickTrajectory(o, DEFAULT_PHYSICS, { solid: plateau, halfExtent: 30 });
+  assert.deepEqual([...a.points], [...b.points]);
+  const mid = trajectoryAt(a, 0.5 + 1 / 120);
+  const lo = trajectoryAt(a, 0.5), hi = trajectoryAt(a, 0.5 + 1 / 60);
+  assert.ok(mid.x > Math.min(lo.x, hi.x) - 1e-9 && mid.x < Math.max(lo.x, hi.x) + 1e-9);
+});
+
+test("kickTarget can aim at where a roaming thing is now, not its home", () => {
+  const s = spawnInterior(); // z = 8, facing -Z
+  const roamer = cube({ id: "r", z: 0 }); // home far away
+  assert.equal(kickTarget(s, [roamer]), null);
+  assert.equal(kickTarget(s, [roamer], () => ({ x: 0, y: 0.5, z: 7 }))?.id, "r");
 });
 
 test("kickTarget picks the object in front, not behind", () => {

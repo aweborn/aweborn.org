@@ -6,7 +6,8 @@ import * as THREE from 'three'
 import { useWorldStore } from '../stores/worldStore'
 import { useUniverseStore } from '../stores/universeStore'
 import type { PlacedObject } from '@aweborn/shared/crdt-schema'
-import { kickedPosition } from '@aweborn/shared/sim/interior'
+import { trajectoryAt } from '@aweborn/shared/sim/interior'
+import { kickPath, localCarry } from '../stores/livePosition'
 import { Suspense } from 'react'
 import { Html, useGLTF } from '@react-three/drei'
 import { AUTH_URL } from '../lib/player'
@@ -120,6 +121,8 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
   const activeLodRef = useRef<0 | 1 | 2>(0)
   /** Collision nudge slide (M7c): which nudge we're playing and when it started here. */
   const slideRef = useRef<{ t: number; at: number } | null>(null)
+  /** Where it's drawn: glides to each new x/y/z (someone carrying it writes 10 times a second). */
+  const shown = useRef<{ x: number; y: number; z: number; rotY: number } | null>(null)
   const [shouldLoad, setShouldLoad] = useState(false)
   const tier = useQualityTier()
   const preparedParts = useModelShapes((s) => (obj.asset ? s.models[obj.asset] : undefined))
@@ -149,15 +152,24 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
 
   // Subtle float animation; a kicked object follows the shared flight sim;
   // distant objects cull past the fog and models step smoothly across 3 decimated LODs.
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const target = (ref.current ?? groupRef.current) as THREE.Object3D | null
     if (!target) return
 
     let px = obj.x
     let py = obj.y
     let pz = obj.z
-    if (obj.kick) {
-      const p = kickedPosition(obj, useWorldStore.getState().physics, (serverNow() - obj.kick.t) / 1000)
+    let rotY = obj.rotY
+    const mine = localCarry.id === obj.id
+    if (mine) {
+      // In your hands: exactly where you hold it, every frame
+      px = localCarry.x
+      py = localCarry.y
+      pz = localCarry.z
+      rotY = localCarry.rotY
+    } else if (obj.kick) {
+      // The shared flight (computed once per kick), smooth between its 60 Hz steps
+      const p = trajectoryAt(kickPath(obj), (serverNow() - obj.kick.t) / 1000)
       px = p.x
       py = p.y
       pz = p.z
@@ -174,6 +186,22 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
         px = n.fx + (obj.x - n.fx) * e
         pz = n.fz + (obj.z - n.fz) * e
       }
+    }
+
+    // Someone else moving it (a carry, a landing): glide there instead of stepping
+    const sh = shown.current
+    if (!sh || mine || obj.kick || Math.hypot(px - sh.x, py - sh.y, pz - sh.z) > 4) {
+      shown.current = { x: px, y: py, z: pz, rotY }
+    } else {
+      const k = 1 - Math.exp(-16 * delta)
+      sh.x += (px - sh.x) * k
+      sh.y += (py - sh.y) * k
+      sh.z += (pz - sh.z) * k
+      sh.rotY += Math.atan2(Math.sin(rotY - sh.rotY), Math.cos(rotY - sh.rotY)) * k
+      px = sh.x
+      py = sh.y
+      pz = sh.z
+      rotY = sh.rotY
     }
 
     const dx = state.camera.position.x - px
@@ -206,17 +234,23 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
       }
     }
 
+    if (mine) {
+      target.scale.set(localCarry.sx, localCarry.sy, localCarry.sz)
+    } else if (target.scale.x !== obj.scaleX || target.scale.y !== obj.scaleY || target.scale.z !== obj.scaleZ) {
+      target.scale.set(obj.scaleX, obj.scaleY, obj.scaleZ)
+    }
     if (obj.kick) {
+      // Upright while it flies (the old tumble snapped back on landing)
       target.position.set(px, py, pz)
-      target.rotation.x += 0.08
+      target.rotation.set(obj.type === 'model' ? 0 : obj.rotX, rotY, obj.type === 'model' ? 0 : obj.rotZ)
     } else if (obj.type === 'model') {
       // Generated models stand still where they were placed
       target.position.set(px, py, pz)
-      target.rotation.set(0, obj.rotY, 0)
+      target.rotation.set(0, rotY, 0)
       return
     } else if (placedLook) {
       target.position.set(px, py, pz)
-      target.rotation.set(obj.rotX, obj.rotY, obj.rotZ)
+      target.rotation.set(obj.rotX, rotY, obj.rotZ)
       return
     } else {
       target.position.set(px, py + Math.sin(state.clock.elapsedTime * 0.5 + obj.x * 0.1) * 0.05, pz)

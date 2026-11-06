@@ -129,6 +129,7 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
       placedBy: (m.get("placedBy") as string) ?? "",
       placedAt: (m.get("placedAt") as number) ?? 0,
       kick: (m.get("kick") as PlacedObject["kick"]) ?? undefined,
+      carry: (m.get("carry") as PlacedObject["carry"]) ?? undefined,
       nudge: (m.get("nudge") as PlacedObject["nudge"]) ?? undefined,
       asset: (m.get("asset") as string) ?? undefined,
       prompt: (m.get("prompt") as string) ?? undefined,
@@ -338,11 +339,22 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
 
 // ── Event-sourced physics (Phase 07): 2 CRDT writes per kick ─────────
 
-/** Start a kick: every client simulates the flight from the object's x/y/z. */
-export function kickObject(doc: Y.Doc, objectId: string, v: { vx: number; vy: number; vz: number }): void {
+/**
+ * Start a kick: every client simulates the flight from the object's x/y/z. `at` is where
+ * it really is when that isn't x/y/z (a roaming creature), so the flight starts there.
+ * `by` (the kicker) writes the landing; anyone else only if the kicker never does.
+ */
+export function kickObject(doc: Y.Doc, objectId: string, v: { vx: number; vy: number; vz: number }, by?: string, at?: { x: number; y: number; z: number }): void {
   const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
   if (!m || m.get("kick")) return; // already flying
-  m.set("kick", { ...v, t: serverNow() });
+  doc.transact(() => {
+    if (at) {
+      m.set("x", at.x);
+      m.set("y", at.y);
+      m.set("z", at.z);
+    }
+    m.set("kick", { ...v, t: serverNow(), ...(by ? { by } : {}) });
+  });
 }
 
 /** Settle a kick: write the landing spot and clear it. Idempotent (same result on every client). */
@@ -508,8 +520,19 @@ export function placeShape(
   return placeLibraryItem(doc, { type: shape.id, material: "default", label: shape.name, color: opts.color, scale: opts.size, rotY }, position, placedBy);
 }
 
-/** Move/rotate a placed object (grab, Phase 07). Clears any kick in flight. */
-export function moveObject(doc: Y.Doc, objectId: string, pos: { x: number; y: number; z: number }, rotY: number, scale?: { x: number; y: number; z: number }): void {
+/**
+ * Move/rotate a placed object (grab, Phase 07). Clears any kick in flight.
+ * `carry`: the carrier's id while it's held (refreshes the carry mark), null to set it down
+ * (clears the mark). Undefined leaves the mark alone.
+ */
+export function moveObject(
+  doc: Y.Doc,
+  objectId: string,
+  pos: { x: number; y: number; z: number },
+  rotY: number,
+  scale?: { x: number; y: number; z: number },
+  carry?: string | null,
+): void {
   const m = doc.getMap("objects").get(objectId) as Y.Map<unknown> | undefined;
   if (!m) return;
   doc.transact(() => {
@@ -523,6 +546,8 @@ export function moveObject(doc: Y.Doc, objectId: string, pos: { x: number; y: nu
       m.set("scaleZ", scale.z);
     }
     if (m.has("kick")) m.delete("kick");
+    if (carry) m.set("carry", { by: carry, t: serverNow() });
+    else if (carry === null && m.has("carry")) m.delete("carry");
   });
 }
 
@@ -551,7 +576,7 @@ export function duplicateObject(
     const m = new Y.Map();
     src.forEach((v, k) => {
       // A mind is one character (server-only); the copy gets the body and its life, not the persona
-      if (k === "kick" || k === "planKey" || k === "nudge" || k === "mind") return;
+      if (k === "kick" || k === "carry" || k === "planKey" || k === "nudge" || k === "mind") return;
       m.set(k, v);
     });
     m.set("id", id);
