@@ -11,7 +11,7 @@ import { kickPath, localCarry } from '../stores/livePosition'
 import { Suspense } from 'react'
 import { Html, useGLTF } from '@react-three/drei'
 import { AUTH_URL } from '../lib/player'
-import { prepareModelAsset, useModelShapes } from '../stores/modelShapes'
+import { markModelFailed, prepareModelAsset, useModelShapes } from '../stores/modelShapes'
 import { placeOnTerrain } from '../stores/worldVoxels'
 import { useAtmosphere } from '../hooks/useAtmosphere'
 import { useQualityTier } from '../stores/qualityStore'
@@ -32,13 +32,14 @@ const isLiving = (o: PlacedObject): boolean => {
 }
 
 /** A model that fails to load must not take the whole scene down: show a wireframe stand-in instead. */
-class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode; asset?: string }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() {
     return { failed: true }
   }
   componentDidCatch(err: unknown) {
     console.warn('[model] failed to load, showing a placeholder:', err)
+    markModelFailed(this.props.asset)
   }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children
@@ -262,7 +263,7 @@ function PlacedObjectMesh({ obj, worldColor, fogFar }: { obj: PlacedObject; worl
     return (
       <group ref={groupRef as never} position={[obj.x, obj.y, obj.z]} scale={[obj.scaleX, obj.scaleY, obj.scaleZ]}>
         {!preparedParts && shouldLoad && (
-          <ModelBoundary fallback={null}>
+          <ModelBoundary fallback={null} asset={obj.asset}>
             <Suspense fallback={null}>
               <GeneratedModelLoader asset={obj.asset} maxTris={tier.modelMaxTris} />
             </Suspense>

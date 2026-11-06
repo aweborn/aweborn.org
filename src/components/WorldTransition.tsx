@@ -3,6 +3,8 @@ import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
 import { useWorldLoadProgress } from '../stores/worldVoxels'
 import { useModelShapes } from '../stores/modelShapes'
+import { useAtmosphere } from '../hooks/useAtmosphere'
+import { interiorController } from '../systems/InteriorController'
 
 /**
  * Animated transition overlay + determinate world-loading HUD bar when entering/exiting worlds.
@@ -15,6 +17,10 @@ import { useModelShapes } from '../stores/modelShapes'
 type TransitionState = 'none' | 'entering' | 'exiting'
 
 const ENTER_DURATION = 0.65 // seconds
+/** Creations farther than this past the fog only load when you walk toward them: the bar doesn't wait for them. */
+const LOAD_REACH = 12 // inside every loader's own reach (they start at fog + 24 from the camera)
+/** No progress on creations for this long: stop showing the bar (a model that never finishes mustn't pin it). */
+const STALL_MS = 12_000
 const EXIT_DURATION = 0.7  // seconds
 
 export function WorldTransition() {
@@ -28,6 +34,9 @@ export function WorldTransition() {
   const chunksTotal = useWorldLoadProgress((s) => s.chunksTotal)
   const models = useModelShapes((s) => s.models)
   const shapes = useModelShapes((s) => s.shapes)
+  const failed = useModelShapes((s) => s.failed)
+  const atmo = useAtmosphere()
+  const fogFar = atmo?.fogFar ?? 200
 
   const prevWorldId = useRef<string | null>(null)
   const [state, setState] = useState<TransitionState>('none')
@@ -40,23 +49,29 @@ export function WorldTransition() {
 
   const distinctAssets = useMemo(() => {
     const s = new Set<string>()
+    // Only what loads from where you arrive (2026-11-06: the bar hung at "3/4" because the 4th
+    // creation was out past the fog, where models don't load until you walk toward them)
+    const me = interiorController.state
     objects.forEach((o) => {
       // Pictures/sounds also carry `asset`, but they stream in on approach — not a load gate.
       // Animated (rigged) models stream in near too and never decimate (Life & minds).
-      if (o.type === 'model' && o.asset && o.life?.mode !== 'animated') s.add(o.asset)
+      if (o.type !== 'model' || !o.asset || o.life?.mode === 'animated') return
+      if (Math.hypot(o.x - me.x, o.y - me.y, o.z - me.z) > fogFar + LOAD_REACH) return
+      s.add(o.asset)
     })
     return [...s]
-  }, [objects])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- measured from where you are when objects arrive
+  }, [objects, fogFar, activeWorldId])
 
   const modelsTotal = distinctAssets.length
   const modelsReady = useMemo(() => {
     let n = 0
     for (const a of distinctAssets) {
-      if (models[a]) n += 1
+      if (models[a] || failed[a]) n += 1 // a failed one shows a placeholder: nothing left to wait for
       else if (shapes[a]) n += 0.5 // downloaded + proxy ready, decimating LODs
     }
     return n
-  }, [distinctAssets, models, shapes])
+  }, [distinctAssets, models, shapes, failed])
 
   const hasTerrain = Boolean(voxelTerrain)
   const totalUnits = 1 + (hasTerrain ? Math.max(9, chunksTotal) : 0) + modelsTotal * 4
@@ -64,10 +79,16 @@ export function WorldTransition() {
     (worldLoaded ? 1 : 0.25) +
     (hasTerrain ? Math.min(Math.max(9, chunksTotal), chunksReady) : 0) +
     modelsReady * 4
-  const isComplete =
-    worldLoaded &&
-    (!hasTerrain || (chunksTotal > 0 && chunksReady >= chunksTotal)) &&
-    modelsReady >= modelsTotal
+  const terrainDone = !hasTerrain || (chunksTotal > 0 && chunksReady >= chunksTotal)
+  // Creations stalled (still nothing after STALL_MS with only them left): call it loaded
+  const [stalled, setStalled] = useState(false)
+  useEffect(() => {
+    setStalled(false)
+    if (!activeWorldId || !worldLoaded || !terrainDone || modelsReady >= modelsTotal) return
+    const t = setTimeout(() => setStalled(true), STALL_MS)
+    return () => clearTimeout(t)
+  }, [activeWorldId, worldLoaded, terrainDone, modelsReady, modelsTotal])
+  const isComplete = worldLoaded && terrainDone && (modelsReady >= modelsTotal || stalled)
 
   // Detect enter/exit transitions (including stepping between parent and child worlds)
   useEffect(() => {
@@ -167,7 +188,7 @@ export function WorldTransition() {
   if (worldLoaded) {
     if (hasTerrain && chunksReady < chunksTotal) {
       statusDetail = `Shaping terrain (${chunksReady}/${chunksTotal})…`
-    } else if (modelsTotal > 0 && modelsReady < modelsTotal) {
+    } else if (modelsTotal > 0 && modelsReady < modelsTotal && !stalled) {
       statusDetail = `Preparing creations (${Math.floor(modelsReady)}/${modelsTotal})…`
     } else {
       statusDetail = 'Ready'

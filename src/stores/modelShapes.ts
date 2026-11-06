@@ -41,8 +41,16 @@ export const useModelShapes = create<{
   shapes: Record<string, Cell[]>
   proxies: Record<string, THREE.BufferGeometry>
   models: Record<string, PreparedModelPart[]>
+  /** Assets that won't get any further (download or preparation failed, or nothing to draw): the loading bar stops waiting for them. */
+  failed: Record<string, true>
   pendingCount: number
-}>(() => ({ shapes: {}, proxies: {}, models: {}, pendingCount: 0 }))
+}>(() => ({ shapes: {}, proxies: {}, models: {}, failed: {}, pendingCount: 0 }))
+
+/** This asset won't become a prepared model (the world's loading bar must not wait for it). */
+export function markModelFailed(asset: string | undefined): void {
+  if (!asset || useModelShapes.getState().failed[asset]) return
+  useModelShapes.setState((st) => ({ failed: { ...st.failed, [asset]: true } }))
+}
 
 const TEX_GRID = 16
 let sampleCanvas: HTMLCanvasElement | null = null
@@ -544,7 +552,7 @@ export function prepareModelAsset(asset: string, rawScene: THREE.Object3D, maxTr
         meshes.push(m)
       })
 
-      if (meshes.length === 0 || totalTris === 0) return
+      if (meshes.length === 0 || totalTris === 0) return markModelFailed(asset)
 
       const matCache = new Map<THREE.Material, THREE.MeshLambertMaterial>()
       const parts: PreparedModelPart[] = []
@@ -646,6 +654,7 @@ export function prepareModelAsset(asset: string, rawScene: THREE.Object3D, maxTr
     })
     .catch((err) => {
       console.warn(`[model] simplification failed for ${asset}:`, err)
+      markModelFailed(asset)
     })
     .finally(() => {
       useModelShapes.setState((st) => ({ pendingCount: Math.max(0, st.pendingCount - 1) }))

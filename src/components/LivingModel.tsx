@@ -7,7 +7,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import type { PlacedObject } from '@aweborn/shared/crdt-schema'
 import { cleanLife, walkSpeed, npcSender, type ObjectLife } from '@aweborn/shared/life'
 import { AUTH_URL } from '../lib/player'
-import { useModelShapes, prepareModelAsset, registerModelShape, skinnedLiteMaterial } from '../stores/modelShapes'
+import { useModelShapes, prepareModelAsset, registerModelShape, skinnedLiteMaterial, markModelFailed } from '../stores/modelShapes'
 import { useQualityTier } from '../stores/qualityStore'
 import { useWorldStore } from '../stores/worldStore'
 import { groundAt, isCarried, localCarry, roamOffset } from '../stores/livePosition'
@@ -45,13 +45,14 @@ function sizeOf(obj: PlacedObject): CreatureSize {
 /** Smallest signed angle a → b. */
 const angleTo = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
 
-class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+class Boundary extends Component<{ fallback: ReactNode; children: ReactNode; asset?: string }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() {
     return { failed: true }
   }
   componentDidCatch(err: unknown) {
     console.warn('[life] animated model failed, showing it still:', err)
+    markModelFailed(this.props.asset)
   }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children
@@ -474,7 +475,7 @@ export function LivingModel({ obj, fogFar }: { obj: PlacedObject; fogFar: number
       <group ref={scaleRef} scale={s}>
         <group ref={inner}>
           {near && (
-            <Boundary fallback={<StillFallback asset={obj.stillAsset ?? obj.asset} />}>
+            <Boundary fallback={<StillFallback asset={obj.stillAsset ?? obj.asset} />} asset={obj.asset}>
               <Suspense fallback={<ProxyOnly asset={obj.asset} />}>
                 {life.mode === 'animated' ? (
                   <AnimatedRig asset={obj.asset} life={life} body={body} dist={dist} weight={Math.min(1, h / 6)} />
