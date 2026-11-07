@@ -694,7 +694,7 @@ Both programs exist side by side:
 These must hold forever, because printed cards can't be patched:
 
 1. **A world ID never changes and never gets reused.** (Pre-launch 5-char IDs are migrated *before* the first card is printed.)
-2. **`/w/<uuid>` resolves forever.** Worlds are never hard-deleted (consistent with *The Museum of Everything*). If a world is ever removed for moderation reasons, the URL still resolves to a graceful "this world has faded" landing at its last coordinates.
+2. **`/w/<uuid>` resolves forever.** Worlds are never hard-deleted (consistent with *The Museum of Everything*). If a world is ever removed for moderation reasons, the URL still resolves to a graceful "this world has faded" landing at its last coordinates. If a world has become **18+**, a player without the 18+ door lands beside its veiled planet (*sign in and turn on 18+ to enter*) instead of inside ([age grill](phases/07-genai-creation.md#containment-18-never-leaks-into-everyone-worlds-alex-2026-11-07)).
 3. **The card stores the ID, not coordinates.** Coordinates printed on the front are decorative. The teleport always uses the live `resolvedPosition`. Only worlds with a server-resolved position (`resolvedAt > 0`) can be printed.
 4. **The `/w/` route and `?a=` param semantics are a permanent public API.** New params may be added, but existing ones can never change meaning.
 
