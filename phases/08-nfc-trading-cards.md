@@ -361,4 +361,4 @@ Turn Aweborn worlds into **physical NFC trading cards**. Tap a phone to a card a
 
 ## Age grill impact (2026-11-07, not built)
 - **No cards printed from 18+ worlds** ([decision 9](./07-genai-creation.md#18-worlds-the-reddit-way-age-grill-alex-2026-11-07-no-code)). Today event and admin orders skip the world check (`cards.ts:223`), and card photo art is a client JPEG with no image check. Both need a check.
-- **Open:** what happens to a world that already has printed cards and then becomes 18+? It collides with "a card lands inside" and "`/w/<uuid>` resolves forever" ([inventory §3](../docs/research/2026-11-adult-models/reconciliation-inventory.md#3-economy--cards)).
+- **Decided (Alex, 2026-11-07):** a world with printed cards **may** become 18+. Tapping its card then lands you **beside the veiled planet** (*sign in and turn on 18+ to enter*) instead of inside, for anyone without the 18+ door. `/w/<uuid>` still resolves forever. This amends the "a card lands inside" invariant for 18+ worlds, so the ordering flow should say that a world's tier can change.
