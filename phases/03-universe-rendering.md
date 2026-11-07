@@ -101,3 +101,8 @@ Transform the decorative cosmic scene into a **data-driven universe** where ever
 | 2026-08-20 | Built LOD rendering (Close/Medium/Far tiers), custom glow+ghost shaders, Aweborn Portal at origin, landmark islands (converted FloatingIslands per user request), PlayerStars with comet trails, WorldInterior with CRDT-driven 3D objects + sky dome + ground grid, Scene universe↔interior switching. TypeScript + Vite build pass clean. Visual verification: portal + landmarks + worlds visible, interior shows 3D objects with colored sky. | **Phase 03 COMPLETE** → Begin Phase 04 (Navigation & Controls) |
 | 2026-08-23 | (During Phase 04 polish) Raised LOD thresholds so nearby worlds render in full (Close 100 / Medium 200); removed landmark islands per Alex. | — |
 | 2026-10-03 | Plan reconciliation: annotated superseded items (LOD values, landmarks, BroadcastChannel presence). | Stress test still deferred |
+
+## Age grill impact (2026-11-07, not built)
+- **Veiled planets:** an 18+ world shows to players without the 18+ door as a soft shimmer with an *18+* mark, no name, no thumbnail and seeded music ([decision 8](./07-genai-creation.md#18-worlds-the-reddit-way-age-grill-alex-2026-11-07-no-code)).
+- **Architecture change:** the universe doc is sent unfiltered to every client and cached offline, so names, thumbnails and music must be **redacted per viewer** (a side channel or a per-viewer view), not just hidden in the UI ([containment](./07-genai-creation.md#containment-18-never-leaks-into-everyone-worlds-alex-2026-11-07), [inventory §4](../docs/research/2026-11-adult-models/reconciliation-inventory.md#4-universe--map)).
+- Open: keep 18+ worlds some distance from Origin? What does an 18+ Ghost world look like?

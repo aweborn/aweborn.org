@@ -1,5 +1,7 @@
 # REPORT: Player-created LLM NPCs (research, late 2026). About 1,750 words.
 
+> **Superseded in part (2026-11-07):** the age grill decided Aweborn is 18+ for everyone, and minds in 18+ worlds may be romantic or sexual with care rules. The "you don\'t age-gate / teen-rated" advice below predates that. See [Phase 07 → 18+ worlds](../../../phases/07-genai-creation.md#18-worlds-the-reddit-way-age-grill-alex-2026-11-07-no-code).
+
 Note on sources: the search tool returns redirect links, so the URLs below are the canonical pages. Treat claims I've marked "press" as secondary coverage.
 
 ## 0. Codebase context I checked (read-only)

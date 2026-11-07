@@ -92,6 +92,8 @@ Rationale (all on the public page `aweborn.org/giving.html`):
 | **NFC cards** (second core) | Single-world cards \~\$8–10: favorite worlds, far-away worlds, creators' own worlds; curated sets; event runs | **Mission, not merchandise:** cards bring people in (§7b). \~\$2 production before art/packaging/shipping |
 | **Organizations** | Events, schools and companies sponsor worlds \+ card runs | Qualified sponsorship (§9) |
 | **Grants** | Arts, education, workplace/organizational research | Main path to paying people |
+
+> **Open (age grill, 2026-11-07):** Aweborn is 18+ and will have 18+ worlds. Sponsorship by schools and education grants need a stated position: e.g. sponsored worlds are everyone worlds, an organization can run with 18+ hidden, and 18+ is described openly to funders. [Phase 07 → 18+ worlds](../phases/07-genai-creation.md#18-worlds-the-reddit-way-age-grill-alex-2026-11-07-no-code)
 | **Impact funding** | Program-related investments, recoverable grants, research partnerships | The non-profit version of "investors": no equity |
 | **Research (later)** | Team matching from opt-in personality signals | Not in base case. Needs explicit consent |
 

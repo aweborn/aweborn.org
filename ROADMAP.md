@@ -863,7 +863,7 @@ The music also follows the player and the sky:
 - **The World Planner gives every planned world one music piece** (one long instrumental loop, about 3 minutes), generated at Manifest with the rest of the world; it replaces the seeded music. Owners of older worlds can add one later (planner or Make → Music → *Use as world music*).
 - If the creator sets an **ambient world sound**, it replaces the music, inside and from outside.
 - Flying past, the universe music **crossfades by distance** into the nearest world's music; only the one or two closest worlds play, and generated music downloads only when you get close.
-- Generated music is **instrumental for now**; layered music, lyrics and real clips come with the Studio. Once worlds are age-tiered, players outside a world's tier hear its seeded music instead of explicit music.
+- Generated music is **instrumental for now**; layered music, lyrics and real clips come with the Studio. Players without the 18+ door hear an 18+ world's seeded music instead of its own ([age grill](phases/07-genai-creation.md#18-worlds-the-reddit-way-age-grill-alex-2026-11-07-no-code)).
 
 **You hear from your avatar.** Positional sound is heard at the player's model, facing the way the model faces (not from the camera). Music and sounds have separate volume sliders.
 
