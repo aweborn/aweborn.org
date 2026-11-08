@@ -25,9 +25,11 @@ import type {
   WorldIndexWorld,
 } from '@aweborn/shared/crdt-schema'
 import { ORIGIN_WORLD_ENTRY, ORIGIN_WORLD_ID } from '@aweborn/shared/crdt-schema'
+import type { BuildRequestView } from '@aweborn/shared/build-requests'
 import { useUniverseStore } from './universeStore'
 import { placeOnTerrain } from './worldVoxels'
 import { useWorldStore } from './worldStore'
+import { receiveBuildRequests, useBuildRequestsStore } from '../lib/builders'
 import { interiorController } from '../systems/InteriorController'
 import { AUTH_URL, getPlayerSnapshot, playerReady, subscribePlayer, type Player } from '../lib/player'
 import type { WorldLookup } from '../systems/TeleportSystem'
@@ -266,6 +268,7 @@ function adopt(p: Player): void {
   queue = readJson<Sighting[]>(queueKey()) ?? []
   const cached = readJson<WorldIndexEntry[]>(entriesKey()) ?? []
   set({ entries: new Map(cached.map((e) => [e.worldId, e])), ready: true })
+  useBuildRequestsStore.getState().set([]) // another player's asks aren't yours
   backoffUntil = 0
   for (const w of earlyArrivals.splice(0)) recordArrival(w)
   void refresh(true)
@@ -281,8 +284,9 @@ export async function refresh(force = false): Promise<void> {
   const me = owner
   const res = await fetch(`${AUTH_URL}/api/player/me`, { credentials: 'include' }).catch(() => null)
   if (!res?.ok || owner !== me) return
-  const body = (await res.json().catch(() => null)) as { worldIndex?: WorldIndexEntry[] } | null
+  const body = (await res.json().catch(() => null)) as { worldIndex?: WorldIndexEntry[]; buildRequests?: BuildRequestView[] } | null
   if (!body?.worldIndex || owner !== me) return
+  receiveBuildRequests(body.buildRequests) // asks to build in your worlds (2026-11-07)
 
   const local = get().entries
   const queued = new Set(queue.map((s) => s.worldId))

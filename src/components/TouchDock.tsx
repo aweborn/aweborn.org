@@ -3,6 +3,7 @@ import { useUniverseStore } from '../stores/universeStore'
 import { useWorldIndexStore } from '../stores/worldIndexStore'
 import { useChatStore } from '../stores/chatStore'
 import { useSheetStore } from '../stores/sheetStore'
+import { useBuildRequestsStore } from '../lib/builders'
 
 /**
  * Touch dock (Alex, 2026-10-22): the bottom action bar between the thumbs.
@@ -21,6 +22,7 @@ export function TouchDock() {
   const activeWorldId = useUniverseStore((s) => s.activeWorldId)
   const indexOpen = useWorldIndexStore((s) => s.open)
   const total = useWorldIndexStore((s) => s.entries.size)
+  const asks = useBuildRequestsStore((s) => s.requests.length)
   const chatOpen = useChatStore((s) => s.open)
   const sheet = useSheetStore((s) => s.sheet)
   const makeOpen = sheet === 'library' || sheet === 'create' || sheet === 'plan'
@@ -44,11 +46,12 @@ export function TouchDock() {
         type="button"
         className={`touch-dock-btn${indexOpen ? ' is-on' : ''}`}
         onClick={() => useWorldIndexStore.getState().toggle()}
-        aria-label={`World Index, ${total} worlds`}
+        aria-label={`World Index, ${total} worlds${asks ? `, ${asks} asking to build` : ''}`}
       >
         <span className="touch-dock-icon" aria-hidden="true">🗺️</span>
         <span className="touch-dock-label">Index</span>
         {total > 0 && <span className="touch-dock-count" aria-hidden="true">{total}</span>}
+        {asks > 0 && <span className="touch-dock-alert" aria-hidden="true" />}
       </button>
       <button
         id="touch-dock-chat"

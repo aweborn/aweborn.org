@@ -11,7 +11,7 @@ import { markMeaningfulMoment } from '../lib/onramp'
 import { ManaSeal, useCanChannel } from './ManaSeal'
 import { MakeTabs } from './MakeTabs'
 import { useSheet } from '../stores/sheetStore'
-import { BuildersPanel } from './BuildersPanel'
+import { WorldBuilders } from './BuildersPanel'
 
 /**
  * Create World (Alex, 2026-10-21; recursive worlds-within-worlds 2026-10-23):
@@ -266,6 +266,7 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
             <p className="mana-seal-body">
               Only this world’s creator can plant new portals here. You can still step through any portals already in this world.
             </p>
+            {parentWorldId && <WorldBuilders worldId={parentWorldId} />}
             <button id="plant-done" type="button" className="mana-seal-secondary" onClick={onClose}>
               Keep exploring
             </button>
@@ -304,7 +305,8 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
                 </div>
               </div>
             )}
-            {isCreator && parentWorldId && <BuildersPanel worldId={parentWorldId} creatorIds={myChars} />}
+            {/* Builders for its creator and builders; Ask to build for everyone else */}
+            {parentWorldId && <WorldBuilders worldId={parentWorldId} />}
             <label className="plant-field" htmlFor="plant-name">
               <span>Name</span>
               <input

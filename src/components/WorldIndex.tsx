@@ -23,6 +23,8 @@ import { CARD_CHECKOUT_ON } from '../lib/cardCheckout'
 import { CARD_PRICE_CENTS, type CardArt } from '@aweborn/shared/cards'
 import { usePhotoStore } from '../stores/photoStore'
 import { groupBySet, refreshCardSets, setLabels, useCardSets, type CardSetLabel } from '../lib/cardSets'
+import { announceTitle, refreshBuildRequests, useBuildRequestsStore } from '../lib/builders'
+import { AskRow, WorldBuilders } from './BuildersPanel'
 
 /**
  * World Index (Phase 08B): every world you've found, as cards. Press M (or
@@ -59,6 +61,7 @@ export function WorldIndexChip() {
   const entries = useWorldIndexStore((s) => s.entries)
   const toggle = useWorldIndexStore((s) => s.toggle)
   const revealSeq = useWorldIndexStore((s) => s.reveal?.seq ?? 0)
+  const asks = useBuildRequestsStore((s) => s.requests.length)
   const [pulse, setPulse] = useState(false)
   const { total } = counts(entries)
 
@@ -88,6 +91,12 @@ export function WorldIndexChip() {
       </svg>
       <span className="wi-chip-label">World Index</span>
       <span className="wi-chip-count">{total}</span>
+      {asks > 0 && (
+        <span className="wi-chip-asks" title={`${asks} asking to build`}>
+          {asks}
+          <span className="visually-hidden"> asking to build</span>
+        </span>
+      )}
       <kbd className="wi-chip-kbd">M</kbd>
     </button>
   )
@@ -106,6 +115,14 @@ export function WorldIndex() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [buyFirst, setBuyFirst] = useState(false)
   const focus = useWorldIndexStore((s) => s.focus)
+  const asks = useBuildRequestsStore((s) => s.requests)
+  const announce = useBuildRequestsStore((s) => s.announce)
+
+  // New asks to build in your worlds (they waited while you were away): tell you once
+  useEffect(() => {
+    if (!announce) return
+    showNotice({ kind: 'arrived', title: announceTitle(announce.fresh), detail: 'Answer in your World Index (M).', color: announce.fresh[0]?.worldColor })
+  }, [announce])
 
   // Opened on one world (photo mode → "Use on a card"): show it, maybe on its checkout.
   useEffect(() => {
@@ -138,6 +155,7 @@ export function WorldIndex() {
       d.showModal()
       inputManager.setEnabled(false)
       void refresh()
+      void refreshBuildRequests()
       refreshCardSets()
     } else if (!open && d.open) {
       d.close()
@@ -257,6 +275,22 @@ export function WorldIndex() {
             </div>
           )}
         </header>
+
+        {!selected && asks.length > 0 && (
+          <section className="wi-asks" aria-labelledby="wi-asks-title">
+            <h3 id="wi-asks-title" className="wi-set-name">Asking to build</h3>
+            <ul className="builders-list wi-asks-list">
+              {asks.map((a) => (
+                <AskRow
+                  key={`${a.worldId}-${a.requester}`}
+                  ask={a}
+                  showWorld
+                  onOpenWorld={entries.has(a.worldId) ? () => setSelectedId(a.worldId) : undefined}
+                />
+              ))}
+            </ul>
+          </section>
+        )}
 
         {selected ? (
           <WorldDetail
@@ -503,6 +537,13 @@ function WorldDetail({
           {!warpUnlocked && !here && <p className="wi-hint">Warp opens at chapter 7. Your journey shows what&rsquo;s left.</p>}
           {warpUnlocked && inWorld && <p className="wi-hint">Exit this world first (Esc), then warp.</p>}
           {warpUnlocked && !inWorld && !here && target && <p className="wi-hint">Free. Locks on, then hold K to leap.</p>}
+          {w && (
+            <WorldBuilders
+              worldId={entry.worldId}
+              fallback={{ creator: w.creator, coCreators: w.coCreators }}
+              canAsk={entry.state === 'visited' && !isOrigin}
+            />
+          )}
           {canBuy && (
             <button type="button" id="wi-get-card" className="wi-get-card" onClick={() => setBuying(true)}>
               <span className="wi-get-card-label">Get this card</span>

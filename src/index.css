@@ -6293,7 +6293,7 @@ html.touch-ui .held-color-btn {
   box-shadow: 0 0 0 1px rgba(255, 210, 122, 0.35);
 }
 
-/* Builders (Rough Draft M1, 2026-10-27): creator picks co-creators */
+/* Builders (Rough Draft M1, 2026-10-27): the creator and builders pick co-creators */
 .builders {
   margin: 0 0 12px;
   padding: 10px 12px;
@@ -6341,13 +6341,119 @@ html.touch-ui .held-color-btn {
   font-weight: 400;
   color: var(--color-text-tertiary);
 }
-.builders-toggle {
+
+/* Builders: asks to build, one change at a time (2026-11-07). Portrait first: 44 px targets, buttons wrap under the name */
+.builders-sub {
+  display: block;
+  margin: 10px 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.builders-btn {
   flex-shrink: 0;
-  min-height: 40px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
   background: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
   transition: background var(--duration-fast), color var(--duration-fast), box-shadow var(--duration-fast);
 }
-.builders-toggle:disabled { opacity: 0.6; cursor: progress; }
+.builders-btn--primary {
+  background: rgba(255, 210, 122, 0.2);
+  color: #ffe2a8;
+  box-shadow: 0 0 0 1px rgba(255, 210, 122, 0.35);
+}
+.builders-btn--danger {
+  background: rgba(255, 120, 110, 0.18);
+  color: #ffc2bc;
+  box-shadow: 0 0 0 1px rgba(255, 120, 110, 0.4);
+}
+.builders-btn:disabled { opacity: 0.6; cursor: progress; }
+.builders--ask .builders-btn { width: 100%; }
+.builders-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 10px;
+  padding: 6px 0;
+}
+.builders-ask + .builders-ask { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+/* Let the panel (sheet or dialog) scroll; a list scrolling inside it clipped rows on a phone */
+.builders .builders-list { max-height: none; overflow: visible; gap: 8px; }
+.builders-ask-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.builders-ask-when {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+}
+.builders-ask-btns {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.builders-world-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.builders-error {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #ffb3a8;
+}
+.wi-asks {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 210, 122, 0.06);
+  border: 1px solid rgba(255, 210, 122, 0.2);
+}
+.wi-asks .wi-set-name { margin: 0 0 4px; }
+.wi-asks-list { max-height: min(14rem, 30dvh); }
+.wi-detail-info .builders { margin-top: 14px; }
+.wi-chip-asks {
+  min-width: 1.25rem;
+  padding: 0.05rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: center;
+  color: #1a1206;
+  background: #ffd27a;
+  border-radius: var(--radius-full);
+}
+.touch-dock-alert {
+  position: absolute;
+  top: 4px;
+  left: 14px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ffd27a;
+  box-shadow: 0 0 0 2px rgba(10, 10, 20, 0.8);
+}
 
 /* ── Your journey (Rough Draft M3, 2026-10-27): awe = experience ───────── */
 .visually-hidden {

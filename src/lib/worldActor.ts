@@ -22,7 +22,8 @@ export function currentWorldActor(): WorldActor {
   }
   const mine = player?.characters ?? (id ? [id] : [])
   const owner = Boolean(id) && mine.some((c) => isWorldOwnerId(c, roles))
-  return { id, owner }
+  // Rights belong to the account: what any of your characters placed, you may edit
+  return { id, owner, mine: id ? mine : undefined }
 }
 
 /** May the local player move / edit / delete this object? */

@@ -887,7 +887,7 @@ export class RoomManager {
     const chars = accountId ? listCharacters(accountId).map((c) => c.id) : [playerId];
     if (!chars.includes(playerId)) chars.push(playerId);
     const owner = chars.some((id) => isWorldOwnerId(id, roles));
-    return canEditObject({ id: playerId, owner }, obj) || chars.some((id) => obj.placedBy === id);
+    return canEditObject({ id: playerId, owner, mine: chars }, obj);
   }
 
   /** Is this character (or another on the same account) the world's creator or a co-creator? */
@@ -944,7 +944,14 @@ export class RoomManager {
     const id = this.playerIds.get(ws) ?? null;
     const accountId = this.accountIds.get(ws);
     let owner: boolean | undefined;
+    let mine: string[] | undefined;
     const entry = () => this.getWorldEntry(worldId);
+    const chars = (): string[] => {
+      if (mine) return mine;
+      mine = accountId ? listCharacters(accountId).map((c) => c.id) : [];
+      if (id && !mine.includes(id)) mine.push(id);
+      return mine;
+    };
     return {
       id,
       get owner() {
@@ -952,8 +959,12 @@ export class RoomManager {
         const w = entry();
         if (!w || !id) return (owner = false);
         const roles = { creator: w.creator, coCreators: w.coCreators };
-        owner = isWorldOwnerId(id, roles) || (accountId ? listCharacters(accountId).some((c) => isWorldOwnerId(c.id, roles)) : false);
+        owner = chars().some((c) => isWorldOwnerId(c, roles));
         return owner;
+      },
+      // What any character on this account placed, all of them may edit (2026-11-07)
+      get mine() {
+        return id ? chars() : undefined;
       },
     };
   }
