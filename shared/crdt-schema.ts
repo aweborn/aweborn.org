@@ -467,6 +467,8 @@ export interface WorldIndexWorld {
   solidified?: boolean;
   /** Enclosing world ID if this is a nested world inside another world. */
   parentWorldId?: string;
+  /** Its builders (co-creators), so you can manage them from the World Index. */
+  coCreators?: string[];
 }
 
 // ── WebSocket Protocol ───────────────────────────────────────────────

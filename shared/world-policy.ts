@@ -5,9 +5,11 @@
  * to only offer tools that will stick.
  *
  * ROADMAP "Object removal governance":
- *   1. The world's **creator** may change anything (as may **co-creators** the
- *      creator names).
- *   2. A **placer** may move, edit or delete what they placed.
+ *   1. The world's **creator** may change anything (as may **co-creators**, "builders",
+ *      whom the creator or another builder names).
+ *   2. A **placer** may move, edit or delete what they placed. Rights belong to the
+ *      account: every character on it counts as the creator, a builder or the placer
+ *      if any one of them is.
  *   3. Everyone else (guests included) may place new things as themselves and
  *      **kick** anything (event-sourced physics), nothing more.
  * Terrain, sky, physics and world meta: creator + co-creators only; `creator`
@@ -21,6 +23,11 @@ export interface WorldActor {
   readonly id: string | null;
   /** True when this actor is the world's creator or a co-creator. May be computed lazily. */
   readonly owner: boolean;
+  /**
+   * Every character on the actor's account (Alex, 2026-11-07: one person, one set of
+   * rights). What any of them placed, all of them may edit. May be computed lazily.
+   */
+  readonly mine?: readonly string[];
 }
 
 /** Top-level world maps the authority guards (besides `objects` and the server-only `chat`). */
@@ -70,7 +77,8 @@ export function canEditObject(actor: WorldActor, obj: Rec | { placedBy?: unknown
   if (actor.owner) return true;
   if (!actor.id || !obj) return false;
   const placedBy = (obj as { placedBy?: unknown }).placedBy;
-  return typeof placedBy === "string" && placedBy !== "" && placedBy === actor.id;
+  if (typeof placedBy !== "string" || placedBy === "") return false;
+  return placedBy === actor.id || Boolean(actor.mine?.includes(placedBy));
 }
 
 /** May this actor create an object stamped with this `placedBy`? (No impersonation.) */
@@ -195,6 +203,45 @@ export function cleanCoCreators(raw: unknown, creator: string): string[] | null 
     if (out.length >= MAX_CO_CREATORS) break;
   }
   return out;
+}
+
+export type BuilderChange = { add: string } | { remove: string };
+export type BuilderChangeResult =
+  | { ok: true; next: string[]; changed: boolean }
+  | { ok: false; error: "not_owner" | "bad_player" | "full" | "not_yours"; message: string };
+
+/**
+ * One change to a world's builders (Alex, 2026-11-07). The creator and every builder
+ * may add builders; only the creator removes one, and anyone may step down. One
+ * change at a time (not a whole list), so two builders acting at once can't undo
+ * each other. `actorChars` is every character on the acting account.
+ */
+export function planBuilderChange(
+  roles: { creator: string; coCreators?: readonly string[] | null },
+  actorChars: readonly string[],
+  change: BuilderChange,
+): BuilderChangeResult {
+  const list = [...(roles.coCreators ?? [])];
+  if (!actorChars.some((id) => isWorldOwnerId(id, roles))) {
+    return { ok: false, error: "not_owner", message: "Only this world’s creator and builders can change who builds here." };
+  }
+  const creatorSide = actorChars.includes(roles.creator);
+  if ("add" in change) {
+    const id = typeof change.add === "string" ? change.add.trim() : "";
+    if (!id || id.length > 64 || id.startsWith("guest") || id === "system") {
+      return { ok: false, error: "bad_player", message: "Only saved players can build." };
+    }
+    // Already in (or one of your own characters: your account already has the rights)
+    if (id === roles.creator || list.includes(id) || actorChars.includes(id)) return { ok: true, next: list, changed: false };
+    if (list.length >= MAX_CO_CREATORS) return { ok: false, error: "full", message: `Up to ${MAX_CO_CREATORS} builders per world.` };
+    return { ok: true, next: [...list, id], changed: true };
+  }
+  const id = change.remove;
+  if (!list.includes(id)) return { ok: true, next: list, changed: false };
+  if (!creatorSide && !actorChars.includes(id)) {
+    return { ok: false, error: "not_yours", message: "Only the creator can remove other builders." };
+  }
+  return { ok: true, next: list.filter((b) => b !== id), changed: true };
 }
 
 /** Read a stored co-creator list (CRDT value) as an optional field for WorldEntry / WorldMeta. */

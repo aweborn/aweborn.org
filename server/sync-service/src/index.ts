@@ -4,10 +4,12 @@ import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
 import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword } from "./auth.js";
-import { listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex, cleanLocation, saveLocation, loadLocation, setCharacterName, characterNameAt, characterNames } from "./identity.js";
+import { accountOfCharacter, listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex, cleanLocation, saveLocation, loadLocation, setCharacterName, characterNameAt, characterNames } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
-import { cleanCoCreators } from "../../../shared/world-policy.js";
+import { cleanCoCreators, isWorldOwnerId, planBuilderChange, type BuilderChange } from "../../../shared/world-policy.js";
+import { BuildRequests, type SqlDb } from "./build-requests.js";
+import type { BuildRequestView, MyBuildRequest } from "../../../shared/build-requests.js";
 import { cleanPlayerName } from "../../../shared/names.js";
 import { timingSafeEqual } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
@@ -61,6 +63,17 @@ const cardOrders = new CardOrders(getDb(), {
   email: (to, subject, text) => sendEmail({ to, subject, text, html: `<pre style="font:15px/1.5 system-ui,sans-serif;white-space:pre-wrap">${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</pre>` }),
 });
 const cardSets = new CardSets(getDb(), (id) => rooms.lookupWorld(id) !== null);
+// Asking to build (2026-11-07): asks wait in every owner's inbox until one answers.
+// (better-sqlite3's Database has the prepare/exec shape SqlDb names; tests use node:sqlite.)
+const buildRequests = new BuildRequests(getDb() as unknown as SqlDb);
+setInterval(() => {
+  try {
+    const n = buildRequests.sweep();
+    if (n) console.log(`[build-requests] swept ${n}`);
+  } catch (err) {
+    console.error("[build-requests] sweep failed:", (err as Error).message);
+  }
+}, 3600_000).unref();
 
 // ── HTTP API (health, stats, world lookup) ───────────────────────────
 // CORS for the public HTTP API (GET only). Extra origins (comma-separated)
@@ -165,7 +178,14 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
 
 /**
  * `/api/player/*`: the signed-in account (session cookie, trusted origins only).
- *   GET  /api/player/me         { playerId, characters, methods, worldIndex }
+ *   GET  /api/player/me         { playerId, characters, methods, buildRequests, worldIndex }
+ *   POST /api/player/world/builders  { worldId, add | remove } → { worldId, coCreators }
+ *        Creator + builders add; only the creator removes; anyone steps down (shared/world-policy.ts).
+ *   GET  /api/player/build-requests  → { requests: BuildRequestView[] }  asks waiting for you (also in /me)
+ *   GET  /api/player/world/build-request?worldId=  → MyBuildRequest (none | open | declined | builder)
+ *   POST /api/player/world/build-request  { worldId } → ask to build (saved players; shared/build-requests.ts limits)
+ *   POST /api/player/world/build-request/withdraw  { worldId }
+ *   POST /api/player/world/build-request/decide  { worldId, requester, approve } → creator or a builder answers
  *   POST /api/player/character  { id } → this device now plays that character
  *   POST /api/player/character/name  { name } → { playerId, name }  (400 bad_name · 429 slow_down)
  *   POST /api/player/password   { password } → add or change this player's password
@@ -242,6 +262,67 @@ function knownWorld(id: unknown): string | null {
   return isWorldId(worldId) && rooms.lookupWorld(worldId) ? worldId : null;
 }
 
+// ── Builders and asking to build (2026-11-07) ───────────────────────
+
+/** A world's creator and builders: the characters whose inboxes get its asks. */
+function ownersOf(worldId: string, coCreators?: readonly string[]): string[] {
+  const w = rooms.lookupWorld(worldId);
+  if (!w) return [];
+  const creator = w.creator && w.creator !== "system" && w.creator !== "guest" ? [w.creator] : [];
+  return [...creator, ...(coCreators ?? w.coCreators ?? [])];
+}
+
+/** Write a world's builders and keep the asks in step (added players' asks are done; inboxes follow). */
+function setBuilders(worldId: string, next: string[], before: readonly string[]): boolean {
+  if (!rooms.setWorldCoCreators(worldId, next)) return false;
+  for (const id of next) {
+    if (before.includes(id)) continue;
+    const account = accountOfCharacter(id);
+    if (account) buildRequests.resolve(worldId, account);
+  }
+  buildRequests.syncOwners(worldId, ownersOf(worldId, next));
+  return true;
+}
+
+/** Builder changes per account per minute: each rewrites the universe entry (fans out to its sector). */
+const BUILDER_CHANGES_PER_MIN = 30;
+const builderWindows = new Map<string, { start: number; count: number }>();
+function takeBuilderChange(accountId: string, now = Date.now()): boolean {
+  let w = builderWindows.get(accountId);
+  if (!w || now - w.start >= 60_000) {
+    if (builderWindows.size > 50_000) for (const [k, v] of builderWindows) if (now - v.start >= 60_000) builderWindows.delete(k);
+    w = { start: now, count: 0 };
+    builderWindows.set(accountId, w);
+  }
+  if (w.count >= BUILDER_CHANGES_PER_MIN) return false;
+  w.count++;
+  return true;
+}
+const SLOW_BUILDERS = { error: "slow_down", message: "That’s a lot of changes. Give it a minute." };
+
+/** Asks waiting for this person (any of their characters owns the world), minus anyone they muted. */
+function buildInbox(accountId: string): BuildRequestView[] {
+  const mine = listCharacters(accountId).map((c) => c.id);
+  const muted = new Set(listMutes(accountId));
+  const rows = buildRequests.inbox(mine).filter((r) => !muted.has(r.requester) && !mine.includes(r.requester));
+  const names = characterNames([...new Set(rows.map((r) => r.requester))]);
+  const out: BuildRequestView[] = [];
+  for (const r of rows) {
+    const w = rooms.lookupWorld(r.worldId);
+    if (!w || !mine.some((c) => isWorldOwnerId(c, { creator: w.creator, coCreators: w.coCreators }))) continue;
+    out.push({
+      worldId: r.worldId, worldName: w.name, worldColor: w.color, requester: r.requester, askedAt: r.askedAt,
+      ...(names[r.requester] ? { requesterName: names[r.requester] } : {}),
+    });
+  }
+  return out;
+}
+
+function myBuildRequest(worldId: string, playerId: string, accountId: string): MyBuildRequest {
+  if (rooms.isWorldOwner(worldId, playerId, accountId)) return { status: "builder" };
+  return buildRequests.status(worldId, accountId);
+}
+
 async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const json = (status: number, body: unknown) => {
     res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -264,6 +345,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
       playerId: session.playerId,
       characters: listCharacters(accountId),
       methods: waysIn(accountId),
+      buildRequests: buildInbox(accountId),
       worldIndex: worldIndex(accountId).map((e) => {
         const w = rooms.lookupWorld(e.worldId);
         return {
@@ -277,6 +359,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
                 sector: w.sector,
                 solidified: w.solidified,
                 ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
+                ...(w.coCreators?.length ? { coCreators: w.coCreators } : {}),
               }
             : null,
         };
@@ -447,10 +530,78 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
       const cleaned = cleanCoCreators(body!.coCreators, w.creator);
       if (!cleaned) return json(400, { error: "bad_request" });
       coCreators = cleaned.filter((id) => !myChars.some((c) => c.id === id));
-      rooms.setWorldCoCreators(worldId, coCreators);
+      setBuilders(worldId, coCreators, w.coCreators ?? []);
     }
     if (hasPortals) rooms.setWorldPortalPolicy(worldId, body!.allowPortals as boolean);
     return json(200, { worldId, ...(hasPortals ? { allowPortals: body!.allowPortals } : {}), ...(coCreators ? { coCreators } : {}) });
+  }
+  // Builders, one change at a time (2026-11-07): the creator and builders add; the creator removes; anyone steps down
+  if (path === "/api/player/world/builders" && req.method === "POST") {
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player to change who builds here." });
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; add?: unknown; remove?: unknown } | null;
+    const worldId = knownWorld(body?.worldId);
+    const change: BuilderChange | null = isPlayerId(body?.add) ? { add: body.add } : isPlayerId(body?.remove) ? { remove: body.remove } : null;
+    if (!worldId || !change || worldId === ORIGIN_WORLD_ID) return json(400, { error: "bad_request" });
+    const w = rooms.lookupWorld(worldId);
+    if (!w) return json(404, { error: "not_found" });
+    if ("add" in change && !accountOfCharacter(change.add)) return json(400, { error: "bad_player", message: "That player isn’t around any more." });
+    const before = w.coCreators ?? [];
+    const plan = planBuilderChange({ creator: w.creator, coCreators: before }, listCharacters(accountId).map((c) => c.id), change);
+    if (!plan.ok) return json(plan.error === "full" ? 409 : plan.error === "bad_player" ? 400 : 403, plan);
+    if (plan.changed && !takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
+    if (plan.changed && !setBuilders(worldId, plan.next, before)) return json(500, { error: "internal" });
+    return json(200, { worldId, coCreators: plan.next });
+  }
+  // Asking to build (2026-11-07): waits in the creator's and builders' inboxes until one answers
+  if (path === "/api/player/build-requests" && req.method === "GET") return json(200, { requests: buildInbox(accountId) });
+  if (path === "/api/player/world/build-request" && req.method === "GET") {
+    const worldId = knownWorld(new URL(req.url ?? "/", "http://x").searchParams.get("worldId"));
+    if (!worldId) return json(400, { error: "bad_request" });
+    return json(200, myBuildRequest(worldId, session.playerId, accountId));
+  }
+  if (path === "/api/player/world/build-request" && req.method === "POST") {
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player to ask to build." });
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown } | null;
+    const worldId = knownWorld(body?.worldId);
+    if (!worldId) return json(400, { error: "bad_request" });
+    if (rooms.isWorldOwner(worldId, session.playerId, accountId)) return json(200, { status: "builder" });
+    const owners = ownersOf(worldId);
+    if (worldId === ORIGIN_WORLD_ID || !owners.length) return json(400, { error: "no_owner", message: "Nobody can make builders in this world." });
+    const r = buildRequests.ask(worldId, session.playerId, accountId, owners);
+    if (!r.ok) return json(r.error === "slow_down" ? 429 : 409, r);
+    return json(200, { status: "open", askedAt: r.askedAt });
+  }
+  if (path === "/api/player/world/build-request/withdraw" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown } | null;
+    const worldId = knownWorld(body?.worldId);
+    if (!worldId) return json(400, { error: "bad_request" });
+    buildRequests.withdraw(worldId, accountId);
+    return json(200, myBuildRequest(worldId, session.playerId, accountId));
+  }
+  if (path === "/api/player/world/build-request/decide" && req.method === "POST") {
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player to answer asks." });
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; requester?: unknown; approve?: unknown } | null;
+    const worldId = knownWorld(body?.worldId);
+    if (!worldId || !isPlayerId(body?.requester) || typeof body?.approve !== "boolean") return json(400, { error: "bad_request" });
+    const w = rooms.lookupWorld(worldId);
+    if (!w) return json(404, { error: "not_found" });
+    const mine = listCharacters(accountId).map((c) => c.id);
+    const roles = { creator: w.creator, coCreators: w.coCreators ?? [] };
+    if (!mine.some((c) => isWorldOwnerId(c, roles))) {
+      return json(403, { error: "not_owner", message: "Only this world’s creator and builders can answer asks." });
+    }
+    const ask = buildRequests.openAsk(worldId, body.requester);
+    if (!ask) return json(404, { error: "not_found", message: "Someone already answered that ask." });
+    if (!body.approve) {
+      buildRequests.decline(worldId, ask.accountId, session.playerId);
+      return json(200, { worldId, declined: true });
+    }
+    const plan = planBuilderChange(roles, mine, { add: body.requester });
+    if (!plan.ok) return json(plan.error === "full" ? 409 : 403, plan);
+    if (plan.changed && !takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
+    if (plan.changed && !setBuilders(worldId, plan.next, roles.coCreators)) return json(500, { error: "internal" });
+    buildRequests.resolve(worldId, ask.accountId);
+    return json(200, { worldId, coCreators: plan.next });
   }
   // Card orders (M6): any player, saved or not, can buy a card of any world
   if (path === "/api/player/cards/checkout" && req.method === "POST") {

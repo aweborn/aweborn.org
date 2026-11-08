@@ -101,6 +101,12 @@ function ensureCharacter(characterId: string, accountId: string): void {
   );
 }
 
+/** The account a character belongs to, or null if no saved player has it. */
+export function accountOfCharacter(characterId: string): string | null {
+  const row = db.prepare(`SELECT accountId FROM character WHERE id = ?`).get(characterId) as { accountId: string } | undefined;
+  return row?.accountId ?? null;
+}
+
 function ownsCharacter(accountId: string, characterId: string): boolean {
   return Boolean(
     db.prepare(`SELECT 1 FROM character WHERE id = ? AND accountId = ?`).get(characterId, accountId),

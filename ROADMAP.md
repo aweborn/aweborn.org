@@ -941,7 +941,8 @@ The offline experience is still rich and beautiful: Ghost worlds have their own 
 - **Object removal governance (World Ownership):**
   1. **The Creator:** Has ultimate power to delete/move anything in their world. Future additions may include configurable roles (e.g., Observer, Builder).
   2. **The Placer:** You can always delete/move an object *you* placed.
-  3. **Co-Creators:** The World Creator can grant "Co-creator" status to specific players, allowing them to delete/move anything.
+  3. **Co-Creators ("builders"):** The World Creator can grant "Co-creator" status to specific players, allowing them to delete/move anything. *(2026-11-07, Alex:)* builders can also add builders and answer asks; only the creator removes one; anyone can step down. Saved players can **ask to build**; the ask waits for the creator and builders even while they're away, and is answerable from the World Index.
+  4. **One person, one set of rights (2026-11-07, Alex):** every character on an account counts as the creator, a builder or the placer if any one of them is.
 
 ### Open Design Questions
 
