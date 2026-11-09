@@ -51,6 +51,9 @@ Earlier playtest rounds are in the Phase 07 session log (2026-11-02, 2026-11-06)
 6. 🟡 **Couldn't find how to ask for builder access.** Expected: the builders
    feature was only on the `builders-ask-to-build` branch. Merged and deployed
    2026-11-08 at Alex's request so he can test it live (first real-game check).
+   *Retest 21:16:* no *Ask to build* on **Lost**, as designed: its creator is
+   `system` ("by Aweborn"), so nobody can approve. **Open:** should asks for
+   Aweborn's own worlds go to Alex (admin) instead?
    Once it's live: World Index → tap the world → *Build here → Ask to build* (worlds
    you've been inside), or Make → 🌱 Portal. Retest after it ships.
 
