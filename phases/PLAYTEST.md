@@ -22,6 +22,8 @@ Earlier playtest rounds are in the Phase 07 session log (2026-11-02, 2026-11-06)
    input pinned at the sheet's bottom. Check at 360 × 740, 390 × 844 and
    844 × 390 with 3+ makings and the card both open and closed.
    (`src/index.css`, `html.touch-ui .planner` and `.planner-*`.)
+   *Second screenshot (21:08):* with the reply chips gone it's still too tall. The
+   *Say more…* input sits below the sheet, under KICK and JUMP.
 
 2. ⬜ **2 of 3 models failed with no reason:** "The making didn't take. Nothing
    was drawn." for *sky shrine* and *drifting stones* (*hanging roots* was made).
@@ -45,6 +47,11 @@ Earlier playtest rounds are in the Phase 07 session log (2026-11-02, 2026-11-06)
    (`useOwnsCurrentWorld` counts them). With the builders branch
    (`builders-ask-to-build`), it should read "creator & builders", and could offer
    *Ask to build*. (`src/components/PlannerPanel.tsx`.)
+
+6. ⬜ **Couldn't find how to ask for builder access.** Expected: the builders
+   feature is only on the `builders-ask-to-build` branch, which isn't deployed yet.
+   Once it's live: World Index → tap the world → *Build here → Ask to build* (worlds
+   you've been inside), or Make → 🌱 Portal. Retest after it ships.
 
 **Question for Alex:** with two items failed, what did *Make models ≈320 mana* do
 when you tapped it? Did it try the failed ones again?
