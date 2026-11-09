@@ -48,8 +48,9 @@ Earlier playtest rounds are in the Phase 07 session log (2026-11-02, 2026-11-06)
    (`builders-ask-to-build`), it should read "creator & builders", and could offer
    *Ask to build*. (`src/components/PlannerPanel.tsx`.)
 
-6. ⬜ **Couldn't find how to ask for builder access.** Expected: the builders
-   feature is only on the `builders-ask-to-build` branch, which isn't deployed yet.
+6. 🟡 **Couldn't find how to ask for builder access.** Expected: the builders
+   feature was only on the `builders-ask-to-build` branch. Merged and deployed
+   2026-11-08 at Alex's request so he can test it live (first real-game check).
    Once it's live: World Index → tap the world → *Build here → Ask to build* (worlds
    you've been inside), or Make → 🌱 Portal. Retest after it ships.
 
