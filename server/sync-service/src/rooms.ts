@@ -763,7 +763,16 @@ export class RoomManager {
   }
 
   /** Server-only write of a policy key to the universe entry and the world's meta. */
-  private setWorldPolicyKey(worldId: string, key: "allowPortals" | "coCreators", value: unknown): boolean {
+  /**
+   * Hand one of Aweborn's own worlds (creator `system`, never Origin) to a player
+   * (admin only, 2026-11-08: Alex takes over Lost). False if it isn't Aweborn's.
+   */
+  claimSystemWorld(worldId: string, playerId: string): boolean {
+    if (this.getWorldEntry(worldId)?.creator !== "system") return false;
+    return this.setWorldPolicyKey(worldId, "creator", playerId);
+  }
+
+  private setWorldPolicyKey(worldId: string, key: "allowPortals" | "coCreators" | "creator", value: unknown): boolean {
     if (worldId === ORIGIN_WORLD_ID) return false;
     const worlds = this.universeDoc.getMap("worlds");
     const worldMap = worlds.get(worldId) as Y.Map<unknown> | undefined;

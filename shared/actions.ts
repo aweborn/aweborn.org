@@ -65,6 +65,7 @@ export const ACTIONS = {
   // ── Online, authenticated ──
   "world.plant": { tier: "saved", via: { http: "POST /api/player/world" }, offline: false, status: "enforced", note: "daily limit; parent allowPortals" },
   "world.set_policy": { tier: "world_creator", via: { http: "POST /api/player/world/policy" }, offline: false, status: "enforced", note: "allowPortals; whole co-creator list (creator only, older clients)" },
+  "world.claim_aweborn_world": { tier: "admin", via: { http: "POST /api/player/world/claim" }, offline: false, status: "enforced", note: "admin token + signed in: become creator of a `system` world (never Origin)" },
   "world.set_builders": { tier: "world_creator", via: { http: "POST /api/player/world/builders" }, offline: false, status: "enforced", note: "one change: creator + builders add, only the creator removes, anyone steps down" },
   "world.ask_to_build": { tier: "saved", via: { http: "POST /api/player/world/build-request" }, offline: false, status: "enforced", note: "waits in every owner's inbox; 10/day per account, 20 open per world, 7 days after a decline" },
   "world.withdraw_ask": { tier: "saved", via: { http: "POST /api/player/world/build-request/withdraw" }, offline: false, status: "enforced", note: "re-ask that world after 1 h" },

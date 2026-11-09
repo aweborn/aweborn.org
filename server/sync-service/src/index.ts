@@ -179,6 +179,7 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
 /**
  * `/api/player/*`: the signed-in account (session cookie, trusted origins only).
  *   GET  /api/player/me         { playerId, characters, methods, buildRequests, worldIndex }
+ *   POST /api/player/world/claim  { worldId, token } → admin: this character becomes creator of an Aweborn world
  *   POST /api/player/world/builders  { worldId, add | remove } → { worldId, coCreators }
  *        Creator + builders add; only the creator removes; anyone steps down (shared/world-policy.ts).
  *   GET  /api/player/build-requests  → { requests: BuildRequestView[] }  asks waiting for you (also in /me)
@@ -299,6 +300,14 @@ function takeBuilderChange(accountId: string, now = Date.now()): boolean {
   return true;
 }
 const SLOW_BUILDERS = { error: "slow_down", message: "That’s a lot of changes. Give it a minute." };
+
+/** The admin token, sent in a JSON body (the player API's CORS allows no Authorization header). */
+function adminTokenMatches(given: unknown): boolean {
+  if (!MANA_ADMIN_TOKEN || typeof given !== "string") return false;
+  const got = Buffer.from(given);
+  const want = Buffer.from(MANA_ADMIN_TOKEN);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
 
 /** Asks waiting for this person (any of their characters owns the world), minus anyone they muted. */
 function buildInbox(accountId: string): BuildRequestView[] {
@@ -534,6 +543,21 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     }
     if (hasPortals) rooms.setWorldPortalPolicy(worldId, body!.allowPortals as boolean);
     return json(200, { worldId, ...(hasPortals ? { allowPortals: body!.allowPortals } : {}), ...(coCreators ? { coCreators } : {}) });
+  }
+  // Take over one of Aweborn's own worlds (admin, 2026-11-08): the signed-in character becomes its creator
+  if (path === "/api/player/world/claim" && req.method === "POST") {
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; token?: unknown } | null;
+    if (!MANA_ADMIN_TOKEN) return json(503, { error: "admin_disabled" });
+    if (!adminTokenMatches(body?.token)) return json(401, { error: "unauthorized", message: "Wrong token." });
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player first, then try again." });
+    const worldId = knownWorld(body?.worldId);
+    if (!worldId || worldId === ORIGIN_WORLD_ID) return json(400, { error: "bad_request", message: "That isn’t a world you can take over." });
+    if (!rooms.claimSystemWorld(worldId, session.playerId)) {
+      return json(409, { error: "not_aweborns", message: "Only worlds made by Aweborn can be taken over." });
+    }
+    buildRequests.syncOwners(worldId, ownersOf(worldId));
+    console.log(`[worlds] ${worldId} now belongs to ${session.playerId}`);
+    return json(200, { worldId, creator: session.playerId, name: rooms.lookupWorld(worldId)?.name ?? "" });
   }
   // Builders, one change at a time (2026-11-07): the creator and builders add; the creator removes; anyone steps down
   if (path === "/api/player/world/builders" && req.method === "POST") {
