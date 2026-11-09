@@ -43,7 +43,7 @@ Earlier playtest rounds are in the Phase 07 session log (2026-11-02, 2026-11-06)
 4. ⬜ **The world pill overlaps the sheet's top edge.** The "Lost · ✦368 · 60 in
    flight · hold to leave" pill hangs a few px over the Plan sheet's border. Minor.
 
-5. ⬜ **"Terrain: creator only" isn't quite right.** Builders can shape terrain too
+5. ✅ **"Terrain: creator only" isn't quite right.** *(2026-11-08: now "Terrain: creator & builders".)* Builders can shape terrain too
    (`useOwnsCurrentWorld` counts them). With the builders branch
    (`builders-ask-to-build`), it should read "creator & builders", and could offer
    *Ask to build*. (`src/components/PlannerPanel.tsx`.)

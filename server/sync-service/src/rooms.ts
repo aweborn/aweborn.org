@@ -878,6 +878,36 @@ export class RoomManager {
     return out;
   }
 
+  /**
+   * What a world holds, read-only (the planner's view, 2026-11-08): its ground (the
+   * voxel terrain spec, if any) and every placed object as plain JSON. Live room or
+   * saved doc; nothing is written. Null if the world has no doc yet.
+   */
+  readWorldState(worldId: string): { terrain: unknown; objects: Record<string, unknown>[] } | null {
+    const read = (doc: Y.Doc) => {
+      const raw = doc.getMap("terrain").get("voxel");
+      let terrain: unknown = null;
+      if (typeof raw === "string") {
+        try { terrain = JSON.parse(raw); } catch { terrain = null; }
+      }
+      const objects: Record<string, unknown>[] = [];
+      doc.getMap("objects").forEach((v: unknown) => {
+        const obj = (v as { toJSON?: () => Record<string, unknown> }).toJSON?.();
+        if (obj) objects.push(obj);
+      });
+      return { terrain, objects };
+    };
+    const room = this.worldRooms.get(worldId);
+    if (room) return read(room.doc);
+    const saved = loadDoc(worldId);
+    if (!saved) return null;
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, saved);
+    const out = read(doc);
+    doc.destroy();
+    return out;
+  }
+
   /** Server-only edit of one placed object (life, minds: Phase 07). False if it isn't there. */
   editWorldObject(worldId: string, objectId: string, fn: (m: Y.Map<unknown>) => void): boolean {
     return this.withWorldDoc(worldId, (doc) => {

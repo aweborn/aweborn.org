@@ -22,7 +22,7 @@ import { DEFAULT_PHYSICS, worldSoundFields } from "@aweborn/shared/crdt-schema";
 import { progress } from "./progressStore";
 import { cleanColor } from "@aweborn/shared/library";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
-import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, editKey, terrainShapeKey } from "@aweborn/shared/terrain-edits";
+import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, editKey } from "@aweborn/shared/terrain-edits";
 import { changeTerrainEdits, resetTerrainEdits, terrainCellAt } from "./worldVoxels";
 
 interface WorldState {
@@ -183,14 +183,20 @@ export function setVoxelTerrain(doc: Y.Doc, terrain: VoxelTerrain, sky?: Bluepri
     m.set("voxel", next);
     if (sky) m.set("sky", JSON.stringify(sky));
     else m.delete("sky");
-    if (before !== next && !sameShape(before, terrain)) doc.getMap(TERRAIN_EDITS_MAP).clear();
+    if (before !== next && !sameBase(before, terrain)) doc.getMap(TERRAIN_EDITS_MAP).clear();
   });
 }
 
-function sameShape(before: unknown, next: VoxelTerrain): boolean {
+/**
+ * Hand edits (dig, fill) stay as long as the ground's base does: worlds grow by adding
+ * features (2026-11-08), and adding a hill mustn't erase everyone's digging. Only a new
+ * size or seed (a different ground altogether) clears them.
+ */
+function sameBase(before: unknown, next: VoxelTerrain): boolean {
   if (typeof before !== "string") return false;
   try {
-    return terrainShapeKey(JSON.parse(before) as VoxelTerrain) === terrainShapeKey(next);
+    const b = JSON.parse(before) as VoxelTerrain;
+    return b.seed === next.seed && JSON.stringify(b.size) === JSON.stringify(next.size);
   } catch {
     return false;
   }

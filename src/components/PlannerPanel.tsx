@@ -243,8 +243,16 @@ export function PlannerPanel() {
     let cancelled = false
     fetch(`${AUTH_URL}/api/player/plan?worldId=${encodeURIComponent(activeWorldId)}`, { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { session: { sessionId: string; blueprint: Blueprint | null; turns: Turn[]; jobs?: { key: string; jobId: string }[] } | null } | null) => {
-        if (cancelled || !j?.session) return
+      .then((j: { session: { sessionId: string; blueprint: Blueprint | null; turns: Turn[]; jobs?: { key: string; jobId: string }[] } | null; worldPlan?: Blueprint | null } | null) => {
+        if (cancelled || !j) return
+        if (!j.session) {
+          // No conversation of yours here yet: start from the world's plan (2026-11-08: one growing plan per world)
+          if (j.worldPlan) {
+            setBlueprint(j.worldPlan)
+            usePlannerStore.getState().setBlueprint(activeWorldId, j.worldPlan)
+          }
+          return
+        }
         setSessionId(j.session.sessionId)
         setTurns(j.session.turns)
         setBlueprint(j.session.blueprint)
@@ -301,7 +309,8 @@ export function PlannerPanel() {
   }, [turns, busy])
 
   // Terrain is its own step: instant, no server call (the planner turn already paid for it). Everyone in the world sees it.
-  // Only the world's creator / co-creators may reshape it (the server reverts anyone else).
+  // Only the world's creator / builders may change it (the server reverts anyone else). Plans only add to the ground;
+  // a plan with fewer features than the ground is an undo (2026-11-08).
   const ownsWorld = useOwnsCurrentWorld()
   const shapeTerrain = useCallback(() => {
     if (!blueprint || !ownsWorld) return
@@ -312,6 +321,22 @@ export function PlannerPanel() {
       progress.use('terrain')
     }
   }, [blueprint, ownsWorld])
+
+  // What Make would still make: not already placed, and music only for the world's makers when it has none yet
+  const worldHasMusic = useWorldStore((s) => Boolean(s.meta?.music))
+  const toMake = blueprint
+    ? blueprint.estimate.items.filter((i) => {
+        const a = blueprint.assets.find((x) => x.key === i.key)
+        if (!a || placedKeys.has(`${blueprint.id}:${a.key}`)) return false
+        return a.kind !== 'music' || (ownsWorld && !worldHasMusic)
+      })
+    : []
+  const toMakeMana = toMake.reduce((s, i) => s + i.mana, 0)
+  const makesMusic = toMake.some((i) => blueprint?.assets.find((a) => a.key === i.key)?.kind === 'music')
+  // Fewer features than the ground has: applying this plan takes some back out (an undo)
+  const terrainUndo = !!blueprint && !!worldTerrain && worldTerrain.features.some(
+    (f) => !blueprint.terrain.features.some((g) => JSON.stringify(g) === JSON.stringify(f)),
+  )
 
   // The button is only live while the previewed blueprint differs from what the world already has
   const terrainShaped = !!blueprint && !!worldTerrain &&
@@ -627,12 +652,12 @@ export function PlannerPanel() {
             type="button"
             onClick={shapeTerrain}
             disabled={busy || terrainShaped || !ownsWorld}
-            title={ownsWorld ? undefined : 'Only this world’s creator (or a co-creator) can shape its terrain'}
+            title={ownsWorld ? undefined : 'Only this world’s creator and builders can change its ground'}
           >
-            {!ownsWorld ? 'Terrain: creator only' : terrainShaped ? 'Terrain shaped ✓' : worldTerrain ? 'Reshape terrain' : 'Shape terrain'}
+            {!ownsWorld ? 'Terrain: creator & builders' : terrainShaped ? 'Terrain up to date ✓' : !worldTerrain ? 'Shape terrain' : terrainUndo ? 'Undo terrain changes' : 'Add to terrain'}
           </button>
-          <button id="planner-manifest" className="planner-manifest" type="button" onClick={() => void manifest()} disabled={manifesting || busy}>
-            {manifesting ? 'Manifesting…' : `${ownsWorld ? 'Make models + music' : 'Make models'} ✦ ≈${blueprint.estimate.items.filter((i) => ownsWorld || blueprint.assets.find((a) => a.key === i.key)?.kind !== 'music').reduce((s, i) => s + i.mana, 0)} mana`}
+          <button id="planner-manifest" className="planner-manifest" type="button" onClick={() => void manifest()} disabled={manifesting || busy || toMakeMana === 0}>
+            {manifesting ? 'Manifesting…' : toMakeMana === 0 ? 'All made ✦' : `${makesMusic ? 'Make models + music' : 'Make models'} ✦ ≈${toMakeMana} mana`}
           </button>
         </div>
       )}
