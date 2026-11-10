@@ -19,7 +19,7 @@ export type MakingOfEntry =
 
 export interface MakingOfSession {
   id: string;
-  /** The author's character name (public, like in chat), or a stand-in. */
+  /** An anonymous label for this world ("Maker 1", "Maker 2"…), never a name (Alex, 2026-11-10). */
   by: string;
   startedAt: number;
   /** Name the plan carried at the end of this conversation. */

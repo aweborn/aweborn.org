@@ -14,7 +14,6 @@ function planDb(): Database.Database {
   return db;
 }
 
-const names = (ids: string[]) => Object.fromEntries(ids.filter((i) => i === "p-alex").map((i) => [i, "Alex"]));
 
 function session(db: Database.Database, id: string, player: string, world: string, at: number, events: [string, Record<string, unknown>, { model?: string; version?: number }?][]) {
   db.prepare("INSERT INTO plan_sessions (id, player_id, world_id, version, blueprint, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)")
@@ -36,10 +35,10 @@ test("the world's planner history reads like the conversation, refusals and raw 
     ["manifest", { version: 3, items: [{ key: "a", jobId: "j1" }, { key: "b", error: "later" }, { key: "c", jobId: "j2" }] }, { version: 3 }],
     ["redo", { key: "moon-bridge", note: "darker wood", jobId: "j3" }, { version: 3 }],
   ]);
-  const m = buildMakingOf(db, "w1", names);
+  const m = buildMakingOf(db, "w1");
   assert.equal(m.sessions.length, 1);
   const s = m.sessions[0];
-  assert.equal(s.by, "Alex");
+  assert.equal(s.by, "Maker 1");
   assert.equal(s.plan, "Moss Hill");
   assert.deepEqual(s.entries.map((e) => e.kind), ["player", "planner", "note", "note", "note", "note"]);
   assert.equal(s.entries[0].text, "a mossy hill at dusk");
@@ -49,7 +48,7 @@ test("the world's planner history reads like the conversation, refusals and raw 
     "removed old bench", "went back to version 1", "manifested: 2 things began to take shape", "remade moon bridge: “darker wood”",
   ]);
   const json = JSON.stringify(m);
-  assert.ok(!json.includes("secret prompt") && !json.includes("not allowed") && !json.includes("p-alex"));
+  assert.ok(!json.includes("secret prompt") && !json.includes("not allowed") && !json.includes("p-alex") && !json.includes("Alex"));
   assert.ok(hasMakingOf(m));
 });
 
@@ -59,14 +58,15 @@ test("oldest conversation first, any author; unanswered ones and other worlds ar
   session(db, "early", "p-guest", "w1", 200, [["user", { message: "what the shit" }], ["turn", { reply: "Here.", chips: [] }, { version: 1 }]]);
   session(db, "silent", "p-alex", "w1", 250, [["user", { message: "hello?" }], ["llm_error", { error: "down" }]]);
   session(db, "elsewhere", "p-alex", "w2", 150, [["user", { message: "x" }], ["turn", { reply: "y", chips: [] }, { version: 1 }]]);
-  const m = buildMakingOf(db, "w1", names);
+  const m = buildMakingOf(db, "w1");
   assert.deepEqual(m.sessions.map((s) => s.id), ["early", "late"]);
-  assert.equal(m.sessions[0].by, "A traveler");
+  // Anonymous, numbered by who spoke first in this world; the same player keeps their number
+  assert.deepEqual(m.sessions.map((s) => s.by), ["Maker 1", "Maker 2"]);
   assert.equal(m.sessions[0].entries[0].text, "what the ****");
 });
 
 test("no planner tables yet → an empty history, not an error", () => {
-  const m = buildMakingOf(new Database(":memory:"), "w1", names);
+  const m = buildMakingOf(new Database(":memory:"), "w1");
   assert.deepEqual(m, { worldId: "w1", sessions: [] });
   assert.equal(hasMakingOf(m), false);
 });

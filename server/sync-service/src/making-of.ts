@@ -13,12 +13,18 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type Database from "better-sqlite3";
 import { getDb } from "./persistence.js";
-import { characterNames } from "./identity.js";
 import { prepareChat } from "../../../shared/chat.js";
 import { MAKING_OF_LIMITS, type MakingOf, type MakingOfEntry, type MakingOfSession } from "../../../shared/making-of.js";
 
 const KINDS = "('user','turn','blocked','edit','restore','redo','manifest')";
-const STAND_IN = "A traveler";
+/**
+ * Authors are anonymous (Alex, 2026-11-10: names "limit someone's ideas because they're
+ * self-conscious"). Each player who shaped this world gets "Maker 1", "Maker 2"… in the
+ * order they first spoke here: you can follow several people's threads, but not who they
+ * are, and the numbers mean nothing in any other world. Who really said what stays
+ * server-side (plan_sessions.player_id → research ID) for research replay.
+ */
+const makerLabel = (n: number) => `Maker ${n}`;
 
 const say = (raw: unknown) => prepareChat(raw, MAKING_OF_LIMITS.text);
 const modelLabel = (m: string | null) => (m ?? "").split("/")[1] ?? m ?? "";
@@ -27,8 +33,8 @@ let indexed = false;
 const hasPlanTables = (db: Database.Database) =>
   !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_events'").get();
 
-/** Pure: the world's planner history from the DB (`names` maps player ids to character names). */
-export function buildMakingOf(db: Database.Database, worldId: string, names: (ids: string[]) => Record<string, string>): MakingOf {
+/** Pure: the world's planner history from the DB, with anonymous per-world author labels. */
+export function buildMakingOf(db: Database.Database, worldId: string): MakingOf {
   if (!hasPlanTables(db)) return { worldId, sessions: [] };
   if (!indexed) {
     db.exec("CREATE INDEX IF NOT EXISTS plan_sessions_world ON plan_sessions(world_id, created_at)");
@@ -36,7 +42,11 @@ export function buildMakingOf(db: Database.Database, worldId: string, names: (id
   }
   const rows = db.prepare("SELECT id, player_id, created_at, blueprint FROM plan_sessions WHERE world_id IN (?, ?) ORDER BY created_at, id LIMIT ?")
     .all(worldId, worldId.toLowerCase(), MAKING_OF_LIMITS.sessions) as { id: string; player_id: string; created_at: number; blueprint: string | null }[];
-  const who = names([...new Set(rows.map((r) => r.player_id))]);
+  const labels = new Map<string, string>();
+  const who = (playerId: string) => {
+    if (!labels.has(playerId)) labels.set(playerId, makerLabel(labels.size + 1));
+    return labels.get(playerId)!;
+  };
   const events = db.prepare(`SELECT kind, model, version, payload, at FROM plan_events WHERE session_id = ? AND kind IN ${KINDS} ORDER BY seq`);
 
   const sessions: MakingOfSession[] = [];
@@ -73,7 +83,7 @@ export function buildMakingOf(db: Database.Database, worldId: string, names: (id
       const n = r.blueprint ? (JSON.parse(r.blueprint) as { name?: unknown }).name : undefined;
       plan = typeof n === "string" ? say(n).slice(0, 80) || undefined : undefined;
     } catch { /* no name */ }
-    sessions.push({ id: r.id, by: who[r.player_id] ?? STAND_IN, startedAt: r.created_at, ...(plan ? { plan } : {}), entries });
+    sessions.push({ id: r.id, by: who(r.player_id), startedAt: r.created_at, ...(plan ? { plan } : {}), entries });
   }
   return { worldId, sessions };
 }
@@ -133,7 +143,7 @@ export function handleMakingOf(req: IncomingMessage, res: ServerResponse, cors: 
   let hit = cache.get(worldId);
   if (!hit || now - hit.at > CACHE_MS) {
     try {
-      hit = { at: now, body: JSON.stringify(buildMakingOf(getDb(), worldId, characterNames)) };
+      hit = { at: now, body: JSON.stringify(buildMakingOf(getDb(), worldId)) };
     } catch (err) {
       console.error("[making-of]", (err as Error).message);
       res.writeHead(500, headers);

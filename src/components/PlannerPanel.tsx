@@ -474,7 +474,7 @@ export function PlannerPanel() {
       <div className="planner-log" ref={logRef} aria-live="polite">
         {!turns.length && <p className="planner-empty">What are you dreaming of?</p>}
         {!turns.length && (
-          <p className="planner-public">📜 This conversation stays with the world: everyone who visits can read it at its story stone.</p>
+          <p className="planner-public">📜 This conversation stays with the world: everyone who visits can read it at its story stone, without your name.</p>
         )}
         {turns.map((t, i) => (
           <div key={i} className={`planner-turn planner-turn--${t.who}`}>
