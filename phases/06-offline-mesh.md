@@ -131,4 +131,4 @@ Make Aweborn work **without internet**. Two phones in the same room (or in the w
 
 ## Age grill impact (2026-11-07, not built)
 - The host phone relays its whole world doc to mesh peers with no checks, and IndexedDB and service-worker caches are per device, never wiped on sign-out. For 18+ worlds: joining over the mesh needs a **door token**, and 18+ content goes in a **separate device store, wiped on sign-out or when *Show 18+* is turned off** ([containment](./07-genai-creation.md#containment-18-never-leaks-into-everyone-worlds-alex-2026-11-07), [inventory §9](../docs/research/2026-11-adult-models/reconciliation-inventory.md#9-offline--mesh--infra)).
-- Open: in a physical room (card events, mesh groups, a TV), hide 18+ worlds and their marks entirely?
+- **Decided (Alex, 2026-11-10):** physical rooms work the same as everywhere. There is no event mode: each device, a TV included, follows the door of the player signed in on it, and a mesh host never relays 18+ content to a peer without its own door token.
