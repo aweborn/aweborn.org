@@ -386,9 +386,11 @@ export async function planTurn(rooms: RoomManager, playerId: string, body: unkno
     if (blocked) {
       // Answer in the planner's voice; the blueprint stays as it was and the request is dropped from context
       s.history.pop();
-      const reply = blocked.suggestion
-        ? `I can't make that one here. How about ${blocked.suggestion.replace(/[.!]+$/, "")}?`
-        : "I can't make that one here. What else could live in this world?";
+      const reply = blocked.category === "unavailable"
+        ? "I couldn't check that just now. Say it again in a moment?"
+        : blocked.suggestion
+          ? `I can't make that one here. How about ${blocked.suggestion.replace(/[.!]+$/, "")}?`
+          : "I can't make that one here. What else could live in this world?";
       const chips = blocked.suggestion ? [blocked.suggestion.slice(0, 60)] : [];
       logEvent(s.id, "blocked", { category: blocked.category, reply, chips, refused: parsed.value }, { ref, model: usedModel, costMana: mana });
       return json(200, {

@@ -60,10 +60,22 @@ test("classifier verdicts are cached and blocks are logged", async () => {
   assert.equal(flags[0].layer, "classifier");
 });
 
-test("classifier outage lets the prompt through (local list still applied)", async () => {
-  setClassifierForTests(async () => ({ verdict: null, costUsd: 0 }));
+test("classifier outage refuses (fail closed) after one retry, and isn't cached", async () => {
+  let calls = 0;
+  setClassifierForTests(async () => (calls++, { verdict: null, costUsd: 0 }));
   const v = await checkCreation("p1", "make", ["a glass whale"], "r5");
-  assert.ok(v.ok);
+  assert.equal(v.ok, false);
+  assert.equal(calls, 2);
+  if (!v.ok) assert.equal(v.category, "unavailable");
+  // Back up: the same text is checked again, not served from a cached refusal
+  setClassifierForTests(async () => ({ verdict: { allowed: true }, costUsd: 0 }));
+  assert.ok((await checkCreation("p1", "make", ["a glass whale"], "r6")).ok);
+});
+
+test("a retry that succeeds lets the prompt through", async () => {
+  let calls = 0;
+  setClassifierForTests(async () => (calls++ === 0 ? { verdict: null, costUsd: 0 } : { verdict: { allowed: true }, costUsd: 0 }));
+  assert.ok((await checkCreation("p1", "make", ["a copper kettle"], "r7")).ok);
 });
 
 test("chargeCheck books the classifier cost as reserve → settle", () => {

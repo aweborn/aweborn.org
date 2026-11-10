@@ -7,10 +7,10 @@
  *   2. Classifier: one small LLM call via genai-service /llm that returns
  *      { allowed, category, suggestion }. Verdicts are cached by text.
  *
- * If the classifier is unreachable we let the prompt through (the local list
- * still applies, the planner has its own safety rules, and Meshy moderates
- * too) and log it, so an OpenRouter hiccup never takes creation down at an
- * event. Every block is saved in `safety_flag` for review.
+ * If the classifier is unreachable we try once more, then **refuse** with
+ * "try again in a moment" (fail closed, 2026-11-10: it used to let the prompt
+ * through, which turned an outage into an open door). Every block is saved in
+ * `safety_flag` for review; outages are logged but not flagged.
  */
 import { createHash } from "node:crypto";
 import { getDb } from "./persistence.js";
@@ -23,7 +23,8 @@ const TIMEOUT_MS = 10_000;
 const CACHE_MAX = 5000;
 
 export type SafetyCategory =
-  | "sexual" | "hate" | "gore" | "self_harm" | "real_person" | "ip" | "personal_info" | "profanity" | "other";
+  | "sexual" | "hate" | "gore" | "self_harm" | "real_person" | "ip" | "personal_info" | "profanity" | "other"
+  | "unavailable"; // the check itself couldn't run (not a violation)
 
 export type SafetyVerdict =
   | { ok: true; costUsd: number }
@@ -53,9 +54,11 @@ const CATEGORY_TEXT: Record<SafetyCategory, string> = {
   personal_info: "it has personal info in it",
   profanity: "it has a word we don't allow",
   other: "it isn't something we make here",
+  unavailable: "",
 };
 
 function messageFor(category: SafetyCategory, suggestion: string): string {
+  if (category === "unavailable") return "We couldn't check that just now. Try again in a moment.";
   const base = `That can't be made here: ${CATEGORY_TEXT[category]}.`;
   return suggestion ? `${base} Try something like “${suggestion}”.` : `${base} Try an idea of your own.`;
 }
@@ -173,11 +176,16 @@ export async function checkCreation(playerId: string | null, surface: string, ra
   let v = cache.get(key);
   let costUsd = 0;
   if (!v) {
-    const out = await classify(`safety:${ref}`, texts, tryResearchId(playerId));
+    let out = await classify(`safety:${ref}`, texts, tryResearchId(playerId));
     costUsd = out.costUsd;
     if (!out.verdict) {
-      console.warn(`[safety] classifier unavailable for ${ref}; letting it through (local list passed)`);
-      return { ok: true, costUsd };
+      out = await classify(`safety:${ref}:retry`, texts, tryResearchId(playerId));
+      costUsd += out.costUsd;
+    }
+    if (!out.verdict) {
+      // Fail closed: an outage must never become an open door
+      console.warn(`[safety] classifier unavailable for ${ref} (twice); refusing`);
+      return { ok: false, category: "unavailable", suggestion: "", message: messageFor("unavailable", ""), costUsd };
     }
     v = out.verdict;
     remember(key, v);
