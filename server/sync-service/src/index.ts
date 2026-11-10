@@ -27,7 +27,7 @@ import { RunwayWatch } from "./runway.js";
 import { sendEmail } from "./email.js";
 import { CardOrders, CHECKOUT_BODY_LIMIT } from "./cards.js";
 import { CardSets } from "./card-sets.js";
-import { checkCreation } from "./safety.js";
+import { checkCreation, checkImage } from "./safety.js";
 import { handleMakingOf } from "./making-of.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
@@ -58,6 +58,10 @@ const cardOrders = new CardOrders(getDb(), {
   nameOf: (playerId) => characterNames([playerId])[playerId] ?? null,
   check: async (playerId, texts, ref) => {
     const v = await checkCreation(playerId, "card", texts, ref);
+    return v.ok ? { ok: true } : { ok: false, message: v.message };
+  },
+  checkImage: async (playerId, dataUrl, ref) => {
+    const v = await checkImage(playerId, "card-photo", dataUrl, ref);
     return v.ok ? { ok: true } : { ok: false, message: v.message };
   },
   email: (to, subject, text) => sendEmail({ to, subject, text, html: `<pre style="font:15px/1.5 system-ui,sans-serif;white-space:pre-wrap">${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</pre>` }),
@@ -696,7 +700,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   const th = /^\/api\/player\/library\/([a-f0-9]{64})\/thumb$/.exec(path ?? "");
   if (th && req.method === "POST") {
     const body = (await readJson(req, 262_144).catch(() => null)) as { dataUrl?: unknown } | null;
-    return uploadAssetThumb(th[1], body?.dataUrl, json);
+    return uploadAssetThumb(session.playerId, th[1], body?.dataUrl, json);
   }
   return json(404, { error: "not_found" });
 }

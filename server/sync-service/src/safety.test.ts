@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), "aw-safety-")), "t.db");
 const { initDb } = await import("./persistence.js");
-const { checkCreation, parseVerdict, setClassifierForTests, listFlags, chargeCheck } = await import("./safety.js");
+const { checkCreation, checkImage, parseVerdict, setClassifierForTests, setImageClassifierForTests, listFlags, chargeCheck } = await import("./safety.js");
 
 before(() => {
   initDb();
@@ -88,4 +88,27 @@ test("chargeCheck books the classifier cost as reserve → settle", () => {
   chargeCheck(ledger, "p1", "y", 0);
   assert.deepEqual(calls, ["reserve safety:x 0.04", "settle safety:x 0.04"]);
   setClassifierForTests(null);
+});
+
+test("image check: blocks and logs, fails closed after one retry, caches by image", async () => {
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+  let calls = 0;
+  setImageClassifierForTests(async () => (calls++, { verdict: { allowed: false, category: "sexual", suggestion: "" }, costUsd: 0.001 }));
+  const v = await checkImage("p1", "thumb", png, "i1");
+  assert.equal(v.ok, false);
+  if (!v.ok) assert.equal(v.category, "sexual");
+  assert.ok(listFlags(5).some((f) => f.surface === "thumb" && f.category === "sexual"));
+  await checkImage("p1", "thumb", png, "i2");
+  assert.equal(calls, 1, "the same image is answered from the cache");
+
+  calls = 0;
+  setImageClassifierForTests(async () => (calls++, { verdict: null, costUsd: 0 }));
+  const down = await checkImage("p1", "card-photo", png + "AA", "i3");
+  assert.equal(down.ok, false);
+  if (!down.ok) assert.equal(down.category, "unavailable");
+  assert.equal(calls, 2);
+
+  setImageClassifierForTests(async () => ({ verdict: { allowed: true }, costUsd: 0 }));
+  assert.ok((await checkImage("p1", "thumb", png + "BB", "i4")).ok);
+  setImageClassifierForTests(null);
 });

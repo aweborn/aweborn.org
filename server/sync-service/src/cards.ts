@@ -22,8 +22,8 @@
  *
  * Printed cards are permanent, so a person approves every order before it
  * prints (`paid → approved`), after the automatic safety check of the world
- * name at checkout. A photo is seen by that person too (no automatic image
- * check yet). The Stripe Lambda holds the shipping address; we keep
+ * name at checkout. A photo gets the automatic image check too (2026-11-10),
+ * and that person sees it before it prints. The Stripe Lambda holds the shipping address; we keep
  * only the buyer's email, to tell them about their order (Privacy).
  */
 import { randomBytes } from "node:crypto";
@@ -67,6 +67,8 @@ export interface CardDeps {
   nameOf: (playerId: string) => string | null;
   /** Safety check of what will be printed. */
   check: (playerId: string, texts: string[], ref: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+  /** The image check for a photo (2026-11-10). Optional so older tests keep working; production always sets it. */
+  checkImage?: (playerId: string, dataUrl: string, ref: string) => Promise<{ ok: true } | { ok: false; message: string }>;
   /** Order notices (never throws). */
   email: (to: string, subject: string, text: string) => Promise<void>;
   now?: () => number;
@@ -192,6 +194,10 @@ export class CardOrders {
     // Printed forever: the name goes through the same check as everything players make
     const safe = await this.deps.check(playerId, [w.name], `card:${worldId}`);
     if (!safe.ok) return { ok: false, status: 422, error: "unsafe", message: "This world's name can't be printed. Rename the world first." };
+    if (photo && this.deps.checkImage) {
+      const pic = await this.deps.checkImage(playerId, PHOTO_PREFIX + photo.jpeg.toString("base64"), `card-photo:${worldId}`);
+      if (!pic.ok) return { ok: false, status: 422, error: "unsafe_photo", message: "That photo can't be printed. Take another one, or order without a photo." };
+    }
 
     const showName = b.showName === true;
     const id = newOrderId();

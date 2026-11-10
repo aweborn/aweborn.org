@@ -195,6 +195,81 @@ export async function checkCreation(playerId: string | null, surface: string, ra
   return { ok: false, category: v.category, suggestion: v.suggestion, message: messageFor(v.category, v.suggestion), costUsd };
 }
 
+// ── Images (2026-11-10): thumbnails, card photos; later pictures and model renders ──
+const IMAGE_SYSTEM = `You check images for Aweborn, an all-ages game. The image is a picture, a rendered 3D model or a screenshot that other players will see.
+Block only:
+- nudity, sexual or suggestive content (in any art style, cartoon and anime included)
+- anyone who looks like a child in a sexual or suggestive way (always block)
+- gore, graphic injury, torture (cartoon monsters, skulls and spooky things are fine)
+- hate symbols, slurs or harassment written in the image
+- a real, identifiable person (a photo or likeness of a real face)
+- personal info written in the image (addresses, phone numbers, emails)
+Everything else is allowed, including fantasy creatures, weapons, dark or sad moods.
+Reply with ONE JSON object and nothing else:
+{"allowed": boolean, "category": "none"|"sexual"|"hate"|"gore"|"self_harm"|"real_person"|"ip"|"personal_info"|"other", "suggestion": ""}`;
+
+type ClassifyImage = (ref: string, dataUrl: string, researchId?: string) => Promise<{ verdict: Cached | null; costUsd: number }>;
+
+const classifyImageViaGenai: ClassifyImage = async (ref, dataUrl, researchId) => {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS * 2);
+  try {
+    const res = await fetch(`${GENAI_URL}/llm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ac.signal,
+      body: JSON.stringify({
+        ref, model: SAFETY_MODEL, json: true, maxTokens: 120, researchId, images: [dataUrl],
+        messages: [
+          { role: "system", content: IMAGE_SYSTEM },
+          { role: "user", content: "Check this image." },
+        ],
+      }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { content?: string; costUsd?: number };
+    if (!res.ok || typeof body.content !== "string") return { verdict: null, costUsd: body.costUsd ?? 0 };
+    return { verdict: parseVerdict(body.content), costUsd: body.costUsd ?? 0 };
+  } catch {
+    return { verdict: null, costUsd: 0 };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+let classifyImage: ClassifyImage = classifyImageViaGenai;
+/** Tests swap the image classifier. */
+export function setImageClassifierForTests(fn: ClassifyImage | null) {
+  classifyImage = fn ?? classifyImageViaGenai;
+  cache.clear();
+}
+
+/**
+ * Check one image (a data:image/png|jpeg|webp URL) before others can see it. Same
+ * verdicts, cache and review log as text; fails closed after one retry.
+ */
+export async function checkImage(playerId: string | null, surface: string, dataUrl: string, ref: string): Promise<SafetyVerdict> {
+  const key = "img:" + createHash("sha256").update(dataUrl).digest("hex");
+  let v = cache.get(key);
+  let costUsd = 0;
+  if (!v) {
+    let out = await classifyImage(`safety:${ref}`, dataUrl, tryResearchId(playerId));
+    costUsd = out.costUsd;
+    if (!out.verdict) {
+      out = await classifyImage(`safety:${ref}:retry`, dataUrl, tryResearchId(playerId));
+      costUsd += out.costUsd;
+    }
+    if (!out.verdict) {
+      console.warn(`[safety] image classifier unavailable for ${ref} (twice); refusing`);
+      return { ok: false, category: "unavailable", suggestion: "", message: messageFor("unavailable", ""), costUsd };
+    }
+    v = out.verdict;
+    remember(key, v);
+  }
+  if (v.allowed) return { ok: true, costUsd };
+  logFlag(playerId, surface, v.category, "classifier", `[image ${key.slice(4, 16)}]`);
+  return { ok: false, category: v.category, suggestion: "", message: messageFor(v.category, ""), costUsd };
+}
+
 /**
  * Book the classifier's real cost as its own creative draw (reserve → settle,
  * K = 100 mana per dollar). The request it guarded was already admitted.

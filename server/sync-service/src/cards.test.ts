@@ -17,7 +17,7 @@ function fakeJpeg(width: number, height: number, pad = 0): Buffer {
 }
 const dataUrl = (b: Buffer) => `data:image/jpeg;base64,${b.toString("base64")}`;
 
-function setup(opts: { unsafe?: boolean } = {}) {
+function setup(opts: { unsafe?: boolean; unsafePhoto?: boolean } = {}) {
   const db = new Database(":memory:");
   const mana = new ManaLedger(db);
   let now = 1_800_000_000_000;
@@ -28,6 +28,7 @@ function setup(opts: { unsafe?: boolean } = {}) {
       : id === GHOST ? { id, name: "Far Mist", resolvedAt: 1, solidified: false } : null),
     nameOf: (p) => (p === "named" ? "Alex" : null),
     check: async () => (opts.unsafe ? { ok: false, message: "no" } : { ok: true }),
+    checkImage: async () => (opts.unsafePhoto ? { ok: false, message: "no" } : { ok: true }),
     email: async (to, subject, text) => { mails.push({ to, subject, text }); },
     now: () => now,
   });
@@ -299,4 +300,13 @@ test("event orders: Origin is allowed even though it never resolves", () => {
   });
   const r = cards.createEvent({ worldIds: [ORIGIN], quantity: 60, note: "Community night" });
   assert.ok(r.ok && r.orders[0].worldName === "Origin");
+});
+
+test("photo art: a photo that fails the image check makes no order", async () => {
+  const { cards } = setup({ unsafePhoto: true });
+  const r = await cards.create("p", { worldId: WORLD, photo: dataUrl(fakeJpeg(1100, 900, 2000)) });
+  assert.equal((r as { error: string }).error, "unsafe_photo");
+  assert.equal(cards.list("pending").length, 0);
+  // Without a photo the same order goes through
+  assert.ok((await cards.create("p", { worldId: WORLD })).ok);
 });
