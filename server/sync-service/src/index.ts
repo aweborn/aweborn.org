@@ -16,6 +16,7 @@ import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
 import { MindHost, startAnimate, createMind, mindHistory, saveMind, adoptMind, removeSavedMind, mindShelf, handleMindLibrary } from "./minds.js";
 import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore, hookWorldMusic } from "./planner.js";
+import { sweepUnrated } from "./output-gate.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
 import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
@@ -258,6 +259,17 @@ setInterval(() => {
     .then((r) => { if (r.settled || r.released) console.log(`[creations] swept: ${r.settled} settled, ${r.released} released`); })
     .catch((err) => console.error("[creations] sweep failed:", (err as Error).message))
     .finally(() => { sweeping = false; });
+}, 60_000).unref();
+
+// Output gate (2026-11-10): rate finished files nobody's poll rated, and the Library from before
+let rating = false;
+setInterval(() => {
+  if (rating) return;
+  rating = true;
+  sweepUnrated()
+    .then((r) => { if (r.rated || r.blocked) console.log(`[output-gate] rated ${r.rated}, blocked ${r.blocked}, waiting ${r.waiting}`); })
+    .catch((err) => console.error("[output-gate] sweep failed:", (err as Error).message))
+    .finally(() => { rating = false; });
 }, 60_000).unref();
 
 /** A live world id (normalised), or null. */

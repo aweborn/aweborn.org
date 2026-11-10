@@ -46,8 +46,10 @@ export function initLibrary(db: DatabaseSync): void {
     created_at INTEGER NOT NULL)`);
   // Added after launch: preview image uploaded; pseudonymous creator (hash of the player id)
   // removed_*: the trash. A removed asset is hidden from the library but never deleted until purged.
+  // rating (2026-11-10): what the output check decided. New rows start "unrated" and stay off the
+  // public shelves until sync-service rates them (rateAsset). Rows from before this are rated by its sweep.
   for (const col of ["thumb INTEGER NOT NULL DEFAULT 0", "creator TEXT", "opt INTEGER NOT NULL DEFAULT 0",
-    "removed_at INTEGER", "removed_by TEXT"]) {
+    "removed_at INTEGER", "removed_by TEXT", "rating TEXT NOT NULL DEFAULT 'unrated'", "rated_at INTEGER"]) {
     try { db.exec(`ALTER TABLE library ADD COLUMN ${col}`); } catch { /* already there */ }
   }
 }
@@ -277,10 +279,44 @@ export function listLibrary(db: DatabaseSync, q: string, limit: number, kind: st
   const like = `%${q.replace(/[%_]/g, "")}%`;
   const kinds = typeof kind === "string" ? [kind] : kind.length ? [...kind] : ["model"];
   return db.prepare(`SELECT sha, file, kind, prompt, provider, bytes, s3, thumb, creator, created_at FROM library
-    WHERE prompt LIKE ? AND kind IN (${kinds.map(() => "?").join(", ")}) AND removed_at IS NULL ORDER BY created_at DESC LIMIT ?`)
+    WHERE prompt LIKE ? AND kind IN (${kinds.map(() => "?").join(", ")}) AND removed_at IS NULL AND rating = 'everyone'
+    ORDER BY created_at DESC LIMIT ?`)
     .all(like, ...kinds, limit) as unknown as LibraryAsset[];
 }
 
 export function assetFiles(assetDir: string): string[] {
   return existsSync(assetDir) ? readdirSync(assetDir).filter((f) => /^[a-f0-9]{64}\.glb$/.test(f)) : [];
+}
+
+// ── Ratings (2026-11-10, Phase 07 "Gaps before 18+") ──────────────────
+/**
+ * unrated < everyone < adult < blocked. A rating is only ever raised (the containment
+ * rule: a tag is never lost), except by an admin. "adult" is reserved for 18+ worlds and
+ * isn't set by anything yet; until 18+ ships, nothing but "everyone" is shown or served.
+ */
+export const RATINGS = ["unrated", "everyone", "adult", "blocked"] as const;
+export type Rating = (typeof RATINGS)[number];
+const rank = (r: string) => RATINGS.indexOf(r as Rating);
+
+/** Set a rating. Returns the rating the row ends up with, or null if there's no such row. */
+export function rateAsset(db: DatabaseSync, sha: string, rating: Rating, opts: { admin?: boolean } = {}): Rating | null {
+  const row = db.prepare("SELECT rating FROM library WHERE sha = ?").get(sha) as { rating: string } | undefined;
+  if (!row) return null;
+  if (opts.admin || rank(rating) > rank(row.rating)) {
+    db.prepare("UPDATE library SET rating = ?, rated_at = ? WHERE sha = ?").run(rating, Date.now(), sha);
+    return rating;
+  }
+  return row.rating as Rating;
+}
+
+export function ratingOf(db: DatabaseSync, file: string): Rating | null {
+  const row = db.prepare("SELECT rating FROM library WHERE file = ? OR sha = ?").get(file, file.replace(/\.\w+$/, "")) as { rating: string } | undefined;
+  return row ? (row.rating as Rating) : null;
+}
+
+/** Rows waiting for the output check (oldest first), for sync-service's sweep. */
+export function listUnrated(db: DatabaseSync, limit: number): Pick<LibraryAsset, "sha" | "file" | "kind" | "prompt" | "thumb">[] {
+  return db.prepare(`SELECT sha, file, kind, prompt, thumb FROM library
+    WHERE rating = 'unrated' AND removed_at IS NULL AND kind != 'npc-voice' ORDER BY created_at LIMIT ?`)
+    .all(limit) as unknown as Pick<LibraryAsset, "sha" | "file" | "kind" | "prompt" | "thumb">[];
 }

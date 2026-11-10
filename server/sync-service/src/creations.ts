@@ -17,6 +17,7 @@ import { Readable } from "node:stream";
 import type { RoomManager } from "./rooms.js";
 import { getDb } from "./persistence.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
+import { rateOutput } from "./output-gate.js";
 import { approveText } from "./approved-text.js";
 import { checkCreation, chargeCheck, SAFETY_MODEL } from "./safety.js";
 import { tryResearchId } from "./research.js";
@@ -147,7 +148,26 @@ export async function startJob(
   return body.jobId;
 }
 
-interface JobView { status: string; progress: number; asset: string | null; costUsd: number | null; error: string | null }
+interface JobView {
+  status: string; progress: number; asset: string | null; costUsd: number | null; error: string | null;
+  /** The output check's rating of the finished file (null: not catalogued, e.g. a rig). */
+  rating?: string | null; prompt?: string;
+}
+
+/**
+ * Output gate (2026-11-10): a finished file isn't handed out (or to the done hooks) until
+ * the output check has rated it. Blocked → the job reads as failed; check unavailable →
+ * it still reads as running, and the next poll or sweep tries again.
+ */
+async function gateJob(c: Creation, j: JobView): Promise<JobView> {
+  if (j.status !== "complete" || !j.asset || !j.rating || j.rating === "everyone") return j;
+  if (j.rating === "unrated") {
+    const r = await rateOutput({ sha: j.asset.replace(/\.\w+$/, ""), file: j.asset, kind: c.kind ?? "model", prompt: j.prompt ?? "" }, c.playerId);
+    if (r === "everyone") return j;
+    if (r === "unavailable") return { ...j, status: "running", progress: Math.max(j.progress ?? 0, 99) };
+  }
+  return { ...j, status: "failed", asset: null, error: "unsafe_output" };
+}
 
 /** Who started a job, for what (planner.ts: a finished world-music job sets the world's music). */
 export function creationOf(jobId: string): { ref: string; playerId: string; kind: string } | undefined {
@@ -181,6 +201,7 @@ function reconcile(rooms: RoomManager, jobId: string, c: Creation, j: JobView): 
 
 /** What to tell the maker when a job fails (rigging refuses shapes it can't find a body in). */
 export function failureMessage(error: string | null): string {
+  if (error === "unsafe_output") return "That came out as something we can't show here. Try describing it another way.";
   if (error && /rigging 422|pose estimation|not.*humanoid/i.test(error)) {
     return "That shape couldn't be given a skeleton (it needs two legs and two arms). It can still breathe and roam: try Alive. Nothing was drawn.";
   }
@@ -192,8 +213,8 @@ export async function creationStatus(rooms: RoomManager, playerId: string, jobId
   if (!c || c.playerId !== playerId) return json(404, { error: "not_found" });
   const res = await fetch(`${GENAI_URL}/jobs/${encodeURIComponent(jobId)}`).catch(() => null);
   if (!res?.ok) return json(503, { error: "genai_unavailable" });
-  const j = (await res.json()) as JobView;
-  reconcile(rooms, jobId, c, j);
+  const j = await gateJob(c, (await res.json()) as JobView);
+  if (j.status !== "running") reconcile(rooms, jobId, c, j);
   return json(200, {
     status: j.status,
     kind: c.kind ?? "model",
@@ -243,7 +264,8 @@ export async function sweepCreations(rooms: RoomManager, now = Date.now()): Prom
       continue;
     }
     if (!res.ok) continue;
-    const j = (await res.json()) as JobView;
+    const j = await gateJob(c, (await res.json()) as JobView);
+    if (j.status === "running") continue; // still being checked
     reconcile(rooms, r.job_id, c, j);
     if (j.status === "complete") settled++;
     else if (j.status === "failed") released++;

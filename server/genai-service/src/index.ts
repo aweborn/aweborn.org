@@ -29,6 +29,7 @@ import { isMediaKind, MEDIA_EXT, speakLine } from "./media.js";
 import { cleanAnimateParams } from "./rig.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
 import { MAX_ATTEMPTS, retryDelay, resumeTaskAfter } from "./retry.js";
+import { rateAsset, ratingOf, listUnrated, RATINGS, type Rating } from "./library.js";
 import { initLibrary, addToLibrary, addMedia, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -191,6 +192,8 @@ app.post("/llm", async (req, res) => {
   const images = Array.isArray(req.body?.images)
     ? (req.body.images as unknown[]).filter((u): u is string => typeof u === "string" && /^data:image\/(png|jpeg|webp);base64,/.test(u) && u.length < 600_000).slice(0, 2)
     : [];
+  // An image we can't pass on must not be dropped silently: a safety check would then judge only the words
+  if (Array.isArray(req.body?.images) && images.length !== Math.min(2, req.body.images.length)) return res.status(400).json({ error: "bad_image" });
   const researchId = researchIdOf(req.body?.researchId) ?? undefined;
   const okMsgs = Array.isArray(messages) && messages.length > 0 && messages.length <= 80 &&
     messages.every((m: ChatMessage) => ["system", "user", "assistant"].includes(m?.role) && typeof m.content === "string");
@@ -274,6 +277,7 @@ app.get("/jobs/:id", (req, res) => {
   res.json({
     jobId: row.id, ref: row.ref, status: row.status, progress: row.progress,
     asset: row.asset, costUsd: row.cost_usd, error: row.error, attempts: row.attempts,
+    rating: row.asset ? ratingOf(db, row.asset) : null, prompt: row.prompt,
   });
 });
 
@@ -289,6 +293,18 @@ app.get("/library", (req, res) => {
 // Trash + shared thumbnails (sync-service checks who may call these). Removal never deletes; only purge does.
 const SHA = /^[a-f0-9]{64}$/;
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+// Ratings (2026-11-10): sync-service's output check sets them; only ever raised unless admin
+app.get("/library/unrated", (req, res) => {
+  const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit ?? "10"), 10) || 10));
+  res.json({ assets: listUnrated(db, limit) });
+});
+app.post("/library/:sha/rating", (req, res) => {
+  const { rating, admin } = req.body ?? {};
+  if (!SHA.test(req.params.sha) || !RATINGS.includes(rating) || rating === "unrated") return res.status(400).json({ error: "bad_request" });
+  const now = rateAsset(db, req.params.sha, rating as Rating, { admin: admin === true });
+  if (!now) return res.status(404).json({ error: "not_found" });
+  res.json({ rating: now });
+});
 app.post("/library/:sha/thumb", async (req, res) => {
   const sha = req.params.sha;
   const pngBase64 = req.body?.pngBase64;
@@ -341,6 +357,8 @@ app.delete("/trash/:sha", async (req, res) => {
 
 app.get("/assets/:file", (req, res) => {
   const file = req.params.file;
+  // Blocked by the output check: never served again (unrated stays reachable so it can be checked)
+  if (/^[a-f0-9]{64}\.\w+$/.test(file) && ratingOf(db, file.replace(/\.png$/, ".glb")) === "blocked") return res.status(410).end();
   if (/^[a-f0-9]{64}\.(webp|mp3|wav)$/.test(file)) {
     // Pictures + sounds: one copy, under media/. CloudFront may read media/ only after the
     // assets stack update (cloudformation-assets.yml); until MEDIA_CDN=1 the box serves its copy.
