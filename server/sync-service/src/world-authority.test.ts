@@ -245,3 +245,22 @@ test("a sound keeps the words it was made from: nobody rewrites its prompt or fi
   assert.equal(act(bob, (d) => d.getMap("objects").delete("s1")), 0);
   assert.equal(obj(server, "s1"), undefined);
 });
+
+test("a sign's words must be ones the server checked; old signs stay movable and copyable", async () => {
+  const { approveText } = await import("./approved-text.js");
+  const { server, act, obj } = setup();
+  // Made up by a client, never through /api/player/lore: reverted
+  assert.equal(act(bob, (d) => addObject(d, "s1", BOB, { type: "sign", text: "words nobody checked", prompt: "x" })), 1);
+  assert.equal(obj(server, "s1"), undefined);
+  // Lore that passed the check: placed
+  approveText("A lantern that remembers every traveller.", { persist: false });
+  assert.equal(act(bob, (d) => addObject(d, "s2", BOB, { type: "sign", text: "A lantern that remembers every traveller.", prompt: "lantern" })), 0);
+  assert.equal(obj(server, "s2")?.text, "A lantern that remembers every traveller.");
+  // A sign already in a world when it loads is grandfathered: a copy of it is fine
+  const s = new Y.Doc();
+  addObject(s, "old", ALICE, { type: "sign", text: "An old sign from before the check." });
+  new WorldAuthority(s);
+  const { act: act2, obj: obj2, server: server2 } = setup();
+  assert.equal(act2(bob, (d) => addObject(d, "copy", BOB, { type: "sign", text: "An old sign from before the check." })), 0);
+  assert.equal(obj2(server2, "copy")?.type, "sign");
+});

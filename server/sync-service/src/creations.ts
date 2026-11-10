@@ -17,6 +17,7 @@ import { Readable } from "node:stream";
 import type { RoomManager } from "./rooms.js";
 import { getDb } from "./persistence.js";
 import type { PlayerProgress } from "../../../shared/crdt-schema.js";
+import { approveText } from "./approved-text.js";
 import { checkCreation, chargeCheck, SAFETY_MODEL } from "./safety.js";
 import { tryResearchId } from "./research.js";
 import { isMakeKind, makeEstimate, clampSeconds, MAKE_SKILL, VOICE_MAX_CHARS, type MakeKind } from "../../../shared/make-costs.js";
@@ -291,6 +292,7 @@ export async function writeLore(rooms: RoomManager, playerId: string, body: { pr
     rooms.mana.settle(ref, mana, "lore");
     if (!outSafe.ok || !text) return json(422, { error: "unsafe", message: "That lore didn't come out right. Try describing it another way." });
     rooms.progress.creation(playerId, mana, ref, "lore");
+    approveText(text); // only checked words may go on a sign (world-authority.ts)
     return json(200, { text, mana, remainingToday: decision.remainingToday });
   } catch (err) {
     // Whatever was really spent (safety calls) is drawn; the rest of the hold goes back

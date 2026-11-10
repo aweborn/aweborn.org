@@ -10,6 +10,7 @@ import {
 } from "../../../shared/world-policy.js";
 import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, parseEditKey, validEditValue } from "../../../shared/terrain-edits.js";
 import { findNudge } from "../../../shared/nudge.js";
+import { approveText, isApprovedText } from "./approved-text.js";
 
 /**
  * Server-side world write authority (Rough Draft M1, 2026-10-27).
@@ -58,7 +59,12 @@ export class WorldAuthority {
     for (const name of GUARDED_WORLD_MAPS) this.mapTypes.set(doc.getMap(name), name);
     this.objectsType.forEach((v, id) => {
       const rec = plain(v);
-      if (rec && typeof rec === "object") this.objects.set(id, rec as Rec);
+      if (rec && typeof rec === "object") {
+        this.objects.set(id, rec as Rec);
+        // Signs already in the world are grandfathered (see approved-text.ts)
+        const text = (rec as Rec).text;
+        if (typeof text === "string") approveText(text, { persist: false });
+      }
     });
     for (const name of GUARDED_WORLD_MAPS) this.maps.set(name, doc.getMap(name).toJSON() as Rec);
     this.editsType = doc.getMap(TERRAIN_EDITS_MAP);
@@ -138,6 +144,8 @@ export class WorldAuthority {
       const after = this.currentObject(id);
       if (sameValue(before, after)) continue;
       let verdict = judgeObjectChange(actor, before, after);
+      // Words on a placed object must be ones the server checked (signs come from /api/player/lore)
+      if (verdict === "ok" && after && typeof after.text === "string" && after.text !== before?.text && !isApprovedText(after.text)) verdict = "revert";
       if (verdict === "ok" && before === undefined && !allowCreate()) verdict = "revert";
       if (verdict === "ok" && before === undefined && after) created.push({ id, rec: after });
       if (verdict === "revert") {
