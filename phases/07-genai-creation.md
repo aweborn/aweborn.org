@@ -596,6 +596,30 @@ Full list: [inventory §11](../docs/research/2026-11-adult-models/reconciliation
 - **Transparency vs. the money firewall:** donation pages "never mention 18+", but transparency says publish everything. Proposed: donation pages stay silent, and the transparency report is public on its own page.
 - **Darkborn:** a fork with a name that close is arguably "confusingly similar" under TRADEMARKS.md.
 
+#### Gaps before 18+ (Alex, 2026-11-10)
+Closed in this order before any 18+ build (the 18+ build itself happens in a separate chat). Status is kept here.
+
+**A. Safety gaps (exist today, with or without 18+)**
+- [ ] **Rating on every creation, on the server:** a `rating` on genai jobs, Library rows and minds (`everyone` / `18+` / `blocked`), only ever raised, inherited by derived files (rig, remesh, opt, thumbnails, duplicates; the stored-once insert upgrades). Until 18+ ships, anything not `everyone` is hidden and refused.
+- [ ] **Output checks:** check what came back (pictures and model thumbnails by a vision judge; lore, persona and sign text by the text judge) before an asset goes live, not only the prompt.
+- [ ] **Fail closed:** when the classifier is down, refuse with "try again in a moment" instead of letting the request through (`safety.ts`).
+- [ ] **Thumbnails:** a player-set thumbnail is checked before it's stored, and only the creator (or the server's own render) can set it.
+- [ ] **Sign text** written straight into the world doc gets the same text check as Make.
+- [ ] **Card photos** get the image check before an order is accepted.
+- [ ] **Rate the existing Library:** a one-off pass over every row. It includes a model made from *"sensual and voluptuous woman"* (2026-10-18), already public and untagged.
+
+**B. Storage: S3 is the source of truth, the disk only a cache (Alex)**
+- [ ] **Web copies for the 9 big models (33–86 MB):** optimize them where there's memory (the 4 GB box, or once on a Mac), upload to `models/opt/`, and the backfill adopts them. Fixes Lost's models on phones.
+- [ ] **Resize 2 → 4 GB** (`infra/rebuild-vps.sh <name> medium_3_0`, runbook in HANDOFF). Then raise genai's memory limit (768 Mi) and `OPT_MAX_BYTES`, and log when the optimizer child dies (it fails silently today).
+- [ ] **`MEDIA_CDN=1`:** update the assets stack so CloudFront reads `media/`, so pictures and sounds no longer depend on the box's disk.
+- [ ] **Off-box backup of `jobs.db`** (the Library catalogue) next to the world DB backup, so `genai-carry.sh` isn't needed for a rebuild.
+- [ ] **Refill from S3:** a new box fetches originals from S3 on demand (optimizer, thumbnails) instead of needing them on disk.
+
+**C. 18+ research gaps**
+- [ ] GPU hosts for self-hosted explicit images and 3D (RunPod, Modal, Vast, Lambda…): adult-content rules, data retention, cost at low volume.
+- [ ] Text hosts on the 18+ menu (DeepInfra, Parasail, Novita, Mancer, Venice…): primary AUP text.
+- [ ] Licenses: Illustrious, NoobAI and Pony (FAIPL "no money-making service"); TRELLIS and TripoSR (MIT, re-check).
+
 #### Later (noted, not now)
 - **Federation, the Mastodon model:** the software is open; the nonprofit runs the main instance under these rules, and other instances answer for their own rules. Forks can't use the Aweborn name ([TRADEMARKS.md](../TRADEMARKS.md)). Alex: *"it could be forked into a Darkborn."* Federation spreads the hosting duty to every node that mirrors content; it doesn't remove it. The hard lines stay on ours.
 
