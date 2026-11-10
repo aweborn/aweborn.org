@@ -116,8 +116,12 @@ export async function uploadModel(path: string, file: string): Promise<boolean> 
   return true;
 }
 
-/** Optimizing decodes a model many times over in memory; skip files the box can't safely handle. */
-const OPT_MAX_BYTES = 30 * 1024 * 1024;
+/**
+ * Optimizing decodes a model many times over in memory; skip files the box can't safely handle.
+ * 30 MB fits the 2 GB box (genai limit 768 Mi). Raise OPT_MAX_MB after the 4 GB resize; until
+ * then infra/opt-giants.sh builds the big ones' web copies elsewhere and the backfill adopts them.
+ */
+const OPT_MAX_BYTES = Number(process.env.OPT_MAX_MB ?? 30) * 1024 * 1024;
 
 /**
  * Make sure a web-ready copy (models/opt/<file>) exists and is flagged. A copy
@@ -128,7 +132,11 @@ export async function syncOptimized(db: DatabaseSync, assetDir: string, file: st
   const flag = () => db.prepare("UPDATE library SET opt = 1 WHERE file = ?").run(file);
   if (s3 && (await exists(`models/opt/${file}`))) return void flag();
   const src = optSource(assetDir, file); // a huge original's Meshy remesh, if any (providers.ts)
-  if (!existsSync(src) || statSync(src).size > OPT_MAX_BYTES) return;
+  if (!existsSync(src)) return;
+  if (statSync(src).size > OPT_MAX_BYTES) {
+    console.warn(`[library] ${file.slice(0, 8)} is ${(statSync(src).size / 1048576).toFixed(0)} MB, over OPT_MAX_MB: no web copy (phones get the original; see infra/opt-giants.sh)`);
+    return;
+  }
   const out = await ensureOptimizedIsolated(assetDir, file);
   if (!out) return;
   if (s3) {

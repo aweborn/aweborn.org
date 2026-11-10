@@ -90,7 +90,12 @@ export function ensureOptimizedIsolated(assetDir: string, file: string): Promise
           console.error(`[optimize] ${file} child failed:`, err.message);
           resolve(null);
         });
-        child.on("exit", () => resolve(existsSync(out) ? out : null));
+        child.on("exit", (code, signal) => {
+          if (existsSync(out)) return resolve(out);
+          // A child killed by the memory limit (SIGKILL) used to fail with no trace at all
+          console.error(`[optimize] ${file.slice(0, 8)} child exited without a web copy (code ${code}, signal ${signal ?? "none"})`);
+          resolve(null);
+        });
       }),
   );
   optChain = next.catch(() => null);
