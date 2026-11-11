@@ -65,9 +65,9 @@ spec:
                   name: aweborn-secrets
                   key: ELEVENLABS_API_KEY
                   optional: true
-            # "1" once cloudformation-assets.yml (media/ read) is applied; until then the box serves pictures/sounds
+            # Pictures + sounds redirect to the CDN (media/ read applied to aweborn-assets 2026-11-10)
             - name: MEDIA_CDN
-              value: "0"
+              value: "1"
             # Asset library (infra/cloudformation-assets.yml). Missing key = files stay on the box only.
             - name: ASSETS_BUCKET
               value: aweborn-assets-111551045759

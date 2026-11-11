@@ -8,11 +8,13 @@
  *   s3://$ASSETS_BUCKET/models/<sha256>.glb        public via $ASSETS_CDN_URL
  *   s3://$ASSETS_BUCKET/media/<sha256>.webp|mp3|wav  pictures + sounds (Rough Draft M5)
  *   s3://$ASSETS_BUCKET/archive/calls/Y/M/D/<id>.json   private, research replay
+ *   s3://$ASSETS_BUCKET/archive/backups/jobs.db.gz      private, hourly snapshot of jobs.db (versioned: 30 days)
  *
  * Without ASSETS_BUCKET (local dev) everything stays on disk and still works.
  */
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { createReadStream, readdirSync, existsSync, statSync, rmSync } from "node:fs";
+import { createReadStream, readdirSync, existsSync, statSync, rmSync, readFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { ensureOptimizedIsolated, optPath, optSource } from "./optimize.js";
@@ -319,4 +321,30 @@ export function listUnrated(db: DatabaseSync, limit: number): Pick<LibraryAsset,
   return db.prepare(`SELECT sha, file, kind, prompt, thumb FROM library
     WHERE rating = 'unrated' AND removed_at IS NULL AND kind != 'npc-voice' ORDER BY created_at LIMIT ?`)
     .all(limit) as unknown as Pick<LibraryAsset, "sha" | "file" | "kind" | "prompt" | "thumb">[];
+}
+
+// ── jobs.db off the box (2026-11-10) ──────────────────────────────────
+/**
+ * The Library catalogue (prompts, makers, ratings, trash, job history) lives in jobs.db on the
+ * box's disk; sync-service's backups only cover the world DB. Once an hour: a consistent copy
+ * (VACUUM INTO), gzipped, to one private key. The bucket is versioned with 30-day expiry of old
+ * versions, so that one key holds 30 days of hourly history. Restore: HANDOFF → Rebuild.
+ */
+export const JOBS_DB_BACKUP_KEY = "archive/backups/jobs.db.gz";
+
+export async function backupJobsDb(db: DatabaseSync, dataDir: string): Promise<number | null> {
+  if (!s3) return null;
+  const tmp = join(dataDir, `jobs.backup-${process.pid}.db`);
+  try {
+    rmSync(tmp, { force: true });
+    db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+    const body = gzipSync(readFileSync(tmp));
+    await s3.send(new PutObjectCommand({
+      Bucket: BUCKET, Key: JOBS_DB_BACKUP_KEY, Body: body, ContentLength: body.length,
+      ContentType: "application/gzip", CacheControl: "no-store", Metadata: { "taken-at": new Date().toISOString() },
+    }));
+    return body.length;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 }

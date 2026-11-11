@@ -29,7 +29,7 @@ import { isMediaKind, MEDIA_EXT, speakLine } from "./media.js";
 import { cleanAnimateParams } from "./rig.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
 import { MAX_ATTEMPTS, retryDelay, resumeTaskAfter } from "./retry.js";
-import { rateAsset, ratingOf, listUnrated, RATINGS, type Rating } from "./library.js";
+import { rateAsset, ratingOf, listUnrated, RATINGS, type Rating, backupJobsDb } from "./library.js";
 import { initLibrary, addToLibrary, addMedia, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -167,6 +167,13 @@ function pumpJobs(): void {
 // Resume unfinished jobs after a restart, and pick up retries as they come due
 pumpJobs();
 setInterval(pumpJobs, 5_000).unref();
+
+// jobs.db off the box: hourly, plus once 2 min after start (library.ts backupJobsDb)
+const backupNow = () => backupJobsDb(db, DATA_DIR)
+  .then((n) => { if (n) console.log(`[backup] jobs.db → s3 (${(n / 1048576).toFixed(1)} MB gz)`); })
+  .catch((err) => console.error("[backup] jobs.db failed:", (err as Error).message));
+setTimeout(backupNow, 2 * 60_000).unref();
+setInterval(backupNow, 60 * 60_000).unref();
 
 // ── HTTP ─────────────────────────────────────────────────────────────
 const app = express();

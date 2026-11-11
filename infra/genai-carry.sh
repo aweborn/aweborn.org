@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Carry genai-service's data across a VPS rebuild (resize, 2026-11-01).
 #
-# The off-box backup (backup.yml) only covers the world DB. genai keeps its own
+# Mostly superseded (2026-11-10): jobs.db is backed up to S3 hourly (infra/restore-genai-db.sh)
+# and every file is in S3. The off-box backup (backup.yml) only covers the world DB. genai keeps its own
 # state in /var/lib/aweborn/genai-data on the box: jobs.db (the asset Library
 # catalogue: prompts, makers, trash, thumbnails, job history), archive.jsonl, and
 # the asset cache (pictures and sounds are served from here until MEDIA_CDN=1).
