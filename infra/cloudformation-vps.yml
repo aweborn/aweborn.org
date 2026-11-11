@@ -12,7 +12,7 @@ Parameters:
 
   InstanceBundle:
     Type: String
-    Default: small_3_0
+    Default: medium_3_0
     Description: >
       Lightsail bundle ID. small_3_0 = 2GB RAM, 2 vCPU, 60GB SSD, $12/mo;
       medium_3_0 = 4GB RAM, 2 vCPU, 80GB SSD, $24/mo (Alex, 2026-11-01: the 2 GB box froze

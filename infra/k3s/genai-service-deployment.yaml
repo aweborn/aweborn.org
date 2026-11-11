@@ -69,6 +69,9 @@ spec:
             - name: MEDIA_CDN
               value: "1"
             # aweborn-assets output DistributionId: blocked files are invalidated at the CDN
+            # Models up to this size get their web copy made on the box (was 30 on the 2 GB box)
+            - name: OPT_MAX_MB
+              value: "120"
             - name: ASSETS_DISTRIBUTION_ID
               value: "E2PSYBOOM9Q3FR"
             # Asset library (infra/cloudformation-assets.yml). Missing key = files stay on the box only.
@@ -98,7 +101,8 @@ spec:
               memory: "32Mi"
               cpu: "25m"
             limits:
-              memory: "768Mi"
+              # 4 GB box (medium_3_0, 2026-11-10): room to optimize big models on the box
+              memory: "1536Mi"
               cpu: "1000m"
           livenessProbe:
             httpGet:

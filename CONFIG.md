@@ -56,7 +56,7 @@ CI reaches AWS through OIDC roles, so there are **no AWS keys in GitHub**. Tails
 | Route53 hosted zone | `Z077908710IGH7R1XO587`: `Default:` in `cloudformation-*.yml` | website, mail, CI stacks |
 | GitHub OIDC subject | `repo:aweborn@261697435/aweborn.org@1329275111:ref:refs/heads/main`: `Default:` in `cloudformation-backups.yml`, `-ci.yml` | AWS role trust |
 | Mail domain / recipients | `aweborn.org`; `hello@`, `privacy@`; sender `Aweborn <hello@aweborn.org>` (`email.ts`, `MAIL_FROM` override) | `aweborn-mail`, sync-service |
-| VPS | bundle `small_3_0` (moving to `medium_3_0`, 4 GB: Alex 2026-11-01), AZ `us-east-1a`, Tailnet name `aweborn-vps`: `cloudformation-vps.yml` | VPS stack, CI, SSH |
+| VPS | bundle `medium_3_0` (4 GB; resized 2026-11-10, instance `aweborn-vps-3`), AZ `us-east-1a`, Tailnet name `aweborn-vps`: `cloudformation-vps.yml` | VPS stack, CI, SSH |
 | Service env | `PORT`, `HOST`, `DB_PATH`, `NODE_ENV`, `BETTER_AUTH_URL`, `AWS_REGION`, `LLM_MODEL`, `LLM_API_URL`, backup `KEEP_*`: `value:` in `infra/k3s/*-deployment.yaml` | pods |
 | Frontend | `VITE_SYNC_URL`, `VITE_API_ENDPOINT`, `VITE_STRIPE_PUBLISHABLE_KEY` (publishable, safe): `.env`, `.env.production` | Vite build |
 | CI role ARNs | `AWS_BACKUP_ROLE_ARN`, `AWS_INFRA_PREVIEW_ROLE_ARN`: GitHub repo **variables**; `VPS_KNOWN_HOST` pin: variable | workflows |
