@@ -44,8 +44,11 @@ sudo docker run --rm -v "$tmp:/restore" --entrypoint node "$image" --input-type=
 '
 [[ $CHECK_ONLY -eq 1 ]] && { log "Check only: nothing changed"; exit 0; }
 
-drain_tty; read -r -p "Replace the live universe.db with this snapshot? Players will be disconnected ~30s. [y/N] " ans
-[[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "aborted"; exit 1; }
+# `|| ans=` matters: under set -e a read that hits end of input (piped answers
+# that ran out, ssh -t without a tty) used to exit here with no message, so a
+# restore looked finished when nothing was installed (2026-11-11).
+drain_tty; read -r -p "Replace the live universe.db with this snapshot? Players will be disconnected ~30s. [y/N] " ans || ans=""
+[[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "ABORTED: not confirmed (answer: '${ans}'). The live DB was NOT replaced." >&2; exit 1; }
 
 log "Scaling sync-service to 0 (flushes docs on SIGTERM)"
 $KUBECTL -n "$NS" scale deployment/sync-service --replicas=0

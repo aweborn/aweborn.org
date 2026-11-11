@@ -77,16 +77,34 @@ bad="$(jq -r '[.Changes[].ResourceChange | select(.Action == "Remove" or ((.Repl
 
 cat <<EOF
 
-Before you continue:
-  1. Delete the old '$TSNAME' node in the Tailscale admin console (Machines),
+Before you continue, IN THIS ORDER:
+  1. If $OLD still runs: gh workflow run backup.yml, and wait until it PASSES.
+     It reaches the box over the Tailnet, so it fails once step 2 is done
+     (2026-11-10: it ran after the node was deleted, failed unnoticed, and the
+     rebuild lost ~5 h of world edits).
+  2. Delete the old '$TSNAME' node in the Tailscale admin console (Machines),
      or the new box joins as '$TSNAME-1' and CI can't find it.
-  2. Everything on $OLD's disk will be DELETED (world DB, on-box snapshots).
+  3. Everything on $OLD's disk will be DELETED (world DB, on-box snapshots).
      Latest off-box backup:
 EOF
 bucket="aweborn-backups-$(aws sts get-caller-identity --query Account --output text)"
-aws s3 ls "s3://$bucket/sync/" --recursive 2>/dev/null | grep '\.db\.gz$' | tail -1 | sed 's/^/       /' || echo "       (could not list $bucket)"
+latest="$(aws s3api list-objects-v2 --bucket "$bucket" --prefix sync/ \
+  --query 'sort_by(Contents[?ends_with(Key, `.db.gz`)], &LastModified)[-1].[LastModified,Size,Key]' --output text 2>/dev/null || true)"
+age_h="$(LATEST="$latest" python3 -c '
+import os, datetime as d
+try:
+    t = d.datetime.fromisoformat(os.environ["LATEST"].split()[0].replace("Z", "+00:00"))
+    print(int((d.datetime.now(d.timezone.utc) - t).total_seconds() // 3600))
+except Exception: print(-1)')"
+if [[ "$age_h" == -1 ]]; then echo "       (could not list $bucket)"; else echo "       $latest  (${age_h} h old)"; fi
 echo
-drain_tty; read -r -p "Type the OLD instance name ($OLD) to rebuild: " ok
+if (( age_h < 0 || age_h >= 2 )); then
+  echo "WARNING: the newest off-box backup is ${age_h} h old (or unknown). Everything written"
+  echo "since then is LOST when $OLD is deleted. If $OLD still runs, stop here and do step 1."
+  drain_tty; read -r -p "Type 'lose-data' to rebuild anyway: " ok || ok=""
+  [[ "$ok" == lose-data ]] || { echo "Not confirmed; nothing changed."; exit 0; }
+fi
+drain_tty; read -r -p "Type the OLD instance name ($OLD) to rebuild: " ok || ok=""
 [[ "$ok" == "$OLD" ]] || { echo "Not confirmed; nothing changed."; exit 0; }
 
 aws cloudformation update-stack --stack-name "$STACK" --template-body "file://$TPL" \

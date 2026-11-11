@@ -51,8 +51,15 @@ fi
 if [[ -n "${1:-}" ]]; then
   KEY="$1"
 else
-  KEY="$(list_backups | tail -1 | awk '{print $NF}')"
+  last2="$(list_backups | tail -2)"
+  KEY="$(tail -1 <<<"$last2" | awk '{print $NF}')"
   [[ -n "$KEY" ]] || die "no backups found in s3://$bucket/sync/"
+  # A fresh box whose restore didn't happen backs up its EMPTY DB, and that
+  # becomes the newest backup (2026-11-11: 6 KB after 544 KB). Don't pick it silently.
+  if [[ "$(wc -l <<<"$last2")" -eq 2 ]]; then
+    prev_b="$(head -1 <<<"$last2" | awk '{print $3}')"; new_b="$(tail -1 <<<"$last2" | awk '{print $3}')"
+    (( new_b * 2 >= prev_b )) || die "newest backup $KEY is $new_b B, under half the one before it ($(head -1 <<<"$last2" | awk '{print $NF}'), $prev_b B). It may be an empty DB from a fresh box. Pass the key you mean explicitly (see --list)."
+  fi
 fi
 [[ "$KEY" =~ ^sync/[0-9]{4}/[0-9]{2}/universe-[0-9]{8}T[0-9]{6}Z\.db\.gz$ ]] \
   || die "unexpected key '$KEY' (want sync/YYYY/MM/universe-<UTC>.db.gz; see --list)"
@@ -138,7 +145,7 @@ else
     echo "  STALE (CI deploys/backups fail closed until updated)"
     echo "    current: ${current:-<unset>}"
     echo "    new    : $pin   (from the Lightsail API)"
-    drain_tty; read -r -p "  Set the repo variable to the new pin now? [y/N] " a
+    drain_tty; read -r -p "  Set the repo variable to the new pin now? [y/N] " a || a=""
     if [[ "$a" == [yY] ]]; then
       gh variable set VPS_KNOWN_HOST -R "$REPO" --body "$pin" >/dev/null \
         || die "gh variable set failed (gh auth status? needs repo admin)"
@@ -165,10 +172,13 @@ with $KEY.
 The current DB is moved aside to /var/lib/aweborn/sync-data/pre-restore-<ts>/
 (not deleted). Players are disconnected for ~30s.
 EOF
-drain_tty; read -r -p 'Type "restore" to continue: ' ok
+drain_tty; read -r -p 'Type "restore" to continue: ' ok || ok=""
 [[ "$ok" == restore ]] || { echo "Not confirmed. The backup stays in ~/restore/ on the box; nothing else changed."; exit 3; }
 fresh_access
-ssh -t "${SSH_OPTS[@]}" "ubuntu@$TSNAME" "$REMOTE_RESTORE ~/restore/$FILE"
+# The on-box script asks its own y/N. With no terminal (piped answers), feed it
+# with: ssh ... 'echo y | ~/aweborn/infra/backup/restore-sync-db.sh ~/restore/<file>'
+rc=0; ssh -t "${SSH_OPTS[@]}" "ubuntu@$TSNAME" "$REMOTE_RESTORE ~/restore/$FILE" || rc=$?
+(( rc == 0 )) || die "the on-box restore exited $rc, so the world DB is probably NOT restored. On the box, a new /var/lib/aweborn/sync-data/pre-restore-<ts>/ means it got as far as the swap. Finish it there: echo y | $REMOTE_RESTORE ~/restore/$FILE"
 
 (( TEST_TARGET )) && { echo; echo "Restore finished on test target $INSTANCE."; exit 0; }
 
