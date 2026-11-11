@@ -192,6 +192,12 @@ function reconcile(rooms: RoomManager, jobId: string, c: Creation, j: JobView): 
     creations.markSettled(jobId);
     rooms.progress.creation(c.playerId, mana, jobId, MAKE_SKILL[kind]);
     if (j.asset) for (const h of doneHooks) h(jobId, { ok: true, asset: j.asset });
+  } else if (j.status === "failed" && j.error === "unsafe_output") {
+    // Blocked by the output check: the provider really ran, so its cost is drawn (otherwise a
+    // blocked result would be a free generation), but nothing is handed out
+    rooms.mana.settle(c.ref, Math.max(0, (j.costUsd ?? 0) * 100), `${kind} blocked`);
+    creations.markSettled(jobId);
+    for (const h of doneHooks) h(jobId, { ok: false, error: "unsafe_output" });
   } else if (j.status === "failed") {
     rooms.mana.release(c.ref); // failed generations draw nothing
     creations.markSettled(jobId);

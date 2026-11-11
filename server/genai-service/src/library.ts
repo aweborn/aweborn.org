@@ -12,7 +12,8 @@
  *
  * Without ASSETS_BUCKET (local dev) everything stays on disk and still works.
  */
-import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
+import { CloudFrontClient, CreateInvalidationCommand } from "@aws-sdk/client-cloudfront";
 import { createReadStream, readdirSync, existsSync, statSync, rmSync, readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
@@ -51,7 +52,8 @@ export function initLibrary(db: DatabaseSync): void {
   // rating (2026-11-10): what the output check decided. New rows start "unrated" and stay off the
   // public shelves until sync-service rates them (rateAsset). Rows from before this are rated by its sweep.
   for (const col of ["thumb INTEGER NOT NULL DEFAULT 0", "creator TEXT", "opt INTEGER NOT NULL DEFAULT 0",
-    "removed_at INTEGER", "removed_by TEXT", "rating TEXT NOT NULL DEFAULT 'unrated'", "rated_at INTEGER"]) {
+    "removed_at INTEGER", "removed_by TEXT", "rating TEXT NOT NULL DEFAULT 'unrated'", "rated_at INTEGER",
+    "quarantined INTEGER NOT NULL DEFAULT 0"]) {
     try { db.exec(`ALTER TABLE library ADD COLUMN ${col}`); } catch { /* already there */ }
   }
 }
@@ -346,5 +348,53 @@ export async function backupJobsDb(db: DatabaseSync, dataDir: string): Promise<n
     return body.length;
   } finally {
     rmSync(tmp, { force: true });
+  }
+}
+
+// ── Blocked files leave the public CDN (2026-11-10) ────────────────────
+const DISTRIBUTION = process.env.ASSETS_DISTRIBUTION_ID ?? "";
+const cf = s3 && DISTRIBUTION && process.env.ASSETS_AWS_ACCESS_KEY_ID
+  ? new CloudFrontClient({
+      region: "us-east-1",
+      credentials: { accessKeyId: process.env.ASSETS_AWS_ACCESS_KEY_ID, secretAccessKey: process.env.ASSETS_AWS_SECRET_ACCESS_KEY ?? "" },
+    })
+  : null;
+
+/**
+ * Take a blocked file off the public prefixes: copy each public object to private
+ * archive/blocked/<key> (kept: review, and legal preservation), delete the public one,
+ * invalidate it at the CDN, and mark the row. Needs the narrow delete + invalidation
+ * permissions in cloudformation-assets.yml; until those are applied it logs and the
+ * startup backfill tries again. /assets already answers 410 for blocked files.
+ */
+export async function quarantineBlocked(db: DatabaseSync, sha: string): Promise<boolean> {
+  if (!s3) return false;
+  const row = db.prepare("SELECT file, kind FROM library WHERE sha = ? AND rating = 'blocked' AND quarantined = 0").get(sha) as { file: string; kind: string } | undefined;
+  if (!row) return false;
+  const keys = row.kind === "model"
+    ? [`models/${row.file}`, `models/opt/${row.file}`, `models/${sha}.png`]
+    : [`media/${row.file}`];
+  const gone: string[] = [];
+  for (const key of keys) {
+    if (!(await exists(key))) continue;
+    await s3.send(new CopyObjectCommand({ Bucket: BUCKET, CopySource: `${BUCKET}/${key}`, Key: `archive/blocked/${key}`, CacheControl: "no-store" }));
+    await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+    gone.push(`/${key}`);
+  }
+  if (gone.length && cf) {
+    await cf.send(new CreateInvalidationCommand({
+      DistributionId: DISTRIBUTION,
+      InvalidationBatch: { CallerReference: `blocked-${sha.slice(0, 16)}-${Date.now()}`, Paths: { Quantity: gone.length, Items: gone } },
+    }));
+  }
+  db.prepare("UPDATE library SET quarantined = 1 WHERE sha = ?").run(sha);
+  console.log(`[library] blocked ${sha.slice(0, 8)}: ${gone.length} public file(s) moved to archive/blocked`);
+  return true;
+}
+
+/** Startup: anything blocked but still public (e.g. before the permissions existed). */
+export async function quarantinePending(db: DatabaseSync): Promise<void> {
+  for (const { sha } of db.prepare("SELECT sha FROM library WHERE rating = 'blocked' AND quarantined = 0").all() as { sha: string }[]) {
+    try { await quarantineBlocked(db, sha); } catch (err) { console.error(`[library] quarantine ${sha.slice(0, 8)} failed:`, (err as Error).message); }
   }
 }

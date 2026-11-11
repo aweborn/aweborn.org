@@ -68,6 +68,9 @@ spec:
             # Pictures + sounds redirect to the CDN (media/ read applied to aweborn-assets 2026-11-10)
             - name: MEDIA_CDN
               value: "1"
+            # aweborn-assets output DistributionId: blocked files are invalidated at the CDN
+            - name: ASSETS_DISTRIBUTION_ID
+              value: "E2PSYBOOM9Q3FR"
             # Asset library (infra/cloudformation-assets.yml). Missing key = files stay on the box only.
             - name: ASSETS_BUCKET
               value: aweborn-assets-111551045759

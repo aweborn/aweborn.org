@@ -155,7 +155,9 @@ Resources:
             HostedZoneId: Z2FDTNDATAQYW2
 
   # genai-service on the VPS: write new files and archive entries, read them
-  # back (library + replay). No delete: the library only grows.
+  # back (library + replay). The library only grows: the one delete allowed is
+  # taking a file the output check blocked off the public prefixes, after it has
+  # been copied to private archive/blocked/ (2026-11-10), plus invalidating it at the CDN.
   GenaiWriter:
     Type: AWS::IAM::User
     Properties:
@@ -171,6 +173,14 @@ Resources:
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt AssetBucket.Arn
+              - Effect: Allow
+                Action: s3:DeleteObject
+                Resource:
+                  - !Sub "${AssetBucket.Arn}/models/*"
+                  - !Sub "${AssetBucket.Arn}/media/*"
+              - Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${AssetDistribution}"
 
 Outputs:
   BucketName:

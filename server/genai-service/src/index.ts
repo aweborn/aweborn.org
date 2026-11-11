@@ -29,7 +29,7 @@ import { isMediaKind, MEDIA_EXT, speakLine } from "./media.js";
 import { cleanAnimateParams } from "./rig.js";
 import { chat, llmConfigured, type ChatMessage } from "./llm.js";
 import { MAX_ATTEMPTS, retryDelay, resumeTaskAfter } from "./retry.js";
-import { rateAsset, ratingOf, listUnrated, RATINGS, type Rating, backupJobsDb } from "./library.js";
+import { rateAsset, ratingOf, listUnrated, RATINGS, type Rating, backupJobsDb, quarantineBlocked, quarantinePending } from "./library.js";
 import { initLibrary, addToLibrary, addMedia, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -173,6 +173,7 @@ const backupNow = () => backupJobsDb(db, DATA_DIR)
   .then((n) => { if (n) console.log(`[backup] jobs.db → s3 (${(n / 1048576).toFixed(1)} MB gz)`); })
   .catch((err) => console.error("[backup] jobs.db failed:", (err as Error).message));
 setTimeout(backupNow, 2 * 60_000).unref();
+setTimeout(() => void quarantinePending(db), 90_000).unref();
 setInterval(backupNow, 60 * 60_000).unref();
 
 // ── HTTP ─────────────────────────────────────────────────────────────
@@ -310,6 +311,7 @@ app.post("/library/:sha/rating", (req, res) => {
   if (!SHA.test(req.params.sha) || !RATINGS.includes(rating) || rating === "unrated") return res.status(400).json({ error: "bad_request" });
   const now = rateAsset(db, req.params.sha, rating as Rating, { admin: admin === true });
   if (!now) return res.status(404).json({ error: "not_found" });
+  if (now === "blocked") void quarantineBlocked(db, req.params.sha).catch((err) => console.error(`[library] quarantine ${req.params.sha.slice(0, 8)} failed:`, (err as Error).message));
   res.json({ rating: now });
 });
 app.post("/library/:sha/thumb", async (req, res) => {
