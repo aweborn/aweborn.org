@@ -36,8 +36,13 @@ export interface Provider {
   generate(job: ProviderJob): Promise<ProviderResult>;
 }
 
-/** Meshy preview ≈ 20 credits × $0.02 (MANA_COSTS.md prices credits at $0.02). */
-export const MESHY_PREVIEW_USD = 0.4;
+/**
+ * Which Meshy model makes the shape. Default meshy-6-lite (Alex, 2026-11-11: the full model
+ * burned the monthly credits in ~27 models). Set MESHY_AI_MODEL=latest for Meshy 7.1.
+ */
+const MESHY_AI_MODEL = process.env.MESHY_AI_MODEL || "meshy-6-lite";
+/** Meshy preview: Lite ≈ 5 credits, full ≈ 20, × $0.02 (MANA_COSTS.md prices credits at $0.02). */
+export const MESHY_PREVIEW_USD = MESHY_AI_MODEL === "meshy-6-lite" ? 0.1 : 0.4;
 /** Texture refine: 10 credits × $0.02. */
 const MESHY_REFINE_USD = 0.2;
 
@@ -136,7 +141,7 @@ const meshy: Provider = {
       // A creature meant to come alive is made in an A-pose: arms clear of the body rig cleanly
       // (arms-down models rig, but raised-arm clips stretch the skin; Lost colossus, 2026-11-01)
       const pose = job.params?.pose === "a-pose" ? { pose_mode: "a-pose" } : {};
-      const body = { mode: "preview", prompt: job.prompt, ...pose };
+      const body = { mode: "preview", prompt: job.prompt, ai_model: MESHY_AI_MODEL, ...pose };
       job.archive({ call: "meshy.create", request: body });
       const res = await fetch(MESHY_BASE, { method: "POST", headers, body: JSON.stringify(body) });
       const json = (await res.json().catch(() => ({}))) as { result?: string; message?: string };

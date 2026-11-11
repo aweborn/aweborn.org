@@ -40,6 +40,8 @@ Provider-agnostic: the table below is keyed by **what the player makes**, so we 
 
 Meshy credits are bought on a subscription ($20 / month for 1,000 credits on Pro, about $0.02 per credit; bigger plans and packs bring it toward $0.012). We price at **$0.02** until our plan says otherwise.
 
+**3D default (Alex, 2026-11-11):** genai now makes models with **Meshy-6-Lite** (`MESHY_AI_MODEL`, ≈ 15 credits with texture) after Meshy-7 used up the month's 1,000 credits in ~27 models. Set `MESHY_AI_MODEL=latest` to go back to full quality.
+
 **Model tiers (Alex, 2026-10-16):** the calls where quality shows (the world planner, lore) use a top model; tiny high-volume calls use Flash. Text is a small slice of any bundle, so the top model adds only ≈ 2–7% to a world. Images, 3D and audio come from specialist models (Meshy, Flash Image, Lyria, ElevenLabs): general LLMs like Claude don't make those.
 
 **Terrain (Alex, 2026-10-16):** the default is a **voxel grid** (perfect grids feel good, Minecraft-like), free and in-browser, laid out by the planner. Meshy makes bounded terrain *pieces* (an island, a mesa, a cliff, a cave mouth) placed on the grid; it isn't built for large continuous landscapes.
