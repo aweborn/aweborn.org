@@ -20,6 +20,8 @@ import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { ensureOptimizedIsolated, optPath, optSource } from "./optimize.js";
 import type { DatabaseSync } from "node:sqlite";
+import type { Readable } from "node:stream";
+import { Upload } from "@aws-sdk/lib-storage";
 
 const BUCKET = process.env.ASSETS_BUCKET ?? "";
 export const CDN_URL = (process.env.ASSETS_CDN_URL ?? "").replace(/\/$/, "");
@@ -120,6 +122,45 @@ export async function uploadModel(path: string, file: string): Promise<boolean> 
     ContentType: "model/gltf-binary", CacheControl: "public, max-age=31536000, immutable",
   }));
   return true;
+}
+
+/**
+ * Stream a download straight into the bucket while it lands on disk (download.ts). The sha
+ * is only known at the end, so it goes to incoming/<id> and is then copied to models/<sha>.
+ * Multipart keeps memory at ~4 parts × 8 MB whatever the model's size.
+ */
+export function startStreamUpload(body: Readable): { finish(file: string): Promise<boolean> } | null {
+  if (!s3) return null;
+  const tmp = `incoming/${randomUUID()}`;
+  const up = new Upload({
+    client: s3, queueSize: 4, partSize: 8 * 1024 * 1024,
+    params: { Bucket: BUCKET, Key: tmp, Body: body, ContentType: "model/gltf-binary" },
+  });
+  const done = up.done().then(() => true, (err) => {
+    console.warn(`[library] streamed upload failed (uploadModel will retry): ${(err as Error).message}`);
+    body.resume(); // never let a dead upload stall the download
+    return false;
+  });
+  return {
+    async finish(file) {
+      if (!(await done)) return false;
+      try {
+        const key = `models/${file}`;
+        if (!(await exists(key))) {
+          await s3.send(new CopyObjectCommand({
+            Bucket: BUCKET, CopySource: `${BUCKET}/${tmp}`, Key: key, MetadataDirective: "REPLACE",
+            ContentType: "model/gltf-binary", CacheControl: "public, max-age=31536000, immutable",
+          }));
+        }
+        return true;
+      } catch (err) {
+        console.warn(`[library] streamed upload copy failed: ${(err as Error).message}`);
+        return false;
+      } finally {
+        await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: tmp })).catch(() => {});
+      }
+    },
+  };
 }
 
 /**

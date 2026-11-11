@@ -55,7 +55,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Download a GLB and store it under its sha256 (dedupes identical files), streamed to disk (download.ts). */
 async function storeGlb(url: string, assetDir: string): Promise<{ file: string; bytes: number }> {
-  return streamToFile(url, assetDir, "glb");
+  return streamToFile(url, assetDir, "glb", undefined, { toS3: true });
 }
 
 /**

@@ -14,7 +14,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream, existsSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { Readable, Transform } from "node:stream";
+import { PassThrough, Readable, Transform } from "node:stream";
+import { startStreamUpload } from "./library.js";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
@@ -42,7 +43,9 @@ export async function headSize(url: string): Promise<number | null> {
  * Download `url` into `dir` as `<sha256>.<ext>` without holding it in memory.
  * Returns the file name and its size. Throws TooLarge past `maxBytes`.
  */
-export async function streamToFile(url: string, dir: string, ext: string, maxBytes = DOWNLOAD_MAX_BYTES): Promise<{ file: string; bytes: number }> {
+export async function streamToFile(
+  url: string, dir: string, ext: string, maxBytes = DOWNLOAD_MAX_BYTES, opts: { toS3?: boolean } = {},
+): Promise<{ file: string; bytes: number; inS3: boolean }> {
   const announced = await headSize(url);
   if (announced !== null && announced > maxBytes) throw new TooLarge(announced);
   const res = await fetch(url, { signal: AbortSignal.timeout(15 * 60_000) });
@@ -58,9 +61,15 @@ export async function streamToFile(url: string, dir: string, ext: string, maxByt
     },
   });
   const tmp = join(dir, `.download-${randomBytes(6).toString("hex")}`);
+  // Models also stream to S3 as they arrive, so the bucket has the original the moment
+  // the download ends, with no second full read and upload (library.ts startStreamUpload)
+  const tee = opts.toS3 ? new PassThrough() : null;
+  const upload = tee ? startStreamUpload(tee) : null;
+  if (tee && upload) meter.pipe(tee);
   try {
     await pipeline(Readable.fromWeb(res.body as unknown as WebReadableStream), meter, createWriteStream(tmp));
   } catch (err) {
+    tee?.destroy(err as Error);
     rmSync(tmp, { force: true });
     throw err;
   }
@@ -68,6 +77,7 @@ export async function streamToFile(url: string, dir: string, ext: string, maxByt
   const path = join(dir, file);
   if (existsSync(path)) rmSync(tmp, { force: true });
   else renameSync(tmp, path);
-  return { file, bytes };
+  const inS3 = upload ? await upload.finish(file) : false;
+  return { file, bytes, inS3 };
 }
 
