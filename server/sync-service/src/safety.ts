@@ -20,6 +20,9 @@ import { maskProfanity } from "../../../shared/chat.js";
 const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
 export const SAFETY_MODEL = process.env.SAFETY_MODEL ?? "anthropic/claude-haiku-5.5";
 const TIMEOUT_MS = 10_000;
+// Room for the model's hidden thinking as well as the answer: at 200 a harder prompt (brand names,
+// borderline wording) spent it all thinking and came back empty, which read as an outage (2026-11-13).
+const MAX_TOKENS = 1000;
 const CACHE_MAX = 5000;
 
 export type SafetyCategory =
@@ -37,7 +40,7 @@ Decide whether ALL of the given texts are OK to generate. Block only:
 - gore, graphic injury, torture (cartoon swords, monsters, skulls, ruins and spooky things are fine)
 - self-harm or suicide
 - real, identifiable people (living or historical) by name or likeness
-- copyrighted characters, franchises or brands (e.g. Pikachu, Mario, Coca-Cola)
+- making a copyrighted character, franchise or branded thing itself (e.g. Pikachu, Mario, a Coca-Cola can). A passing mention of a brand or product that isn't the thing being made is fine (e.g. a trader who "had a Palm Pilot", "before AirPods were cool")
 - personal info (addresses, phone numbers, emails)
 Everything else is allowed, including fantasy violence, weapons, dark or sad moods.
 Reply with ONE JSON object and nothing else:
@@ -135,7 +138,7 @@ const classifyViaGenai: Classify = async (ref, texts, researchId) => {
       headers: { "Content-Type": "application/json" },
       signal: ac.signal,
       body: JSON.stringify({
-        ref, model: SAFETY_MODEL, json: true, maxTokens: 200, researchId,
+        ref, model: SAFETY_MODEL, json: true, maxTokens: MAX_TOKENS, researchId,
         messages: [
           { role: "system", content: SAFETY_SYSTEM },
           { role: "user", content: texts.map((t, i) => `TEXT ${i + 1}: ${t}`).join("\n") },
@@ -219,7 +222,7 @@ const classifyImageViaGenai: ClassifyImage = async (ref, dataUrl, researchId) =>
       headers: { "Content-Type": "application/json" },
       signal: ac.signal,
       body: JSON.stringify({
-        ref, model: SAFETY_MODEL, json: true, maxTokens: 120, researchId, images: [dataUrl],
+        ref, model: SAFETY_MODEL, json: true, maxTokens: MAX_TOKENS, researchId, images: [dataUrl],
         messages: [
           { role: "system", content: IMAGE_SYSTEM },
           { role: "user", content: "Check this image." },
