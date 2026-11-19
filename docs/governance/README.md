@@ -3,22 +3,24 @@
 Aweborn's governing documents, published so anyone can see how the
 organization is run and hold it to its own rules.
 
-**Status (November 2026): being set up.** Aweborn is reorganizing its
-founding board so that a majority of directors are independent of the
-founder. The bylaws and conflict-of-interest policy are drafted and will be
-posted here once the board has adopted them. Until then, nothing in this
-folder is in force.
+**Status (November 19, 2026): in force.** The board adopted the
+[Bylaws](./bylaws.md) and the
+[Conflict of Interest Policy](./conflict-of-interest-policy.md) by unanimous
+written consent on November 19, 2026, and the new, independent-majority
+board took office the same day ([who serves](./board.md)). The filed
+government documents (articles, IRS letter, exemption application) are
+still to be posted.
 
-## Planned layout
+## Layout
 
 | File | What it is | Posted when |
 | --- | --- | --- |
 | `articles-of-incorporation.pdf` | DC articles of incorporation (filed March 17, 2026) | Now possible; needs redaction first |
 | `irs-determination-letter.pdf` | IRS letter recognizing Aweborn as a 501(c)(3) public charity | Now possible |
 | `form-1023-ez.pdf` | Application for recognition of exemption | Now possible; needs redaction first |
-| `bylaws.md` | Bylaws as adopted, with the adoption date | After the board signs |
-| `conflict-of-interest-policy.md` | Conflict of interest policy as adopted | After the board signs |
-| `board.md` | Current directors and officers, with terms | After new directors accept |
+| [`bylaws.md`](./bylaws.md) | Bylaws as adopted, with the adoption date | Posted 2026-11-19 |
+| [`conflict-of-interest-policy.md`](./conflict-of-interest-policy.md) | Conflict of interest policy as adopted | Posted 2026-11-19 |
+| [`board.md`](./board.md) | Current directors and officers, with terms | Posted 2026-11-19 |
 | `annual-returns/` | Form 990-series returns, one file per year | After each filing |
 
 Text documents go in Markdown so changes show up in the git history. Filed
@@ -57,3 +59,4 @@ anyway, and donors need the EIN.
 | Date | Change |
 | --- | --- |
 | 2026-11-19 | Folder created; documents pending board adoption |
+| 2026-11-19 | Board adopted the Bylaws and Conflict of Interest Policy; new board seated. Posted `bylaws.md`, `conflict-of-interest-policy.md` and `board.md` |
