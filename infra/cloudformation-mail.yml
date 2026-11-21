@@ -30,6 +30,14 @@ Parameters:
     Type: CommaDelimitedList
     Default: hello@aweborn.org,privacy@aweborn.org
     Description: Public addresses to accept and forward.
+  ManageSharedRecords:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: "'false' creates only the DKIM records, for a zone that already holds MX/SPF/DMARC/MAIL FROM (AWS move, 2026-11-21)"
+
+Conditions:
+  ManageShared: !Equals [!Ref ManageSharedRecords, 'true']
 
 Resources:
   # --- Domain identity (sending + DKIM) -------------------------------------
@@ -55,39 +63,57 @@ Resources:
     Type: AWS::Route53::RecordSetGroup
     Properties:
       HostedZoneId: !Ref HostedZoneId
-      RecordSets:
-        - Name: !GetAtt DomainIdentity.DkimDNSTokenName1
-          Type: CNAME
-          TTL: "1800"
-          ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue1]
-        - Name: !GetAtt DomainIdentity.DkimDNSTokenName2
-          Type: CNAME
-          TTL: "1800"
-          ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue2]
-        - Name: !GetAtt DomainIdentity.DkimDNSTokenName3
-          Type: CNAME
-          TTL: "1800"
-          ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue3]
-        - Name: !Ref DomainName
-          Type: MX
-          TTL: "300"
-          ResourceRecords: [!Sub "10 inbound-smtp.${AWS::Region}.amazonaws.com"]
-        - Name: !Ref DomainName
-          Type: TXT
-          TTL: "300"
-          ResourceRecords: ['"v=spf1 include:amazonses.com ~all"']
-        - Name: !Sub "_dmarc.${DomainName}"
-          Type: TXT
-          TTL: "300"
-          ResourceRecords: [!Sub '"v=DMARC1; p=none; adkim=r; aspf=r"']
-        - Name: !Sub "mail.${DomainName}"
-          Type: MX
-          TTL: "300"
-          ResourceRecords: [!Sub "10 feedback-smtp.${AWS::Region}.amazonses.com"]
-        - Name: !Sub "mail.${DomainName}"
-          Type: TXT
-          TTL: "300"
-          ResourceRecords: ['"v=spf1 include:amazonses.com ~all"']
+      # Shared records (MX, SPF, DMARC, MAIL FROM) can be left out with
+      # ManageSharedRecords=false while another account's zone copy holds them
+      # (AWS move, 2026-11-21). DKIM is per account, so it's always here.
+      RecordSets: !If
+        - ManageShared
+        -
+          - Name: !GetAtt DomainIdentity.DkimDNSTokenName1
+            Type: CNAME
+            TTL: "1800"
+            ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue1]
+          - Name: !GetAtt DomainIdentity.DkimDNSTokenName2
+            Type: CNAME
+            TTL: "1800"
+            ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue2]
+          - Name: !GetAtt DomainIdentity.DkimDNSTokenName3
+            Type: CNAME
+            TTL: "1800"
+            ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue3]
+          - Name: !Ref DomainName
+            Type: MX
+            TTL: "300"
+            ResourceRecords: [!Sub "10 inbound-smtp.${AWS::Region}.amazonaws.com"]
+          - Name: !Ref DomainName
+            Type: TXT
+            TTL: "300"
+            ResourceRecords: ['"v=spf1 include:amazonses.com ~all"']
+          - Name: !Sub "_dmarc.${DomainName}"
+            Type: TXT
+            TTL: "300"
+            ResourceRecords: [!Sub '"v=DMARC1; p=none; adkim=r; aspf=r"']
+          - Name: !Sub "mail.${DomainName}"
+            Type: MX
+            TTL: "300"
+            ResourceRecords: [!Sub "10 feedback-smtp.${AWS::Region}.amazonses.com"]
+          - Name: !Sub "mail.${DomainName}"
+            Type: TXT
+            TTL: "300"
+            ResourceRecords: ['"v=spf1 include:amazonses.com ~all"']
+        -
+          - Name: !GetAtt DomainIdentity.DkimDNSTokenName1
+            Type: CNAME
+            TTL: "1800"
+            ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue1]
+          - Name: !GetAtt DomainIdentity.DkimDNSTokenName2
+            Type: CNAME
+            TTL: "1800"
+            ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue2]
+          - Name: !GetAtt DomainIdentity.DkimDNSTokenName3
+            Type: CNAME
+            TTL: "1800"
+            ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue3]
 
   # --- Inbound: store raw mail, then forward ---------------------------------
   InboundBucket:
