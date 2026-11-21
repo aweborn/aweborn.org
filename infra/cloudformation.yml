@@ -9,6 +9,14 @@ Parameters:
     Type: String
     Description: Route53 Hosted Zone ID for aweborn.org
 
+  SiteBucketName:
+    Type: String
+    Default: aweborn-website-content
+    Description: >
+      S3 bucket for the built site. Bucket names are unique across all of AWS, so a
+      second account can't reuse the old name while it exists: the Aweborn account
+      (285037497167) uses aweborn-website-285037497167 (AWS move, 2026-11-21).
+
   StripeSecretKey:
     Type: String
     NoEcho: true
@@ -51,7 +59,7 @@ Resources:
   SiteBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: aweborn-website-content
+      BucketName: !Ref SiteBucketName
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true

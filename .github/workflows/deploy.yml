@@ -186,7 +186,9 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::111551045759:role/aweborn-github-deploy
+          # Repo variables switch the deploy to Aweborn's account (AWS move, 2026-11-21);
+          # unset, they fall back to the old personal account.
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN || 'arn:aws:iam::111551045759:role/aweborn-github-deploy' }}
           aws-region: us-east-1
 
       - name: Setup Node
@@ -201,6 +203,9 @@ jobs:
           npm run build
 
       - name: Deploy static site to S3 bucket
+        env:
+          SITE_BUCKET: ${{ vars.SITE_BUCKET || 'aweborn-website-content' }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID || 'E3Q49I3A6Q6RH' }}
         run: |
-          aws s3 sync ./dist/ s3://aweborn-website-content --delete
-          aws cloudfront create-invalidation --distribution-id E3Q49I3A6Q6RH --paths '/*'
+          aws s3 sync ./dist/ "s3://$SITE_BUCKET" --delete
+          aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths '/*'

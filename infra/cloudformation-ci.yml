@@ -19,6 +19,10 @@ Parameters:
   HostedZoneId:
     Type: String
     Default: Z077908710IGH7R1XO587
+  SiteBucketName:
+    Type: String
+    Default: aweborn-website-content
+    Description: Same value as the aweborn-website stack's SiteBucketName
 
 Resources:
   # Website deploy (deploy.yml): sync the built site to S3 + invalidate
@@ -48,11 +52,11 @@ Resources:
               - Sid: SiteBucket
                 Effect: Allow
                 Action: [s3:ListBucket, s3:GetBucketLocation]
-                Resource: arn:aws:s3:::aweborn-website-content
+                Resource: !Sub "arn:aws:s3:::${SiteBucketName}"
               - Sid: SiteObjects
                 Effect: Allow
                 Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
-                Resource: arn:aws:s3:::aweborn-website-content/*
+                Resource: !Sub "arn:aws:s3:::${SiteBucketName}/*"
               - Sid: Invalidate
                 Effect: Allow
                 Action: [cloudfront:CreateInvalidation, cloudfront:GetInvalidation, cloudfront:ListInvalidations]
@@ -121,7 +125,7 @@ Resources:
                   - s3:GetMetricsConfiguration
                   - s3:GetInventoryConfiguration
                 Resource:
-                  - arn:aws:s3:::aweborn-website-content
+                  - !Sub "arn:aws:s3:::${SiteBucketName}"
                   - !Sub "arn:aws:s3:::aweborn-backups-${AWS::AccountId}"
               - Sid: DriftReadIam
                 Effect: Allow

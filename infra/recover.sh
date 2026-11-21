@@ -28,7 +28,7 @@ cd "$(dirname "$0")/.."
 
 KEYS="${AWEBORN_KEYS_DIR:-$HOME/keys}"
 REPO=aweborn/aweborn.org
-ZONE=Z077908710IGH7R1XO587
+ZONE="${AWEBORN_ZONE_ID:-Z077908710IGH7R1XO587}"  # Aweborn account's zone: set AWEBORN_ZONE_ID (AWS move)
 HEALTH=https://sync.aweborn.org/api/auth/methods
 CHECK=0; [[ "${1:-}" == --check ]] && CHECK=1
 
