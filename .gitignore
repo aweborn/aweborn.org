@@ -38,3 +38,6 @@ server/.env
 
 # Card print batches (scripts/cards/build-batch.mjs): may hold buyers' photos, never commit
 cards/batches/
+
+# AWS move scratch (zone exports etc.); never commit
+.migration/

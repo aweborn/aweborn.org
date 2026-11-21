@@ -32,9 +32,17 @@ Parameters:
   AssetsDomain:
     Type: String
     Default: assets.aweborn.org
+  AttachAliases:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: "'false' leaves assets.aweborn.org off the distribution until it is moved across with aws cloudfront associate-alias (AWS move, 2026-11-21)"
   CertificateArn:
     Type: String
     Description: The existing *.aweborn.org certificate (us-east-1) from the aweborn-website stack.
+
+Conditions:
+  WithAliases: !Equals [!Ref AttachAliases, 'true']
 
 Resources:
   AssetBucket:
@@ -100,7 +108,7 @@ Resources:
         Comment: aweborn asset library
         PriceClass: PriceClass_100
         HttpVersion: http2and3
-        Aliases: [!Ref AssetsDomain]
+        Aliases: !If [WithAliases, [!Ref AssetsDomain], !Ref AWS::NoValue]
         ViewerCertificate:
           AcmCertificateArn: !Ref CertificateArn
           SslSupportMethod: sni-only

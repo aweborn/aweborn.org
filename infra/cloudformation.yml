@@ -9,6 +9,15 @@ Parameters:
     Type: String
     Description: Route53 Hosted Zone ID for aweborn.org
 
+  AttachAliases:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: >
+      'false' creates the CloudFront site without aweborn.org/www, which another
+      distribution (another account's) can still hold. Move them across with
+      aws cloudfront associate-alias, then redeploy with 'true' (AWS move, 2026-11-21).
+
   SiteBucketName:
     Type: String
     Default: aweborn-website-content
@@ -51,6 +60,7 @@ Parameters:
 
 Conditions:
   UseAuthProxy: !Equals [!Ref AuthProxy, 'true']
+  WithAliases: !Equals [!Ref AttachAliases, 'true']
 
 Resources:
   # ============================================
@@ -125,9 +135,10 @@ Resources:
         PriceClass: PriceClass_100
         HttpVersion: http2and3
 
-        Aliases:
-          - aweborn.org
-          - www.aweborn.org
+        Aliases: !If
+          - WithAliases
+          - [aweborn.org, www.aweborn.org]
+          - !Ref AWS::NoValue
 
         ViewerCertificate:
           AcmCertificateArn: !Ref Certificate
