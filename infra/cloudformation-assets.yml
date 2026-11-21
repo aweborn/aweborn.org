@@ -26,6 +26,11 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Aweborn asset library. Content-addressed generated files in S3, public via CloudFront (assets.aweborn.org); private creation archive.
 
 Parameters:
+  ManageDnsRecords:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: "'false' skips this stack's Route53 records, for a zone that already holds them (AWS move, 2026-11-21)"
   HostedZoneId:
     Type: AWS::Route53::HostedZone::Id
     Default: Z077908710IGH7R1XO587
@@ -42,6 +47,7 @@ Parameters:
     Description: The existing *.aweborn.org certificate (us-east-1) from the aweborn-website stack.
 
 Conditions:
+  WithDns: !Equals [!Ref ManageDnsRecords, 'true']
   WithAliases: !Equals [!Ref AttachAliases, 'true']
 
 Resources:
@@ -147,6 +153,7 @@ Resources:
           OriginOverride: true
 
   AssetDns:
+    Condition: WithDns
     Type: AWS::Route53::RecordSetGroup
     Properties:
       HostedZoneId: !Ref HostedZoneId

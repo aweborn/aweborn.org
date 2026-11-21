@@ -6,6 +6,11 @@ Description: >
   for sync.aweborn.org and api.aweborn.org.
 
 Parameters:
+  ManageDnsRecords:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: "'false' skips this stack's Route53 records, for a zone that already holds them (AWS move, 2026-11-21)"
   HostedZoneId:
     Type: String
     Description: Route53 Hosted Zone ID for aweborn.org
@@ -57,6 +62,9 @@ Parameters:
       Never commit it; set it with infra/set-stack-key.sh tailscale.
       Empty = the bootstrap fails loudly (a server off the Tailnet can't
       be deployed to or backed up). See HANDOFF -> Tailscale.
+
+Conditions:
+  WithDns: !Equals [!Ref ManageDnsRecords, 'true']
 
 Resources:
   # ============================================
@@ -296,6 +304,7 @@ Resources:
   # Route53 — DNS Records for VPS services
   # ============================================
   SyncDNSRecord:
+    Condition: WithDns
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneId: !Ref HostedZoneId
@@ -307,6 +316,7 @@ Resources:
     DependsOn: VPSStaticIp
 
   ApiDNSRecord:
+    Condition: WithDns
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneId: !Ref HostedZoneId

@@ -5,6 +5,11 @@ Description: >
   MUST be deployed in us-east-1 (ACM requirement for CloudFront).
 
 Parameters:
+  ManageDnsRecords:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: "'false' skips this stack's Route53 records, for a zone that already holds them (AWS move, 2026-11-21)"
   HostedZoneId:
     Type: String
     Description: Route53 Hosted Zone ID for aweborn.org
@@ -59,6 +64,7 @@ Parameters:
       site with VITE_AUTH_URL=https://aweborn.org (see phases/08 log 2026-10-29).
 
 Conditions:
+  WithDns: !Equals [!Ref ManageDnsRecords, 'true']
   UseAuthProxy: !Equals [!Ref AuthProxy, 'true']
   WithAliases: !Equals [!Ref AttachAliases, 'true']
 
@@ -227,6 +233,7 @@ Resources:
   # Route53 — DNS Records
   # ============================================
   DNSRecordApex:
+    Condition: WithDns
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneId: !Ref HostedZoneId
@@ -238,6 +245,7 @@ Resources:
         EvaluateTargetHealth: false
 
   DNSRecordWww:
+    Condition: WithDns
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneId: !Ref HostedZoneId
