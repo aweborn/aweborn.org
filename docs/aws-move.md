@@ -94,16 +94,17 @@ Old account: `aws ses set-active-receipt-rule-set --profile default` (no name =
 deactivate). New: `aws ses set-active-receipt-rule-set --profile aweborn
 --rule-set-name aweborn-inbound`. Test hello@, privacy@ and a sign-in code.
 
-### 5. VPS (window: sync + gen-AI down ~30-60 min)
-Follow HANDOFF → Rebuild, with these changes: take the final `backup.yml` run
-**before** deleting the old Tailscale node; copy the newest `sync/…` backup into
-`aweborn-backups-285037497167`; create `aweborn-vps` in the new account
-(`ManageDnsRecords=false`, Tailscale secret from `~/keys`, stack policy); `UPSERT`
-`sync` + `api` `A` to the new static IP; `restore-from-s3.sh`, `set-secret.sh push all`,
-`restore-genai-db.sh` with `AWS_PROFILE=aweborn`; change `ASSETS_BUCKET` and
-`ASSETS_DISTRIBUTION_ID` in `infra/k3s/genai-service-deployment.yaml`; deploy;
-`gh variable set AWS_BACKUP_ROLE_ARN … --body arn:aws:iam::285037497167:role/aweborn-github-backup`;
-run `backup.yml`.
+### 5. VPS (window: sync + gen-AI down ~30-45 min)
+`infra/move/move-vps.sh freeze`, then `build`, then `restore` (run in a real
+Terminal; each part can be re-run). It follows HANDOFF → Rebuild with the
+cross-account changes: sync-service and gen-AI are stopped on the old box
+**before** the final snapshot (no lost edits), `backup.yml` runs **before** the
+old Tailscale node is deleted, the backup is copied into
+`aweborn-backups-285037497167`, the new stack is `aweborn-vps-4` with
+`ManageDnsRecords=false` and sync/api are `UPSERT`ed to its static IP, then
+`restore-from-s3.sh`, `set-secret.sh push all` (SES keys are still the old
+account's sender: mail keeps working), `restore-genai-db.sh`, the CI role
+variables (this is also step 6), a full deploy and `backup.yml` into the new bucket.
 
 ### 6. CI
 `gh variable set AWS_INFRA_PREVIEW_ROLE_ARN` to the new `aweborn-ci` preview role.
