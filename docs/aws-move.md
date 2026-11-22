@@ -27,15 +27,15 @@ bank account".
 | Identity Center + admin login | ✅ 2026-11-21 | |
 | Templates account-portable | ✅ `2cd70cb`, `1aefc72`, `d232387`, this commit | Params default to the live values; old stacks unchanged |
 | GitHub OIDC provider | ✅ | |
-| `aweborn-backups` | ✅ | `aweborn-backups-285037497167`, role `aweborn-github-backup`. Not used yet: `AWS_BACKUP_ROLE_ARN` still points at the old account |
+| `aweborn-backups` | ✅ | `aweborn-backups-285037497167`, role `aweborn-github-backup`. `backup.yml` writes here since 2026-11-22 (first run passed, 6 worlds) |
 | Route53 zone + nameservers | ✅ **live** 2026-11-21 ~11:35 ET | New zone `Z08362011L7H2GNY83C20` is authoritative (registrar switched, op `c5a56d8f…`). Old zone `Z077908710IGH7R1XO587` must stay identical and untouched until the move ends |
-| `aweborn-ci` | ✅ | Roles exist; GitHub still uses the old ones |
+| `aweborn-ci` | ✅ | GitHub uses these since 2026-11-22 (`AWS_DEPLOY_ROLE_ARN`, `AWS_INFRA_PREVIEW_ROLE_ARN`) |
 | `aweborn-mail` | ✅ (`ManageSharedRecords=false`) | Domain verified (DKIM + MAIL FROM). Receipt rule set **inactive**: hello@/privacy@ still arrive via the old account |
 | SES production access | ❌ **denied** 2026-11-22 | Appeal by replying to AWS's denial email. Not blocking: mail keeps going through the old account's SES (its DKIM records are in the new zone) and moves last |
 | Account verification | ✅ by 2026-11-22 | Support case 179528017900730. CloudFront works now |
 | `aweborn-website` | ✅ **live** 2026-11-22 ~16:25 ET; payments ✅ ~16:35 | `E29ZTT5F8DU5CT` (`d2790huj99b2gc.cloudfront.net`), bucket `aweborn-website-285037497167`, API `https://r3hw3vo49l.execute-api.us-east-1.amazonaws.com`. GitHub deploys go here (repo variables set). `associate-alias` refused ("source distribution is enabled"), so `infra/move/cutover-site-names.sh` detached the names from the old site (`E3Q49I3A6Q6RH`, config saved in `.migration/` on Alex's Mac) and attached them here: ~2 min outage. Payments: the one Stripe endpoint (`we_1URYrLPkgUqNqJwuXM3aIL2R`) delivers to the new API and checkout calls it; a test gift reached the mana ledger |
 | `aweborn-assets` | ✅ **live** 2026-11-22 ~17:05 ET | `E1PJRFELCXQ12A` (`d2uvsovz1wnzu5.cloudfront.net`), bucket `aweborn-assets-285037497167`: 655 objects (1.97 GB) copied S3-to-S3 with `infra/move/cutover-assets.sh`, ~2 min outage. Gen-AI writes here (new `aweborn-genai-writer` key in `~/keys` + VPS; manifest `405a4a7`). Old bucket kept as a backup until step 7 |
-| `aweborn-vps` | to do | Lightsail should work now that the account is verified |
+| `aweborn-vps` | ✅ **live** 2026-11-22 ~17:47 ET | `aweborn-vps-4` (medium_3_0), static IP `98.94.194.204`, Tailnet name `aweborn-vps`. `infra/move/move-vps.sh`: sync + gen-AI down 22:14–22:47 UTC (~33 min), no edits lost (6 worlds before and after), 67 Library rows restored. Admin SSH key is now the new account's Lightsail default key (old one kept as `~/keys/AWEBORN_VPS_ADMIN_SSH_KEY.old-account.pem`). Old box `aweborn-vps-3` (old account) has sync + gen-AI scaled to 0 and its Tailscale node deleted; delete it in step 7 |
 
 ## Rules while the move is open
 
@@ -94,7 +94,7 @@ Old account: `aws ses set-active-receipt-rule-set --profile default` (no name =
 deactivate). New: `aws ses set-active-receipt-rule-set --profile aweborn
 --rule-set-name aweborn-inbound`. Test hello@, privacy@ and a sign-in code.
 
-### 5. VPS (window: sync + gen-AI down ~30-45 min)
+### 5. VPS ✅ (2026-11-22, ~33 min down)
 `infra/move/move-vps.sh freeze`, then `build`, then `restore` (run in a real
 Terminal; each part can be re-run). It follows HANDOFF → Rebuild with the
 cross-account changes: sync-service and gen-AI are stopped on the old box
@@ -111,7 +111,7 @@ the keys step, put the new account's into `~/keys` (old one kept beside it):
 `aws lightsail download-default-key-pair --profile aweborn --query privateKeyBase64 --output text`.
 If `restore` stops there, fix the key and run `move-vps.sh finish`.
 
-### 6. CI
+### 6. CI ✅ (set by `move-vps.sh`)
 `gh variable set AWS_INFRA_PREVIEW_ROLE_ARN` to the new `aweborn-ci` preview role.
 
 ### 7. Finish
