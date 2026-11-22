@@ -7,6 +7,9 @@
 #   infra/stripe-webhook.sh status   # lists the account's webhook endpoints (no secrets)
 #   infra/stripe-webhook.sh events   # sets the existing endpoint's events to $EVENTS below
 #                                    # (M4, 2026-10-27: refunds + lost disputes become labeled draws)
+#   infra/stripe-webhook.sh move     # points the ONE existing /stripe-webhook endpoint at this
+#                                    # stack's ApiEndpoint (AWS move, 2026-11-22). Same endpoint,
+#                                    # same signing secret: never two live endpoints, no double gifts.
 #
 # Uses the Stripe key in ~/keys/AWEBORN_STRIPE_SECRET_KEY.txt (sent via a 0600
 # curl config file, never on the command line). The endpoint URL comes from the
@@ -68,5 +71,18 @@ case "${1:-}" in
     resp="$(stripe "https://api.stripe.com/v1/webhook_endpoints/$id" "${args[@]}")"
     echo "$id → $(jq -r '(.enabled_events // []) | join(",")' <<<"$resp")"
     ;;
-  *) echo "usage: $0 create|status|events" >&2; exit 1 ;;
+  move)
+    url="$(endpoint_url)"
+    others="$(stripe https://api.stripe.com/v1/webhook_endpoints | jq -r --arg u "$url" '.data[] | select(.url | endswith("/stripe-webhook")) | select(.url != $u) | "\(.id) \(.url)"')"
+    [[ -n "$others" ]] || { echo "Nothing to move: the endpoint already points at $url (or none exists)." >&2; exit 1; }
+    [[ $(wc -l <<<"$others") -eq 1 ]] || { echo "More than one candidate endpoint, sort it out by hand:" >&2; echo "$others" >&2; exit 1; }
+    read -r id from <<<"$others"
+    echo "Moving $id"; echo "  from $from"; echo "  to   $url"
+    drain_tty() { [[ -t 0 ]] || return 0; while read -r -s -t 1 -n 256 _; do :; done; }; drain_tty
+    read -r -p 'Type "move" to repoint it: ' ok; [[ "$ok" == move ]] || { echo "Not moved."; exit 0; }
+    resp="$(stripe "https://api.stripe.com/v1/webhook_endpoints/$id" -d url="$url")"
+    [[ "$(jq -r .url <<<"$resp")" == "$url" ]] || { echo "Stripe error: $(jq -c '.error // .' <<<"$resp")" >&2; exit 1; }
+    echo "$id now delivers to $url (signing secret unchanged)."
+    ;;
+  *) echo "usage: $0 create|status|events|move" >&2; exit 1 ;;
 esac

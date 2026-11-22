@@ -31,11 +31,11 @@ bank account".
 | Route53 zone + nameservers | ✅ **live** 2026-11-21 ~11:35 ET | New zone `Z08362011L7H2GNY83C20` is authoritative (registrar switched, op `c5a56d8f…`). Old zone `Z077908710IGH7R1XO587` must stay identical and untouched until the move ends |
 | `aweborn-ci` | ✅ | Roles exist; GitHub still uses the old ones |
 | `aweborn-mail` | ✅ (`ManageSharedRecords=false`) | Domain verified (DKIM + MAIL FROM). Receipt rule set **inactive**: hello@/privacy@ still arrive via the old account |
-| SES production access | ⏳ requested 2026-11-21 | `aws sesv2 get-account --profile aweborn` → ReviewDetails |
-| Account verification | ⏳ **blocking** | CloudFront refuses: "Your account must be verified…". Support case **179528017900730** (Account Activation → Account Verification). CloudShell also refused. Lightsail is probably blocked too |
-| `aweborn-website` | ⛔ blocked on verification | First try rolled back and was deleted |
-| `aweborn-assets` | ⛔ blocked (CloudFront) | |
-| `aweborn-vps` | ⛔ likely blocked (Lightsail) | |
+| SES production access | ❌ **denied** 2026-11-22 | Appeal by replying to AWS's denial email. Not blocking: mail keeps going through the old account's SES (its DKIM records are in the new zone) and moves last |
+| Account verification | ✅ by 2026-11-22 | Support case 179528017900730. CloudFront works now |
+| `aweborn-website` | ✅ **live** 2026-11-22 ~16:25 ET | `E29ZTT5F8DU5CT` (`d2790huj99b2gc.cloudfront.net`), bucket `aweborn-website-285037497167`, API `https://r3hw3vo49l.execute-api.us-east-1.amazonaws.com`. GitHub deploys go here (repo variables set). `associate-alias` refused ("source distribution is enabled"), so `infra/move/cutover-site-names.sh` detached the names from the old site (`E3Q49I3A6Q6RH`, config saved in `.migration/` on Alex's Mac) and attached them here: ~2 min outage. Payments still on the old API until step 2c |
+| `aweborn-assets` | next | Same cutover as the website (no associate-alias) |
+| `aweborn-vps` | to do | Lightsail should work now that the account is verified |
 
 ## Rules while the move is open
 
@@ -53,14 +53,16 @@ bank account".
 
 ## Remaining steps
 
-### 1. Wait for AWS
-Case 179528017900730 and the SES review. Test CloudFront by re-running step 2a.
+### 1. Wait for AWS ✅
+Verification done by Nov 22. SES production access was denied: appeal later.
 
 ### 2. Website
 a. `infra/move/create-website.sh` (needs `~/keys/AWEBORN_STRIPE_SECRET_KEY.txt`).
    Note the new `DistributionId` and its `d….cloudfront.net` domain.
 
-b. Fill the bucket and move the names:
+b. ✅ Done 2026-11-22 with `infra/move/cutover-site-names.sh` (the
+   associate-alias route below was refused because the old site was enabled;
+   kept for reference). Fill the bucket and move the names:
    ```bash
    gh variable set AWS_DEPLOY_ROLE_ARN -R aweborn/aweborn.org --body arn:aws:iam::285037497167:role/aweborn-github-deploy
    gh variable set SITE_BUCKET -R aweborn/aweborn.org --body aweborn-website-285037497167
@@ -76,8 +78,7 @@ b. Fill the bucket and move the names:
 c. Payments: set the new stack's `StripeWebhookSecret` (the existing endpoint's
    secret; we move the endpoint, we don't make a second one) and
    `ManaInflowToken` with `AWS_PROFILE=aweborn infra/set-stack-key.sh …`. Then
-   point the existing Stripe endpoint at the new `ApiEndpoint` + `/stripe-webhook`
-   (dashboard), and change `VITE_API_ENDPOINT` in `.env.production` to the new
+   `AWS_PROFILE=aweborn infra/stripe-webhook.sh move`, and change `VITE_API_ENDPOINT` in `.env.production` to the new
    `ApiEndpoint`; push. Test a small gift end to end.
 
 ### 3. Assets
