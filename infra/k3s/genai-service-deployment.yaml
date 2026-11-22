@@ -73,10 +73,10 @@ spec:
             - name: OPT_MAX_MB
               value: "120"
             - name: ASSETS_DISTRIBUTION_ID
-              value: "E2PSYBOOM9Q3FR"
+              value: "E1PJRFELCXQ12A"
             # Asset library (infra/cloudformation-assets.yml). Missing key = files stay on the box only.
             - name: ASSETS_BUCKET
-              value: aweborn-assets-111551045759
+              value: aweborn-assets-285037497167
             - name: ASSETS_CDN_URL
               value: https://assets.aweborn.org
             - name: AWS_REGION
