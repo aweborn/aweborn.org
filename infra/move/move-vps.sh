@@ -11,6 +11,7 @@
 #                                    # point sync/api at its static IP
 #   infra/move/move-vps.sh restore   # wait for bootstrap, restore world DB + keys +
 #                                    # gen-AI catalogue, CI variables, deploy, backup
+#   infra/move/move-vps.sh finish    # the restore from step 3 on (after the world DB)
 #
 # Each part checks before it acts and can be re-run. The old box isn't deleted:
 # it's stopped in step 7 of docs/aws-move.md.
@@ -30,6 +31,44 @@ watch_run() { # workflow [extra gh args]
   local wf=$1; shift
   gh workflow run "$wf" -R $REPO "$@"; sleep 8
   gh run watch -R $REPO "$(gh run list -R $REPO --workflow "$wf" --event workflow_dispatch -L 1 --json databaseId -q '.[0].databaseId')" --exit-status
+}
+
+finish_steps() {
+  # Resume point after the world DB restore. The admin SSH key is the Lightsail
+  # DEFAULT key, which differs per account: fetch the new account's first
+  # (2026-11-22: "Permission denied (publickey)" here).
+  export AWS_PROFILE=$NEW
+  ssh -i "$KEYS/AWEBORN_VPS_ADMIN_SSH_KEY.pem" -o BatchMode=yes ubuntu@aweborn-vps true \
+    || die "admin SSH to the new box fails. Get the new account's Lightsail default key into ~/keys (docs/aws-move.md step 5)"
+
+  say "3. Runtime keys -> new box (same BETTER_AUTH_SECRET, so nobody is signed out)"
+  infra/set-secret.sh push all
+
+  say "4. Gen-AI catalogue (right after the keys: gen-AI uploads its own backup ~2 min after start)"
+  infra/restore-genai-db.sh
+
+  say "5. CI -> new account (backups + infra check)"
+  for pair in AWS_BACKUP_ROLE_ARN:aweborn-backups:RoleArn AWS_INFRA_PREVIEW_ROLE_ARN:aweborn-ci:RoleArn; do
+    IFS=: read -r var st key <<<"$pair"
+    v=$(aws cloudformation describe-stacks --stack-name "$st" --query "Stacks[0].Outputs[?OutputKey=='$key'].OutputValue | [0]" --output text)
+    [[ $v == arn:aws:iam::285037497167:* ]] || die "$st has no $key output"
+    gh variable set "$var" -R $REPO --body "$v"
+  done
+
+  say "6. Deploy every service to the new box"
+  watch_run deploy.yml -f services=all
+
+  say "7. First snapshot on the new box, then backup.yml into the new bucket"
+  ssh -i "$KEYS/AWEBORN_VPS_ADMIN_SSH_KEY.pem" -o BatchMode=yes ubuntu@aweborn-vps \
+    "j=sync-backup-first-\$(date +%s); sudo k3s kubectl -n $NS create job --from=cronjob/sync-backup \$j \
+     && sudo k3s kubectl -n $NS wait --for=condition=complete job/\$j --timeout=600s && sudo cat /var/lib/aweborn/backups/sync/latest.json"
+  watch_run backup.yml
+
+  say "8. Health"
+  for u in https://sync.aweborn.org/health https://api.aweborn.org/health https://sync.aweborn.org/api/auth/methods; do
+    echo "  $u -> $(curl -s -o /dev/null -m 10 -w '%{http_code}' "$u")"
+  done
+  echo; echo "Check latest.json above shows your real world count (not \"worlds\": 0), then play a bit."
 }
 
 case "${1:-}" in
@@ -108,36 +147,13 @@ restore)
   say "2. Trust the new box from this Mac (host key from the CI pin restore-from-s3 just set)"
   ssh-keygen -R aweborn-vps >/dev/null 2>&1 || true
   gh variable get VPS_KNOWN_HOST -R $REPO >> ~/.ssh/known_hosts
-
-  say "3. Runtime keys -> new box (same BETTER_AUTH_SECRET, so nobody is signed out)"
-  infra/set-secret.sh push all
-
-  say "4. Gen-AI catalogue (right after the keys: gen-AI uploads its own backup ~2 min after start)"
-  infra/restore-genai-db.sh
-
-  say "5. CI -> new account (backups + infra check)"
-  for pair in AWS_BACKUP_ROLE_ARN:aweborn-backups:RoleArn AWS_INFRA_PREVIEW_ROLE_ARN:aweborn-ci:RoleArn; do
-    IFS=: read -r var st key <<<"$pair"
-    v=$(aws cloudformation describe-stacks --stack-name "$st" --query "Stacks[0].Outputs[?OutputKey=='$key'].OutputValue | [0]" --output text)
-    [[ $v == arn:aws:iam::285037497167:* ]] || die "$st has no $key output"
-    gh variable set "$var" -R $REPO --body "$v"
-  done
-
-  say "6. Deploy every service to the new box"
-  watch_run deploy.yml -f services=all
-
-  say "7. First snapshot on the new box, then backup.yml into the new bucket"
-  ssh -i "$KEYS/AWEBORN_VPS_ADMIN_SSH_KEY.pem" -o BatchMode=yes ubuntu@aweborn-vps \
-    "j=sync-backup-first-\$(date +%s); sudo k3s kubectl -n $NS create job --from=cronjob/sync-backup \$j \
-     && sudo k3s kubectl -n $NS wait --for=condition=complete job/\$j --timeout=600s && sudo cat /var/lib/aweborn/backups/sync/latest.json"
-  watch_run backup.yml
-
-  say "8. Health"
-  for u in https://sync.aweborn.org/health https://api.aweborn.org/health https://sync.aweborn.org/api/auth/methods; do
-    echo "  $u -> $(curl -s -o /dev/null -m 10 -w '%{http_code}' "$u")"
-  done
-  echo; echo "Check latest.json above shows your real world count (not \"worlds\": 0), then play a bit."
+  finish_steps
   ;;
 
-*) echo "usage: $0 freeze|build|restore" >&2; exit 1 ;;
+finish)
+  finish_steps
+
+  ;;
+
+*) echo "usage: $0 freeze|build|restore|finish" >&2; exit 1 ;;
 esac

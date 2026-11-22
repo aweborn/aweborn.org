@@ -106,6 +106,11 @@ old Tailscale node is deleted, the backup is copied into
 account's sender: mail keeps working), `restore-genai-db.sh`, the CI role
 variables (this is also step 6), a full deploy and `backup.yml` into the new bucket.
 
+The admin SSH key is the **Lightsail default key, which is per account**: before
+the keys step, put the new account's into `~/keys` (old one kept beside it):
+`aws lightsail download-default-key-pair --profile aweborn --query privateKeyBase64 --output text`.
+If `restore` stops there, fix the key and run `move-vps.sh finish`.
+
 ### 6. CI
 `gh variable set AWS_INFRA_PREVIEW_ROLE_ARN` to the new `aweborn-ci` preview role.
 
