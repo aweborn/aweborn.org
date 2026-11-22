@@ -52,6 +52,10 @@ Resources:
       MailFromAttributes:
         MailFromDomain: !Sub "mail.${DomainName}"
         BehaviorOnMxFailure: USE_DEFAULT_VALUE
+      # Every send from aweborn.org goes through the safeguards below, with no
+      # code change in sync-service (2026-11-22).
+      ConfigurationSetAttributes:
+        ConfigurationSetName: !Ref TransactionalConfigSet
 
   ForwardToIdentity:
     # Sandbox accounts can only send to verified addresses.
@@ -114,6 +118,94 @@ Resources:
             Type: CNAME
             TTL: "1800"
             ResourceRecords: [!GetAtt DomainIdentity.DkimDNSTokenValue3]
+
+  # --- Sending safeguards (2026-11-22, SES production-access review) --------
+  # Hard bounces and complaints put the address on the suppression list, so it
+  # is never mailed again. Each one is also emailed to ForwardTo, and alarms
+  # fire well before AWS's own review levels (bounce 5%, complaint 0.1%).
+  TransactionalConfigSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: aweborn-transactional
+      ReputationOptions:
+        ReputationMetricsEnabled: true
+      SendingOptions:
+        SendingEnabled: true
+      SuppressionOptions:
+        SuppressedReasons: [BOUNCE, COMPLAINT]
+
+  MailAlerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: aweborn-mail-alerts
+      DisplayName: Aweborn mail alerts
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref ForwardTo
+
+  MailAlertsPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref MailAlerts]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SesPublishesBouncesAndComplaints
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref MailAlerts
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+          - Sid: CloudWatchAlarms
+            Effect: Allow
+            Principal: { Service: cloudwatch.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref MailAlerts
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+
+  BounceComplaintEvents:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    DependsOn: MailAlertsPolicy
+    Properties:
+      ConfigurationSetName: !Ref TransactionalConfigSet
+      EventDestination:
+        Name: bounces-and-complaints-to-email
+        Enabled: true
+        MatchingEventTypes: [bounce, complaint]
+        SnsDestination:
+          TopicARN: !Ref MailAlerts
+
+  BounceRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: aweborn-ses-bounce-rate
+      AlarmDescription: SES bounce rate >= 2% (AWS reviews accounts at 5%)
+      Namespace: AWS/SES
+      MetricName: Reputation.BounceRate
+      Statistic: Maximum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 0.02
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref MailAlerts]
+
+  ComplaintRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: aweborn-ses-complaint-rate
+      AlarmDescription: SES complaint rate >= 0.05% (AWS reviews accounts at 0.1%)
+      Namespace: AWS/SES
+      MetricName: Reputation.ComplaintRate
+      Statistic: Maximum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 0.0005
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref MailAlerts]
 
   # --- Inbound: store raw mail, then forward ---------------------------------
   InboundBucket:
@@ -298,6 +390,10 @@ Resources:
               InvocationType: Event
 
 Outputs:
+  ConfigurationSet:
+    Value: !Ref TransactionalConfigSet
+  AlertsTopic:
+    Value: !Ref MailAlerts
   InboundBucket:
     Value: !Ref InboundBucket
   ForwarderFunction:
