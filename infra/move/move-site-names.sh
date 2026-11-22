@@ -7,7 +7,7 @@
 # runs, requests still arriving at the OLD site's edge addresses are served by
 # the NEW distribution. DNS is pointed at the new site afterwards.
 #
-# Undo (from the old account): put TXT _aweborn.org / _www.aweborn.org =
+# Undo (from the old account): put TXT _.aweborn.org / _www.aweborn.org =
 # "dicg1f6sshyqf.cloudfront.net" in the zone, then
 #   aws cloudfront associate-alias --profile default --target-distribution-id E3Q49I3A6Q6RH --alias aweborn.org   (and www)
 # and UPSERT the A records back to dicg1f6sshyqf.cloudfront.net.
@@ -29,6 +29,9 @@ EOF
   aws route53 wait resource-record-sets-changed --profile $P --id "$id"; }
 
 # 1. Deploys go to the new bucket from now on (the live site is unaffected until step 3).
+if [[ $(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN/") == 200 ]]; then
+  echo "== 1. New site already serving: skipping the deploy"
+else
 echo "== 1. GitHub deploys -> new account"
 gh variable set AWS_DEPLOY_ROLE_ARN -R aweborn/aweborn.org --body arn:aws:iam::285037497167:role/aweborn-github-deploy
 gh variable set SITE_BUCKET -R aweborn/aweborn.org --body aweborn-website-285037497167
@@ -37,17 +40,21 @@ gh workflow run deploy.yml -R aweborn/aweborn.org -f services=none; sleep 8   # 
 gh run watch -R aweborn/aweborn.org "$(gh run list -R aweborn/aweborn.org --workflow deploy.yml --event workflow_dispatch -L 1 --json databaseId -q '.[0].databaseId')" --exit-status
 code=$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN/")
 echo "New site answers $code at https://$DOMAIN/"; [[ $code == 200 ]] || { echo "Not serving yet: stop here."; exit 1; }
+fi
 
 # 2. Ownership proof for the cross-account move.
 echo "== 2. TXT proof records"
-for n in aweborn.org www.aweborn.org; do
-  upsert "{\"Name\":\"_$n\",\"Type\":\"TXT\",\"TTL\":300,\"ResourceRecords\":[{\"Value\":\"\\\"$DOMAIN\\\"\"}]}"
+# Apex: "_." + name; subdomain: "_" + name (CloudFront docs, "Set up the target distribution").
+for n in _.aweborn.org _www.aweborn.org; do
+  upsert "{\"Name\":\"$n\",\"Type\":\"TXT\",\"TTL\":300,\"ResourceRecords\":[{\"Value\":\"\\\"$DOMAIN\\\"\"}]}"
 done
 
 # 3. The live move.
 read -r -p "== 3. Move aweborn.org + www to $DIST now? Type 'move': " ok; [[ $ok == move ]] || { echo "Stopped before moving."; exit 1; }
+# Apex first: if it's refused (AWS sends some cross-account apex moves to Support),
+# set -e stops here with nothing moved.
 for n in aweborn.org www.aweborn.org; do
-  aws cloudfront associate-alias --profile $P --target-distribution-id "$DIST" --alias "$n" && echo "moved $n"
+  aws cloudfront associate-alias --profile $P --target-distribution-id "$DIST" --alias "$n"; echo "moved $n"
 done
 
 # 4. Point DNS at the new site.
