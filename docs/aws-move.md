@@ -33,8 +33,8 @@ bank account".
 | `aweborn-mail` | ✅ (`ManageSharedRecords=false`) | Domain verified (DKIM + MAIL FROM). Receipt rule set **inactive**: hello@/privacy@ still arrive via the old account |
 | SES production access | ❌ **denied** 2026-11-22 | Appeal by replying to AWS's denial email. Not blocking: mail keeps going through the old account's SES (its DKIM records are in the new zone) and moves last |
 | Account verification | ✅ by 2026-11-22 | Support case 179528017900730. CloudFront works now |
-| `aweborn-website` | ✅ **live** 2026-11-22 ~16:25 ET | `E29ZTT5F8DU5CT` (`d2790huj99b2gc.cloudfront.net`), bucket `aweborn-website-285037497167`, API `https://r3hw3vo49l.execute-api.us-east-1.amazonaws.com`. GitHub deploys go here (repo variables set). `associate-alias` refused ("source distribution is enabled"), so `infra/move/cutover-site-names.sh` detached the names from the old site (`E3Q49I3A6Q6RH`, config saved in `.migration/` on Alex's Mac) and attached them here: ~2 min outage. Payments still on the old API until step 2c |
-| `aweborn-assets` | next | Same cutover as the website (no associate-alias) |
+| `aweborn-website` | ✅ **live** 2026-11-22 ~16:25 ET; payments ✅ ~16:35 | `E29ZTT5F8DU5CT` (`d2790huj99b2gc.cloudfront.net`), bucket `aweborn-website-285037497167`, API `https://r3hw3vo49l.execute-api.us-east-1.amazonaws.com`. GitHub deploys go here (repo variables set). `associate-alias` refused ("source distribution is enabled"), so `infra/move/cutover-site-names.sh` detached the names from the old site (`E3Q49I3A6Q6RH`, config saved in `.migration/` on Alex's Mac) and attached them here: ~2 min outage. Payments: the one Stripe endpoint (`we_1URYrLPkgUqNqJwuXM3aIL2R`) delivers to the new API and checkout calls it; a test gift reached the mana ledger |
+| `aweborn-assets` | ✅ **live** 2026-11-22 ~17:05 ET | `E1PJRFELCXQ12A` (`d2uvsovz1wnzu5.cloudfront.net`), bucket `aweborn-assets-285037497167`: 655 objects (1.97 GB) copied S3-to-S3 with `infra/move/cutover-assets.sh`, ~2 min outage. Gen-AI writes here (new `aweborn-genai-writer` key in `~/keys` + VPS; manifest `405a4a7`). Old bucket kept as a backup until step 7 |
 | `aweborn-vps` | to do | Lightsail should work now that the account is verified |
 
 ## Rules while the move is open
@@ -75,13 +75,13 @@ b. ✅ Done 2026-11-22 with `infra/move/cutover-site-names.sh` (the
    even before DNS changes. Then `UPSERT` the apex and www `A` aliases to the new
    domain, and redeploy the stack with `AttachAliases=true` (keep the other params).
 
-c. Payments: set the new stack's `StripeWebhookSecret` (the existing endpoint's
+c. ✅ Payments (2026-11-22): set the new stack's `StripeWebhookSecret` (the existing endpoint's
    secret; we move the endpoint, we don't make a second one) and
    `ManaInflowToken` with `AWS_PROFILE=aweborn infra/set-stack-key.sh …`. Then
    `AWS_PROFILE=aweborn infra/stripe-webhook.sh move`, and change `VITE_API_ENDPOINT` in `.env.production` to the new
    `ApiEndpoint`; push. Test a small gift end to end.
 
-### 3. Assets
+### 3. Assets ✅ (2026-11-22, `infra/move/cutover-assets.sh`)
 Stack with `AttachAliases=false ManageDnsRecords=false CertificateArn=<new website cert>`.
 Copy `s3://aweborn-assets-111551045759` → `s3://aweborn-assets-285037497167`
 (includes `archive/backups/jobs.db.gz`). Move `assets.aweborn.org` like 2b
