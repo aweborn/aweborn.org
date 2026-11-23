@@ -1,6 +1,7 @@
 # Phase 10: The Game Layer (rules, boundaries, goals, teams, lobby, NPC players)
 
-**Status:** `[ ]` Not Started. **Grill closed 2026-11-23, no code.** A v1 build order is proposed below and waits for Alex's approval.
+**Status:** `[ ]` Not Started. **Grill closed 2026-11-23, no code. Build order approved; next: slice 1** (see [Start here](#start-here-handoff-for-the-next-chat-2026-11-23)).
+**Whiteboard** (the player's loop and the build order on one board): https://claude.ai/artifact/MLb7vRPPaCspVNUXH1mora
 **Depends on:**
 - [Phase 07](./07-genai-creation.md): [rules, goals & constraints design](./07-genai-creation.md#rules-goals--constraints-design-2026-11-01), minds/NPCs, the planner/Studio
 - [Phase 09](./09-authoritative-flight.md): deterministic `shared/sim`, server-authoritative intents (`shared/actions.ts`)
@@ -23,6 +24,39 @@ In short, players turn a world into a game:
 - **NPCs:** they can help build the game and can play in it.
 
 Because every rule, team assignment and outcome is data, each match is also a well-described trial for the research.
+
+## Start here: handoff for the next chat (2026-11-23)
+
+**You are starting slice 1: the game record and setup tools.** No game code exists yet. Read, in this order: [The design in one page](#the-design-in-one-page-from-the-decisions-below-2026-11-23), the [build order](#v1-build-order-approved-by-alex-2026-11-23-lets-create-the-handoff-for-the-next-chat-to-start-implementing-nothing-is-built-yet), the Decisions table, then [AGENTS.md](../AGENTS.md) (ship working things by pushing to `main`; portrait phone first; no O(n²) fan-out).
+
+### What slice 1 delivers
+A creator or co-creator can turn their world into a game *on paper*: pick a template and settings, mark the arena, its zones and the lobby, and see them in the world. No matches run yet (slice 2).
+
+1. **`shared/game.ts` (new) + tests:** the game record as plain data, with a `parseGame` that validates, clamps and repairs, in the style of `parseDraft` in [`shared/blueprint.ts`](../shared/blueprint.ts). Suggested shape (a starting point, not decided):
+   - `version` (a number that goes up with every change; matches will record it);
+   - `template`: `race | collect | capture-the-flag | king-of-the-hill | survive | build-together` (only `race` has to be playable in slice 2);
+   - `settings`: teams (count), players `min`/`max`, `rounds`, `roundSeconds` (default one round, 300 to 600 s), `scoreToWin`, player traits (`speedMul`, `gravityMul`, `fly`), `edge: soft | wall | instant` with `edgeSeconds` (default 10);
+   - `arena`: a box (`at`, `size`) in world coordinates: the stage;
+   - `zones`: `spawn` (one per team), `keep-out`, `goal`, each a box with an id and, where it applies, a team;
+   - `lobby`: a box, a `ring` position inside it, and an arrival point;
+   - `npcRoster`: empty for now (slice 6).
+   - Limits come from [Phase 07](./07-genai-creation.md#rules-goals--constraints-design-2026-11-01) (≤ 64 rules, and so on); add zone and player caps to a `GAME_LIMITS` constant.
+2. **Where it is stored:** decide and log it. Options: a `game` key in the World Y.Doc's `meta` (syncs to everyone for free; add it to the guarded keys in [`shared/world-policy.ts`](../shared/world-policy.ts) so only the creator and co-creators can write it), or a server table like `world_plans` in [`planner.ts`](../server/sync-service/src/planner.ts) with a server-written copy in the doc. The second fits Phase 09's direction (the server is the sole writer) and keeps a version history, which replays need forever.
+3. **Authority:** only the world's creator and co-creators may write the game ([`world-authority.ts`](../server/sync-service/src/world-authority.ts) and its tests). Add the new actions to [`shared/actions.ts`](../shared/actions.ts) (for example `game.set`, tier `world_creator`); its drift test will tell you if you forget.
+4. **The stage:** inside the arena box in the live world, only the creator and co-creators may place, edit or kick (Q5b). Enforce it in `world-policy.ts`.
+5. **Client:** a *Game* tab for owners (bottom sheet on phones) to pick the template and settings and to place the arena, zones and lobby by standing where they should go; translucent outlines in the world for owners (arena, zones, lobby, ring). Arrival in the lobby when a world has a game (`InteriorController` reset / `computeArrivalPose`).
+6. **Docs:** session log row here, the active-phase note in [README.md](./README.md), and [HANDOFF.md](../HANDOFF.md) if files or services change. Slice 1 collects no new data about players, so the public pages don't change yet.
+
+### Before slice 2 (matches + recording), not before slice 1
+- **The public pages must be rewritten in the same push** as recording: Privacy, Terms and [RESEARCH.md](../RESEARCH.md) (every match recorded for everyone and kept forever; the 18+ opt-in makes a player a research candidate; erasure turns a player into an anonymous stand-in). **Lawyer pass first.** Draft them early so slice 2 isn't blocked.
+- Decide how much of Phase 09's typed intents (9F) the rule step needs.
+- Load-test instances with `scripts/loadtest/bots.mjs` on a throwaway box, never prod.
+
+### Checks to run
+`npx tsc -b`, `npm run lint`, the shared tests, `npm test` in `server/sync-service`, `npm run build`; UI at 390×844, 360×740, 844×390 and 1440×900. Say plainly which checks could not be run.
+
+### Still to ask Alex (small, as they come up)
+How a link between two characters is made; what an NPC's "level" means; the grace period before an NPC takes a dropped player's slot. Offline games and Social Publication are separate future grills.
 
 ## How to continue this phase (any agent or chat)
 
@@ -299,7 +333,7 @@ Options:
 - **Rewards:** awe for finishing. No mana prizes.
 - **Games travel:** saved to the Library, versioned and credited like minds.
 
-## Proposed v1 build order (a proposal, waiting for Alex's approval; nothing is built)
+## v1 build order (approved by Alex 2026-11-23: *"let's create the handoff for the next chat to start implementing"*; nothing is built yet)
 
 Each slice ends in something Alex can try on prod. Public pages move with slice 2.
 
@@ -345,3 +379,4 @@ Each slice ends in something Alex can try on prod. Public pages move with slice 
 | 2026-11-23 | **Q8 parts 1 and 2 answered** (creators set rounds and time, default 5 to 10 min; a drop-out may return any time while the match runs, an NPC holding the slot meanwhile). The end-of-match flow is proposed, not confirmed. Asked Q9 (rewards). | Alex answers Q9 and confirms the end-of-match flow and the template list |
 | 2026-11-23 | **Q8 closed** (end-of-match flow confirmed) and **Q9 answered** (awe, no mana prizes). Q10 marked settled by Q1b/Q10a/Q10b. Asked the last three together (Q11 offline, Q12 limits, Q13 ownership and the Library) plus the template list. | Alex answers Q11–Q13 and the template list; then close the grill and propose a v1 slice |
 | 2026-11-23 | **Grill closed.** Q11 (offline games wanted, own grill), Q12 (limits) and Q13 (credit, Library, versioned like minds) answered; six templates confirmed. Wrote "The design in one page" and a proposed 7-slice v1 build order. | Alex approves or changes the build order; then slice 1 |
+| 2026-11-23 | **Build order approved; handoff written.** Alex asked for a whiteboard ([link](https://claude.ai/artifact/MLb7vRPPaCspVNUXH1mora)) and a handoff so the next chat starts implementing. Added "Start here" with slice 1's scope, file pointers and the slice 2 blockers. | Next chat: slice 1 (the game record and setup tools) |
