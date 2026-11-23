@@ -1,3 +1,4 @@
+import { useMatchStore } from '../lib/match'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { Game, GameBox, Vec3 } from '@aweborn/shared/game'
@@ -65,8 +66,10 @@ export function GameOutlines() {
   const saved = useWorldStore((s) => s.meta?.game ?? null)
   const draftWorld = useGameDraftStore((s) => s.worldId)
   const draft = useGameDraftStore((s) => s.draft)
+  // An owner playing a match sees the match's own markings (MatchWorld), not the setup outlines over them
+  const playing = useMatchStore((s) => s.playing !== null)
   const game: Game | null = draft && draftWorld === worldId ? draft : saved
-  if (!owner || !game) return null
+  if (!owner || !game || playing) return null
   return (
     <group>
       {game.arena && <BoxOutline box={game.arena} color={ARENA} fill={0.04} />}

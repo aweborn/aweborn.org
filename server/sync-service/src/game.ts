@@ -18,7 +18,7 @@
  * Pure SQL over a minimal db interface (better-sqlite3 in the service, node:sqlite in
  * tests). Every method is synchronous.
  */
-import { parseGame, sameGame, type Game } from "../../../shared/game.js";
+import { parseGame, sameGame, type Game, type GameCredit } from "../../../shared/game.js";
 import type { SqlDb } from "./build-requests.js";
 
 export type SaveGameResult =
@@ -71,11 +71,15 @@ export class WorldGames {
   /**
    * Validate and save a game as the next version. An unchanged game keeps its version.
    * The caller has already checked that `by` may write this world's game.
+   * `credits` (the Library's bring path only) replaces the game's credit chain.
    */
-  save(worldId: string, raw: unknown, by: string, now = Date.now()): SaveGameResult {
+  save(worldId: string, raw: unknown, by: string, now = Date.now(), credits?: readonly GameCredit[]): SaveGameResult {
     const p = parseGame(raw);
     if (!p.ok) return { ok: false, error: "bad_game", message: p.errors.join("; ") };
     const current = this.get(worldId);
+    // Credits are server-written: whatever a client sends is ignored and the stored chain is kept.
+    // Only bringing a game from the Library (game-library.ts) passes `credits`.
+    p.value.credits = credits ? credits.slice(-16).map((c) => ({ ...c })) : current?.credits ?? [];
     if (current && sameGame(current, p.value)) return { ok: true, game: current, changed: false, warnings: p.warnings };
     const game: Game = { ...p.value, version: this.lastVersion(worldId) + 1 };
     const json = JSON.stringify(game);

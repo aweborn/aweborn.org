@@ -76,6 +76,8 @@ interface PresenceEntry {
   z: number;
   /** "" = flying in space; otherwise the world id (interior coordinates). */
   group: string;
+  /** Where the client says it is (`inWorld`, "" = space). `group` differs only for a player in a match instance. */
+  place: string;
   /** Last update time. */
   at: number;
 }
@@ -112,6 +114,10 @@ export class RoomManager {
 
   /** Authenticated playerId (active character) per socket (from the session cookie at upgrade). */
   private playerIds = new WeakMap<WebSocket, string>();
+  /** Phase 10: every open socket of a player, so the match host can find them by id in O(1). */
+  private playerSockets = new Map<string, Set<WebSocket>>();
+  /** Phase 10: players in a match instance and its presence group `<worldId>#<matchId>` (see setPresenceGroup). */
+  private presenceGroups = new Map<string, string>();
   /** Heartbeat (M7c): when each socket's last ping was answered. */
   private lastPing = new WeakMap<WebSocket, number>();
   /** Account behind a socket, for the World Index. */
@@ -192,6 +198,9 @@ export class RoomManager {
   /** Record the authenticated player behind a socket. */
   setPlayer(ws: WebSocket, playerId: string, accountId?: string): void {
     this.playerIds.set(ws, playerId);
+    let socks = this.playerSockets.get(playerId);
+    if (!socks) this.playerSockets.set(playerId, (socks = new Set()));
+    socks.add(ws);
     this.admission.markActive(playerId);
     if (accountId) this.accountIds.set(ws, accountId);
   }
@@ -389,10 +398,20 @@ export class RoomManager {
     const room = this.worldRooms.get(worldId);
     if (!room) return;
 
-    room.clients.delete(ws);
+    const had = room.clients.delete(ws);
 
     // Update player count
     updatePlayerCount(this.universeDoc, worldId, room.clients.size);
+
+    // Phase 10: the match host hears when a player's last screen leaves a world (lobby pool, links, watching)
+    const leaver = had ? this.playerIds.get(ws) : undefined;
+    if (leaver && this.onLeftWorld && !this.playerOnline(worldId, leaver)) {
+      try {
+        this.onLeftWorld(worldId, leaver);
+      } catch (err) {
+        console.error("[rooms] onLeftWorld failed:", err);
+      }
+    }
 
     if (room.clients.size === 0) {
       // Last player left — flush and unload
@@ -632,6 +651,17 @@ export class RoomManager {
           if (pid) this.sendSteer(this.steering.active(ws, pid));
           break;
         }
+        case "match": {
+          // Phase 10: lobby and match intents, handled by the match host (matches.ts)
+          const playerId = this.playerIds.get(ws);
+          if (!message.worldId || !playerId || message.data.length > 2048 || !this.onMatchIntent) break;
+          try {
+            this.onMatchIntent(ws, message.worldId, playerId, JSON.parse(new TextDecoder().decode(message.data)));
+          } catch {
+            // not JSON: ignored
+          }
+          break;
+        }
         case "mesh-signal": {
           this.relayMeshSignal(ws, message.data);
           break;
@@ -657,6 +687,12 @@ export class RoomManager {
       if (room.clients.has(ws)) {
         this.leaveWorld(ws, worldId);
       }
+    }
+    const pid = this.playerIds.get(ws);
+    const socks = pid ? this.playerSockets.get(pid) : undefined;
+    if (pid && socks) {
+      socks.delete(ws);
+      if (socks.size === 0) this.playerSockets.delete(pid);
     }
   }
 
@@ -763,6 +799,99 @@ export class RoomManager {
   /** Replace the world's co-creators (already cleaned; creator-only, checked by the caller). */
   setWorldCoCreators(worldId: string, coCreators: string[]): boolean {
     return this.setWorldPolicyKey(worldId, "coCreators", coCreators);
+  }
+
+  /** Phase 10: a client's lobby / match intent (set by the match host). */
+  onMatchIntent: ((ws: WebSocket, worldId: string, playerId: string, intent: unknown) => void) | null = null;
+
+  /** Phase 10: send one lobby / match message to a client. */
+  sendMatch(ws: WebSocket, worldId: string, msg: unknown): void {
+    if (ws.readyState === 1) ws.send(this.encodeMessage("match", new TextEncoder().encode(JSON.stringify(msg)), worldId));
+  }
+
+  /** Phase 10: a player's last connection in a world closed or left it (set by the match host). */
+  onLeftWorld: ((worldId: string, playerId: string) => void) | null = null;
+
+  /** The presence group for a player who says they are in `place`: their match instance while they stand in its world. */
+  private groupFor(playerId: string | undefined, place: string): string {
+    const override = playerId ? this.presenceGroups.get(playerId) : undefined;
+    return override && place && override.startsWith(place + "#") ? override : place;
+  }
+
+  /**
+   * Phase 10: put a player in a match instance (`<worldId>#<matchId>`), or back in the
+   * world (null). An instance is a partition of presence: its players see each other and
+   * nobody else, at the arena's real coordinates. Applies at once to what they last sent.
+   */
+  setPresenceGroup(playerId: string, group: string | null): void {
+    if (group === null) this.presenceGroups.delete(playerId);
+    else this.presenceGroups.set(playerId, group);
+    for (const ws of this.playerSockets.get(playerId) ?? []) {
+      const e = this.presence.get(ws);
+      if (e) e.group = this.groupFor(playerId, e.place);
+    }
+  }
+
+  /** Phase 10: does this player have an open connection in the world's room? */
+  playerOnline(worldId: string, playerId: string): boolean {
+    const room = this.worldRooms.get(worldId);
+    if (!room) return false;
+    for (const ws of this.playerSockets.get(playerId) ?? []) if (ws.readyState === 1 && room.clients.has(ws)) return true;
+    return false;
+  }
+
+  /** Phase 10: where a player stands in a world (their latest presence there, in a match instance or not), or null. */
+  playerPosition(worldId: string, playerId: string): { x: number; y: number; z: number } | null {
+    let best: PresenceEntry | null = null;
+    for (const ws of this.playerSockets.get(playerId) ?? []) {
+      const e = this.presence.get(ws);
+      if (e && e.place === worldId && (!best || e.at > best.at)) best = e;
+    }
+    return best ? { x: best.x, y: best.y, z: best.z } : null;
+  }
+
+  /** Phase 10: send one lobby / match message to every screen a player has in a world. */
+  sendMatchTo(playerId: string, worldId: string, msg: unknown): void {
+    const room = this.worldRooms.get(worldId);
+    const socks = this.playerSockets.get(playerId);
+    if (!room || !socks) return;
+    let data: Uint8Array | null = null;
+    for (const ws of socks) {
+      if (ws.readyState !== 1 || !room.clients.has(ws)) continue;
+      data ??= this.encodeMessage("match", new TextEncoder().encode(JSON.stringify(msg)), worldId);
+      ws.send(data);
+    }
+  }
+
+  /** Phase 10 (game Library): place plain objects in a world as the server. Each needs an `id`; existing ids are left alone. */
+  placeWorldObjects(worldId: string, objects: Record<string, unknown>[]): number {
+    if (worldId === ORIGIN_WORLD_ID || objects.length === 0) return 0;
+    return this.withWorldDoc(worldId, (doc) => {
+      const map = doc.getMap("objects");
+      let n = 0;
+      for (const o of objects) {
+        if (typeof o.id !== "string" || map.has(o.id)) continue;
+        const m = new Y.Map<unknown>();
+        for (const [k, v] of Object.entries(o)) m.set(k, v);
+        map.set(o.id, m);
+        n++;
+      }
+      return n;
+    }) ?? 0;
+  }
+
+  /** Phase 10 (game Library): remove the objects an earlier bring placed (marked `gameProp`). Returns how many. */
+  clearGameProps(worldId: string): number {
+    if (worldId === ORIGIN_WORLD_ID) return 0;
+    return this.withWorldDoc(worldId, (doc) => {
+      const map = doc.getMap("objects");
+      const gone: string[] = [];
+      map.forEach((v, id) => {
+        if (v instanceof Y.Map && typeof v.get("gameProp") === "string") gone.push(id);
+      });
+      for (const id of gone) map.delete(id);
+      return gone.length;
+    }) ?? 0;
   }
 
   /**
@@ -1169,10 +1298,12 @@ export class RoomManager {
     if (!p || typeof p !== "object" || Array.isArray(p)) return;
     const x = Number(p.position?.x), y = Number(p.position?.y), z = Number(p.position?.z);
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-    const group = typeof p.inWorld === "string" ? p.inWorld : "";
-    this.presence.set(sender, { json, x, y, z, group, at: Date.now() });
+    const place = typeof p.inWorld === "string" ? p.inWorld : "";
+    // A player in a match is in its instance, whatever the client says (Phase 10): one map lookup
+    const group = this.groupFor(this.playerIds.get(sender), place);
+    this.presence.set(sender, { json, x, y, z, group, place, at: Date.now() });
     // Same world + same network → introduce for a direct mesh link (A2); O(1) when nothing changed
-    this.sendIntros(this.meshIntro.place(sender, this.ips.get(sender) ?? null, group || null));
+    this.sendIntros(this.meshIntro.place(sender, this.ips.get(sender) ?? null, place || null));
   }
 
   /**
@@ -1334,6 +1465,7 @@ export class RoomManager {
   //   0x10 = sim-resume       (client → server: back online; the offline flight log follows, 9C)
   //   0x11 = steer            (server → client: 1 byte, 1 = this screen steers, 0 = another screen of the player does;
   //                            client → server: empty, "Play here", M9)
+  //   0x13 = match            (JSON both ways, Phase 10: a world's lobby and matches; shared/match-protocol.ts)
   //   0x12 = mesh-signal      (JSON both ways, Network-less A2: server → client { t: "intro", peer } and
   //                            { t: "sdp", from, kind, sdp }; client → server { t: "sdp", to, kind, sdp })
 
@@ -1356,6 +1488,7 @@ export class RoomManager {
     "sim-resume": 0x10,
     "steer": 0x11,
     "mesh-signal": 0x12,
+    "match": 0x13,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

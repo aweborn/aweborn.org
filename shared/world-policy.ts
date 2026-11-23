@@ -47,7 +47,7 @@ export const SERVER_ONLY_META_KEYS: ReadonlySet<string> = new Set(["creator", "c
  * Phase 07 Life & minds) is compiled and safety-checked server-side, so a client may
  * neither set, change nor copy it (deleting the whole object is still fine).
  */
-export const SERVER_ONLY_OBJECT_KEYS: ReadonlySet<string> = new Set(["mind"]);
+export const SERVER_ONLY_OBJECT_KEYS: ReadonlySet<string> = new Set(["mind", "gameProp"]);
 
 /**
  * Media objects (a picture, a sounding orb, a lore sign) keep what they were made from:

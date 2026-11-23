@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { parseGame, type Game } from '@aweborn/shared/game'
+import { parseGame, type Game, type GameCredit, type GameTemplate, type Vec3 } from '@aweborn/shared/game'
 import { AUTH_URL } from './player'
 
 /**
@@ -53,4 +53,58 @@ export async function saveGame(worldId: string, game: Game | null): Promise<Resu
   const data = (await res.json().catch(() => ({}))) as SaveGameReply & { message?: string }
   if (!res.ok) return { ok: false, message: data.message ?? 'That didn’t save. Please try again.' }
   return { ok: true, data }
+}
+
+// ── The Library (slice 7): games travel between worlds, versioned and credited ──
+
+/** A game saved to the Library, as the list shows it. */
+export interface LibraryGame {
+  id: string
+  name: string
+  version: number
+  template: GameTemplate
+  /** Who saved it (playerId) and the name to show. */
+  by: string
+  byName: string
+  credits: GameCredit[]
+  updatedAt: number
+  mine: boolean
+}
+
+export const LIBRARY_NAME = { min: 3, max: 40 } as const
+
+async function call<T>(path: string, body?: unknown, failed = 'That didn’t work. Please try again.'): Promise<Result<T>> {
+  const res = await fetch(`${AUTH_URL}${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    credentials: 'include',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  }).catch(() => null)
+  if (!res) return { ok: false, message: 'You seem to be offline. Try again when you’re connected.' }
+  const data = (await res.json().catch(() => ({}))) as T & { message?: string }
+  if (!res.ok) return { ok: false, message: typeof data.message === 'string' && data.message ? data.message : failed }
+  return { ok: true, data }
+}
+
+/** Library games: mine first, then recent ones by others. */
+export async function listLibraryGames(): Promise<Result<LibraryGame[]>> {
+  const r = await call<{ games?: unknown }>('/api/player/game-library', undefined, 'The Library didn’t load. Please try again.')
+  if (!r.ok) return r
+  return { ok: true, data: Array.isArray(r.data.games) ? (r.data.games as LibraryGame[]).filter((g) => g && typeof g.id === 'string' && typeof g.name === 'string') : [] }
+}
+
+/** Save this world's saved game to the Library (again from the same world = its next version). */
+export async function saveGameToLibrary(worldId: string, name: string): Promise<Result<LibraryGame>> {
+  const r = await call<{ game?: LibraryGame }>('/api/player/game-library', { worldId, name }, 'That didn’t save to the Library. Please try again.')
+  if (!r.ok) return r
+  if (!r.data.game) return { ok: false, message: 'That didn’t save to the Library. Please try again.' }
+  return { ok: true, data: r.data.game }
+}
+
+/** Make a Library game this world's game, its arena's floor middle at `at`. Returns the saved game. */
+export async function bringLibraryGame(worldId: string, libraryId: string, at: Vec3): Promise<Result<Game>> {
+  const r = await call<{ game?: unknown }>('/api/player/game-library/bring', { worldId, libraryId, at }, 'That game didn’t come over. Please try again.')
+  if (!r.ok) return r
+  const p = parseGame(r.data.game)
+  if (!p.ok) return { ok: false, message: 'That game didn’t come over. Please try again.' }
+  return { ok: true, data: p.value }
 }

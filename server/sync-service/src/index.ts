@@ -10,9 +10,16 @@ import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-
 import { cleanCoCreators, isWorldOwnerId, planBuilderChange, type BuilderChange } from "../../../shared/world-policy.js";
 import { BuildRequests, type SqlDb } from "./build-requests.js";
 import { WorldGames } from "./game.js";
+import { MatchStore } from "./match-store.js";
+import { MatchHost } from "./matches.js";
+import { GameLibrary, saveLibraryGame, bringLibraryGame, type LibraryRouteDeps } from "./game-library.js";
+import { tryResearchId } from "./research.js";
+import { MATCH_TICK_MS } from "../../../shared/match.js";
+import { AWE_MATCH_DAILY_MAX, GAME_HOST_SENDER, type MatchMessage } from "../../../shared/match-protocol.js";
+import { wandererTag } from "../../../shared/names.js";
 import type { BuildRequestView, MyBuildRequest } from "../../../shared/build-requests.js";
 import { cleanPlayerName } from "../../../shared/names.js";
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, randomInt } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
 import { MindHost, startAnimate, createMind, mindHistory, saveMind, adoptMind, removeSavedMind, mindShelf, handleMindLibrary } from "./minds.js";
@@ -20,7 +27,7 @@ import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, 
 import { sweepUnrated } from "./output-gate.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
-import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
+import { parseWorldRequest, worldsLeftToday, cleanWorldName, WORLDS_PER_DAY } from "./world-create.js";
 import { listMutes, setMute, fileReport, handleReportsAdmin, isPlayerId } from "./moderation.js";
 import { CLIENT_SKILLS, type Skill } from "../../../shared/progress.js";
 import type { ProgressDelta } from "./progress.js";
@@ -75,6 +82,46 @@ const buildRequests = new BuildRequests(getDb() as unknown as SqlDb);
 // The game layer (Phase 10, slice 1): one game per world, every version kept (game.ts).
 const worldGames = new WorldGames(getDb() as unknown as SqlDb);
 rooms.worldGame = (worldId) => worldGames.get(worldId);
+// Matches (Phase 10, slices 2 to 6): every match is recorded (match-store.ts) and run by the match host (matches.ts).
+const nameOfPlayer = (playerId: string): string => characterNames([playerId])[playerId] ?? wandererTag(playerId);
+const matchStore = new MatchStore(getDb() as unknown as SqlDb, (worldId) => rooms.lookupWorld(worldId)?.name ?? "");
+const matchHost = new MatchHost({
+  game: (worldId) => worldGames.get(worldId),
+  isOwner: (worldId, playerId) => rooms.isWorldOwner(worldId, playerId, accountOfCharacter(playerId)),
+  position: (worldId, playerId) => rooms.playerPosition(worldId, playerId),
+  online: (worldId, playerId) => rooms.playerOnline(worldId, playerId),
+  send: (playerId, worldId, msg: MatchMessage) => rooms.sendMatchTo(playerId, worldId, msg),
+  setGroup: (playerId, group) => rooms.setPresenceGroup(playerId, group),
+  name: nameOfPlayer,
+  researchId: (playerId) => tryResearchId(playerId),
+  awe: (playerId, amount, matchId) => rooms.progress.match(playerId, amount, matchId, AWE_MATCH_DAILY_MAX).xp,
+  chat: (worldId, line) => { rooms.pushWorldChat(worldId, { sender: GAME_HOST_SENDER, text: line }); },
+  store: matchStore,
+  now: Date.now,
+  seed: () => randomInt(0x100000000),
+});
+rooms.onMatchIntent = (_ws, worldId, playerId, intent) => matchHost.intent(worldId, playerId, intent);
+rooms.onLeftWorld = (worldId, playerId) => matchHost.left(worldId, playerId);
+setInterval(() => matchHost.tick(), MATCH_TICK_MS);
+// The game Library (Phase 10, slice 7): games travel between worlds, versioned and credited (game-library.ts).
+const gameLibrary = new GameLibrary(getDb() as unknown as SqlDb);
+const libraryDeps = (accountId: string): LibraryRouteDeps => ({
+  lib: gameLibrary,
+  isOwner: (worldId, playerId) => rooms.isWorldOwner(worldId, playerId, accountId),
+  game: (worldId) => worldGames.get(worldId),
+  objects: (worldId) => rooms.readWorldState(worldId)?.objects ?? [],
+  cleanName: cleanWorldName,
+  saveGame: (worldId, game, by, credits) => {
+    const r = worldGames.save(worldId, game, by, Date.now(), credits);
+    if (!r.ok) return { ok: false, message: r.message };
+    rooms.setWorldGame(worldId, r.game);
+    matchHost.gameChanged(worldId);
+    return { ok: true, game: r.game, warnings: r.warnings };
+  },
+  placeObjects: (worldId, objects) => { rooms.placeWorldObjects(worldId, objects); },
+  clearProps: (worldId) => rooms.clearGameProps(worldId),
+  name: nameOfPlayer,
+});
 setInterval(() => {
   try {
     const n = buildRequests.sweep();
@@ -191,6 +238,12 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
  *   POST /api/player/world/claim  { worldId, token } → admin: this character becomes creator of an Aweborn world
  *   POST /api/player/world/builders  { worldId, add | remove } → { worldId, coCreators }
  *        Creator + builders add; only the creator removes; anyone steps down (shared/world-policy.ts).
+ *   GET  /api/match/world?worldId=  → { matches }   a world's finished matches (Phase 10; any session)
+ *   GET  /api/match/record?id=      → { record }    one match record, running or finished (any session)
+ *   GET  /api/player/replays        → { matches }   the matches this account's characters played
+ *   GET  /api/player/game-library   → { games }     the game Library (mine first)
+ *   POST /api/player/game-library        { worldId, name }            → { game }   owners save this world's game
+ *   POST /api/player/game-library/bring  { worldId, libraryId, at }   → { game }   owners bring a Library game here
  *   POST /api/player/world/game  { worldId, game | null } → { worldId, game, changed, warnings }
  *        The world's game (Phase 10): creator + builders only. Validated and repaired
  *        (shared/game.ts parseGame), saved as the next version, copied to the world's
@@ -613,14 +666,50 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (body.game === null) {
       const changed = worldGames.remove(worldId);
       rooms.setWorldGame(worldId, null);
+      matchHost.gameChanged(worldId);
       if (changed) console.log(`[game] ${worldId} removed by ${session.playerId}`);
       return json(200, { worldId, game: null, changed, warnings: [] });
     }
     const r = worldGames.save(worldId, body.game, session.playerId);
     if (!r.ok) return json(400, r);
     rooms.setWorldGame(worldId, r.game);
+    if (r.changed) matchHost.gameChanged(worldId);
     if (r.changed) console.log(`[game] ${worldId} v${r.game.version} (${r.game.template}) by ${session.playerId}`);
     return json(200, { worldId, game: r.game, changed: r.changed, warnings: r.warnings });
+  }
+  // Matches (Phase 10): a world's finished matches, a character's replays, one record (any session: a replay is watchable by id)
+  if (path === "/api/match/world" && req.method === "GET") {
+    const worldId = knownWorld(new URL(req.url ?? "/", "http://x").searchParams.get("worldId"));
+    if (!worldId) return json(400, { error: "bad_request", message: "That world isn't there." });
+    return json(200, { matches: matchStore.worldRecent(worldId, 30) });
+  }
+  if (path === "/api/player/replays" && req.method === "GET") {
+    const mine = [...new Set([session.playerId, ...listCharacters(accountId).map((c) => c.id)])];
+    return json(200, { matches: matchStore.playerRecent(mine, 50) });
+  }
+  if (path === "/api/match/record" && req.method === "GET") {
+    const id = new URL(req.url ?? "/", "http://x").searchParams.get("id") ?? "";
+    // A running match answers with the record so far (result null): watchers read the roster from it
+    const record = /^[0-9a-f-]{36}$/.test(id) ? matchHost.record(id) : null;
+    return record ? json(200, { record }) : json(404, { error: "not_found", message: "That match isn't on record." });
+  }
+  // The game Library (Phase 10, slice 7): browse, save this world's game, bring one here
+  if (path === "/api/player/game-library" && req.method === "GET") {
+    const mine = [...new Set([session.playerId, ...listCharacters(accountId).map((c) => c.id)])];
+    return json(200, { games: gameLibrary.list(mine, (ids) => ({ ...Object.fromEntries(ids.map((id) => [id, wandererTag(id)])), ...characterNames(ids) })) });
+  }
+  if ((path === "/api/player/game-library" || path === "/api/player/game-library/bring") && req.method === "POST") {
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player to use the game Library." });
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; name?: unknown; libraryId?: unknown; at?: unknown } | null;
+    const known = knownWorld(body?.worldId);
+    const worldId = known === ORIGIN_WORLD_ID ? null : known;
+    if (!takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
+    const mine = [...new Set([session.playerId, ...listCharacters(accountId).map((c) => c.id)])];
+    const r = path.endsWith("/bring")
+      ? bringLibraryGame(libraryDeps(accountId), { playerId: session.playerId }, worldId, body?.libraryId, body?.at)
+      : saveLibraryGame(libraryDeps(accountId), { playerId: session.playerId, mine }, worldId, body?.name);
+    if (r.status === 200) console.log(`[game-library] ${path.endsWith("/bring") ? "brought to" : "saved from"} ${worldId} by ${session.playerId}`);
+    return json(r.status, r.body);
   }
   // Asking to build (2026-11-07): waits in the creator's and builders' inboxes until one answers
   if (path === "/api/player/build-requests" && req.method === "GET") return json(200, { requests: buildInbox(accountId) });
@@ -1030,7 +1119,7 @@ const server = createServer((req, res) => {
     if (!Number.isFinite(from) || !Number.isFinite(to)) return send(400, { error: "bad_range" });
     return send(200, { player, from, to, points: rooms.telemetry.path(player, from, to) });
   }
-  if (req.url?.startsWith("/api/player/")) {
+  if (req.url?.startsWith("/api/player/") || req.url?.startsWith("/api/match/")) {
     const origin = req.headers.origin;
     if (isTrustedOrigin(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);

@@ -1,0 +1,126 @@
+/* Watching matches and replays (Phase 10): the 👁 chip, its sheet, the strip, name tags. */
+
+/* ── The chip (in .match-bar, next to the lobby chip) ── */
+.watch-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px; min-width: 44px; padding: 0 14px;
+  font: 600 14px/1 var(--font-body); color: var(--color-text-primary);
+  background: rgba(14, 12, 34, 0.72); border: 1px solid rgba(159, 232, 255, 0.3); border-radius: var(--radius-full);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  cursor: pointer; touch-action: manipulation;
+}
+.watch-chip.is-on { background: rgba(60, 130, 160, 0.5); border-color: rgba(159, 232, 255, 0.75); }
+.watch-chip:focus-visible, .watch-btn:focus-visible, .watch-row:focus-visible, .watch-tab:focus-visible, .watch-event:focus-visible { outline: 2px solid rgba(159, 232, 255, 0.9); outline-offset: 2px; }
+.watch-chip-count { font-variant-numeric: tabular-nums; }
+
+/* ── The sheet (the frame is .planner: a side panel on desktop, a sheet above the sticks on a phone) ── */
+.watch-sheet { z-index: 42; border-color: rgba(159, 232, 255, 0.28); }
+.watch-close { background: none; border: none; color: var(--color-text-secondary); font-size: 16px; cursor: pointer; min-width: 44px; min-height: 44px; }
+.watch-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 14px; background: rgba(0, 0, 0, 0.35); }
+.watch-tab {
+  flex: 1; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font: 600 14px/1 var(--font-body); color: var(--color-text-secondary);
+  background: none; border: none; border-radius: 11px; cursor: pointer; touch-action: manipulation;
+}
+.watch-tab.is-on { background: rgba(159, 232, 255, 0.16); color: #d8f5ff; box-shadow: 0 0 0 1px rgba(159, 232, 255, 0.35); }
+.watch-tab-count { min-width: 18px; padding: 2px 5px; border-radius: 999px; background: rgba(159, 232, 255, 0.25); font-size: 11px; }
+.watch-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; }
+.watch-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.watch-row {
+  width: 100%; min-height: 60px; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 9px 12px; text-align: left;
+  font: inherit; color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); border-radius: 12px; cursor: pointer; touch-action: manipulation;
+}
+.watch-row:disabled { opacity: 0.6; cursor: default; }
+.watch-row.is-on { background: rgba(159, 232, 255, 0.12); border-color: rgba(159, 232, 255, 0.55); }
+.watch-row-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.watch-row-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-row-play { color: #9fe8ff; font-size: 13px; }
+.watch-row-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: var(--color-text-secondary); }
+.watch-row-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.watch-row-on { color: #9fe8ff; }
+.watch-empty { margin: 8px 2px; font-size: 14px; line-height: 1.5; color: var(--color-text-secondary); }
+.watch-error { margin: 0; padding: 8px 10px; font-size: 13px; color: #ffc2bc; background: rgba(255, 120, 110, 0.14); border-radius: 10px; }
+
+/* ── Scores in team colours ── */
+.watch-scores { display: inline-flex; align-items: baseline; font: 700 18px/1 var(--font-display); font-variant-numeric: tabular-nums; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); white-space: nowrap; }
+.watch-score-sep { margin: 0 5px; color: var(--color-text-tertiary); font-weight: 400; }
+.watch-score.is-winner { text-decoration: underline; text-underline-offset: 4px; }
+
+/* ── Buttons ── */
+.watch-btn {
+  min-height: 36px; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font: 600 13px/1 var(--font-body); color: var(--color-text-primary); white-space: nowrap;
+  background: rgba(255, 255, 255, 0.09); border: 1px solid var(--glass-border); border-radius: 11px; cursor: pointer; touch-action: manipulation;
+}
+.watch-btn.is-on { border-color: rgba(159, 232, 255, 0.7); color: #d8f5ff; }
+.watch-btn--primary { background: rgba(159, 232, 255, 0.2); border-color: rgba(159, 232, 255, 0.5); color: #d8f5ff; }
+.watch-btn--wide { width: 100%; min-height: 44px; }
+html.touch-ui .watch-btn { min-height: 44px; min-width: 44px; }
+
+/* ── The strip: under the chip row, never over the sticks ── */
+.watch-strip {
+  position: fixed; z-index: 38;
+  top: calc(116px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+  width: min(440px, calc(100vw - 24px)); max-height: calc(100dvh - 420px - env(safe-area-inset-top, 0px)); overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  font-family: var(--font-body); color: var(--color-text-primary);
+  background: linear-gradient(160deg, rgba(16, 26, 48, 0.8), rgba(10, 12, 30, 0.84));
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(159, 232, 255, 0.28); border-radius: 16px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+}
+.watch-line { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.watch-line-meta { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 12px; font-size: 13px; color: var(--color-text-secondary); }
+.watch-clock { color: var(--color-text-primary); font-variant-numeric: tabular-nums; font-weight: 600; }
+.watch-result { flex: 1; font-size: 15px; font-weight: 600; }
+.watch-badge { padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #0b1620; background: #9fe8ff; }
+.watch-x { padding: 0; min-width: 36px; }
+.watch-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.watch-actions > .watch-btn { flex: 1; }
+.watch-note { margin: 0; font-size: 12px; line-height: 1.4; color: var(--color-text-secondary); }
+
+/* Replay controls */
+.watch-scrub { display: flex; align-items: center; gap: 8px; }
+.watch-play { min-width: 44px; padding: 0; font-size: 13px; }
+.watch-speed { min-width: 44px; padding: 0; font-variant-numeric: tabular-nums; }
+.watch-bar { position: relative; flex: 1; min-width: 0; height: 36px; display: flex; align-items: center; }
+html.touch-ui .watch-bar { height: 44px; }
+.watch-range { position: relative; width: 100%; height: 100%; margin: 0; background: transparent; accent-color: #9fe8ff; cursor: pointer; touch-action: none; }
+.watch-marks { position: absolute; left: 8px; right: 8px; top: 3px; height: 8px; pointer-events: none; }
+.watch-mark { position: absolute; top: 0; width: 3px; height: 8px; margin-left: -1.5px; border-radius: 2px; background: rgba(238, 240, 246, 0.75); }
+.watch-time { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--color-text-primary); white-space: nowrap; }
+.watch-time > span { color: var(--color-text-tertiary); }
+.watch-events { list-style: none; margin: 0; padding: 0 0 2px; display: flex; gap: 6px; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.watch-events::-webkit-scrollbar { display: none; }
+.watch-event {
+  min-height: 34px; padding: 0 10px; white-space: nowrap;
+  font: 500 12px/1 var(--font-body); color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.07); border: 1px solid var(--glass-border); border-radius: 999px; cursor: pointer; touch-action: manipulation;
+}
+html.touch-ui .watch-event { min-height: 44px; font-size: 13px; }
+.watch-event.is-past { color: var(--color-text-secondary); }
+.watch-event-time { font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+/* Sized so the whole strip ends above the sticks and action buttons on a short phone */
+.watch-map { flex: none; width: 100%; height: clamp(90px, calc(100dvh - 640px), 200px); border-radius: 10px; background: rgba(0, 0, 0, 0.35); }
+
+/* Ghost camera: only what the flight needs */
+.watch-strip.is-ghost { gap: 6px; padding: 8px 10px; }
+
+/* A phone's sheet covers the strip's place while it is open */
+html.touch-ui .watch-under-sheet { display: none; }
+
+/* Landscape phone: short, so the strip goes to the top corner and stays low */
+@media (orientation: landscape) and (max-height: 500px) {
+  .watch-strip { top: calc(60px + env(safe-area-inset-top, 0px)); width: min(380px, calc(100vw - 24px)); max-height: calc(100dvh - 146px - env(safe-area-inset-bottom, 0px)); padding: 8px 10px; gap: 6px; }
+  .watch-map { height: 84px; }
+  .watch-note { display: none; }
+}
+
+/* Name tags over watched players and NPCs */
+.watch-tag { display: inline-flex; align-items: center; gap: 5px; border-width: 1px; border-style: solid; }
+.watch-ai { padding: 1px 5px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; color: #0b1620; background: #ffe08a; }
+
+@media (prefers-reduced-motion: reduce) {
+  .watch-sheet { animation: none; }
+}

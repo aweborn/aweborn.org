@@ -18,7 +18,7 @@
 import type { PhysicsParams } from '@aweborn/shared/crdt-schema'
 import {
   stepInterior, spawnInterior, INTERIOR_DT,
-  type Box, type InteriorInput, type InteriorState,
+  type Box, type InteriorInput, type InteriorMods, type InteriorState,
 } from '@aweborn/shared/sim/interior'
 import { inputManager } from './InputManager'
 
@@ -39,6 +39,12 @@ class InteriorController {
    * arrival is claimed: a world with a game puts new arrivals in its lobby (Phase 10).
    */
   freshArrival = false
+  /** Changes to the step while a match is being played (its traits, a walled arena): set and cleared by lib/matchPlay. */
+  mods: InteriorMods | null = null
+  /** Stand still (turning and looking still work): a match's countdown and the break between rounds. */
+  hold = false
+  /** The camera should jump to the player on the next frame instead of gliding (set by arriveAt; Scene clears it). */
+  camSnap = false
 
   /** The next reset() puts the player here instead of at the spawn point (returning to a saved spot). */
   restoreOnNextReset(at: Partial<InteriorState>): void {
@@ -65,11 +71,12 @@ class InteriorController {
 
   /**
    * Put the player at a point, facing `face` (x/z) when given: arriving in a game's
-   * lobby. A small scatter keeps a crowd from landing on one spot.
+   * lobby. A small scatter keeps a crowd from landing on one spot (`scatter` metres
+   * across; 0 when whoever sent the point already spread people out).
    */
-  arriveAt(at: { x: number; y: number; z: number }, face?: { x: number; z: number }): void {
-    const x = at.x + (Math.random() - 0.5) * 2
-    const z = at.z + (Math.random() - 0.5) * 2
+  arriveAt(at: { x: number; y: number; z: number }, face?: { x: number; z: number }, scatter = 2): void {
+    const x = at.x + (Math.random() - 0.5) * scatter
+    const z = at.z + (Math.random() - 0.5) * scatter
     let fx = this.state.fx
     let fz = this.state.fz
     if (face) {
@@ -81,6 +88,7 @@ class InteriorController {
     this.state = { ...this.state, x, y: at.y, z, vx: 0, vy: 0, vz: 0, fx, fz, pitch: 0, grounded: true }
     this.prev = this.state
     this._acc = 0
+    this.camSnap = true
   }
 
   /**
@@ -106,14 +114,15 @@ class InteriorController {
   readInput(): InteriorInput {
     const a = inputManager.getActions()
     const b = (v: boolean) => (v ? 1 : 0)
+    const go = this.hold ? 0 : 1
     // Action names come from the flight map: A=rollRight, D=pitchDown,
     // Q=yawLeft, E=pitchUp, R=yawRight, F=rollLeft
     return {
-      move: Math.max(-1, Math.min(1, b(a.thrust) - b(a.reverse) + inputManager.getAxis('moveY'))),
-      strafe: Math.max(-1, Math.min(1, b(a.pitchDown) - b(a.rollRight) + inputManager.getAxis('moveX'))),
+      move: go * Math.max(-1, Math.min(1, b(a.thrust) - b(a.reverse) + inputManager.getAxis('moveY'))),
+      strafe: go * Math.max(-1, Math.min(1, b(a.pitchDown) - b(a.rollRight) + inputManager.getAxis('moveX'))),
       turn: Math.max(-1, Math.min(1, b(a.pitchUp) - b(a.yawLeft) + inputManager.getAxis('yaw') + inputManager.getAxis('lookYaw'))),
       look: Math.max(-1, Math.min(1, b(a.yawRight) - b(a.rollLeft) + inputManager.getAxis('pitch') + inputManager.getAxis('lookPitch'))),
-      jump: a.brake,
+      jump: a.brake && !this.hold,
       sprint: a.warp,
     }
   }
@@ -128,7 +137,7 @@ class InteriorController {
     let n = 0
     while (this._acc >= INTERIOR_DT && n < MAX_SUBSTEPS) {
       this.prev = this.state
-      this.state = stepInterior(this.state, input, physics, boxes, INTERIOR_DT, halfExtent)
+      this.state = stepInterior(this.state, input, physics, boxes, INTERIOR_DT, halfExtent, this.mods ?? undefined)
       this._acc -= INTERIOR_DT
       n++
     }

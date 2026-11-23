@@ -122,6 +122,23 @@ function overlaps(x: number, y: number, z: number, b: Box): boolean {
   );
 }
 
+/**
+ * Optional changes to one step, as plain data (Phase 10: a match's traits and its
+ * walled arena). Absent or empty = the step is exactly what it always was, so
+ * recorded inputs replay the same; a step with modifiers is just as deterministic
+ * (the same modifiers must be passed when replaying it).
+ */
+export interface InteriorMods {
+  /** Walk and sprint speed × this. */
+  speedMul?: number;
+  /** The world's gravity × this. */
+  gravityMul?: number;
+  /** false = no jetpack (jumping still works). */
+  fly?: boolean;
+  /** A box the player can't leave (feet stay on or above minY, head under maxY). */
+  wall?: { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
+}
+
 /** Advance one fixed step. Pure: returns a new state. */
 export function stepInterior(
   s: InteriorState,
@@ -130,6 +147,7 @@ export function stepInterior(
   boxes: readonly Box[],
   dt: number = INTERIOR_DT,
   halfExtent: number = INTERIOR_HALF_EXTENT,
+  mods?: InteriorMods,
 ): InteriorState {
   const move = clamp(input.move, -1, 1);
   const strafe = clamp(input.strafe, -1, 1);
@@ -155,7 +173,7 @@ export function stepInterior(
     dx /= dl;
     dz /= dl;
   }
-  const speed = input.sprint ? SPRINT_SPEED : WALK_SPEED;
+  const speed = (input.sprint ? SPRINT_SPEED : WALK_SPEED) * (mods?.speedMul ?? 1);
   const tx = dx * speed;
   const tz = dz * speed;
 
@@ -170,7 +188,7 @@ export function stepInterior(
   let vy = s.vy;
 
   // ── Gravity (full vector; the floor is still y = 0) ──
-  const gScale = inWater ? WATER_GRAVITY_SCALE : 1;
+  const gScale = (inWater ? WATER_GRAVITY_SCALE : 1) * (mods?.gravityMul ?? 1);
   vx += physics.gravityX * gScale * dt;
   vy += physics.gravityY * gScale * dt;
   vz += physics.gravityZ * gScale * dt;
@@ -182,7 +200,7 @@ export function stepInterior(
       vy = Math.max(vy, SWIM_SPEED);
     } else if (s.grounded) {
       vy = JUMP_SPEED;
-    } else if (fuel > 0) {
+    } else if (fuel > 0 && mods?.fly !== false) {
       vy += JET_ACCEL * dt;
       fuel = Math.max(0, fuel - dt);
     }
@@ -243,6 +261,19 @@ export function stepInterior(
     grounded = true;
   }
   if (grounded) fuel = JET_FUEL;
+
+  // ── A walled arena: stay inside its box ──
+  const w = mods?.wall;
+  if (w) {
+    const loX = w.minX + PLAYER_RADIUS, hiX = w.maxX - PLAYER_RADIUS;
+    const loZ = w.minZ + PLAYER_RADIUS, hiZ = w.maxZ - PLAYER_RADIUS;
+    if (x < loX) { x = Math.min(loX, hiX); if (vx < 0) vx = 0; } else if (x > hiX) { x = Math.max(loX, hiX); if (vx > 0) vx = 0; }
+    if (z < loZ) { z = Math.min(loZ, hiZ); if (vz < 0) vz = 0; } else if (z > hiZ) { z = Math.max(loZ, hiZ); if (vz > 0) vz = 0; }
+    const top = Math.max(w.minY, w.maxY - PLAYER_HEIGHT);
+    if (y > top) { y = top; if (vy > 0) vy = 0; }
+    // Below the arena's floor (it sits above the ground): stand on its floor
+    if (y < w.minY) { y = w.minY; if (vy < 0) vy = 0; grounded = true; fuel = JET_FUEL; }
+  }
 
   return { x, y, z, vx, vy, vz, fx, fz, pitch, grounded, fuel };
 }

@@ -166,6 +166,20 @@ export class Progress {
   }
 
   /**
+   * A match finished (Phase 10, Q11: awe for finishing, never for winning). Granted once
+   * per match (`matchId` is the ref) and capped per rolling day, so matches can't be farmed.
+   */
+  match(characterId: string, amount: number, matchId: string, dailyMax: number): ProgressDelta {
+    return this.mutate(characterId, (r) => {
+      const today = (this.db
+        .prepare(`SELECT COALESCE(SUM(amount), 0) AS s FROM xp_event WHERE character_id = ? AND kind = 'match' AND at >= ?`)
+        .get(characterId, this.now() - DAY_MS) as { s: number }).s;
+      const give = Math.min(Math.floor(amount), Math.max(0, dailyMax - today));
+      return give > 0 ? this.grant(r, "match", give, matchId) : 0;
+    });
+  }
+
+  /**
    * Flight since the last report (client-reported, warp leaps excluded).
    * Cheap check: never more than max speed × elapsed time.
    */

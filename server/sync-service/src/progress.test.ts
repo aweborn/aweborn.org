@@ -96,3 +96,16 @@ test("the whole ladder: chapter 7 unlocks warp and starts counting levels since"
   assert.equal(v.levelsSinceWarp, 0);
   assert.deepEqual(p.playerProgress("c1"), { chapter: 7, warpUnlocked: true, levelsSinceWarp: 0 });
 });
+
+test("matches: awe once per match, capped per rolling day", () => {
+  const { p, tick } = fresh();
+  assert.equal(p.match("c1", 30, "m1", 70).xp, 30);
+  assert.equal(p.match("c1", 30, "m1", 70).xp, 0); // the same match never pays twice
+  assert.equal(p.match("c1", 30, "m2", 70).xp, 30);
+  assert.equal(p.match("c1", 30, "m3", 70).xp, 10); // what the cap leaves
+  assert.equal(p.match("c1", 30, "m4", 70).xp, 0);
+  assert.equal(p.match("c2", 8, "m4", 70).xp, 8); // per character
+  tick(24 * 3600_000 + 1);
+  assert.equal(p.match("c1", 30, "m5", 70).xp, 30);
+  assert.equal(p.view("c1").xp, 100);
+});

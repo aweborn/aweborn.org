@@ -1,6 +1,7 @@
 import { CreatePanel } from './components/CreatePanel'
 import { PlannerPanel } from './components/PlannerPanel'
 import { GamePanel } from './components/GamePanel'
+import { MatchBar } from './components/match/MatchBar'
 import { MakingOfPanel } from './components/MakingOfPanel'
 import { ManaTracker } from './components/ManaTracker'
 import { LibraryPanel } from './components/LibraryPanel'
@@ -168,6 +169,7 @@ export default function App() {
           <CreatePanel />
           <PlannerPanel />
           <GamePanel />
+          <MatchBar />
           <MakingOfPanel />
           <ManaTracker />
           <LibraryPanel />

@@ -411,6 +411,12 @@ export interface PlayerPresence {
    * set, `position` is in that world's interior coordinates, not universe ones.
    */
   facing?: { x: number; z: number };
+  /**
+   * The match instance this player is in (Phase 10), absent in the live world. The server
+   * already partitions presence by instance; this is for the paths that don't pass through
+   * it (the same-network mesh, other tabs): a client drops presence from another instance.
+   */
+  instance?: string;
 }
 
 // ── World Index (per account; Phase 08B) ─────────────────────────────

@@ -1,0 +1,38 @@
+# The sandbox rig
+
+Runs the real sync-service and the real frontend on a machine that can't install the
+native packages (tsx's esbuild, better-sqlite3, Vite's bundler): for example a Linux
+sandbox that holds only a Mac's `node_modules`. Written 2026-11-23 to check Phase 10.
+On a normal machine you don't need it: `npm run dev` plus `npm run dev` in
+`server/sync-service` is the real thing, and the walkthrough scripts work against that
+too (set `CHROME` if Chrome isn't found).
+
+| File | What it does |
+|------|--------------|
+| `hooks.mjs` | Node resolve hooks: `./x.js` → `./x.ts` (what tsx does) and `better-sqlite3` → `sqlite-shim.mjs` |
+| `sqlite-shim.mjs` | A stand-in for better-sqlite3 over Node's own `node:sqlite` (only what the service uses) |
+| `web.mjs` | Serves the frontend without a bundler: transpiles each `src/` and `shared/` file on request with the TypeScript compiler and points bare imports at Vite's pre-bundled dependencies in `node_modules/.vite/deps` (left by any earlier `npm run dev`). No hot reload: reload the page |
+| `up.sh` | Starts both with a fresh database. `RIG_N=<0-9>` runs separate copies side by side (frontend 5173+10N, sync 1234+10N, files in `/tmp/rig<N>`). `up.sh stop` stops that copy |
+| `browser.mjs` | Headless Chrome with software WebGL, plus helpers: a saved player, plant a world, enter it, stand somewhere, read a store |
+
+Tests without tsx:
+```
+T="node --no-warnings --experimental-transform-types --import $PWD/scripts/verify/rig/hooks.mjs --test"
+$T shared/*.test.ts shared/sim/*.test.ts
+(cd server/sync-service && $T src/*.test.ts)
+```
+
+Walkthroughs (each prints what it checked and writes screenshots to `/tmp/rig<N>/`):
+
+| Script | Covers |
+|--------|--------|
+| `check-game-tab.mjs` | Slice 1: mark arena, zones, lobby; save; outlines |
+| `check-game-setup.mjs` | The Game tab's sections, NPC roster, rule cards, Library (faked routes), four screen sizes |
+| `check-match-server.mjs` | Three players over raw sockets: queue, ready check, host start, instance partition, watcher, race, awe, record verifies, lists, Library. Run with the `--import hooks.mjs` flags above |
+| `check-play.mjs` / `check-view.mjs` | The play and view layers against a faked server, four screen sizes |
+| `check-play-live.mjs` | One player and NPCs through a whole race against the real server |
+| `check-view-live.mjs` | Tune in, fly in, result, replay against the real server |
+RIG_MORE_PLACEHOLDER
+
+Limits: Chrome renders in software here (5 to 10 frames a second), so the scripts wait
+on store state, not on time; fonts, Stripe and Google sign-in can't load (no network).

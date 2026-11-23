@@ -45,9 +45,75 @@ export const GAME_LIMITS = {
   zoneSize: [1, 160],
   lobbySize: [3, 80],
   ringRadius: [1, 6],
-  /** When ▸ If ▸ Do rules (Phase 07 budget), for slice 7. */
+  /** When ▸ If ▸ Do rules (Phase 07 budget: ≤ 64 rules, ≤ 256 actions per tick, cascade depth ≤ 4). */
   rules: 64,
+  ruleActions: 4,
+  ruleConditions: 3,
+  ruleActionsPerTick: 256,
+  ruleDepth: 4,
+  /** NPCs the creators may put on a game's roster, and the levels an NPC plays at (1 gentle … 5 sharp). */
+  npcs: 8,
+  npcLevel: [1, 5],
 } as const;
+
+// ── NPC roster (slice 6, Q7) ───────────────────────────────────────────
+
+/** How an NPC player behaves. `auto` picks what suits the template. Fixed and deterministic: never a language model. */
+export const NPC_BEHAVIORS = ["auto", "chase", "guard", "fetch", "follow"] as const;
+export type NpcBehavior = (typeof NPC_BEHAVIORS)[number];
+
+/** NPC names come from a fixed list (they are shown to everyone, so nothing free-typed). */
+export const NPC_NAMES = ["Bolt", "Comet", "Dot", "Ember", "Fern", "Glim", "Juno", "Koi", "Luma", "Moss", "Nova", "Pip", "Quill", "Rune", "Sol", "Tumble"] as const;
+
+export interface NpcEntry {
+  id: string;
+  name: string;
+  behavior: NpcBehavior;
+  /** Levels players may pick for it. */
+  levels: { min: number; max: number };
+}
+
+/** What the creators allow NPCs to do in this game. */
+export interface NpcPolicy {
+  /** Players may fill empty slots from the roster ("play now with NPCs"; a group must all agree). */
+  fill: boolean;
+  /** An NPC holds a dropped player's slot until they return. */
+  hold: boolean;
+  /** A host NPC announces the match in the lobby chat. */
+  host: boolean;
+}
+
+// ── When ▸ If ▸ Do rules (slice 7, Q3) ─────────────────────────────────
+
+export const RULE_EVENTS = ["match-start", "round-start", "every-seconds", "seconds-left", "enter-zone", "leave-zone", "score", "out-of-bounds", "pickup", "capture"] as const;
+export type RuleEvent = (typeof RULE_EVENTS)[number];
+export const RULE_VALUES = ["score", "other-score", "seconds-left", "round", "players", "var-a", "var-b", "var-c"] as const;
+export type RuleValue = (typeof RULE_VALUES)[number];
+export const RULE_OPS = ["<", "<=", "=", ">=", ">"] as const;
+export type RuleOp = (typeof RULE_OPS)[number];
+export const RULE_ACTIONS = ["add-score", "add-seconds", "return-to-spawn", "end-round", "set-var", "add-var", "announce"] as const;
+export type RuleActionType = (typeof RULE_ACTIONS)[number];
+/** Who an action is about: the team (or player) that caused the event, the other teams, or everyone. */
+export const RULE_TARGETS = ["actor", "others", "all"] as const;
+export type RuleTarget = (typeof RULE_TARGETS)[number];
+/** Announcements are picked from a list (shown to everyone, so nothing free-typed). */
+export const RULE_ANNOUNCEMENTS = ["Go!", "Halfway there!", "One minute left!", "Sudden death!", "Bonus point!", "Back to the start!", "So close!", "New round!"] as const;
+
+export interface RuleCondition { left: RuleValue; op: RuleOp; right: number }
+export interface RuleAction {
+  type: RuleActionType;
+  target?: RuleTarget;
+  /** add-score / add-seconds / set-var / add-var amount; announce: index into RULE_ANNOUNCEMENTS. */
+  value?: number;
+  /** set-var / add-var: which variable. */
+  name?: "var-a" | "var-b" | "var-c";
+}
+export interface GameRule {
+  id: string;
+  when: { event: RuleEvent; /** enter-zone / leave-zone: the zone's id (absent = any zone). */ zone?: string; /** every-seconds / seconds-left: the number of seconds. */ seconds?: number };
+  if: RuleCondition[];
+  do: RuleAction[];
+}
 
 /** A box standing on its floor: `at` is the middle of the floor, `size` is width (x), height (y), depth (z). */
 export interface GameBox {
@@ -94,7 +160,22 @@ export interface Game {
   zones: GameZone[];
   lobby: GameLobby | null;
   /** NPCs the creators allow to play (slice 6). */
-  npcRoster: never[];
+  npcRoster: NpcEntry[];
+  npc: NpcPolicy;
+  /** When ▸ If ▸ Do cards on top of the template (slice 7). */
+  rules: GameRule[];
+  /** Credit chain when the game came from the Library (slice 7): newest last. Server-written. */
+  credits: GameCredit[];
+}
+
+/** One link of a game's credit chain: who made which version of which Library game. */
+export interface GameCredit {
+  libraryId: string;
+  version: number;
+  /** The character who saved that version, and (server-written when the game is brought) the name they showed then. */
+  by: string;
+  byName?: string;
+  name: string;
 }
 
 /** What each template starts with. `scoreToWin` means: race 1 finish, collect N things, flags captured, hill seconds held, rounds survived, builds finished. */
@@ -121,9 +202,11 @@ export function defaultSettings(template: GameTemplate): GameSettings {
   };
 }
 
+export const DEFAULT_NPC_POLICY: NpcPolicy = { fill: true, hold: true, host: true };
+
 /** A new, empty game: a template and its settings, nothing marked yet. */
 export function newGame(template: GameTemplate = "race"): Game {
-  return { version: 0, template, settings: defaultSettings(template), arena: null, zones: [], lobby: null, npcRoster: [] };
+  return { version: 0, template, settings: defaultSettings(template), arena: null, zones: [], lobby: null, npcRoster: [], npc: { ...DEFAULT_NPC_POLICY }, rules: [], credits: [] };
 }
 
 // ── Geometry ───────────────────────────────────────────────────────────
@@ -304,9 +387,70 @@ export function parseGame(raw: unknown): Parsed<Game> {
     if (arena && boxesOverlap(lb, arena)) warnings.push("the lobby overlaps the arena: move it beside or above the stage");
   }
 
+  const npcRoster: NpcEntry[] = [];
+  for (const n of Array.isArray(raw.npcRoster) ? raw.npcRoster.slice(0, L.npcs) : []) {
+    if (!isObj(n)) continue;
+    const name = oneOf(n.name, NPC_NAMES);
+    if (!name) { warnings.push("dropped an NPC: pick its name from the list"); continue; }
+    let id = slug(n.id) || `npc-${npcRoster.length + 1}`;
+    while (npcRoster.some((x) => x.id === id)) id += "-2";
+    const lv = isObj(n.levels) ? n.levels : {};
+    const max = int(lv.max, L.npcLevel[0], L.npcLevel[1], L.npcLevel[1]);
+    npcRoster.push({ id, name, behavior: oneOf(n.behavior, NPC_BEHAVIORS) ?? "auto", levels: { min: int(lv.min, L.npcLevel[0], max, L.npcLevel[0]), max } });
+  }
+  const np = isObj(raw.npc) ? raw.npc : {};
+  const npc: NpcPolicy = {
+    fill: typeof np.fill === "boolean" ? np.fill : DEFAULT_NPC_POLICY.fill,
+    hold: typeof np.hold === "boolean" ? np.hold : DEFAULT_NPC_POLICY.hold,
+    host: typeof np.host === "boolean" ? np.host : DEFAULT_NPC_POLICY.host,
+  };
+
+  const rules: GameRule[] = [];
+  const rawRules = Array.isArray(raw.rules) ? raw.rules : [];
+  if (rawRules.length > L.rules) warnings.push(`kept the first ${L.rules} rules`);
+  for (const r of rawRules.slice(0, L.rules)) {
+    const w = isObj(r) && isObj(r.when) ? r.when : null;
+    const event = w ? oneOf(w.event, RULE_EVENTS) : undefined;
+    if (!isObj(r) || !w || !event) { warnings.push("dropped a rule: it needs a When"); continue; }
+    const when: GameRule["when"] = { event };
+    if (event === "enter-zone" || event === "leave-zone") {
+      const zid = slug(w.zone);
+      if (zid && zones.some((z) => z.id === zid)) when.zone = zid;
+    }
+    if (event === "every-seconds" || event === "seconds-left") when.seconds = int(w.seconds, 1, L.roundSeconds[1], 30);
+    const conds: RuleCondition[] = [];
+    for (const c of Array.isArray(r.if) ? r.if.slice(0, L.ruleConditions) : []) {
+      const left = isObj(c) ? oneOf(c.left, RULE_VALUES) : undefined;
+      const op = isObj(c) ? oneOf(c.op, RULE_OPS) : undefined;
+      if (isObj(c) && left && op) conds.push({ left, op, right: int(c.right, -9999, 9999, 0) });
+    }
+    const acts: RuleAction[] = [];
+    for (const a of Array.isArray(r.do) ? r.do.slice(0, L.ruleActions) : []) {
+      const type = isObj(a) ? oneOf(a.type, RULE_ACTIONS) : undefined;
+      if (!isObj(a) || !type) continue;
+      const act: RuleAction = { type };
+      if (type !== "add-seconds" && type !== "announce") act.target = oneOf(a.target, RULE_TARGETS) ?? "actor";
+      if (type === "announce") act.value = int(a.value, 0, RULE_ANNOUNCEMENTS.length - 1, 0);
+      else if (type === "add-seconds") act.value = int(a.value, -600, 600, 30);
+      else if (type !== "return-to-spawn" && type !== "end-round") act.value = int(a.value, -999, 999, 1);
+      if (type === "set-var" || type === "add-var") act.name = oneOf(a.name, ["var-a", "var-b", "var-c"] as const) ?? "var-a";
+      acts.push(act);
+    }
+    if (!acts.length) { warnings.push("dropped a rule: it needs a Do"); continue; }
+    let id = slug(r.id) || `rule-${rules.length + 1}`;
+    while (rules.some((x) => x.id === id)) id += "-2";
+    rules.push({ id, when, if: conds, do: acts });
+  }
+
+  const credits: GameCredit[] = [];
+  for (const c of Array.isArray(raw.credits) ? raw.credits.slice(-16) : []) {
+    if (!isObj(c) || typeof c.libraryId !== "string" || typeof c.by !== "string") continue;
+    credits.push({ libraryId: c.libraryId.slice(0, 64), version: int(c.version, 1, 1e9, 1), by: c.by.slice(0, 64), name: typeof c.name === "string" ? c.name.slice(0, 60) : "", ...(typeof c.byName === "string" && c.byName ? { byName: c.byName.slice(0, 40) } : {}) });
+  }
+
   return {
     ok: true,
-    value: { version: int(raw.version, 0, Number.MAX_SAFE_INTEGER, 0), template, settings, arena, zones, lobby, npcRoster: [] },
+    value: { version: int(raw.version, 0, Number.MAX_SAFE_INTEGER, 0), template, settings, arena, zones, lobby, npcRoster, npc, rules, credits },
     warnings,
   };
 }

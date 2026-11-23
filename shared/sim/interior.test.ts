@@ -2,12 +2,12 @@
  * Tests for the deterministic interior movement step.
  * Run: node --import tsx --test shared/sim/
  */
-import { test } from "node:test";
+import { test, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_PHYSICS } from "../crdt-schema.js";
 import {
-  stepInterior, spawnInterior, collidersFor, NO_INPUT, INTERIOR_HALF_EXTENT, kickVelocity, kickedPosition, kickTarget, kickTrajectory, trajectoryAt, KICK_SETTLE_SEC,
-  type InteriorInput, type InteriorState, type Box,
+  stepInterior, spawnInterior, collidersFor, NO_INPUT, INTERIOR_HALF_EXTENT, kickVelocity, kickedPosition, kickTarget, kickTrajectory, trajectoryAt, KICK_SETTLE_SEC, INTERIOR_DT, PLAYER_RADIUS, PLAYER_HEIGHT,
+  type InteriorInput, type InteriorMods, type InteriorState, type Box,
 } from "./interior.js";
 
 function run(s: InteriorState, input: InteriorInput, steps: number, boxes: Box[] = [], physics = DEFAULT_PHYSICS) {
@@ -172,4 +172,47 @@ test("kickTarget picks the object in front, not behind", () => {
   const s = spawnInterior(); // z = 8, facing -Z
   assert.equal(kickTarget(s, [mk("front", 7), mk("behind", 9)])?.id, "front");
   assert.equal(kickTarget(s, [mk("far", 2)]), null);
+});
+
+// ── Step modifiers (Phase 10: a match's traits and its walled arena) ──
+describe("stepInterior modifiers", () => {
+  const run = (n: number, input: Partial<InteriorInput>, mods?: InteriorMods, from: InteriorState = spawnInterior()) => {
+    let s = from;
+    for (let i = 0; i < n; i++) s = stepInterior(s, { ...NO_INPUT, ...input }, DEFAULT_PHYSICS, [], INTERIOR_DT, 100, mods);
+    return s;
+  };
+
+  it("no modifiers, or empty ones, change nothing", () => {
+    const a = run(120, { move: 1, jump: true, turn: 0.3 });
+    assert.deepEqual(run(120, { move: 1, jump: true, turn: 0.3 }, {}), a);
+    assert.deepEqual(run(120, { move: 1, jump: true, turn: 0.3 }, { speedMul: 1, gravityMul: 1, fly: true }), a);
+  });
+
+  it("speedMul scales how far you walk", () => {
+    const base = run(120, { move: 1 });
+    const fast = run(120, { move: 1 }, { speedMul: 2 });
+    assert.ok(Math.abs((fast.z - 8) / (base.z - 8) - 2) < 0.01);
+  });
+
+  it("gravityMul makes a jump go higher, fly: false takes the jetpack away", () => {
+    const peak = (mods?: InteriorMods, hold = false) => {
+      let s = stepInterior(spawnInterior(), { ...NO_INPUT, jump: true }, DEFAULT_PHYSICS, [], INTERIOR_DT, 100, mods);
+      let top = 0;
+      for (let i = 0; i < 400; i++) { s = stepInterior(s, { ...NO_INPUT, jump: hold && !s.grounded }, DEFAULT_PHYSICS, [], INTERIOR_DT, 100, mods); top = Math.max(top, s.y); }
+      return top;
+    };
+    assert.ok(peak({ gravityMul: 0.5 }) > peak() * 1.4);
+    assert.ok(peak(undefined, true) > peak() * 2, "the jetpack lifts");
+    assert.ok(Math.abs(peak({ fly: false }, true) - peak()) < 1e-9, "no jetpack: a held jump is a plain jump");
+  });
+
+  it("a wall keeps the player inside the box", () => {
+    const wall = { minX: -5, maxX: 5, minY: 0, maxY: 4, minZ: 0, maxZ: 10 };
+    const s = run(600, { move: 1, strafe: 1, jump: true }, { wall });
+    assert.ok(s.x >= wall.minX + PLAYER_RADIUS - 1e-9 && s.x <= wall.maxX - PLAYER_RADIUS + 1e-9);
+    assert.ok(s.z >= wall.minZ + PLAYER_RADIUS - 1e-9 && s.z <= wall.maxZ - PLAYER_RADIUS + 1e-9);
+    assert.ok(s.y <= wall.maxY - PLAYER_HEIGHT + 1e-9);
+    // Deterministic: the same inputs and modifiers give the same state
+    assert.deepEqual(run(600, { move: 1, strafe: 1, jump: true }, { wall }), s);
+  });
 });

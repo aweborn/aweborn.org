@@ -214,6 +214,8 @@ function stopPresenceLoop() {
  */
 function applyPresence(presence: PlayerPresence): void {
   if (!presence || presence.id === _playerId) return;
+  // A match instance is a partition (Phase 10): the server keeps to it, the mesh and other tabs don't know
+  if ((presence.instance ?? null) !== _instance) return;
 
   const isNew = !_state.players.has(presence.id);
   const now = Date.now();
@@ -258,6 +260,40 @@ export function setPresenceSender(send: PresenceSendFn | null): void {
 /** Set by the offline mesh while it has open links. */
 export function setMeshPresenceSender(send: ((payload: Uint8Array) => void) | null): void {
   _meshSend = send;
+}
+
+/** The match instance this player is in (null = the live world): sent with our presence, and others' are filtered by it. */
+let _instance: string | null = null;
+export function setPresenceInstance(matchId: string | null): void {
+  if (_instance === matchId) return;
+  _instance = matchId;
+  if (matchId) _localState.instance = matchId;
+  else delete _localState.instance;
+  clearPresence();
+}
+
+/**
+ * Something else just arrived on the room socket (a lobby or match message, Phase 10):
+ * the link is alive, so players we stopped hearing from really left (they went into a
+ * match instance, or back out of one) and go after the usual 3 s, not the 30 s kept for
+ * a silent link.
+ */
+export function notePresenceLinkAlive(): void {
+  _lastAnyRx = Date.now();
+}
+
+/**
+ * Forget everyone at once: this player was just moved between a world and a match
+ * instance (a different presence group), so nobody they saw is there any more. Whoever
+ * is in the new group shows up with their next broadcast.
+ */
+export function clearPresence(): void {
+  if (_state.players.size === 0) return;
+  _state.players.clear();
+  _state.lastSeen.clear();
+  _state.reported.clear();
+  _structuralVersion++;
+  notifyListeners();
 }
 
 /**

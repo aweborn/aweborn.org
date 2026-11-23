@@ -26,12 +26,20 @@ const MAX_INTERIOR_COORD = 200;
 
 export type WorldRequest = { name: string; color: string; position: Vec3; parentWorldId?: string };
 
+/**
+ * A public name (a world's, a Library game's): the same cleaning + word filter as chat
+ * (it is public, like a chat line). Null when nothing usable is left or it is too long.
+ */
+export function cleanWorldName(raw: unknown): string | null {
+  const name = typeof raw === "string" ? prepareChat(raw.slice(0, WORLD_NAME_MAX * 2)) : null;
+  return name && name.length <= WORLD_NAME_MAX ? name : null;
+}
+
 /** Validate and clean a create-world body. Returns the clean request or an error code. */
 export function parseWorldRequest(body: unknown): WorldRequest | { error: string } {
   const b = (body ?? {}) as { name?: unknown; color?: unknown; position?: unknown; parentWorldId?: unknown };
-  // Same cleaning + word filter as chat (a world name is public, like a chat line).
-  const name = typeof b.name === "string" ? prepareChat(b.name.slice(0, WORLD_NAME_MAX * 2)) : null;
-  if (!name || name.length > WORLD_NAME_MAX) return { error: "bad_name" };
+  const name = cleanWorldName(b.name);
+  if (!name) return { error: "bad_name" };
   const color = typeof b.color === "string" ? b.color.toLowerCase() : "";
   if (!/^#[0-9a-f]{6}$/.test(color)) return { error: "bad_color" };
   let parentWorldId: string | undefined;

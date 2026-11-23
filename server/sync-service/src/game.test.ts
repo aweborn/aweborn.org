@@ -56,3 +56,21 @@ test("every version stays readable, even after the game is removed; numbers are 
   const back = g.save(W, race, "cara");
   assert.ok(back.ok && back.game.version === 3);
 });
+
+test("credits are server-written: a client's are ignored, the stored chain is kept", () => {
+  const g = fresh();
+  const forged = [{ libraryId: "lib-x", version: 1, by: "mallory", name: "Mine" }];
+  const a = g.save(W, { ...race, credits: forged }, "cara", 1000);
+  assert.ok(a.ok && a.changed);
+  assert.deepEqual(a.game.credits, []);
+  const chain = [{ libraryId: "lib-1", version: 2, by: "dana", name: "Sky Race" }];
+  const b = g.save(W, race, "cara", 2000, chain);
+  assert.ok(b.ok && b.changed && b.game.version === 2);
+  assert.deepEqual(b.game.credits, chain);
+  // A later ordinary save keeps the chain, whatever the client sends
+  const c = g.save(W, { ...race, template: "collect", credits: [] }, "cara", 3000);
+  assert.ok(c.ok && c.changed);
+  assert.deepEqual(c.game.credits, chain);
+  const d = g.save(W, { ...race, template: "collect", credits: forged }, "cara", 4000);
+  assert.ok(d.ok && !d.changed);
+});

@@ -1,5 +1,7 @@
 import { GhostPreview, WorldTerrain } from './GhostPreview'
 import { GameOutlines } from './GameOutlines'
+import { MatchWorld } from './match/MatchWorld'
+import { WatchWorld } from './match/WatchWorld'
 import { useRef, useMemo, useState, useEffect, Component, type ReactNode } from 'react'
 import { serverNow } from '../lib/serverClock'
 import { useFrame } from '@react-three/fiber'
@@ -711,6 +713,9 @@ export function WorldInterior() {
 
       {/* The world's game, outlined for its creator and builders (Phase 10) */}
       <GameOutlines />
+      {/* The game being played or watched: the ring, match things, the watched match (Phase 10) */}
+      <MatchWorld />
+      <WatchWorld />
 
       {/* Placed objects from CRDT (pictures, sounds and signs have their own renderers, M5) */}
       {objectList.map((obj) =>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useMuteStore } from '../stores/muteStore'
 import { useNameStore, displayName } from '../stores/nameStore'
 import { AUTH_URL, getPlayerSnapshot, subscribePlayer } from '../lib/player'
+import { PlayLinks } from './match/PlayLinks'
 
 const REASONS: [string, string][] = [
   ['harassment', 'Harassment or bullying'],
@@ -83,6 +84,7 @@ export function PlayerActions() {
 
           {step === 'menu' && (
             <div className="pact-actions">
+              {target.id !== player?.playerId && <PlayLinks target={target} name={name} onDone={close} />}
               <button
                 id="pact-mute"
                 type="button"

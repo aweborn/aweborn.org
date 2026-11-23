@@ -34,6 +34,7 @@ import { useAtmosphere } from '../hooks/useAtmosphere'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
 import { ChatBubble } from './ChatBubble'
 import { NameTag } from './NameTag'
+import { ghostCam } from './match/GhostCamera'
 import { inputManager } from '../systems/InputManager'
 import { flightController } from '../systems/FlightController'
 import { cameraController } from '../systems/CameraController'
@@ -466,6 +467,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
     }
     const toggleCarry = () => {
+      // Ghost flight (Phase 10): the buttons belong to the camera, the body does nothing
+      if (ghostCam.active) return
       const doc = useUniverseStore.getState().activeWorldDoc
       const s = interiorController.state
       if (held.current) {
@@ -496,6 +499,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       useHeldItemStore.getState().setCarryingId(target.id)
     }
     const doPlaceHeld = () => {
+      if (ghostCam.active) return
       if (playerId) placeEquippedItem(playerId)
     }
     const onAdjust = (ev: Event) => {
@@ -601,6 +605,10 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Every world entered is an arrival, also from one world straight into another (a portal
+  // to a child world, or back out to the parent): this component stays mounted across
+  // those, so the reset is keyed on the world. Without it nobody arrived in a child
+  // world's lobby, and the "emerge in front of the portal" spot was never used.
   useEffect(() => {
     interiorController.reset()
     // Flight rolls camera.up with the ship; interiors are always upright
@@ -610,7 +618,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     camPos.current.set(s.x - s.fx * camDist.current, s.y + EYE_HEIGHT + 1, s.z - s.fz * camDist.current)
     camera.position.copy(camPos.current)
     camera.lookAt(camTarget.current)
-  }, [camera])
+  }, [camera, activeWorldId])
 
   // A world with a game: new arrivals land in its lobby, facing the arena (Phase 10, Q5).
   // Returning to a saved spot is not an arrival. The game can reach a cached world a moment
@@ -632,7 +640,7 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     camPos.current.set(s.x - s.fx * camDist.current, s.y + EYE_HEIGHT + 1, s.z - s.fz * camDist.current)
     camera.position.copy(camPos.current)
     camera.lookAt(camTarget.current)
-  }, [worldLoaded, lobbyArrival, camera])
+  }, [worldLoaded, lobbyArrival, camera, activeWorldId])
 
   // New or reshaped terrain under the player: stand on top of it, not inside it
   useEffect(() => {
@@ -645,7 +653,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
   useFrame((_state, delta) => {
     const physics = useWorldStore.getState().physics
     // Hold still until the world has loaded: its terrain isn't there to stand on yet
-    const t = useWorldStore.getState().loaded ? interiorController.update(delta, physics, boxes, halfExtent) : 1
+    // Ghost camera (Phase 10): the sticks fly the camera, so the body gets no time to move in
+    const t = useWorldStore.getState().loaded ? interiorController.update(ghostCam.active ? 0 : delta, physics, boxes, halfExtent) : 1
     const p = interiorController.prev
     const s = interiorController.state
     const x = p.x + (s.x - p.x) * t
@@ -669,10 +678,15 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
       z - s.fz * cp * D,
     )
     desired.y = Math.max(0.3, desired.y) // never dip under the ground
-    camPos.current.lerp(desired, 1 - Math.exp(-12 * delta))
+    // A teleport (a match placing the player, Phase 10): jump there, don't glide across the world
+    if (interiorController.camSnap) {
+      interiorController.camSnap = false
+      camPos.current.copy(desired)
+    } else camPos.current.lerp(desired, 1 - Math.exp(-12 * delta))
     camera.position.copy(camPos.current)
     camera.up.set(0, 1, 0)
     camera.lookAt(target)
+    if (ghostCam.active) ghostCam.apply(camera, delta) // watching a match from inside: the camera leaves the body where it stands
 
     // Presence: interior coordinates + facing, tagged with the world
     updatePosition({ x, y, z }, { x: s.vx, y: s.vy, z: s.vz }, activeWorldId, { x: s.fx, z: s.fz })
@@ -756,7 +770,8 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     sceneHints.canEnter = nearestChildWorldId !== null || nearReturnPortal
 
     if (doc) {
-      if (inputManager.getEvents().justPressed.has('interact')) {
+      // Not while ghost flying: the body neither kicks nor walks through a portal
+      if (inputManager.getEvents().justPressed.has('interact') && !ghostCam.active) {
         if (nearReturnPortal) {
           useUniverseStore.getState().exitWorld()
           return

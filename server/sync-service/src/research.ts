@@ -16,6 +16,8 @@
 import { randomBytes } from "node:crypto";
 import type Database from "better-sqlite3";
 import { getDb } from "./persistence.js";
+import { eraseFromMatches } from "./match-store.js";
+import type { SqlDb } from "./build-requests.js";
 
 let ready: Database.Database | null = null;
 function db(d: Database.Database = getDb()): Database.Database {
@@ -65,11 +67,12 @@ export function playerForResearchId(researchId: string, d?: Database.Database): 
  * Delete a player's creation history on request (Privacy: delete your player):
  * their planner sessions + events and their research-id row. Archive records
  * elsewhere carry only the research id, so they can no longer be tied back.
+ * Match records keep the replay and lose the player (match-store.ts).
  */
-export function forgetPlayer(playerId: string, d?: Database.Database): { sessions: number; events: number; researchId: string | null } {
+export function forgetPlayer(playerId: string, d?: Database.Database): { sessions: number; events: number; researchId: string | null; matches: number } {
   const conn = db(d);
   const researchId = (conn.prepare("SELECT research_id FROM research_identity WHERE player_id = ?").get(playerId) as { research_id: string } | undefined)?.research_id ?? null;
-  let sessions = 0, events = 0;
+  let sessions = 0, events = 0, matches = 0;
   conn.transaction(() => {
     const hasPlans = conn.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_sessions'").get();
     if (hasPlans) {
@@ -77,6 +80,8 @@ export function forgetPlayer(playerId: string, d?: Database.Database): { session
       sessions = conn.prepare("DELETE FROM plan_sessions WHERE player_id = ?").run(playerId).changes;
     }
     conn.prepare("DELETE FROM research_identity WHERE player_id = ?").run(playerId);
+    // Replays stay (they are the other players' records too): this player becomes an anonymous stand-in (Phase 10)
+    matches = eraseFromMatches(conn as unknown as SqlDb, playerId);
   })();
-  return { sessions, events, researchId };
+  return { sessions, events, researchId, matches };
 }

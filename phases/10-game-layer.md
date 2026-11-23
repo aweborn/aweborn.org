@@ -1,6 +1,6 @@
 # Phase 10: The Game Layer (rules, boundaries, goals, teams, lobby, NPC players)
 
-**Status:** `[~]` In progress. Grill closed 2026-11-23. **Slice 1 (the game record and setup tools) is written and committed on the local branch `phase-10-slice-1`, not pushed:** typecheck and tests pass, but the Game tab has not been looked at on a screen yet (see [Start here](#start-here-handoff-for-the-next-chat-2026-11-23)). Next after that: slice 2.
+**Status:** `[~]` In progress. Grill closed 2026-11-23. **All seven slices exist as a rough draft on the local branch `phase-10-slice-1`** (written 2026-11-23, nothing pushed): real matches run end to end in a sandbox with real browsers. Not load-tested, not played by a person, public pages not lawyer-reviewed. See [Start here](#start-here-handoff-for-the-next-chat-2026-11-23).
 **Whiteboard** (the player's loop and the build order on one board): https://claude.ai/artifact/MLb7vRPPaCspVNUXH1mora
 **Depends on:**
 - [Phase 07](./07-genai-creation.md): [rules, goals & constraints design](./07-genai-creation.md#rules-goals--constraints-design-2026-11-01), minds/NPCs, the planner/Studio
@@ -27,11 +27,12 @@ Because every rule, team assignment and outcome is data, each match is also a we
 
 ## Start here: handoff for the next chat (2026-11-23)
 
-> **Update, 2026-11-23 (later the same day): slice 1 is written.** Before anything else, finish it:
-> 1. **Look at it on a screen** (nobody has yet): run the frontend and the sync-service, open a world you own, and try the 🎯 Game tab at 390×844, 360×740, 844×390 and 1440×900 (AGENTS.md). Check the outlines in the world, a save, a reload, arrival in the lobby from a second browser, and that a non-owner's block placed on the stage snaps back.
-> 2. Run `npm run lint` and `npm run build` (they could not be run in the session that wrote it; see the session log).
-> 3. Fix what that turns up, then merge and **push** (the commit is on a local branch on Alex's Mac, `phase-10-slice-1`, one commit ahead of `main`: `git switch main && git merge --ff-only phase-10-slice-1 && git push`). The push creates two tables on prod (`world_games`, `world_game_versions`); nothing else migrates.
-> 4. Then start **slice 2** (below: "Before slice 2"). What slice 1 built, and where, is in [Slice 1 as built](#slice-1-as-built-2026-11-23).
+> **Update, 2026-11-23 (evening): slices 1 to 7 are written as a rough draft.** Alex asked for everything implemented with gaps filled by reasonable assumptions before he looks. What exists, how it was checked and what it assumes: [The rough draft as built](#the-rough-draft-of-slices-2-to-7-as-built-2026-11-23). What to do next, in order:
+> 1. **Alex plays it** (nobody has, only scripts): `scripts/verify/rig/README.md` says how to run it locally; on a normal machine `npm run dev` + the sync-service is enough.
+> 2. Run `npm run lint` and `npm run build` (they could not be run in the sandbox that wrote this) and fix what they say.
+> 3. Go through [Assumptions to confirm with Alex](#assumptions-to-confirm-with-alex) and [Known gaps](#known-gaps-in-the-rough-draft).
+> 4. **Do not push `main` until the lawyer pass** on Privacy, Terms and RESEARCH.md ([review note](../docs/legal/2026-11-game-layer-pages.md)): pushing is the deploy, and this branch starts recording matches. The pages are already rewritten on the branch so that code and pages ship together.
+> 5. Load-test instances on a throwaway box (`scripts/loadtest/`), never prod.
 
 **Slice 1 was: the game record and setup tools.** The scope below is kept as written for the record. Read, in this order: [The design in one page](#the-design-in-one-page-from-the-decisions-below-2026-11-23), the **v1 build order** section below it, the Decisions table, then [AGENTS.md](../AGENTS.md) (ship working things by pushing to `main`; portrait phone first; no O(n²) fan-out).
 
@@ -81,6 +82,67 @@ Not done in slice 1:
 - Arrival in the lobby happens when you enter a world from space or by link. Stepping through a portal *inside* a world into a child world that has a game was not looked at (the interior isn't reset there today); check it with the screen pass.
 - No keyboard shortcut for the Game tab on desktop (a 🎯 pill above ✧ Plan opens it).
 - The planner cannot fill in a game from words yet (Q3 says it should be able to).
+
+### The rough draft of slices 2 to 7, as built (2026-11-23)
+
+Built in one session by parallel agents against a shared contract, then merged and run together. Each piece has a doc comment at the top of its file saying what it does and assumes.
+
+**How a match works in this draft**
+- **Movement stays on the player's device** (the interior sim, as everywhere in worlds today). The server reads each player's position from presence and runs the **referee** on those samples ten times a second. When Phase 09 puts interior movement under server authority, samples become inputs and nothing else changes.
+- **The referee** ([`shared/match-referee.ts`](../shared/match-referee.ts)) is one deterministic step for all six templates, the edge, keep-out zones, rounds and the When ▸ If ▸ Do cards. No clock, no random source: time is ticks, randomness is seeded.
+- **The record** is the setup (the whole game version, roster, how teams were formed) plus every tick's samples, control inputs, events and the result. Feeding it back through the referee reproduces every event and the result (`verifyRecord`); playing the samples back shows the match. That is the hard rule.
+- **An instance is a partition, not a copy of geometry.** Players in a match stay at the arena's real coordinates in presence group `<worldId>#<matchId>`: the live world doesn't see them and they don't see it. The stage's objects are the scenery (owners-only since slice 1). Flags, pickups and pieces are match state drawn by the client, never world objects. Nothing is saved back.
+- **Watching** is receiving that match's snapshots. The same drawing serves the view from the lobby, the hologram, the ghost camera, NPC bodies and replays.
+- **The server decides everything** (pool, teams, ready check, start, score, end); the client asks and draws. One socket message type, `match` (0x13), JSON both ways ([`shared/match-protocol.ts`](../shared/match-protocol.ts)).
+
+| Slice | What | Where |
+|-------|------|-------|
+| 2 | Referee, records, replay verification | `shared/match.ts` (contract), `shared/match-referee.ts` (63 tests) |
+| 2 | Recording store: `matches`, `match_frames`, `match_players` (kept forever; erasure turns a player into a stand-in) | `server/sync-service/src/match-store.ts` |
+| 2, 3 | The match host: lobby pool, ready check, instances, ticking, drops and rejoin, results, "play again together", links, awe | `server/sync-service/src/matches.ts`; presence groups in `rooms.ts`; wiring and routes in `index.ts` |
+| 3 | The matchmaker (random with a logged seed, headcount balanced, stay-together units, play-against links) and NPC fill | `shared/matchmaker.ts` |
+| 2, 3 | The player's side: ring and label for everyone, lobby chip and sheet, ready check, match HUD, edge warning, match traits and the wall, results, Play with / against | `src/lib/matchPlay.ts`, `src/components/match/{LobbyChip,MatchLayer,MatchWorld,MatchHud,PlayLinks}.tsx`; `mods` in `shared/sim/interior.ts` |
+| 4 | Spectating: the 👁 chip (Live / Finished / Mine), bodies in the arena, the hologram, the watching strip, the ghost camera, replays with a scrub bar, a 2D mini-map when you're in another world | `src/lib/matchView.ts`, `src/components/match/{WatchChip,WatchLayer,WatchWorld,GhostCamera}.ts(x)` |
+| 5 | The other five templates (collect, capture the flag, king of the hill, survive, build together) | in the referee; awe in `progress.ts` (`match`) |
+| 6 | NPC players: auto / fetch / chase / guard / follow, levels 1 to 5; roster and policy in the game record; NPC fill, "play now with NPCs", group vote, holding a dropped slot; a host line in chat | `shared/npc.ts` (28 tests), `shared/game.ts`, the host |
+| 7 | The game Library: save a world's game (with the stage's objects), bring it into another world, credits | `server/sync-service/src/game-library.ts` |
+| 7 | When ▸ If ▸ Do cards: types and limits in the record, evaluated by the referee, edited in the Game tab | `shared/game.ts`, `src/components/game/GameCards.tsx` |
+| 1+ | The Game tab in sections: Game · Places · Rules · NPCs · Cards · Library | `src/components/GamePanel.tsx`, `src/components/game/*` |
+| – | Public pages rewritten for recording, replays, erasure, NPCs, the Library | `public/privacy.html`, `public/terms.html`, `RESEARCH.md`, [`docs/legal/2026-11-game-layer-pages.md`](../docs/legal/2026-11-game-layer-pages.md) |
+| – | A rig that runs the real server and app where native packages can't be installed, with scripted walkthroughs | [`scripts/verify/rig/`](../scripts/verify/rig/README.md) |
+
+New HTTP routes: `GET /api/match/world`, `GET /api/player/replays`, `GET /api/match/record`, `GET` and `POST /api/player/game-library`, `POST /api/player/game-library/bring`. New tables: `world_games`, `world_game_versions`, `matches`, `match_frames`, `match_players`, `game_library`, `game_library_versions`, plus a per-character daily count for awe from matches.
+
+#### Assumptions to confirm with Alex
+
+Made to fill gaps; each is a constant or a small function, easy to change.
+- **Records hold positions, not inputs** (see above). A replay is exact about what the referee saw, at ten samples a second.
+- **Positions are trusted from the client** during a match, as they are everywhere inside worlds today. A cheater could teleport to the goal. Server authority over interior movement (Phase 09) closes this.
+- **The arena is not snapshotted per match.** Running matches see the live stage; if a creator edits it mid-match, players see the edit (Q1b says running instances keep their snapshot). The Library does snapshot the stage's objects when a game is saved there.
+- **Numbers:** ready check 10 s; pool waits 3 s for more players once the minimum is met; an NPC takes a dropped slot after 8 s; a match with no human online ends after 15 s; results choice 20 s; finished matches stay in the lobby list 30 min; a match is capped at 2 h; 32 players per match.
+- **Awe:** 30 per finished match, a quarter (8) when no other human played, at most 300 a day per character from matches, winners get nothing extra.
+- **Links:** made from the chat name sheet (Play with / Play against), the other accepts in the lobby sheet; they last while both stay in the world.
+- **An NPC's level** sets speed (60% to 100% of walking), reaction time (1.2 s to 0.2 s) and how often it picks a poor target (30% to never). An NPC holding a dropped slot plays "auto" at level 3.
+- **NPC names and announcements come from fixed lists**, and rule cards have no free text, because there is no moderation path for text typed into a game.
+- **Template details:** race needs a goal zone; collect spawns 6 to 24 pickups that reappear; capture the flag uses each team's goal zone as its base (else its spawn); king of the hill scores a point per second held alone; survive uses "score to win" as lives and scores survivors at the end; build together delivers pieces to the goal zone and nobody wins on time. With several teams a match ends early once the leader can't be caught.
+- **Replays can be opened by anyone with a session who has the id**; the world's recent matches are listed in its lobby. The record holds character names and player ids (research ids are stored beside them for research copies).
+- **The 18+ research filter is not in the code**, because there is no 18+ opt-in in the game yet. Every match is recorded; nothing marks a player as a research candidate. The public pages say so.
+- **One ready check per world at a time.**
+
+#### Known gaps in the rough draft
+
+- **Nobody has played it.** Only scripts in headless, software-rendered Chrome.
+- `npm run lint` and `npm run build` were never run.
+- **No load test** of instances; the referee and snapshots are O(players in the match) per tick, lobby updates are coalesced to once a second per world.
+- **Erasure is wired but unreachable:** `forgetPlayer` now rewrites match records to a stand-in, and that is tested, but no route deletes a player today.
+- **No in-game notice** beyond one line on the ready-check card ("Matches are recorded and can be replayed"); Privacy promises players are told before new recording starts.
+- NPCs walk on one flat height (no climbing to raised goals), and stand still when keep-out zones leave no route.
+- A player can't be held at spawn by the server during the countdown; the client holds them.
+- Reloading mid-match puts you back on your spawn.
+- The planner cannot fill in a game from words yet (Q3); the host NPC only posts fixed lines; NPCs don't build (Q7's third role).
+- "Mine" (a character's replays) is only reachable in worlds that have a game.
+- No sounds for any of it.
+INTEGRATION_PLACEHOLDER
 
 ### Before slice 2 (matches + recording), not before slice 1
 - **The public pages must be rewritten in the same push** as recording: Privacy, Terms and [RESEARCH.md](../RESEARCH.md) (every match recorded for everyone and kept forever; the 18+ opt-in makes a player a research candidate; erasure turns a player into an anonymous stand-in). **Lawyer pass first.** Draft them early so slice 2 isn't blocked.
@@ -327,6 +389,7 @@ Options:
 
 | Date | Decision |
 |------|----------|
+| 2026-11-23 | **Rough-draft decisions for slices 2 to 7 (made by the builder; Alex: *"filled all gaps with reasonable assumptions"*).** Listed under [Assumptions to confirm with Alex](#assumptions-to-confirm-with-alex): records hold sampled positions and the referee re-runs over them; an instance is a presence partition at the arena's real coordinates; the arena is not snapshotted per match; awe 30 / 8 / 300 a day; fixed lists instead of free text; the numbers for the ready check, drops and results. None of these is Alex's decision yet. |
 | 2026-11-23 | **Where the game is stored (decided while building slice 1; Alex left it to the builder).** A server table with every version kept forever (`world_games`, `world_game_versions`), and a server-written copy in the world doc (`meta.game`) so every client gets it through the world sync. Clients never write it. Chosen over a client-written doc key because replays need every old version forever, and because it follows Phase 09 (the server is the only writer). |
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
 | 2026-11-23 | **Q11: offline games are wanted, in their own grill.** v1 matches need the server (referee, matchmaker, recorder). Alex: *"I really want those offline games! Maybe it's a separate grill altogether."* Logged as a future grill tied to [Phase 06](./06-offline-mesh.md): one phone acts as referee with the same deterministic rule code, and the record syncs to the server afterwards. |
@@ -388,6 +451,7 @@ Each slice ends in something Alex can try on prod. Public pages move with slice 
 - **Offline games (its own grill, with [Phase 06](./06-offline-mesh.md)):** Alex wants matches to work without a network.
 - **Details left to design:** how a link is made and links among more than two characters; what an NPC's "level" means; the grace period before an NPC takes a dropped slot and the rejoin prompt; keeping old sim, arena and ruleset versions runnable so replays play forever; erasure (a deleted player becomes an anonymous stand-in in replays).
 
+- **2D arenas, saved instanced runs (dungeons with character progress), and why keep games open** (asked by Alex 2026-11-23 while the rough draft was being built): design notes, nothing decided, in [docs/research/2026-11-game-layer-next](../docs/research/2026-11-game-layer-next/README.md). Each is a future grill. The notes list where they collide with decisions above ("nothing is saved back", "nobody dies", awe, one game per world).
 - **Social Publication (a future phase, its own grill):** characters browsing their replays and publishing them to social platforms; consent of the other players shown in a replay.
 - How the game layer meets 18+ containment: a game in an 18+ world is 18+, and NPC players follow their mind's tier.
 - A spectator camera on phones (portrait first).
@@ -417,3 +481,4 @@ Each slice ends in something Alex can try on prod. Public pages move with slice 
 | 2026-11-23 | **Grill closed.** Q11 (offline games wanted, own grill), Q12 (limits) and Q13 (credit, Library, versioned like minds) answered; six templates confirmed. Wrote "The design in one page" and a proposed 7-slice v1 build order. | Alex approves or changes the build order; then slice 1 |
 | 2026-11-23 | **Build order approved; handoff written.** Alex asked for a whiteboard ([link](https://claude.ai/artifact/MLb7vRPPaCspVNUXH1mora)) and a handoff so the next chat starts implementing. Added "Start here" with slice 1's scope, file pointers and the slice 2 blockers. | Next chat: slice 1 (the game record and setup tools) |
 | 2026-11-23 | **Slice 1 written: the game record and setup tools.** See [Slice 1 as built](#slice-1-as-built-2026-11-23). `shared/game.ts` (record, limits, `parseGame`), server storage with version history and `POST /api/player/world/game`, `meta.game` server-only, the stage rule in `world-policy.ts` and the authority, the 🎯 Game tab, owner outlines, arrival in the lobby. **Checked:** `tsc -b` (app) and `tsc --noEmit` (sync-service) clean; 188 shared tests and 169 sync-service tests pass (22 new). **Not checked:** `npm run lint` and `npm run build` (the session's Linux sandbox had only the Mac builds of oxlint and Vite's bundler), and **no screen check at any size**: the Game tab, the outlines and the lobby arrival have never been seen running. Tests ran through Node's own TypeScript support with a small `.js` → `.ts` resolver instead of `tsx` (same reason). Committed on a local branch, `phase-10-slice-1`, **not merged or pushed**, because AGENTS.md wants UI checked first and pushing `main` is the deploy. | Screen check at the four sizes, lint, build, then push. Then slice 2 (public pages + lawyer pass first) |
+| 2026-11-23 | **Slices 2 to 7 written as a rough draft** (Alex: *"I don't want to touch the game until you've implemented everything and filled all gaps with reasonable assumptions… fan out subagents"*). A shared contract first (`shared/match.ts`, `match-protocol.ts`, the socket message, the client store, mount points), then seven agents in parallel (referee, NPCs, server, play, view, Game tab, public pages), merged and run together by an integration pass. Slice 1 was screen-checked first (phone and desktop) in a new sandbox rig (`scripts/verify/rig/`) that runs the real sync-service and frontend without native packages. **Checked:** both typechecks; SHARED_N shared and SERVER_N sync-service tests; scripted walkthroughs in real (headless) browsers, listed in the rig's README. **Not checked:** lint, build, any human play, load. | Alex plays it; lawyer pass on the public pages before any push; then tune the assumptions |

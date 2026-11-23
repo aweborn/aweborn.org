@@ -5,6 +5,7 @@ import { simLink } from "../lib/simLink";
 import { useSteerStore } from "../stores/steerStore";
 import { setPresenceSocketUp } from "./usePresence";
 import { onMeshSignal, setMeshSignalSender } from "../lib/mesh";
+import { onMatchMessage, setMatchSender } from "../lib/match";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
@@ -46,6 +47,8 @@ const MSG_TYPES: Record<string, number> = {
   "steer": 0x11,
   /** Network-less A2: auto-pairing intros + SDP relay for the mesh (src/lib/mesh.ts). */
   "mesh-signal": 0x12,
+  /** Phase 10: a world's lobby and matches, JSON both ways (shared/match-protocol.ts, src/lib/match.ts). */
+  "match": 0x13,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -244,6 +247,11 @@ export function useSyncConnection(
             sock.send(encodeMessage("mesh-signal", new TextEncoder().encode(JSON.stringify(m))) as unknown as ArrayBuffer);
           }
         });
+        setMatchSender((worldId, m) => {
+          if (ws === sock && sock.readyState === WebSocket.OPEN) {
+            sock.send(encodeMessage("match", new TextEncoder().encode(JSON.stringify(m)), worldId) as unknown as ArrayBuffer);
+          }
+        });
         console.log("[sync] connected to sync-service");
       });
 
@@ -301,6 +309,9 @@ export function useSyncConnection(
             break;
           case "mesh-signal":
             void onMeshSignal(msg.data);
+            break;
+          case "match":
+            onMatchMessage(msg.worldId, msg.data);
             break;
         }
       });
