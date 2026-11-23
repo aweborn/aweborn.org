@@ -206,8 +206,8 @@ Options:
   - **Outcomes:** a rule, never the LLM, decides scores and wins (the Where Winds Meet lesson).
   - **Later:** LLM-steered teammates, useful for human-AI teaming research.
 
-### Q8 ⏳ Joining mid-match, rounds, and the end of a match (parts 1 and 2 answered 2026-11-23, see Decisions; the end-of-match flow is not yet confirmed)
-**Proposed end-of-match flow, waiting on Alex:** results screen (winner, each team's score) → each team gets "play again together" → players teleport back to the lobby, and the match shows in the spectator panel as "finished x ago", opening its replay. A player can leave for the lobby at any time.
+### Q8 ✅ Joining mid-match, rounds, and the end of a match (answered 2026-11-23, see Decisions)
+**End-of-match flow, confirmed by Alex:** results screen (winner, each team's score) → each team gets "play again together" → players teleport back to the lobby, and the match shows in the spectator panel as "finished x ago", opening its replay. A player can leave for the lobby at any time.
 *(Settled already: latecomers wait in the pool, since a roster locks at the ready check; an instance is discarded when its last player leaves. Asked: rounds and length, a player dropping out mid-match, and the end-of-match flow.)*
 - **Options** (Fortnite): late joiners spawn now, spectate, or wait for the next round. Then: how many rounds there are, team rotation, and what happens at the end (results board, rematch vote, back to the lobby).
 - **Rec:**
@@ -215,14 +215,16 @@ Options:
   - A results board shows at the end, followed by a 20 s rematch vote, then everyone returns to the lobby.
   - Matches are short (5–10 min) by default, so the wait stays short.
 
-### Q9 ⏳ Rewards (asked 2026-11-23)
+### Q9 ✅ Rewards (answered 2026-11-23, see Decisions)
+**Answer:** awe, no mana prizes.
 - **Options:** none (play for its own sake); awe/XP for playing; mana prizes.
 - **Rec:**
   - A little **awe** for taking part.
   - No mana prizes in v1: mana is real money in the pool, and prizes invite farming.
   - Winners get a moment, not a payout.
 
-### Q10 ⬜ Research record and consent
+### Q10 ✅ Research record and consent (settled by Q1b, Q10a and Q10b; see Decisions)
+*(The list below is the proposed content of the match record, for the build. Consent is settled: record everyone, the 18+ opt-in is the research filter.)*
 - **The match record:**
   - world, game version and seed;
   - who played, as research IDs only for players who opted in, and as anonymous counts for everyone else;
@@ -254,6 +256,8 @@ Options:
 | Date | Decision |
 |------|----------|
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
+| 2026-11-23 | **Q9: rewards are awe, not mana.** Alex chose (b). <br>• Everyone who finishes a match earns some **awe**; winners get little or no extra, so nobody is pushed away from games they might lose. <br>• **No mana prizes in v1:** mana is real money from the shared pool, and prizes invite farming. <br>• Limits against farming awe: none or much less for matches played only against NPCs, and a daily cap per character on awe from matches. <br>• Winners get a moment: names on the results board in the lobby, and the replay to keep. |
+| 2026-11-23 | **Q8 (part 3): the end of a match.** Confirmed by Alex: a results screen (winner, each team's score) → each team gets "play again together" → players teleport back to the lobby, and the match shows in the spectator panel as "finished x ago", opening its replay. A player can leave for the lobby at any time. |
 | 2026-11-23 | **Q8 (parts 1 and 2): match length and drop-outs.** <br>• **Length:** the creators set the number of rounds and the time limit; the default is one round of 5 to 10 minutes. <br>• **A player who drops out can come back for as long as the match runs.** Alex: *"whenever the drop-out returns, it can replace the NPC again if it's the same match… the window would be the rest of the match."* No fixed 60-second window. <br>• While they're away, **an NPC from the creators' roster holds their slot** if the creators allowed that for the game; otherwise the team plays short-handed. When the character returns to Aweborn and the match is still running, they may re-enter and take the slot back. <br>• The match record notes every moment a human was replaced by an NPC and every return, so research can cut the match at those points. <br>• To design: a short grace period before the NPC steps in (signal blips), and the "your match is still running, rejoin?" prompt on return. |
 | 2026-11-23 | **Q7 follow-up: who picks the NPCs.** Alex agreed with all three: <br>• **The creators set the NPC roster** for their game: which NPCs may play and at which levels. Players choose from it. <br>• **"Play now with NPCs":** a player waiting in the pool can start right away with NPCs in the other slots, so a lone player is never stuck. <br>• **A group has to agree:** during the ready countdown any matched player can propose NPCs for the empty slots; they join only if everyone in the match agrees. Default: none. |
 | 2026-11-23 | **Q7: NPCs host, play and build; players can fill empty slots with NPCs.** <br>• Alex: all three roles are important: **host** (explains rules, announces, calls results), **player** (joins a team and plays) and **builder** (helps set up the game through the planner). <br>• **Filling empty slots with NPCs is an option, per match** (replaces the "no automatic filling" recommendation). Alex: *"that's how super smash bros does it. The players themselves choose what NPCs will or will not play, their level, and their NPC model/behavior."* <br>• So an NPC player has three things players choose: **which NPC** (its model and character), **its level** (how well it plays) and **its behavior**. <br>• Accepted from the recommendation: NPC players start with fixed, deterministic behaviors (chase, guard, fetch, follow), walking only at first; **a rule, never the language model, decides scores and wins**; every NPC is **labeled as AI** in the world and **tagged in the match record** with its identity, level and behavior version, so research can separate human play from NPC play. <br>• To design: what "level" means for a behavior (reaction time, accuracy, speed, how often it makes mistakes). |
@@ -298,3 +302,4 @@ Options:
 | 2026-11-23 | **Q7 mostly answered:** all three NPC roles matter; players may fill empty slots with NPCs they choose (which NPC, level, behavior), Smash Bros style. Asked who picks when the match is a group of strangers. | Alex answers the Q7 follow-up |
 | 2026-11-23 | **Q7 closed** (creator roster, "play now with NPCs", group agreement). Asked Q8 (rounds, a player dropping out, the end of a match). | Alex answers Q8; the template list is still unconfirmed |
 | 2026-11-23 | **Q8 parts 1 and 2 answered** (creators set rounds and time, default 5 to 10 min; a drop-out may return any time while the match runs, an NPC holding the slot meanwhile). The end-of-match flow is proposed, not confirmed. Asked Q9 (rewards). | Alex answers Q9 and confirms the end-of-match flow and the template list |
+| 2026-11-23 | **Q8 closed** (end-of-match flow confirmed) and **Q9 answered** (awe, no mana prizes). Q10 marked settled by Q1b/Q10a/Q10b. Asked the last three together (Q11 offline, Q12 limits, Q13 ownership and the Library) plus the template list. | Alex answers Q11–Q13 and the template list; then close the grill and propose a v1 slice |
