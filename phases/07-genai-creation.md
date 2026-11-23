@@ -642,7 +642,7 @@ Closed in this order before any 18+ build (the 18+ build itself happens in a sep
 
 ## Rules, goals & constraints (design, 2026-11-01)
 
-> Alex: *"Eventually we'll implement ways for players to create rules and goals and constraints."* **Not built.** Design from the [harness & rules research](../docs/research/2026-11-life-and-minds/harness-and-rules.md), so the pieces built now fit.
+> Alex: *"Eventually we'll implement ways for players to create rules and goals and constraints."* **Not built.** **Continued in [Phase 10: the game layer](./10-game-layer.md) (2026-11-23):** boundaries, teams, a physical lobby, NPC players, research records. Design from the [harness & rules research](../docs/research/2026-11-life-and-minds/harness-and-rules.md), so the pieces built now fit.
 
 The field's lesson (Fortnite devices, Horizon Code Blocks, Rec Room Circuits, Mario Maker, VGDL): most players make most worlds from **pre-built behaviours + event → action wiring + a win condition**. Full scripting is for the top 1%. So:
 

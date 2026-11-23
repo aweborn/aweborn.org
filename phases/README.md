@@ -36,6 +36,7 @@ Every new agent session should follow this sequence:
 | **07** | World Creation & Gen AI | 🔴 Not Started (planner designed 2026-10-16) | [07-genai-creation.md](./07-genai-creation.md) | Interior movement & physics, building tools, gen AI integration, polish |
 | **08** | NFC Trading Cards & the World Index | 🟡 In Progress | [08-nfc-trading-cards.md](./08-nfc-trading-cards.md) | `/w/<uuid>` teleport links, World Index (personal index of discovered worlds + warp), physical NFC cards, print-your-world |
 | **09** | Authoritative Flight, Intent Authority & Telemetry | 🔴 Not Started | [09-authoritative-flight.md](./09-authoritative-flight.md) | One deterministic flight + interior sim in `shared/`, plus **9F Unified Intent Authority** (enumerated `shared/actions.ts`, server sole writer to canonical CRDTs, typed offline intent replay retiring client `0x04 world-update` + `chat-guard.ts`); feeds 05/06/07/08 |
+| **10** | The Game Layer | 🔴 Not Started (grill in progress 2026-11-23) | [10-game-layer.md](./10-game-layer.md) | Player-made games inside a world: boundaries, rules/constraints, one goal, teams, a physical matchmaking lobby, NPC hosts and players; every match a research trial. One game per world |
 
 ### Status Legend
 
@@ -51,6 +52,8 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
+> **🎮 Game layer grill (opened 2026-11-23, no code): [Phase 10](./10-game-layer.md).** Research done ([custom games](../docs/research/2026-11-custom-games/README.md)); a 13-question grill queue with recommended answers is in the phase file. Q1 (where a match runs) is waiting on Alex. Any chat can continue it: read Phase 10 → "How to continue this phase".
+>
 > **📝 Playtest log (2026-11-08):** Alex's phone playtest notes are collected in [PLAYTEST.md](./PLAYTEST.md), newest first. Open items there come before new features unless Alex says otherwise.
 >
 > **➡️ NEXT UP (start here, written 2026-11-10 night): the safety + storage gaps are closed and deployed; pick the next thread.** State of prod: 4 GB box `aweborn-vps-3` (Tailnet `aweborn-vps`), all services healthy, deploy + backup workflows green. Shipped today: fail-closed safety check, checked sign text, image check on thumbnails + card photos, the **output gate** (every Library item rated before it's public; blocked files leave the CDN), anonymous story stone ("Maker 1, 2…", traces kept per research ID), all assets on the CDN (`MEDIA_CDN=1`), `jobs.db` hourly to S3 (`infra/restore-genai-db.sh`), big models' web copies (`infra/opt-giants.sh`; the box now handles up to 120 MB itself). Agent permissions: standing OK to push/deploy (memory) + allow rules in `/Users/ajmedeio/repos/.claude/settings.local.json`. **Pick up next (any order):**
