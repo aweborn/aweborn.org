@@ -36,7 +36,8 @@ Because every rule, team assignment and outcome is data, each match is also a we
 
 Each question gives the options, the recommendation (`Rec`), and why. Questions marked ⏳ have been asked and are waiting for an answer; ⬜ are not asked yet.
 
-### Q1 ⏳ Where does a match run? (asked 2026-11-23)
+### Q1 ✅ Where does a match run? (answered 2026-11-23, see Decisions)
+**Answer:** in an **instance**: a boundaried part of the world, copied for each match. Many instances can run at once in one world. The original options are kept below for history.
 - (a) In the **live world**: the world is the arena, and everything a match changes stays changed.
 - (b) In a **fresh copy for each match** (a Roblox reserved server): clean resets, but it breaks "stateful like real life" and splits a small player count.
 - (c) A **game layer over the live world**:
@@ -46,7 +47,23 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
 - **Rec: (c).** It keeps the stateful rule, keeps everyone in one place at low traffic, and gives research a clean record of each match.
 - **Also asked:** does "one game per world" mean one ruleset per world *and* one match running at a time? **Rec: both, for now.**
 
+### Q1b ⏳ What is copied into an instance, and what survives when it ends? (asked 2026-11-23)
+- **What's copied:** the boundaried region's terrain and objects, taken as a snapshot when the match starts.
+- **While the match runs, the original region:**
+  - (a) stays part of the live world, open to everyone; or
+  - (b) is closed while any instance runs.
+- **When the match ends, changes made inside the instance:**
+  - (a) are **thrown away**; the instance was a copy;
+  - (b) **merge back** into the world (the winners' builds stay), which risks conflicts with edits in the live world;
+  - (c) are thrown away, but the creator can choose to promote a match's final state into the world.
+- **Rec:**
+  - The original region stays live and open (a).
+  - Instance changes are **thrown away** (a), so every match starts from the same arena. That's fair, and it's a clean trial for research.
+  - "Stateful like real life" is kept through the **match record**: results, replay and chat stay with the world, shown on a results board in the lobby.
+- **Sub-question:** when the creator edits the arena region, do running instances keep their snapshot? **Rec: yes.** The next match picks up the new version, and each match records which version it used.
+
 ### Q2 ⬜ Who may author and start the world's game?
+*(Partly answered by Q1: Alex named a **game creator** role, "which can be bound to the world creator and its co-creators". Still to settle: may anyone who isn't an owner author a world's game, or is the game creator always the world creator or a co-creator? And who starts a match?)*
 - **Options:**
   - creator and builders only (like terrain);
   - anyone, with the creator approving;
@@ -66,6 +83,7 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
 - **Sub-question:** which 5–6 starter templates? Phase 07 lists collect-N, race-to-zone, survive-T, find-the-NPC, build-contest and explore-all-zones. Add team modes like capture-the-flag, king of the hill, and a cooperative build-against-the-clock (good for team research)?
 
 ### Q4 ⬜ Boundaries, and people who aren't playing
+*(Changed by Q1: people who aren't playing never enter an instance. They roam the live world or watch from the lobby, so the "passersby inside the boundary" problem goes away. Still open: how the boundary's edge behaves for players **inside** an instance, plus keep-out, spawn and base zones.)*
 - **Boundary kinds** (Halo Reach model):
   - a **play area** with a soft edge: a countdown, then a return to spawn rather than "death";
   - **keep-out zones**, soft and hard;
@@ -77,6 +95,20 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
 - **Rec:** spectators are ghosted and can watch from anywhere. They can't touch game objects or players. No "death" in Aweborn: going out of bounds means a soft return to the team spawn (fits the gentle tone).
 
 ### Q5 ⬜ The physical lobby
+*(Partly answered by Q1: the lobby is a **special zone the game creator draws**, and it may hold everyone. Matched players **teleport** from the lobby to their spawns in a new instance. Still open: do players arrive in the world inside the lobby (is it the world's spawn when a game exists?), how queueing and team forming work in the zone, and minimum and maximum players.)*
+
+### Q5b ⬜ Spectating from the lobby
+*(New from Q1: anyone in the lobby can pick an in-progress instance and watch it, and switch between instances.)* Questions:
+- **How it's shown:**
+  - (a) a window or hologram in the lobby showing the instance;
+  - (b) the spectator's camera moves into the instance as a ghost, while their body stays in the lobby;
+  - (c) both.
+- Can spectators chat with players?
+- Do players see who's watching?
+- **Rec:**
+  - (b) first: a ghost camera, free-fly inside the boundary or following a player. It works in portrait and costs one presence feed.
+  - Spectator chat stays in the lobby, so players aren't distracted. Players see a "👁 N watching" count.
+  - **Server cost:** a spectator subscribes to **one instance at a time** and gets its batched presence (the same nearest-30 batching as `rooms.ts`).
 - **Where:**
   - a lobby area inside the world near spawn (Roblox-style pads, or a gate);
   - a lobby object the creator places;
@@ -154,6 +186,7 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
 | Date | Decision |
 |------|----------|
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
+| 2026-11-23 | **Q1: matches run in instances.** Alex: *"the match runs in a boundaried instance of a part of the world which the boundary is laid by the game creator."* <br>• Players entering the world start in the **game lobby**, a special zone the game creator makes (the game creator *"can be bound to the world creator and its co-creators"*). <br>• The lobby may hold everyone. Matched players **teleport** from the lobby to their starting spots in a new **boundaried instance** of the game. <br>• Players in the lobby can **spectate any in-progress instance** and switch between them. <br>• So one world hosts **multiple instances of its one game at once**: "one game per world" means one ruleset, not one match. <br>• This is the Roblox reserved-server pattern (lobby → private copy), scoped to a region of the world rather than a whole place. Follow-ups: Q1b, Q5b; Q2, Q4 and Q5 updated. |
 
 ## Open questions not yet in the queue
 
@@ -166,3 +199,4 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
 | Date | What was done | Next step |
 |------|--------------|-----------|
 | 2026-11-23 | **Opened.** Alex asked to grill him on the game layer after deep research. Wrote [the research](../docs/research/2026-11-custom-games/README.md) (Halo 3 → Infinite, Roblox, Fortnite, WC3, Rec Room, VRChat, Empirica, Overcooked-AI, a tradeoff table) and this phase with the 13-question grill queue and recommended answers. Asked Q1. Alex: put these feature docs in the repo so another chat can carry on. | Alex answers Q1, then continue down the queue |
+| 2026-11-23 | **Q1 answered:** instances of a boundaried region drawn by the game creator; a lobby zone; matched players teleport in; lobby spectators pick any running instance. Logged in Decisions; added Q1b (what an instance copies and what survives) and Q5b (spectating); updated Q2, Q4, Q5. Asked Q1b. | Alex answers Q1b |

@@ -52,7 +52,7 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
-> **🎮 Game layer grill (opened 2026-11-23, no code): [Phase 10](./10-game-layer.md).** Research done ([custom games](../docs/research/2026-11-custom-games/README.md)); a 13-question grill queue with recommended answers is in the phase file. Q1 (where a match runs) is waiting on Alex. Any chat can continue it: read Phase 10 → "How to continue this phase".
+> **🎮 Game layer grill (opened 2026-11-23, no code): [Phase 10](./10-game-layer.md).** Research done ([custom games](../docs/research/2026-11-custom-games/README.md)); a 13-question grill queue with recommended answers is in the phase file. Q1 decided (matches run in boundaried instances, many per world, lobby spectators); Q1b (what an instance copies and what survives) is waiting on Alex. Any chat can continue it: read Phase 10 → "How to continue this phase".
 >
 > **📝 Playtest log (2026-11-08):** Alex's phone playtest notes are collected in [PLAYTEST.md](./PLAYTEST.md), newest first. Open items there come before new features unless Alex says otherwise.
 >
