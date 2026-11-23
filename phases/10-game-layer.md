@@ -27,7 +27,7 @@ Because every rule, team assignment and outcome is data, each match is also a we
 
 ## Start here: handoff for the next chat (2026-11-23)
 
-**You are starting slice 1: the game record and setup tools.** No game code exists yet. Read, in this order: [The design in one page](#the-design-in-one-page-from-the-decisions-below-2026-11-23), the [build order](#v1-build-order-approved-by-alex-2026-11-23-lets-create-the-handoff-for-the-next-chat-to-start-implementing-nothing-is-built-yet), the Decisions table, then [AGENTS.md](../AGENTS.md) (ship working things by pushing to `main`; portrait phone first; no O(n²) fan-out).
+**You are starting slice 1: the game record and setup tools.** No game code exists yet. Read, in this order: [The design in one page](#the-design-in-one-page-from-the-decisions-below-2026-11-23), the **v1 build order** section below it, the Decisions table, then [AGENTS.md](../AGENTS.md) (ship working things by pushing to `main`; portrait phone first; no O(n²) fan-out).
 
 ### What slice 1 delivers
 A creator or co-creator can turn their world into a game *on paper*: pick a template and settings, mark the arena, its zones and the lobby, and see them in the world. No matches run yet (slice 2).
