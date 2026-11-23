@@ -47,7 +47,8 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
 - **Rec: (c).** It keeps the stateful rule, keeps everyone in one place at low traffic, and gives research a clean record of each match.
 - **Also asked:** does "one game per world" mean one ruleset per world *and* one match running at a time? **Rec: both, for now.**
 
-### Q1b ⏳ What is copied into an instance, and what survives when it ends? (asked 2026-11-23)
+### Q1b ✅ What is copied into an instance, and what survives when it ends? (answered 2026-11-23, see Decisions)
+**Answer:** an instance copies what the play space was set up to hold. Nothing from the match is saved back into the world. Every match is fully traceable by replaying its telemetry (a **hard rule**). An instance is discarded when its last player leaves. Original options below for history.
 - **What's copied:** the boundaried region's terrain and objects, taken as a snapshot when the match starts.
 - **While the match runs, the original region:**
   - (a) stays part of the live world, open to everyone; or
@@ -61,6 +62,25 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
   - Instance changes are **thrown away** (a), so every match starts from the same arena. That's fair, and it's a clean trial for research.
   - "Stateful like real life" is kept through the **match record**: results, replay and chat stay with the world, shown on a results board in the lobby.
 - **Sub-question:** when the creator edits the arena region, do running instances keep their snapshot? **Rec: yes.** The next match picks up the new version, and each match records which version it used.
+
+### Q1c ⬜ Is the arena an authored template or a snapshot of the live region?
+*(New from Q1b: Alex said the play space copies "anything it was intended to have".)* In the live world, anyone may place things and kick them around (`world-policy.ts`), so the region can fill up with visitors' clutter.
+- **(a) Snapshot of the live region** at match start, clutter included.
+- **(b) Authored template:** only what the game creator(s) placed for the game (terrain plus objects tagged for the game), versioned like a blueprint. The live region can look like the arena, or be somewhere else entirely.
+- **Rec: (b).** Every match starts from the same, intended arena; research gets a fixed condition (the arena version); and visitors can't break the game by dropping things into the region. Like Halo's map variant, the arena is its own record and can travel to other worlds.
+
+### Q10a ⏳ The hard rule (every match fully traceable) vs. research opt-in (asked 2026-11-23)
+*(Raised by Q1b. Two of Alex's rules pull against each other.)*
+- **Every match must be fully traceable** by telemetry replay (2026-11-23).
+- **People are researched only if they opt in,** and only players who have opted into 18+ may opt into research (2026-11-20, open item in [README.md](./README.md) → "Age restriction hardening").
+- [RESEARCH.md](../RESEARCH.md) still says *"disclosed, no consent form"* and pseudonymous.
+
+Options:
+- **(a)** Only research-opted-in players may join games.
+- **(b)** Record and replay **every** match for everyone, as part of the game (replays, the results board, settling disputes, anti-cheat, like flight telemetry today), disclosed in Privacy. A match counts as **research data only if every human in it opted in**. Matchmaking can prefer grouping opted-in players so research matches happen often.
+- **(c)** Record everyone, and use opted-in players' traces for research while reducing everyone else to anonymous "other player" traces.
+- **Rec: (b).** The replay is a game feature for everyone, and research stays clean and consented. Team research needs whole teams, so a mixed match is simply left out.
+- **Sub-question:** how long are replays kept? Flight samples are kept 14 days today. **Rec:** game replays 90 days; research matches for as long as the study needs, under research IDs.
 
 ### Q2 ⬜ Who may author and start the world's game?
 *(Partly answered by Q1: Alex named a **game creator** role, "which can be bound to the world creator and its co-creators". Still to settle: may anyone who isn't an owner author a world's game, or is the game creator always the world creator or a co-creator? And who starts a match?)*
@@ -186,6 +206,7 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
 | Date | Decision |
 |------|----------|
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
+| 2026-11-23 | **Q1b: the instance lifecycle (accepted the recommendations).**<br>• The creators set up a **play space**, and each new instance copies what that play space was set up to hold. <br>• **Nothing is saved back** into the world after a match: the instance was only a copy for the match. <br>• **Hard rule:** researchers can trace every player's interactions and the world's by **replaying the telemetry** of any match. Alex: *"the entire point of Aweborn is to have players discover their awe in a shared world. We need games and ways to force interesting behavior to observe, measure, and study success versus loss."* <br>• An instance is **discarded when all its players have left**. That's how others do it too: Roblox reserved servers only run while someone is in them, and Popup room instances persist as long as one attendee is present. Add a maximum match length and an idle timeout so an instance can't live forever. <br>• When its last player leaves, an instance leaves the spectator panel, or stays a while as a "finished x ago" row (suggested: that row opens the replay). <br>• The original region of the live world stays open while matches run. Running instances keep their snapshot when the creator edits the arena; the next match uses the new version and records which one. Follow-ups: Q1c, Q10a. |
 | 2026-11-23 | **Q1: matches run in instances.** Alex: *"the match runs in a boundaried instance of a part of the world which the boundary is laid by the game creator."* <br>• Players entering the world start in the **game lobby**, a special zone the game creator makes (the game creator *"can be bound to the world creator and its co-creators"*). <br>• The lobby may hold everyone. Matched players **teleport** from the lobby to their starting spots in a new **boundaried instance** of the game. <br>• Players in the lobby can **spectate any in-progress instance** and switch between them. <br>• So one world hosts **multiple instances of its one game at once**: "one game per world" means one ruleset, not one match. <br>• This is the Roblox reserved-server pattern (lobby → private copy), scoped to a region of the world rather than a whole place. Follow-ups: Q1b, Q5b; Q2, Q4 and Q5 updated. |
 
 ## Open questions not yet in the queue
@@ -200,3 +221,4 @@ Each question gives the options, the recommendation (`Rec`), and why. Questions 
 |------|--------------|-----------|
 | 2026-11-23 | **Opened.** Alex asked to grill him on the game layer after deep research. Wrote [the research](../docs/research/2026-11-custom-games/README.md) (Halo 3 → Infinite, Roblox, Fortnite, WC3, Rec Room, VRChat, Empirica, Overcooked-AI, a tradeoff table) and this phase with the 13-question grill queue and recommended answers. Asked Q1. Alex: put these feature docs in the repo so another chat can carry on. | Alex answers Q1, then continue down the queue |
 | 2026-11-23 | **Q1 answered:** instances of a boundaried region drawn by the game creator; a lobby zone; matched players teleport in; lobby spectators pick any running instance. Logged in Decisions; added Q1b (what an instance copies and what survives) and Q5b (spectating); updated Q2, Q4, Q5. Asked Q1b. | Alex answers Q1b |
+| 2026-11-23 | **Q1b answered** (lifecycle, the hard rule of full telemetry replay, discard when empty, a "finished x ago" row). Added Q1c (authored template vs. live snapshot) and Q10a (the hard rule vs. research opt-in). Asked Q10a. | Alex answers Q10a, then Q1c |
