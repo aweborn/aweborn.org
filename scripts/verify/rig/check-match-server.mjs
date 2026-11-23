@@ -151,7 +151,8 @@ const brought = await owner.api("/api/player/game-library/bring", { worldId: w2,
 assert.equal(brought.status, 200, JSON.stringify(brought.data));
 assert.deepEqual(brought.data.game.arena.at, [50, 2, -40]);
 assert.deepEqual(brought.data.game.lobby.ring.at, [50, 32, -40]);
-assert.deepEqual(brought.data.game.credits, [{ libraryId: lib.data.game.id, version: 1, by: owner.id, name: "Rig Race" }]);
+assert.deepEqual(brought.data.game.credits.map(({ byName, ...c }) => c), [{ libraryId: lib.data.game.id, version: 1, by: owner.id, name: "Rig Race" }]);
+assert.ok(brought.data.game.credits[0].byName, "the credit carries the maker's name");
 console.log("library ok: brought to", w2, "credits", JSON.stringify(brought.data.game.credits));
 
 for (const p of [owner, ann, ben]) { clearInterval(p.timer); p.ws.close(); }

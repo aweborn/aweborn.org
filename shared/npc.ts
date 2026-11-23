@@ -49,6 +49,9 @@ const CORNER_CLEAR = 0.6;
 const SNAP_DISTANCE = 3;
 const FOLLOW_DISTANCE = 2;
 
+/** Ticks an NPC waits after a round begins, per level 1..5. */
+export const NPC_HEAD_START_TICKS = [60, 50, 40, 30, 20] as const;
+
 const levelOf = (level: number | undefined): number => Math.min(5, Math.max(1, Math.round(Number.isFinite(level) ? (level as number) : 3)));
 
 /** Metres per second an NPC of this level walks (the game's speed trait applies to it like to anyone). */
@@ -359,6 +362,10 @@ export function stepNpc(setup: MatchSetup, state: MatchState, slot: number, mind
     m.wait = 0;
   }
   if (!me || state.phase !== "playing" || me.out || me.left) return m;
+  // A head start for people: an NPC waits a moment after a round begins (6 s at level 1
+  // down to 2 s at level 5). Without it NPCs won a short race before anyone had moved
+  // (seen in the first live matches, 2026-11-23).
+  if (state.played !== undefined && state.played < NPC_HEAD_START_TICKS[levelOf(setup.slots.find((x) => x.slot === slot)?.npc?.level) - 1]) return m;
 
   const v = viewOf(setup, state, slot, m, me);
   if (m.wait <= 0 || !m.goal) {

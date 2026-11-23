@@ -10,7 +10,7 @@ import type { Vec3 } from "./game.js";
 import type { MatchEvent, MatchPhase, MatchResult, MatchSlot } from "./match.js";
 
 /** How long a matched group has to step out before the roster locks. */
-export const READY_MS = 10_000;
+export const READY_MS = 15_000;
 /** After a player's connection drops, how long before an NPC takes their slot (if the game allows). */
 export const DROP_GRACE_MS = 8_000;
 /** A match with no humans left in it is discarded after this. */

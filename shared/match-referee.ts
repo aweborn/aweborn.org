@@ -43,7 +43,9 @@
  *   more deliveries are needed than there are pieces (several teams, or a big
  *   scoreToWin): then it reappears somewhere else after RESPAWN_TICKS.
  * - **King of the hill.** A point for every 10 ticks in a row the same team holds the
- *   hill alone; losing or contesting it restarts that second.
+ *   hill: it has more players on it than any other team (equal numbers contest it).
+ *   Losing or contesting it restarts that second. (It was "alone on it" at first: with
+ *   NPCs on every team, who all walk to the hill, nobody ever scored.)
  * - **Rules.** `match-start` and `round-start` rules run on the first playing tick (round
  *   1's, every round's), so their actions land on a running clock. Without an actor,
  *   `score` is the best team's score, `other-score` the second best, and `others` means
@@ -520,8 +522,14 @@ function stepTemplate(c: Ctx, entered: { p: PlayerState; zone: GameZone }[]): vo
     case "king-of-the-hill": {
       const hill = goals(game);
       const on = s.players.filter((p) => isIn(p) && hill.some((z) => inBox(z, p.x, p.y, p.z)));
-      const teams = [...new Set(on.map((p) => teamOf(c, p.slot)))];
-      const holder = teams.length === 1 ? teams[0] : 0;
+      // The team with the most players on the hill holds it; equal numbers contest it (nobody scores)
+      const heads = new Map<number, number>();
+      for (const p of on) heads.set(teamOf(c, p.slot), (heads.get(teamOf(c, p.slot)) ?? 0) + 1);
+      let holder = 0, best = 0;
+      for (const [team, n] of [...heads].sort((a, b) => a[0] - b[0])) {
+        if (n > best) { best = n; holder = team; }
+        else if (n === best) holder = 0;
+      }
       if (holder !== s.hill) {
         s.hill = holder;
         s.hillTicks = 0;
@@ -530,7 +538,7 @@ function stepTemplate(c: Ctx, entered: { p: PlayerState; zone: GameZone }[]): vo
       if (holder > 0) {
         s.hillTicks = (s.hillTicks ?? 0) + 1;
         if (s.hillTicks % TICKS_PER_SECOND === 0) {
-          for (const p of on) p.score++;
+          for (const p of on) if (teamOf(c, p.slot) === holder) p.score++;
           addScore(c, holder, 1, undefined, 0);
         }
       }

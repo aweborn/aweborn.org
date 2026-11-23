@@ -32,7 +32,15 @@ Walkthroughs (each prints what it checked and writes screenshots to `/tmp/rig<N>
 | `check-play.mjs` / `check-view.mjs` | The play and view layers against a faked server, four screen sizes |
 | `check-play-live.mjs` | One player and NPCs through a whole race against the real server |
 | `check-view-live.mjs` | Tune in, fly in, result, replay against the real server |
-RIG_MORE_PLACEHOLDER
+| `check-match-e2e.mjs` | **Three people in three browser contexts** (owner, a saved player, a guest): set-up, arrival, ring, ready check, spawns, each sees the other, the lobby doesn't, the owner tunes in (bodies, hologram), out of bounds and back, the goal, results, record verifies, play again together, a decline, the NPC vote, replays from Finished and Mine, the mini-map from another world. Passed at all four sizes |
+| `check-match-more.mjs` | Play against from the chat name sheet; Hold / Release / Start now; a closed tab → an NPC takes the slot → Rejoin; Leave. Phone size |
+| `check-templates-live.mjs` | One match each of collect, capture the flag, king of the hill, survive, build together and a two-card rules game with NPCs; every record verifies. Phone size |
+| `check-library-live.mjs` | The Library against the real routes: save, list, bring into a second world, bring again, another creator brings it, credits. Phone size |
+| `match-kit.mjs` | Shared helpers for the live scripts |
+
+`check-match-server.mjs` assumes a fresh database (run `up.sh` first). The e2e has the
+owner hold the queue around its decline step, because software Chrome at desktop size
+can't act inside a ready check in time.
 
 Limits: Chrome renders in software here (5 to 10 frames a second), so the scripts wait
 on store state, not on time; fonts, Stripe and Google sign-in can't load (no network).

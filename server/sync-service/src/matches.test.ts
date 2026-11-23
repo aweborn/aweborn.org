@@ -239,7 +239,7 @@ test("play now: alone in the pool, a match starts at once with NPCs in the other
   r.say("ann", { t: "play-now", level: 2 });
   const start = r.last("ann", "start")!;
   assert.equal(start.roster.length, 4);
-  assert.deepEqual(start.roster.filter((s) => s.kind === "npc").map((s) => [s.name, s.npc!.level]), [["Bolt", 2], ["Bolt", 2], ["Bolt", 2]]);
+  assert.deepEqual(start.roster.filter((s) => s.kind === "npc").map((s) => [s.name, s.npc!.level]), [["Bolt", 2], ["Bolt 2", 2], ["Bolt 3", 2]]); // one roster NPC used three times: numbered
   assert.deepEqual([1, 2].map((team) => start.roster.filter((s) => s.team === team).length), [2, 2]);
   const rec = r.store.record(start.matchId)!;
   assert.equal(rec.setup.formed.policy, "play-now");
@@ -456,7 +456,7 @@ test("the end: recorded and verified, awe once, play again together, back to the
   assert.ok(rec.events.some((e) => e.type === "goal"));
   assert.deepEqual(r.verified.map((v) => v.setup.matchId), [id]);
   assert.deepEqual(r.verified[0], rec);
-  assert.equal(r.chats.at(-1), `Match over. Team ${team("ann")} wins!`);
+  assert.equal(r.chats.at(-1), `Match over. ${["Red", "Blue"][team("ann") - 1]} wins!`);
   // Still together in the instance for the results
   assert.equal(r.groups.get("ann"), `${W}#${id}`);
   r.run(5000);
@@ -705,7 +705,7 @@ test("real referee and NPCs: play now, a drop held by an NPC, a rejoin, a host e
   const start = r.last("ann", "start")!;
   const id = start.matchId;
   r.pos.set("ann", { x: start.spawn[0], y: start.spawn[1], z: start.spawn[2] });
-  r.run(7000);
+  r.run(10000); // past the countdown and the NPCs' head start
   // The NPCs move on their own once play starts
   const a = r.last("ann", "snap")!;
   r.run(2000);

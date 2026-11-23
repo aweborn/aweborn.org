@@ -19,7 +19,7 @@
  * another player through this file: announcements are fixed lines.
  */
 import { randomUUID } from "node:crypto";
-import { gameMissing, type Game, type Vec3 } from "../../../shared/game.js";
+import { gameMissing, teamName, type Game, type Vec3 } from "../../../shared/game.js";
 import {
   MATCH_SIM_VERSION, packSamples, q, spawnPoint,
   type ControlInput, type MatchEvent, type MatchFrame, type MatchRecord, type MatchResult, type MatchSetup, type MatchSlot, type MatchState, type Sample,
@@ -92,12 +92,14 @@ const PIN_MS = 1_500;
 const START_PIN_MS = 6_000;
 const PIN_NEAR = 3;
 const MAX_LINKS = 8;
+/** A ready check with an NPC proposal runs at least this long from the (first) proposal. */
+const NPC_VOTE_MS = 8_000;
 const DEFAULT_NPC_LEVEL = 3;
 
 const HOST_LINES = {
   found: "A match is forming. Step out of the ring if you can't play.",
   started: (heads: number[]) => (heads.length > 1 ? `Match started: ${heads.join(" v ")}. Good luck!` : `Match started with ${heads[0]} ${heads[0] === 1 ? "player" : "players"}. Good luck!`),
-  over: (winner: number | null, teams: number) => (winner === null ? "Match over." : winner === 0 ? "Match over. It's a draw!" : teams > 1 ? `Match over. Team ${winner} wins!` : "Match over. Well played!"),
+  over: (winner: number | null, teams: number) => (winner === null ? "Match over." : winner === 0 ? "Match over. It's a draw!" : teams > 1 ? `Match over. ${teamName(winner)} wins!` : "Match over. Well played!"),
 } as const;
 
 interface Seat {
@@ -141,6 +143,8 @@ interface Check {
   formed: MatchSetup["formed"];
   deadline: number;
   npc: { level: number; by: string; yes: Set<string> } | null;
+  /** The one extension for an NPC proposal has been used. */
+  extended?: boolean;
 }
 
 interface Lobby {
@@ -314,6 +318,11 @@ export class MatchHost {
         if (!c.game.npc.fill || c.game.npcRoster.length === 0) return refuse("This game has no NPC players to play with.");
         if (c.slots.length >= c.game.settings.players.max) return refuse("The match is already full.");
         c.npc = { level: level(it.level), by: playerId, yes: new Set([playerId]) };
+        // Everyone has to see the question and answer it: the first proposal buys the ready check a little time (once)
+        if (!c.extended) {
+          c.extended = true;
+          c.deadline = Math.max(c.deadline, this.deps.now() + NPC_VOTE_MS);
+        }
         this.sendFound(lobby);
         return;
       }

@@ -160,8 +160,11 @@ test("the routes: owners only, a checked name, and the brought game lands in the
   const brought = games.get(W2)!;
   assert.deepEqual(b.body.game, brought);
   assert.deepEqual(brought.arena!.at, [-50, 2, 60]);
-  assert.deepEqual(brought.credits, [{ libraryId: saved.id, version: 1, by: "cara", name: "Sky Race" }]);
+  // The credit carries the maker's name as the server resolves it, so clients never show a raw id
+  assert.deepEqual(brought.credits, [{ libraryId: saved.id, version: 1, by: "cara", name: "Sky Race", byName: "CARA" }]);
   assert.equal(b.body.placed, 2);
+  // Each placed object is marked as this Library game's prop (so the next bring can clear them)
+  assert.ok(placed[W2].every((o) => (o as { gameProp?: string }).gameProp === saved.id));
   assert.deepEqual(placed[W2].map((o) => [(o as { x: number }).x, (o as { placedBy: string }).placedBy]), [[-48, "dana"], [-51, "dana"]]);
   // Cara's world is untouched
   assert.deepEqual(games.get(W)!.arena!.at, [10, 5, -20]);

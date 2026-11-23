@@ -27,7 +27,7 @@ const H = player(p, "player", W);
 const PLAN = {
   "collect": { items: "pickup", scores: true, hud: /RED|BLUE/i, act: async (snap) => { const it = snap.items.find((i) => i.kind === "pickup"); if (it) await H.stand(it.x, it.y, it.z); } },
   "capture-the-flag": { items: "flag", scores: true, hud: /RED|BLUE/i, act: async () => {} },
-  "king-of-the-hill": { items: null, scores: true, hud: /RED|BLUE/i, act: async () => H.stand(0, 0, -8) },
+  "king-of-the-hill": { items: null, scores: true, hud: /RED|BLUE/i, act: async () => {}, late: async () => H.stand(0, 0, -8) },
   "survive": { items: null, scores: false, hud: /\d/, act: async () => {} },
   "build-together": { items: "piece", scores: true, hud: /\d/, act: async () => {} },
   "rules": { items: "pickup", scores: true, hud: /RED|BLUE/i, act: async () => H.stand(0, 0, -13) },
@@ -67,7 +67,7 @@ for (const name of ONLY) {
 
   // Watch the round: sample the snapshot about once a second
   const seen = { kinds: new Set(), maxItems: 0, hill: new Set(), walked: new Map(npcs.map((r) => [r.slot, 0])), last: new Map(), toasts: new Set(), carry: new Set(), warned: false };
-  let shotDone = false, acted = false;
+  let shotDone = false, acted = false, lated = false;
   const t0 = Date.now();
   while (Date.now() - t0 < 100000) {
     const s = await H.match((s) => s.snap && { phase: s.snap.phase, left: s.snap.left, scores: s.snap.scores, hill: s.snap.hill, items: s.snap.items, players: s.snap.players, ended: Boolean(s.ended) });
@@ -85,6 +85,7 @@ for (const name of ONLY) {
     if (await H.has("#match-warning")) seen.warned = true;
     const secs = (Date.now() - t0) / 1000;
     if (!acted && secs > 6) { acted = true; await plan.act(s); }
+    if (plan.late && !lated && secs > 30) { lated = true; await plan.late(s); }
     if (name === "survive" && secs > 14 && secs < 17) await H.stand(0, 0, -10); // into the keep-out for a moment
     if (name === "survive" && secs > 20 && secs < 23) await H.stand(0, 0, -2);
     if (!shotDone && secs > 16) { shotDone = true; await H.shot(`tpl-${VP}-${name}-play`); }

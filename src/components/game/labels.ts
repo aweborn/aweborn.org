@@ -10,8 +10,8 @@ import {
  * reads is the same wherever a card is shown.
  */
 
-const TEAM_NAMES = ['Red', 'Blue', 'Green', 'Gold', 'Violet', 'Teal', 'Orange', 'Pink']
-export const teamName = (n: number) => TEAM_NAMES[n - 1] ?? `Team ${n}`
+import { teamName } from '@aweborn/shared/game'
+export { teamName }
 
 export const ZONE_LABEL: Record<ZoneKind, string> = { spawn: 'Spawn', 'keep-out': 'Keep-out', goal: 'Goal' }
 

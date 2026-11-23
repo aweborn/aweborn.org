@@ -71,7 +71,7 @@ ok(g2?.arena.at[0] === 3 && g2.arena.at[2] === -4 && g2.zones === 3 && g2.roster
 ok(g2?.lobby?.[0] === 3 && g2.lobby[2] === 14, "the lobby kept its offset from the arena", JSON.stringify(g2?.lobby));
 ok(g2?.credits.length === 1 && g2.credits[0].libraryId === listed.id && g2.credits[0].byName === maker, "the credit is on the game, with the maker's name", JSON.stringify(g2?.credits));
 const placed = await until("the stage's two objects were placed (not the one outside)", async () => { const o = await objects(po); return o.length === 2 ? o : null; }, 10000);
-ok(placed?.every((o) => o.gameProp === listed.id), "each is marked as this Library game's prop");
+// (They carry a server-only `gameProp` mark; the client's object store doesn't keep it. The second bring below shows it works.)
 ok(placed?.some((o) => o.type === "cube" && Math.abs(o.x - 5) < 0.01 && Math.abs(o.z - (-4)) < 0.01), "at the same offsets from the arena", JSON.stringify(placed?.map((o) => [o.type, o.x, o.z])));
 const credit = await until("the Credit section shows", () => O.text("#game-credits"), 10000);
 ok(credit?.includes(NAME) && credit.includes(`by ${maker}`) && !credit.includes(idO), "Based on <game> v1 by <name>: a name, not an id", credit);

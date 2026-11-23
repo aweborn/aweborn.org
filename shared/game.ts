@@ -168,6 +168,10 @@ export interface Game {
   credits: GameCredit[];
 }
 
+/** What teams are called everywhere (the HUD, results, the host's chat lines). */
+const TEAM_NAMES = ["Red", "Blue", "Green", "Gold", "Violet", "Teal", "Orange", "Pink"];
+export const teamName = (n: number): string => TEAM_NAMES[n - 1] ?? `Team ${n}`;
+
 /** One link of a game's credit chain: who made which version of which Library game. */
 export interface GameCredit {
   libraryId: string;

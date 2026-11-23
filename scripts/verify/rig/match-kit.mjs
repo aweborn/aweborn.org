@@ -47,8 +47,8 @@ export const GAMES = {
     { id: "goal-2", kind: "goal", team: 2, at: [7, 0, -12], size: [3, 3, 3] },
   ]),
   "king-of-the-hill": base("king-of-the-hill", { scoreToWin: 120, roundSeconds: 300 }, [{ id: "hill", kind: "goal", at: [0, 0, -8], size: [5, 3, 5] }]),
-  "survive": { ...base("survive", { teams: 1, scoreToWin: 1, players: { min: 1, max: 4 } }, [{ id: "pit", kind: "keep-out", at: [0, 0, -10], size: [6, 3, 4], ret: "countdown" }]), zones: [...ONE_SPAWN, { id: "pit", kind: "keep-out", at: [0, 0, -10], size: [6, 3, 4], ret: "countdown" }] },
-  "build-together": { ...base("build-together", { teams: 1, scoreToWin: 3, players: { min: 1, max: 4 } }, []), zones: [...ONE_SPAWN, { id: "site", kind: "goal", at: [0, 0, -12], size: [4, 3, 4] }] },
+  "survive": { ...base("survive", { teams: 1, scoreToWin: 1 }, [{ id: "pit", kind: "keep-out", at: [0, 0, -10], size: [6, 3, 4], ret: "countdown" }]), zones: [...ONE_SPAWN, { id: "pit", kind: "keep-out", at: [0, 0, -10], size: [6, 3, 4], ret: "countdown" }] },
+  "build-together": { ...base("build-together", { teams: 1, scoreToWin: 3 }, []), zones: [...ONE_SPAWN, { id: "site", kind: "goal", at: [0, 0, -12], size: [4, 3, 4] }] },
 };
 export const RING = RACE.lobby.ring.at;
 export const GOAL = RACE.zones[2].at;

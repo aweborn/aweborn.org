@@ -130,6 +130,8 @@ await shot(O, "10-watcher-ended");
 ok(M1 && (await verifies(O, M1)) === true, "the stored record replays to the same result (verifyRecord)");
 
 // ── 6. Play again together, then a decline ──────────────────────────
+// The owner holds the queue meanwhile, so the next ready check starts when this script is looking (10 s is short for software Chrome)
+await O.send({ t: "host", cmd: "hold" });
 ok(await A.click("#match-again") && await B.click("#match-again"), "both tap Play again together");
 await until("both are back in the lobby, in the pool, standing in the ring", async () => {
   const [a, c] = await Promise.all([A.match((s) => s.playing === null && s.ended === null && s.lobby?.queued === true), B.match((s) => s.playing === null && s.ended === null && s.lobby?.queued === true)]);
@@ -137,8 +139,8 @@ await until("both are back in the lobby, in the pool, standing in the ring", asy
 }, 30000);
 for (const h of [A, B]) { const at = await h.pos(); ok(Math.hypot(at.x - RING[0], at.z - RING[2]) <= 2.2 && at.mods === null, `${h.name} stands in the ring, traits cleared`, JSON.stringify({ x: +at.x.toFixed(1), z: +at.z.toFixed(1) })); }
 await until("the owner sees them in the lobby again", async () => { const o = await O.others(); return o.includes(idA) && o.includes(idB); }, 15000);
+await O.send({ t: "host", cmd: "release" });
 const f2 = await until("a second ready check", async () => { const [a, c] = await Promise.all([A.match((s) => s.found?.matchId), B.match((s) => s.found?.matchId)]); return a && a === c && a !== M1 ? a : null; }, 20000);
-await sleep(1200);
 await A.stepOut();
 await until("A steps out of the ring: the ready check is called off for both", async () => (await A.match((s) => s.found === null)) && (await B.match((s) => s.found === null)), 10000);
 ok((await A.match((s) => s.playing)) === null && (await B.match((s) => s.playing)) === null, "nobody was placed");
@@ -152,9 +154,9 @@ const f3 = await until("A steps back in: a third ready check", async () => { con
 ok(await A.click("#match-npc-propose"), "A asks everyone: fill the empty slots with NPCs");
 await until("B sees the proposal and the vote", () => B.has("#match-npc-yes"), 8000);
 ok(/1 of 2 agree/.test(await B.text(".match-npc-votes") ?? ""), "one of two agrees so far", await B.text(".match-npc-votes"));
-await shot(B, "11-npc-vote");
 await B.click("#match-npc-yes");
 await until("everyone agreed", async () => /2 of 2 agree/.test(await A.text(".match-npc-votes") ?? ""), 8000);
+await shot(B, "11-npc-vote");
 const s3 = await until("the match starts, filled to max with NPCs", () => A.match((s, id) => s.playing?.matchId === id && { roster: s.playing.roster.map((r) => `${r.name}:${r.kind}:t${r.team}`), team: s.playing.you.team }, f3), 25000);
 console.log("     roster:", s3?.roster.join(" "));
 const npcNames = (s3?.roster ?? []).filter((r) => r.includes(":npc:")).map((r) => r.split(":")[0]);

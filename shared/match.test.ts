@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   MATCH_SIM_VERSION, MATCH_TICK_MS, ROUND_BREAK_MS, ROUND_COUNTDOWN_MS,
   initMatch, packSamples, q, replayRecord, resultOf, spawnPoint, stepMatch, verifyRecord,
-  type ControlInput, type MatchEvent, type MatchEventType, type MatchFrame, type MatchRecord, type MatchSetup, type MatchState, type Sample,
+  type ControlInput, type MatchEvent, type MatchEventType, type MatchFrame, type MatchRecord, type MatchSetup, type MatchSlot, type MatchState, type Sample,
 } from "./match.ts";
 import { GAME_LIMITS, boundsOf, inBox, parseGame, type Game, type GameTemplate, type Vec3 } from "./game.ts";
 import { RESPAWN_TICKS, RETURN_GRACE_TICKS, TICKS_PER_SECOND } from "./match-referee.ts";
@@ -1058,4 +1058,18 @@ test("verifyRecord is false when a frame, a control, an event or the result is t
   const broken = fresh();
   (broken as unknown as { setup: unknown }).setup = null;
   assert.equal(verifyRecord(broken), false);
+});
+
+test("king of the hill: more players on the hill than the other team holds it; equal numbers contest it", () => {
+  const g = game("king-of-the-hill", { scoreToWin: 50 });
+  const hill = g.zones.find((z) => z.kind === "goal")!.at;
+  const slots: MatchSlot[] = [0, 1, 2].map((i) => ({ slot: i, team: i < 2 ? 1 : 2, kind: "human", id: `p${i}`, name: `P${i}` }));
+  const m = drive({ ...setupOf(g), slots }).toPlay();
+  m.put(0, hill).put(1, hill).put(2, hill).tick();
+  assert.equal(m.state.hill, 1, "two against one: team 1 holds it");
+  m.tick(9);
+  assert.equal(m.state.scores[0], 1);
+  assert.equal(m.state.players[2].score, 0, "standing on a hill the other team holds scores nothing");
+  m.put(1, [hill[0] + 9, hill[1], hill[2]]).tick();
+  assert.equal(m.state.hill, 0, "one against one: contested");
 });

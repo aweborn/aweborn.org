@@ -98,7 +98,8 @@ console.log("player", me, "world", state.world, "| game v", state.game.version);
 const feed = (msg) => p.evaluate(async (w, msg) => (await import("/src/lib/match.ts")).onMatchMessage(w, new TextEncoder().encode(JSON.stringify(msg))), state.world, msg);
 const view = (fn, ...args) => store(p, "lib/matchView", "useViewStore", fn, ...args);
 const match = (fn, ...args) => store(p, "lib/match", "useMatchStore", fn, ...args);
-const click = async (sel) => { const el = await p.$(sel); if (!el) throw new Error("missing " + sel); await el.click(); await sleep(400); };
+// A click through the DOM: immediately after signing in, the level-up banner lies over the chips row for a few seconds
+const click = async (sel) => { const el = await p.$(sel); if (!el) throw new Error("missing " + sel); await el.evaluate((e) => e.click()); await sleep(400); };
 const clickText = (sel, text) => p.evaluate((sel, text) => { const el = [...document.querySelectorAll(sel)].find((e) => e.textContent.includes(text)); if (!el) throw new Error(`no ${sel} with "${text}"`); el.click(); }, sel, text);
 /** Is anything of ours off-screen, and do the things you tap meet the touch size? */
 const layout = (sels) => p.evaluate((sels) => {
