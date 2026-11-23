@@ -1,6 +1,6 @@
 # Phase 10: The Game Layer (rules, boundaries, goals, teams, lobby, NPC players)
 
-**Status:** `[ ]` Not Started. **Grill in progress, no code** (opened 2026-11-23).
+**Status:** `[ ]` Not Started. **Grill closed 2026-11-23, no code.** A v1 build order is proposed below and waits for Alex's approval.
 **Depends on:**
 - [Phase 07](./07-genai-creation.md): [rules, goals & constraints design](./07-genai-creation.md#rules-goals--constraints-design-2026-11-01), minds/NPCs, the planner/Studio
 - [Phase 09](./09-authoritative-flight.md): deterministic `shared/sim`, server-authoritative intents (`shared/actions.ts`)
@@ -110,7 +110,7 @@ Options:
 - **Sub-question:** can a game's ruleset be saved to the Library and reused in other worlds (the portable-creations rule)? **Rec: yes.** It's a versioned, credited record, like minds.
 
 ### Q3 ✅ How are rules written in v1? (answered 2026-11-23, see Decisions)
-**Answer:** templates and settings first (v1), then When ▸ If ▸ Do cards over the same data. No user code. **Not yet confirmed:** the list of starter templates.
+**Answer:** templates and settings first (v1), then When ▸ If ▸ Do cards over the same data. No user code. **Confirmed 2026-11-23:** the six starter templates.
 - **Options:**
   - **Halo 3 style:** parameters and templates (mode, teams, score to win, time limit, player traits like speed, fly/no-fly, gravity);
   - **event wiring:** the When ▸ If ▸ Do triggers already designed in Phase 07;
@@ -237,17 +237,20 @@ Options:
   - Only opted-in players' records are research data.
   - Privacy is updated before any of it ships.
 
-### Q11 ⬜ Offline and mesh play
+### Q11 ✅ Offline and mesh play (answered 2026-11-23, see Decisions)
+**Answer:** v1 matches need the server. Alex wants offline games; they get their own grill.
 - **Rec:** v1 matches need the server, because the referee is server-authoritative. Mesh play can come later by running the same deterministic rule step on a host phone (as flight already does).
 
-### Q12 ⬜ Budgets and limits
+### Q12 ✅ Budgets and limits (answered 2026-11-23, see Decisions)
+**Answer:** agreed with every bullet.
 - **Rec:**
   - Complexity caps from Phase 07 (rules, zones, spawned objects, players per match), not a Forge-style money budget.
   - Building a game is free.
   - Only generated assets cost mana, as today.
   - Max players per match is sized to the 100-bots-under-50%-of-a-core bar (AGENTS.md).
 
-### Q13 ⬜ Ownership and credit
+### Q13 ✅ Ownership and credit (answered 2026-11-23, see Decisions)
+**Answer:** creators keep the credit; games are saveable to the Library and come back to life in other worlds, versioned and credited like minds.
 *(Also carries the open sub-question from Q2: can a ruleset and its arena be saved to the Library and reused in other worlds, credited to their makers like minds? **Rec: yes.**)*
 - **Rec:** the creator keeps credit, and the ruleset is open like the code (no Blizzard-style claim). Forks keep the credit chain, as minds do.
 
@@ -256,6 +259,10 @@ Options:
 | Date | Decision |
 |------|----------|
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
+| 2026-11-23 | **Q11: offline games are wanted, in their own grill.** v1 matches need the server (referee, matchmaker, recorder). Alex: *"I really want those offline games! Maybe it's a separate grill altogether."* Logged as a future grill tied to [Phase 06](./06-offline-mesh.md): one phone acts as referee with the same deterministic rule code, and the record syncs to the server afterwards. |
+| 2026-11-23 | **Q12: limits.** Building a game is free; only AI-generated assets cost mana, as today. Complexity caps (rules, zones, spawned objects) use the Phase 07 limits, not a Forge-style object budget. Players per match are capped to what the server handles comfortably (AGENTS.md bar: 100 bots under ~50% of one core). |
+| 2026-11-23 | **Q13: ownership and travel.** The creators keep the credit; Aweborn makes no ownership claim. A game (rules, arena, NPC roster) can be **saved to the Library and brought to life in other worlds**, **versioned and credited the same way as minds**. |
+| 2026-11-23 | **Starter templates confirmed** (*"good for now"*): race, collect, capture the flag, king of the hill, survive, build together against the clock. |
 | 2026-11-23 | **Q9: rewards are awe, not mana.** Alex chose (b). <br>• Everyone who finishes a match earns some **awe**; winners get little or no extra, so nobody is pushed away from games they might lose. <br>• **No mana prizes in v1:** mana is real money from the shared pool, and prizes invite farming. <br>• Limits against farming awe: none or much less for matches played only against NPCs, and a daily cap per character on awe from matches. <br>• Winners get a moment: names on the results board in the lobby, and the replay to keep. |
 | 2026-11-23 | **Q8 (part 3): the end of a match.** Confirmed by Alex: a results screen (winner, each team's score) → each team gets "play again together" → players teleport back to the lobby, and the match shows in the spectator panel as "finished x ago", opening its replay. A player can leave for the lobby at any time. |
 | 2026-11-23 | **Q8 (parts 1 and 2): match length and drop-outs.** <br>• **Length:** the creators set the number of rounds and the time limit; the default is one round of 5 to 10 minutes. <br>• **A player who drops out can come back for as long as the match runs.** Alex: *"whenever the drop-out returns, it can replace the NPC again if it's the same match… the window would be the rest of the match."* No fixed 60-second window. <br>• While they're away, **an NPC from the creators' roster holds their slot** if the creators allowed that for the game; otherwise the team plays short-handed. When the character returns to Aweborn and the match is still running, they may re-enter and take the slot back. <br>• The match record notes every moment a human was replaced by an NPC and every return, so research can cut the match at those points. <br>• To design: a short grace period before the NPC steps in (signal blips), and the "your match is still running, rejoin?" prompt on return. |
@@ -267,7 +274,7 @@ Options:
 | 2026-11-23 | **Q5: the lobby queue is a pool, and the server is the matchmaker.** Alex: *"this should be a good start."* <br>• The ring means "I'm available"; the server picks who plays together and on which team (a replaceable matching policy: random with a logged seed in v1, MatchRank later). <br>• "Match found" is shown physically (team color on the character, a ~10 s ready countdown); stepping out declines and the slot is refilled; at zero the roster locks, is recorded, and the players teleport. Everyone else stays in the pool. <br>• **Links between two characters (Alex):** **stay together** (same match, same team) and **play against each other** (same match, different teams). The matchmaker respects links and **logs them**, since a linked pairing is not the matchmaker's own assignment. <br>• To design: how a link is made (suggested: tap a character in the lobby → *Play with* / *Play against*, and the other accepts), links among more than two characters, and games without teams (both links then just mean "same match"). |
 | 2026-11-23 | **Q5 (part): arriving and match size.** Players **arrive in the lobby** when they enter a world that has a game; the rest of the world is open from there. **The creators set the minimum and maximum players** per match. The lobby stays **physical-first**. How queueing forms determinate groups and allows intelligent matchmaking is still open (proposal under Q5). |
 | 2026-11-23 | **Q4: the arena's edge and zones.** Alex: *"that's spot on."* <br>• **Default: a soft edge.** Crossing the boundary starts a short countdown (Halo used 10 s); a player who doesn't come back returns to their team's spawn. The creator can instead pick a **solid wall** or an **instant return** per game. <br>• **Nobody "dies"** in Aweborn: out of bounds means a return to spawn. <br>• **Zones the creators place inside the arena:** spawn zones (one per team), keep-out zones (the same soft or instant return), and goal zones used by the templates (finish line, flag base, hill). |
-| 2026-11-23 | **Q3: how rules are written.** Alex agreed with the recommendation: **v1 is templates plus settings** (Halo 3 style: team count, score to win, time limit, player traits such as speed, gravity and whether flying is allowed), which the planner can fill in from plain words. **Then When ▸ If ▸ Do cards** (the Phase 07 trigger design) over the same data. **No user code.** <br>• Proposed starter templates, **not yet confirmed by Alex**: race, collect, capture the flag, king of the hill, survive, build together against the clock (cooperative; the most useful for team research). |
+| 2026-11-23 | **Q3: how rules are written.** Alex agreed with the recommendation: **v1 is templates plus settings** (Halo 3 style: team count, score to win, time limit, player traits such as speed, gravity and whether flying is allowed), which the planner can fill in from plain words. **Then When ▸ If ▸ Do cards** (the Phase 07 trigger design) over the same data. **No user code.** <br>• Starter templates (**confirmed by Alex 2026-11-23**, *"good for now"*): race, collect, capture the flag, king of the hill, survive, build together against the clock (cooperative; the most useful for team research). |
 | 2026-11-23 | **Q2: who starts a match.** Automatic by default: players queue in the lobby, and when the minimum set by the creators is met a short countdown starts the match (so a game works while its creators are offline). A creator or co-creator who is present can **start early or hold the queue** (organized sessions, card events, studies). |
 | 2026-11-23 | **Q10b: the 18+ opt-in is the research filter.** Alex: *"Nvm on Nov 20. Let's make it as simple as possible. If they 18+ opt-in, they are automatically research candidates. Disclosed, no consent form."* <br>• **Supersedes** the Nov 20 idea of a separate, revocable research opt-in. <br>• Matches [RESEARCH.md](../RESEARCH.md) rule 1 as written (*disclosed, no consent form*). <br>• Everything is still recorded for everyone (Q10a). Research analyses use the traces of players who have opted into 18+. **Confirmed by Alex (2026-11-23):** players who haven't opted into 18+ are still recorded for replays, but appear in research as anonymous stand-ins. <br>• Before it ships: Privacy and Terms say this plainly at the 18+ door (opting in also makes your play research data), and a lawyer pass plus the university partner's IRB confirm it before anything is published. |
 | 2026-11-23 | **Q10a: record and replay every match, for everyone, forever.** Alex: *"I want to record and replay every match for everyone."* *"We need everything. In research, the first step is filtering out the data we cannot use."* <br>• Replays are **linked to the character**: a character can look at all of its replays. <br>• Every record is linked **character → research ID** (the existing `research_identity` mapping). <br>• **Replays stay forever.** Alex: *"They are essentially a character's assets in my eyes."* This replaces the 90-day suggestion. <br>• Publishing replays to social media is a **separate future phase and grill** ("Social Publication"). <br>• Which records research may *use* is the filter question, Q10b. |
@@ -275,7 +282,41 @@ Options:
 | 2026-11-23 | **Q1b: the instance lifecycle (accepted the recommendations).**<br>• The creators set up a **play space**, and each new instance copies what that play space was set up to hold. <br>• **Nothing is saved back** into the world after a match: the instance was only a copy for the match. <br>• **Hard rule:** researchers can trace every player's interactions and the world's by **replaying the telemetry** of any match. Alex: *"the entire point of Aweborn is to have players discover their awe in a shared world. We need games and ways to force interesting behavior to observe, measure, and study success versus loss."* <br>• An instance is **discarded when all its players have left**. That's how others do it too: Roblox reserved servers only run while someone is in them, and Popup room instances persist as long as one attendee is present. Add a maximum match length and an idle timeout so an instance can't live forever. <br>• When its last player leaves, an instance leaves the spectator panel, or stays a while as a "finished x ago" row (suggested: that row opens the replay). <br>• ~~The original region of the live world stays open while matches run.~~ *(Amended the same day by Q5b: the arena's footprint is a stage.)* Running instances keep their snapshot when the creator edits the arena; the next match uses the new version and records which one. Follow-ups: Q1c, Q10a. |
 | 2026-11-23 | **Q1: matches run in instances.** Alex: *"the match runs in a boundaried instance of a part of the world which the boundary is laid by the game creator."* <br>• Players entering the world start in the **game lobby**, a special zone the game creator makes (the game creator *"can be bound to the world creator and its co-creators"*). <br>• The lobby may hold everyone. Matched players **teleport** from the lobby to their starting spots in a new **boundaried instance** of the game. <br>• Players in the lobby can **spectate any in-progress instance** and switch between them. <br>• So one world hosts **multiple instances of its one game at once**: "one game per world" means one ruleset, not one match. <br>• This is the Roblox reserved-server pattern (lobby → private copy), scoped to a region of the world rather than a whole place. Follow-ups: Q1b, Q5b; Q2, Q4 and Q5 updated. |
 
+## The design in one page (from the decisions below, 2026-11-23)
+
+- **One game per world,** set up by the world's creator and co-creators: a fixed **arena**, its **boundary and zones** (spawn, keep-out, goal), a **lobby**, the **rules** and an **NPC roster**.
+- **Rules** are a template plus settings in v1 (six templates), then When ▸ If ▸ Do cards over the same data. No user code.
+- **The lobby** is a theater box overlooking the arena. Players arrive there. It always shows a hologram of the match each person is tuned into.
+- **Queueing:** standing in the ring puts you in a pool. The server's matchmaker picks groups and teams (random with a logged seed, headcount balanced), respecting *stay together* and *play against* links. A physical ready check locks the roster, and the players teleport in.
+- **A match runs in an instance:** a copy of the arena. Many can run at once. Nothing is saved back to the world. The arena's spot in the live world is a stage.
+- **The edge** is soft by default: a countdown, then a return to the team spawn. Nobody dies.
+- **Matches start automatically;** a creator who is present can start early or hold the queue. Default length: one round of 5 to 10 minutes.
+- **NPCs** host, play and build. Players may fill empty slots with NPCs from the creators' roster (a lone player can always play; a group must all agree). An NPC holds a dropped player's slot until they return. Rules, never a language model, decide outcomes. NPCs are always labeled and tagged.
+- **Spectating:** from the box, by hologram, or with a ghost camera. Chat stays in the lobby.
+- **The end:** results → "play again together" → back to the lobby; teams reshuffle by default.
+- **Hard rule: every match is recorded and fully replayable,** for everyone, forever, linked to each character and research ID. Replays are a character's assets.
+- **Research** uses the traces of players who opted into 18+ (disclosed, no consent form); others appear as anonymous stand-ins.
+- **Rewards:** awe for finishing. No mana prizes.
+- **Games travel:** saved to the Library, versioned and credited like minds.
+
+## Proposed v1 build order (a proposal, waiting for Alex's approval; nothing is built)
+
+Each slice ends in something Alex can try on prod. Public pages move with slice 2.
+
+1. **The game record and setup tools.** The data for a game (template + settings, arena, boundary, zones, lobby zone), kept beside the blueprint and validated like it. Creators and co-creators draw the arena, zones and lobby. The arena's spot becomes a stage.
+2. **Instances, one template, and recording.** The server runs a match in an instance with a deterministic rule step (`shared/`), starting with **race**: teleport in, soft edge, goal zone, results, back to the lobby. **No match runs unrecorded:** the record and its replay ship in this slice, with Privacy, Terms and RESEARCH.md rewritten in the same push (lawyer pass first).
+3. **The lobby pool and matchmaker.** The ring, the random headcount-balanced matchmaker with a logged seed, the ready check, several instances at once, "play again together", and the two links.
+4. **Spectating.** The spectator panel ("finished x ago" rows opening replays), the ghost camera, the view from the box, the hologram.
+5. **The other five templates, and awe** for finishing (with the farming limits).
+6. **NPCs:** hosts first, then roster players with levels, "play now with NPCs", group agreement, and holding a dropped player's slot.
+7. **Travel and cards:** save a game to the Library (versioned, credited), then the When ▸ If ▸ Do editor.
+
+**Checks before building:** how much of Phase 09's typed intents (9F) the rule step needs first; load-test instances with `scripts/loadtest/bots.mjs`; portrait-phone design for the lobby, ready check and spectator camera (AGENTS.md).
+
 ## Open questions not yet in the queue
+
+- **Offline games (its own grill, with [Phase 06](./06-offline-mesh.md)):** Alex wants matches to work without a network.
+- **Details left to design:** how a link is made and links among more than two characters; what an NPC's "level" means; the grace period before an NPC takes a dropped slot and the rejoin prompt; keeping old sim, arena and ruleset versions runnable so replays play forever; erasure (a deleted player becomes an anonymous stand-in in replays).
 
 - **Social Publication (a future phase, its own grill):** characters browsing their replays and publishing them to social platforms; consent of the other players shown in a replay.
 - How the game layer meets 18+ containment: a game in an 18+ world is 18+, and NPC players follow their mind's tier.
@@ -303,3 +344,4 @@ Options:
 | 2026-11-23 | **Q7 closed** (creator roster, "play now with NPCs", group agreement). Asked Q8 (rounds, a player dropping out, the end of a match). | Alex answers Q8; the template list is still unconfirmed |
 | 2026-11-23 | **Q8 parts 1 and 2 answered** (creators set rounds and time, default 5 to 10 min; a drop-out may return any time while the match runs, an NPC holding the slot meanwhile). The end-of-match flow is proposed, not confirmed. Asked Q9 (rewards). | Alex answers Q9 and confirms the end-of-match flow and the template list |
 | 2026-11-23 | **Q8 closed** (end-of-match flow confirmed) and **Q9 answered** (awe, no mana prizes). Q10 marked settled by Q1b/Q10a/Q10b. Asked the last three together (Q11 offline, Q12 limits, Q13 ownership and the Library) plus the template list. | Alex answers Q11–Q13 and the template list; then close the grill and propose a v1 slice |
+| 2026-11-23 | **Grill closed.** Q11 (offline games wanted, own grill), Q12 (limits) and Q13 (credit, Library, versioned like minds) answered; six templates confirmed. Wrote "The design in one page" and a proposed 7-slice v1 build order. | Alex approves or changes the build order; then slice 1 |
