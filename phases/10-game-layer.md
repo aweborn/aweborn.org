@@ -134,7 +134,19 @@ Options:
   - **Option 3:** the boundary is closed to non-players.
 - **Rec:** spectators are ghosted and can watch from anywhere. They can't touch game objects or players. No "death" in Aweborn: going out of bounds means a soft return to the team spawn (fits the gentle tone).
 
-### Q5 ⬜ The physical lobby
+### Q5 ⏳ The physical lobby (partly answered 2026-11-23; the queue mechanics are waiting on Alex)
+**Decided:** players arrive in the lobby when they enter a world that has a game; the creators set the minimum and maximum players per match.
+**Open (Alex, 2026-11-23):** a single ring that people walk in and out of doesn't by itself make determinate groups, and doesn't obviously allow intelligent matchmaking. Keep it physical-first.
+
+**Proposal put to Alex: the ring is a pool, and the server is the matchmaker.**
+1. **The ring means "I'm available".** Standing in it puts you in the **pool**. It does not put you in a particular match.
+2. **The matchmaker picks.** The server looks at the pool and chooses who plays together and on which team. This is one replaceable function (a *matching policy*): v1 is random with a logged seed; MatchRank (match → observe → re-match, using who has played with whom and how it went) replaces it later without changing the lobby.
+3. **Match found, shown physically.** Each chosen player gets their team's color (a glow or beam on their character, visible to the whole lobby) and a short ready countdown (about 10 s).
+4. **Lock.** Stepping out of the ring during the countdown declines; the matchmaker fills the slot from the pool. At zero the roster locks: this is the determinate set, recorded with the seed and the policy version. Those players teleport to their spawns.
+5. **Everyone else stays in the pool** for the next match. With 11 people waiting and a 4-player game, two matches form and 3 keep waiting.
+- **Tradeoff:** the longer the matchmaker waits, the more people it can choose from and the better the match, but the longer the wait. The creators' minimum and a maximum wait time bound it.
+- **Alternative:** one pad per match (Roblox elevators): players choose their own group. Determinate, but no intelligent matching and no random assignment for research.
+- **Open sub-question:** playing with a friend. Rec: later, a "stay together" link between two characters that the matchmaker respects (and logs, since it's not a random assignment).
 *(Partly answered by Q1: the lobby is a **special zone the game creator draws**, and it may hold everyone. Matched players **teleport** from the lobby to their spawns in a new instance. Still open: do players arrive in the world inside the lobby (is it the world's spawn when a game exists?), how queueing and team forming work in the zone, and minimum and maximum players.)*
 
 ### Q5b ⬜ Spectating from the lobby
@@ -227,6 +239,7 @@ Options:
 | Date | Decision |
 |------|----------|
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
+| 2026-11-23 | **Q5 (part): arriving and match size.** Players **arrive in the lobby** when they enter a world that has a game; the rest of the world is open from there. **The creators set the minimum and maximum players** per match. The lobby stays **physical-first**. How queueing forms determinate groups and allows intelligent matchmaking is still open (proposal under Q5). |
 | 2026-11-23 | **Q4: the arena's edge and zones.** Alex: *"that's spot on."* <br>• **Default: a soft edge.** Crossing the boundary starts a short countdown (Halo used 10 s); a player who doesn't come back returns to their team's spawn. The creator can instead pick a **solid wall** or an **instant return** per game. <br>• **Nobody "dies"** in Aweborn: out of bounds means a return to spawn. <br>• **Zones the creators place inside the arena:** spawn zones (one per team), keep-out zones (the same soft or instant return), and goal zones used by the templates (finish line, flag base, hill). |
 | 2026-11-23 | **Q3: how rules are written.** Alex agreed with the recommendation: **v1 is templates plus settings** (Halo 3 style: team count, score to win, time limit, player traits such as speed, gravity and whether flying is allowed), which the planner can fill in from plain words. **Then When ▸ If ▸ Do cards** (the Phase 07 trigger design) over the same data. **No user code.** <br>• Proposed starter templates, **not yet confirmed by Alex**: race, collect, capture the flag, king of the hill, survive, build together against the clock (cooperative; the most useful for team research). |
 | 2026-11-23 | **Q2: who starts a match.** Automatic by default: players queue in the lobby, and when the minimum set by the creators is met a short countdown starts the match (so a game works while its creators are offline). A creator or co-creator who is present can **start early or hold the queue** (organized sessions, card events, studies). |
@@ -255,3 +268,4 @@ Options:
 | 2026-11-23 | **Q2 answered** (automatic start with a creator override); the mixed-match assumption under Q10b confirmed. The Library sub-question moved to Q13. Asked Q3 (how rules are written). | Alex answers Q3 |
 | 2026-11-23 | **Q3 answered** (templates + settings, then When ▸ If ▸ Do cards, no code). The six starter templates are proposed but not confirmed. Asked Q4 (the boundary edge inside an instance). | Alex answers Q4; confirm the template list |
 | 2026-11-23 | **Q4 answered** (soft edge by default, wall or instant return per game; spawn, keep-out and goal zones). Asked Q5 (the lobby). | Alex answers Q5; the template list is still unconfirmed |
+| 2026-11-23 | **Q5 partly answered** (arrive in the lobby; creators set min/max). Alex questioned how a walk-in ring makes determinate groups or intelligent matches. Proposed: the ring is an availability pool, the server matchmaker picks groups and teams, a physical "match found" ready check locks the roster. | Alex reacts to the pool + matchmaker proposal |
