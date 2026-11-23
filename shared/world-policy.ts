@@ -14,7 +14,12 @@
  *      **kick** anything (event-sourced physics), nothing more.
  * Terrain, sky, physics and world meta: creator + co-creators only; `creator`
  * and `coCreators` themselves are server-written only.
+ *
+ * The stage (Phase 10, Q5b): when the world has a game, its arena's spot in the live
+ * world belongs to the creator and co-creators alone. Nobody else places, edits,
+ * kicks or removes anything there.
  */
+import { inBounds, type Bounds } from "./game.js";
 
 export type Rec = Record<string, unknown>;
 
@@ -35,7 +40,7 @@ export const GUARDED_WORLD_MAPS = ["meta", "physics", "terrain"] as const;
 export type GuardedWorldMap = (typeof GUARDED_WORLD_MAPS)[number];
 
 /** Meta keys nobody but the server writes. */
-export const SERVER_ONLY_META_KEYS: ReadonlySet<string> = new Set(["creator", "coCreators", "createdAt", "parentWorldId", "solidified"]);
+export const SERVER_ONLY_META_KEYS: ReadonlySet<string> = new Set(["creator", "coCreators", "createdAt", "parentWorldId", "solidified", "game"]);
 
 /**
  * Object keys nobody but the server writes: a creation's **mind** (NPC persona summary,
@@ -72,10 +77,11 @@ export function isWorldOwnerId(
   return Boolean(roles.coCreators?.includes(id));
 }
 
-/** May this actor move / rotate / scale / recolor / redo / delete this object? */
-export function canEditObject(actor: WorldActor, obj: Rec | { placedBy?: unknown } | undefined | null): boolean {
+/** May this actor move / rotate / scale / recolor / redo / delete this object? (`stage`: see `judgeObjectChange`.) */
+export function canEditObject(actor: WorldActor, obj: Rec | { placedBy?: unknown } | undefined | null, stage?: Bounds | null): boolean {
   if (actor.owner) return true;
   if (!actor.id || !obj) return false;
+  if (onStage(stage, obj)) return false;
   const placedBy = (obj as { placedBy?: unknown }).placedBy;
   if (typeof placedBy !== "string" || placedBy === "") return false;
   return placedBy === actor.id || Boolean(actor.mine?.includes(placedBy));
@@ -160,9 +166,34 @@ export function isKickChange(before: Rec, after: Rec): boolean {
 
 export type Verdict = "ok" | "revert";
 
-/** Judge one object's change (undefined = absent). Does not count create budgets; callers do. */
-export function judgeObjectChange(actor: WorldActor, before: Rec | undefined, after: Rec | undefined): Verdict {
+/** Is this object's middle on the stage? */
+export function onStage(stage: Bounds | null | undefined, obj: Rec | { x?: unknown; y?: unknown; z?: unknown } | undefined | null): boolean {
+  if (!stage || !obj) return false;
+  const { x, y, z } = obj as { x?: unknown; y?: unknown; z?: unknown };
+  return finite(x) && finite(y) && finite(z) && inBounds(stage, x, y, z);
+}
+
+/**
+ * The stage rule for someone who isn't an owner: nothing on the stage is theirs to
+ * touch, and nothing of theirs goes onto it. One exception: a thing already in the
+ * air from a kick may land there (refusing the landing would leave it hanging in
+ * flight for everyone); the owners can remove it, and matches copy only the arena
+ * the creators set up, never what the live stage happens to hold.
+ */
+export function breaksStage(stage: Bounds | null | undefined, before: Rec | undefined, after: Rec | undefined): boolean {
+  if (!stage) return false;
+  if (onStage(stage, before)) return true;
+  if (!onStage(stage, after)) return false;
+  return !(before !== undefined && before.kick !== undefined && after !== undefined && after.kick === undefined);
+}
+
+/**
+ * Judge one object's change (undefined = absent). Does not count create budgets; callers do.
+ * `stage`: the arena's bounds when the world has a game (shared/game.ts `stageOf`).
+ */
+export function judgeObjectChange(actor: WorldActor, before: Rec | undefined, after: Rec | undefined, stage?: Bounds | null): Verdict {
   if (before === undefined && after === undefined) return "ok";
+  if (!actor.owner && breaksStage(stage, before, after)) return "revert";
   if (before === undefined) {
     // Create
     if (after && [...SERVER_ONLY_OBJECT_KEYS].some((k) => after[k] !== undefined)) return "revert";

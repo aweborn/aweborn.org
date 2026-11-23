@@ -612,6 +612,28 @@ function InteriorSystem({ playerColor }: { playerColor: string }) {
     camera.lookAt(camTarget.current)
   }, [camera])
 
+  // A world with a game: new arrivals land in its lobby, facing the arena (Phase 10, Q5).
+  // Returning to a saved spot is not an arrival. The game can reach a cached world a moment
+  // after it loads, so the arrival stays open for a few seconds, then it's spent.
+  const worldLoaded = useWorldStore((s) => s.loaded)
+  const lobbyArrival = useWorldStore((s) => s.meta?.game?.lobby?.arrival.join(',') ?? '')
+  useEffect(() => {
+    if (!worldLoaded || !interiorController.freshArrival) return
+    const g = useWorldStore.getState().meta?.game
+    if (!g?.lobby) {
+      const t = setTimeout(() => { interiorController.freshArrival = false }, 4000)
+      return () => clearTimeout(t)
+    }
+    interiorController.freshArrival = false
+    const [ax, ay, az] = g.lobby.arrival
+    interiorController.arriveAt({ x: ax, y: ay, z: az }, g.arena ? { x: g.arena.at[0], z: g.arena.at[2] } : undefined)
+    const s = interiorController.state
+    camTarget.current.set(s.x, s.y + EYE_HEIGHT, s.z)
+    camPos.current.set(s.x - s.fx * camDist.current, s.y + EYE_HEIGHT + 1, s.z - s.fz * camDist.current)
+    camera.position.copy(camPos.current)
+    camera.lookAt(camTarget.current)
+  }, [worldLoaded, lobbyArrival, camera])
+
   // New or reshaped terrain under the player: stand on top of it, not inside it
   useEffect(() => {
     if (!refTerrain) return

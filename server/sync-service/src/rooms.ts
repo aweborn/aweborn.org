@@ -43,7 +43,7 @@ import { prepareChat, cleanChatText, ChatLimiter, CHAT_HISTORY, CHAT_MAX_BYTES }
 import { touchesChat } from "./chat-guard.js";
 import { WorldAuthority, CreateLimiter } from "./world-authority.js";
 import { listCharacters } from "./identity.js";
-import { isWorldOwnerId, canEditObject, coCreatorsField, type WorldActor } from "../../../shared/world-policy.js";
+import { isWorldOwnerId, canEditObject, coCreatorsField, sameValue, type WorldActor } from "../../../shared/world-policy.js";
 import { SimHost } from "./sim-host.js";
 import { sqliteSimStore } from "./sim-store.js";
 import { FlightTelemetry } from "./telemetry.js";
@@ -309,6 +309,9 @@ export class RoomManager {
         newDoc.destroy();
         console.log(`[rooms] created new world doc for "${worldId}"`);
       }
+
+      // The world's game (Phase 10): the server's table is the source; the doc carries a copy
+      this.syncWorldGame(worldId, doc);
 
       room = {
         doc,
@@ -760,6 +763,35 @@ export class RoomManager {
   /** Replace the world's co-creators (already cleaned; creator-only, checked by the caller). */
   setWorldCoCreators(worldId: string, coCreators: string[]): boolean {
     return this.setWorldPolicyKey(worldId, "coCreators", coCreators);
+  }
+
+  /**
+   * Phase 10: reads a world's current game from the server's table (set by index.ts;
+   * null = no game). The world doc's `meta.game` is a server-written copy of it.
+   */
+  worldGame: ((worldId: string) => unknown) | null = null;
+
+  /** Make a world doc's `meta.game` match the stored game (on room load: the world may have had no doc when it was saved). */
+  private syncWorldGame(worldId: string, doc: Y.Doc): void {
+    if (!this.worldGame || worldId === ORIGIN_WORLD_ID) return;
+    const want = this.worldGame(worldId) ?? null;
+    const meta = doc.getMap("meta");
+    const have = meta.get("game");
+    if (want === null ? have === undefined : sameValue(have, want)) return;
+    doc.transact(() => {
+      if (want === null) meta.delete("game");
+      else meta.set("game", want);
+    }, "server");
+  }
+
+  /** Server-only: write (or clear) the copy of a world's game in its doc. A world with no doc yet gets it when its room loads. */
+  setWorldGame(worldId: string, game: unknown | null): void {
+    if (worldId === ORIGIN_WORLD_ID) return;
+    this.withWorldDoc(worldId, (doc) => {
+      const meta = doc.getMap("meta");
+      if (game === null) meta.delete("game");
+      else meta.set("game", game);
+    });
   }
 
   /** Server-only write of a policy key to the universe entry and the world's meta. */

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useSheetStore, type SheetName } from '../stores/sheetStore'
 import { useScrollHint } from '../hooks/useScrollHint'
+import { useOwnsCurrentWorld } from '../lib/worldActor'
 
 const TABS: [SheetName, string][] = [
   ['library', '▦ Library'],
@@ -8,6 +9,8 @@ const TABS: [SheetName, string][] = [
   ['plan', '✧ Plan'],
   ['plant', '🌱 Portal'],
 ]
+/** Only the world's creator and builders set up its game (Phase 10). */
+const GAME_TAB: [SheetName, string] = ['game', '🎯 Game']
 
 /**
  * Touch only (hidden on desktop by CSS, which keeps its B / C / P buttons):
@@ -17,6 +20,8 @@ const TABS: [SheetName, string][] = [
 export function MakeTabs({ current }: { current: SheetName }) {
   const setSheet = useSheetStore((s) => s.setSheet)
   const ref = useRef<HTMLElement>(null)
+  const owner = useOwnsCurrentWorld()
+  const tabs = owner || current === 'game' ? [...TABS, GAME_TAB] : TABS
   useScrollHint(ref, [current])
   // The open sheet's tab stays in view when the row scrolls sideways (narrow phones)
   useEffect(() => {
@@ -24,7 +29,7 @@ export function MakeTabs({ current }: { current: SheetName }) {
   }, [current])
   return (
     <nav ref={ref} className="make-tabs" role="tablist" aria-label="Make">
-      {TABS.map(([name, label]) => (
+      {tabs.map(([name, label]) => (
         <button
           key={name}
           id={`make-tab-${name}`}

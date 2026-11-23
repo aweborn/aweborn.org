@@ -34,6 +34,11 @@ class InteriorController {
   private _acc = 0
 
   private _restore: Partial<InteriorState> | null = null
+  /**
+   * True after a reset() that used the default spawn (not a saved spot), until the
+   * arrival is claimed: a world with a game puts new arrivals in its lobby (Phase 10).
+   */
+  freshArrival = false
 
   /** The next reset() puts the player here instead of at the spawn point (returning to a saved spot). */
   restoreOnNextReset(at: Partial<InteriorState>): void {
@@ -51,9 +56,30 @@ class InteriorController {
       const dz = (Math.random() - 0.5) * 3.0
       this.state = { ...base, x: base.x + dx, z: base.z + dz }
     }
+    this.freshArrival = !this._restore
     this._restore = null
     this.prev = this.state
     this.camDistGoal = 4.5
+    this._acc = 0
+  }
+
+  /**
+   * Put the player at a point, facing `face` (x/z) when given: arriving in a game's
+   * lobby. A small scatter keeps a crowd from landing on one spot.
+   */
+  arriveAt(at: { x: number; y: number; z: number }, face?: { x: number; z: number }): void {
+    const x = at.x + (Math.random() - 0.5) * 2
+    const z = at.z + (Math.random() - 0.5) * 2
+    let fx = this.state.fx
+    let fz = this.state.fz
+    if (face) {
+      const dx = face.x - x
+      const dz = face.z - z
+      const len = Math.hypot(dx, dz)
+      if (len > 0.01) { fx = dx / len; fz = dz / len }
+    }
+    this.state = { ...this.state, x, y: at.y, z, vx: 0, vy: 0, vz: 0, fx, fz, pitch: 0, grounded: true }
+    this.prev = this.state
     this._acc = 0
   }
 

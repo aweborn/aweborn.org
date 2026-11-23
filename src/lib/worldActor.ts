@@ -1,4 +1,5 @@
 import { canEditObject, isWorldOwnerId, type WorldActor } from '@aweborn/shared/world-policy'
+import { stageOf } from '@aweborn/shared/game'
 import type { PlacedObject } from '@aweborn/shared/crdt-schema'
 import { useSyncExternalStore } from 'react'
 import { getPlayerSnapshot, subscribePlayer } from './player'
@@ -28,7 +29,8 @@ export function currentWorldActor(): WorldActor {
 
 /** May the local player move / edit / delete this object? */
 export function canEditHere(obj: PlacedObject | undefined | null): boolean {
-  return canEditObject(currentWorldActor(), obj ?? null)
+  // On the stage (the arena's spot, Phase 10) only the creator and builders edit
+  return canEditObject(currentWorldActor(), obj ?? null, stageOf(useWorldStore.getState().meta?.game))
 }
 
 /** May the local player change this world's terrain, sky and physics? */

@@ -70,6 +70,7 @@ export const ACTIONS = {
   "world.ask_to_build": { tier: "saved", via: { http: "POST /api/player/world/build-request" }, offline: false, status: "enforced", note: "waits in every owner's inbox; 10/day per account, 20 open per world, 7 days after a decline" },
   "world.withdraw_ask": { tier: "saved", via: { http: "POST /api/player/world/build-request/withdraw" }, offline: false, status: "enforced", note: "re-ask that world after 1 h" },
   "world.answer_ask": { tier: "world_creator", via: { http: "POST /api/player/world/build-request/decide" }, offline: false, status: "enforced", note: "creator or a builder; approve = add as builder" },
+  "game.set": { tier: "world_creator", via: { http: "POST /api/player/world/game" }, offline: false, status: "enforced", note: "creator + builders; the server validates (shared/game.ts), versions and writes meta.game; null removes it" },
   "chat.send": { tier: "any_session", via: { ws: "chat" }, offline: false, status: "enforced", note: "ChatLimiter; server writes the log" },
   "library.create_model": { tier: "saved", via: { http: "POST /api/player/create" }, offline: false, status: "enforced", note: "mana; safety check" },
   "life.animate": { tier: "saved", via: { http: "POST /api/player/animate" }, offline: false, status: "enforced", note: "mana; placer, creator or builders; Meshy rig (humanoid)" },

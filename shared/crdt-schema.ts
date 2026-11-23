@@ -8,6 +8,7 @@
  *   - Client:  import type { WorldEntry, ... } from "@aweborn/shared/crdt-schema"
  *   - Server:  import type { WorldEntry, ... } from "../../shared/crdt-schema.js"
  */
+import type { Game } from "./game.js";
 
 // ── Spatial ──────────────────────────────────────────────────────────
 
@@ -261,6 +262,8 @@ export interface WorldMeta {
   ambientSound?: string;
   /** The world's music (2026-11-03): one long instrumental loop, from the planner or Make → Music. Absent = the world's seeded version of the universe music. */
   music?: string;
+  /** The world's game (Phase 10): server-written copy of the stored record (shared/game.ts). Absent = the world isn't a game. */
+  game?: Game;
 }
 
 /** A generated audio file name, as stored in world meta. */

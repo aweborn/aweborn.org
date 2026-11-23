@@ -22,6 +22,7 @@ import { DEFAULT_PHYSICS, worldSoundFields } from "@aweborn/shared/crdt-schema";
 import { progress } from "./progressStore";
 import { cleanColor } from "@aweborn/shared/library";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
+import { gameField } from "@aweborn/shared/game";
 import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, editKey } from "@aweborn/shared/terrain-edits";
 import { changeTerrainEdits, resetTerrainEdits, terrainCellAt } from "./worldVoxels";
 
@@ -91,6 +92,7 @@ function readMeta(doc: Y.Doc): WorldMeta | null {
     ...(allowPortals !== undefined ? { allowPortals } : {}),
     ...worldSoundFields(meta.get("music"), meta.get("ambientSound")),
     ...coCreatorsField(meta.get("coCreators")),
+    ...gameField(meta.get("game")),
   };
 }
 

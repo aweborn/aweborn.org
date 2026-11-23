@@ -264,3 +264,31 @@ test("a sign's words must be ones the server checked; old signs stay movable and
   assert.equal(act2(bob, (d) => addObject(d, "copy", BOB, { type: "sign", text: "An old sign from before the check." })), 0);
   assert.equal(obj2(server2, "copy")?.type, "sign");
 });
+
+test("the stage (Phase 10): the arena's spot is the owners' alone, and nobody writes meta.game through the doc", () => {
+  const { server, client, act, obj } = setup();
+  // Alice's own client can't set the game in the doc (the server writes it after POST /api/player/world/game)
+  assert.equal(act(alice, (d) => d.getMap("meta").set("game", { template: "race", arena: { at: [50, 0, 50], size: [10, 10, 10] } })), 1);
+  assert.equal(server.getMap("meta").get("game"), undefined);
+  assert.equal(client.getMap("meta").get("game"), undefined);
+  // The server writes it: the stage is x/z 45..55, y 0..10
+  server.transact(() => server.getMap("meta").set("game", { template: "race", arena: { at: [50, 0, 50], size: [10, 10, 10] } }), "server");
+  addObject(server, "prop", ALICE, { x: 50, z: 50 });
+
+  assert.equal(act(bob, (d) => addObject(d, "b2", BOB, { x: 50, z: 50 })), 1);
+  assert.equal(obj(server, "b2"), undefined);
+  assert.equal(act(bob, (d) => addObject(d, "b3", BOB, { x: 20, z: 20 })), 0);
+  // Bob's own thing, carried onto the stage: back where it was
+  assert.equal(act(bob, (d) => d.transact(() => { const m = d.getMap("objects").get("b3") as Y.Map<unknown>; m.set("x", 50); m.set("z", 50); })), 1);
+  assert.equal(obj(server, "b3")?.x, 20);
+  // Kicking or removing what's on the stage
+  assert.equal(act(bob, (d) => (d.getMap("objects").get("prop") as Y.Map<unknown>).set("kick", { vx: 1, vy: 2, vz: 0, t: 5 })), 1);
+  assert.equal(act(guest, (d) => d.getMap("objects").delete("prop")), 1);
+  assert.equal(obj(client, "prop")?.placedBy, ALICE);
+  // The owners work there freely
+  assert.equal(act(alice, (d) => addObject(d, "a2", ALICE, { x: 51, z: 51 })), 0);
+  assert.equal(act(alice, (d) => (d.getMap("objects").get("prop") as Y.Map<unknown>).set("x", 52)), 0);
+  // The game goes away: the spot is open again
+  server.transact(() => server.getMap("meta").delete("game"), "server");
+  assert.equal(act(bob, (d) => addObject(d, "b4", BOB, { x: 50, z: 50 })), 0);
+});

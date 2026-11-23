@@ -9,6 +9,7 @@ import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 import { cleanCoCreators, isWorldOwnerId, planBuilderChange, type BuilderChange } from "../../../shared/world-policy.js";
 import { BuildRequests, type SqlDb } from "./build-requests.js";
+import { WorldGames } from "./game.js";
 import type { BuildRequestView, MyBuildRequest } from "../../../shared/build-requests.js";
 import { cleanPlayerName } from "../../../shared/names.js";
 import { timingSafeEqual } from "node:crypto";
@@ -71,6 +72,9 @@ const cardSets = new CardSets(getDb(), (id) => rooms.lookupWorld(id) !== null);
 // Asking to build (2026-11-07): asks wait in every owner's inbox until one answers.
 // (better-sqlite3's Database has the prepare/exec shape SqlDb names; tests use node:sqlite.)
 const buildRequests = new BuildRequests(getDb() as unknown as SqlDb);
+// The game layer (Phase 10, slice 1): one game per world, every version kept (game.ts).
+const worldGames = new WorldGames(getDb() as unknown as SqlDb);
+rooms.worldGame = (worldId) => worldGames.get(worldId);
 setInterval(() => {
   try {
     const n = buildRequests.sweep();
@@ -187,6 +191,10 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
  *   POST /api/player/world/claim  { worldId, token } → admin: this character becomes creator of an Aweborn world
  *   POST /api/player/world/builders  { worldId, add | remove } → { worldId, coCreators }
  *        Creator + builders add; only the creator removes; anyone steps down (shared/world-policy.ts).
+ *   POST /api/player/world/game  { worldId, game | null } → { worldId, game, changed, warnings }
+ *        The world's game (Phase 10): creator + builders only. Validated and repaired
+ *        (shared/game.ts parseGame), saved as the next version, copied to the world's
+ *        meta.game. `game: null` removes it (saved versions stay). 400 bad_game.
  *   GET  /api/player/build-requests  → { requests: BuildRequestView[] }  asks waiting for you (also in /me)
  *   GET  /api/player/world/build-request?worldId=  → MyBuildRequest (none | open | declined | builder)
  *   POST /api/player/world/build-request  { worldId } → ask to build (saved players; shared/build-requests.ts limits)
@@ -591,6 +599,28 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (plan.changed && !takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
     if (plan.changed && !setBuilders(worldId, plan.next, before)) return json(500, { error: "internal" });
     return json(200, { worldId, coCreators: plan.next });
+  }
+  // The world's game (Phase 10, slice 1): creator and builders set it up; the server is the only writer
+  if (path === "/api/player/world/game" && req.method === "POST") {
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player to set up a game." });
+    const body = (await readJson(req, 16_384).catch(() => null)) as { worldId?: unknown; game?: unknown } | null;
+    const worldId = knownWorld(body?.worldId);
+    if (!worldId || worldId === ORIGIN_WORLD_ID || body?.game === undefined) return json(400, { error: "bad_request" });
+    if (!rooms.isWorldOwner(worldId, session.playerId, accountId)) {
+      return json(403, { error: "not_owner", message: "Only this world’s creator and builders can set up its game." });
+    }
+    if (!takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
+    if (body.game === null) {
+      const changed = worldGames.remove(worldId);
+      rooms.setWorldGame(worldId, null);
+      if (changed) console.log(`[game] ${worldId} removed by ${session.playerId}`);
+      return json(200, { worldId, game: null, changed, warnings: [] });
+    }
+    const r = worldGames.save(worldId, body.game, session.playerId);
+    if (!r.ok) return json(400, r);
+    rooms.setWorldGame(worldId, r.game);
+    if (r.changed) console.log(`[game] ${worldId} v${r.game.version} (${r.game.template}) by ${session.playerId}`);
+    return json(200, { worldId, game: r.game, changed: r.changed, warnings: r.warnings });
   }
   // Asking to build (2026-11-07): waits in the creator's and builders' inboxes until one answers
   if (path === "/api/player/build-requests" && req.method === "GET") return json(200, { requests: buildInbox(accountId) });

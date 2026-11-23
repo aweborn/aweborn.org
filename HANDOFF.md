@@ -70,6 +70,7 @@ User → CloudFront (CDN) → S3 (static Vite/React app)
 | `src/components/SyncBridge.tsx` | Sync connection wiring (rooms, presence, chat) + "Reconnecting…" chip. Replaced the backtick dev panel (`CRDTDevOverlay`) on 2026-10-21 |
 | `src/components/PlantWorldPanel.tsx` / `server/sync-service/src/world-create.ts` | Create World ("Plant a world", space only, Y): `POST /api/player/world`, signed-in only, 3 per player per rolling 24 h |
 | `shared/crdt-schema.ts` | Shared CRDT types + spatial helpers (client + server) |
+| `shared/game.ts` / `server/sync-service/src/game.ts` / `src/components/GamePanel.tsx` | The game layer (Phase 10, slice 1): the game record and `parseGame`; its storage (`world_games`, `world_game_versions` in `universe.db`, every version kept) behind `POST /api/player/world/game`, with a server-written copy in the world doc's `meta.game`; the 🎯 Game tab for a world's creator and builders (`GameOutlines.tsx` draws it in the world). No matches run yet |
 | `server/sync-service/src/rooms.ts` | Room manager: sector rooms, world rooms, world creation, spatial resolver, presence relay |
 | `src/index.css` | Full design system — tokens, glass effects, animations, payment form styles, success animation |
 | `server/sync-service/src/index.ts` | WebSocket + Yjs CRDT sync server; also `GET /worlds/:id` (see [Teleport links](#teleport-links)) |

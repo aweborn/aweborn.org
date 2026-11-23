@@ -1,4 +1,5 @@
 import { GhostPreview, WorldTerrain } from './GhostPreview'
+import { GameOutlines } from './GameOutlines'
 import { useRef, useMemo, useState, useEffect, Component, type ReactNode } from 'react'
 import { serverNow } from '../lib/serverClock'
 import { useFrame } from '@react-three/fiber'
@@ -707,6 +708,9 @@ export function WorldInterior() {
       {/* Planner blueprint: walkable voxel terrain + wireframe assets */}
       <WorldTerrain />
       <GhostPreview />
+
+      {/* The world's game, outlined for its creator and builders (Phase 10) */}
+      <GameOutlines />
 
       {/* Placed objects from CRDT (pictures, sounds and signs have their own renderers, M5) */}
       {objectList.map((obj) =>

@@ -1,6 +1,6 @@
 # Phase 10: The Game Layer (rules, boundaries, goals, teams, lobby, NPC players)
 
-**Status:** `[ ]` Not Started. **Grill closed 2026-11-23, no code. Build order approved; next: slice 1** (see [Start here](#start-here-handoff-for-the-next-chat-2026-11-23)).
+**Status:** `[~]` In progress. Grill closed 2026-11-23. **Slice 1 (the game record and setup tools) is written and committed on the local branch `phase-10-slice-1`, not pushed:** typecheck and tests pass, but the Game tab has not been looked at on a screen yet (see [Start here](#start-here-handoff-for-the-next-chat-2026-11-23)). Next after that: slice 2.
 **Whiteboard** (the player's loop and the build order on one board): https://claude.ai/artifact/MLb7vRPPaCspVNUXH1mora
 **Depends on:**
 - [Phase 07](./07-genai-creation.md): [rules, goals & constraints design](./07-genai-creation.md#rules-goals--constraints-design-2026-11-01), minds/NPCs, the planner/Studio
@@ -27,7 +27,13 @@ Because every rule, team assignment and outcome is data, each match is also a we
 
 ## Start here: handoff for the next chat (2026-11-23)
 
-**You are starting slice 1: the game record and setup tools.** No game code exists yet. Read, in this order: [The design in one page](#the-design-in-one-page-from-the-decisions-below-2026-11-23), the **v1 build order** section below it, the Decisions table, then [AGENTS.md](../AGENTS.md) (ship working things by pushing to `main`; portrait phone first; no O(n²) fan-out).
+> **Update, 2026-11-23 (later the same day): slice 1 is written.** Before anything else, finish it:
+> 1. **Look at it on a screen** (nobody has yet): run the frontend and the sync-service, open a world you own, and try the 🎯 Game tab at 390×844, 360×740, 844×390 and 1440×900 (AGENTS.md). Check the outlines in the world, a save, a reload, arrival in the lobby from a second browser, and that a non-owner's block placed on the stage snaps back.
+> 2. Run `npm run lint` and `npm run build` (they could not be run in the session that wrote it; see the session log).
+> 3. Fix what that turns up, then merge and **push** (the commit is on a local branch on Alex's Mac, `phase-10-slice-1`, one commit ahead of `main`: `git switch main && git merge --ff-only phase-10-slice-1 && git push`). The push creates two tables on prod (`world_games`, `world_game_versions`); nothing else migrates.
+> 4. Then start **slice 2** (below: "Before slice 2"). What slice 1 built, and where, is in [Slice 1 as built](#slice-1-as-built-2026-11-23).
+
+**Slice 1 was: the game record and setup tools.** The scope below is kept as written for the record. Read, in this order: [The design in one page](#the-design-in-one-page-from-the-decisions-below-2026-11-23), the **v1 build order** section below it, the Decisions table, then [AGENTS.md](../AGENTS.md) (ship working things by pushing to `main`; portrait phone first; no O(n²) fan-out).
 
 ### What slice 1 delivers
 A creator or co-creator can turn their world into a game *on paper*: pick a template and settings, mark the arena, its zones and the lobby, and see them in the world. No matches run yet (slice 2).
@@ -46,6 +52,35 @@ A creator or co-creator can turn their world into a game *on paper*: pick a temp
 4. **The stage:** inside the arena box in the live world, only the creator and co-creators may place, edit or kick (Q5b). Enforce it in `world-policy.ts`.
 5. **Client:** a *Game* tab for owners (bottom sheet on phones) to pick the template and settings and to place the arena, zones and lobby by standing where they should go; translucent outlines in the world for owners (arena, zones, lobby, ring). Arrival in the lobby when a world has a game (`InteriorController` reset / `computeArrivalPose`).
 6. **Docs:** session log row here, the active-phase note in [README.md](./README.md), and [HANDOFF.md](../HANDOFF.md) if files or services change. Slice 1 collects no new data about players, so the public pages don't change yet.
+
+### Slice 1 as built (2026-11-23)
+
+| What | Where |
+|------|-------|
+| The game record: types, `GAME_LIMITS`, `parseGame` (validates, clamps, repairs), `gameMissing` (what a match still needs), `stageOf` | [`shared/game.ts`](../shared/game.ts), 14 tests in `shared/game.test.ts` |
+| Storage: tables `world_games` (current) and `world_game_versions` (every version, never deleted), plus a server-written copy in the world doc's `meta.game` | [`server/sync-service/src/game.ts`](../server/sync-service/src/game.ts) (4 tests), `rooms.ts` (`setWorldGame`, `syncWorldGame`) |
+| Saving: `POST /api/player/world/game { worldId, game \| null }`, creator and builders only; action `game.set` in the catalog | `index.ts`, [`shared/actions.ts`](../shared/actions.ts) |
+| `meta.game` is server-only: not even the creator writes it through the world doc | `SERVER_ONLY_META_KEYS` in [`shared/world-policy.ts`](../shared/world-policy.ts) |
+| The stage: inside the arena box only the creator and builders place, edit, kick or remove | `breaksStage` / `judgeObjectChange(…, stage)` in `world-policy.ts`, read by `world-authority.ts` (tests in both) |
+| The 🎯 Game tab (owners): template, arena, zones, lobby, ring, arrival point, rules, a "before a match can start" checklist, Save, Remove | `src/components/GamePanel.tsx` + `.css`, `src/lib/game.ts`, `MakeTabs.tsx`, `sheetStore.ts` |
+| Outlines in the world for owners (arena, zones by team color, lobby, ring, arrival) | `src/components/GameOutlines.tsx` in `WorldInterior.tsx` |
+| Arrival in the lobby, facing the arena, for anyone entering fresh (not when returning to a saved spot) | `InteriorController.arriveAt` / `freshArrival`, `Scene.tsx` |
+
+Choices made while building (change them freely):
+- **A box is the middle of its floor (`at`) plus `size`** (width, height, depth), in world coordinates. "Stand where it should go" gives `at` directly. The arena's floor is marked 1 m below the creator's feet so things resting on the ground count as on the stage.
+- **A game can be saved half-finished** (no arena or lobby yet). `gameMissing(game)` lists what a match still needs; slice 2 must refuse to start a match while it is not empty.
+- **Zones live inside the arena:** `parseGame` moves and shrinks them to fit, and drops them if there is no arena. One spawn per team. Keep-outs carry their own return (`ret`: countdown or straight back).
+- **A lobby that overlaps the arena is kept with a warning** and listed by `gameMissing` (a box above the arena's ceiling is fine: the theater box).
+- **Defaults:** 2 teams (1 for survive and build together), 2 to 8 players, one 7-minute round, soft edge with a 10 s countdown, jetpack on. **Caps:** 32 players per match (to be raised or lowered after the instance load test), 8 teams, 32 zones, 9 rounds, rounds of 1 to 30 minutes.
+- **A thing already in the air from a kick may land on the stage.** Refusing the landing would leave it hanging in flight for everyone. Owners can remove it, and matches copy the authored arena, not the live stage. Slice 2 decides what "the arena as the creators set it up" means for objects (suggested: everything on the stage when a version is saved, snapshotted into that version).
+- **Each version stores which character saved it** (`saved_by`), for the credit chain games carry to the Library (Q13). It is the same kind of fact as `placedBy` on an object, about creators' own work, so the public pages did not change.
+
+Not done in slice 1:
+- The client does not yet stop a non-owner from *trying* to place or kick on the stage; the server puts it back (the thing snaps back). Grabbing is already filtered (`canEditHere`).
+- Nobody but owners sees anything of the game in the world (no lobby look, no ring for players): that arrives with slices 3 and 4.
+- Arrival in the lobby happens when you enter a world from space or by link. Stepping through a portal *inside* a world into a child world that has a game was not looked at (the interior isn't reset there today); check it with the screen pass.
+- No keyboard shortcut for the Game tab on desktop (a 🎯 pill above ✧ Plan opens it).
+- The planner cannot fill in a game from words yet (Q3 says it should be able to).
 
 ### Before slice 2 (matches + recording), not before slice 1
 - **The public pages must be rewritten in the same push** as recording: Privacy, Terms and [RESEARCH.md](../RESEARCH.md) (every match recorded for everyone and kept forever; the 18+ opt-in makes a player a research candidate; erasure turns a player into an anonymous stand-in). **Lawyer pass first.** Draft them early so slice 2 isn't blocked.
@@ -292,6 +327,7 @@ Options:
 
 | Date | Decision |
 |------|----------|
+| 2026-11-23 | **Where the game is stored (decided while building slice 1; Alex left it to the builder).** A server table with every version kept forever (`world_games`, `world_game_versions`), and a server-written copy in the world doc (`meta.game`) so every client gets it through the world sync. Clients never write it. Chosen over a client-written doc key because replays need every old version forever, and because it follows Phase 09 (the server is the only writer). |
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
 | 2026-11-23 | **Q11: offline games are wanted, in their own grill.** v1 matches need the server (referee, matchmaker, recorder). Alex: *"I really want those offline games! Maybe it's a separate grill altogether."* Logged as a future grill tied to [Phase 06](./06-offline-mesh.md): one phone acts as referee with the same deterministic rule code, and the record syncs to the server afterwards. |
 | 2026-11-23 | **Q12: limits.** Building a game is free; only AI-generated assets cost mana, as today. Complexity caps (rules, zones, spawned objects) use the Phase 07 limits, not a Forge-style object budget. Players per match are capped to what the server handles comfortably (AGENTS.md bar: 100 bots under ~50% of one core). |
@@ -380,3 +416,4 @@ Each slice ends in something Alex can try on prod. Public pages move with slice 
 | 2026-11-23 | **Q8 closed** (end-of-match flow confirmed) and **Q9 answered** (awe, no mana prizes). Q10 marked settled by Q1b/Q10a/Q10b. Asked the last three together (Q11 offline, Q12 limits, Q13 ownership and the Library) plus the template list. | Alex answers Q11–Q13 and the template list; then close the grill and propose a v1 slice |
 | 2026-11-23 | **Grill closed.** Q11 (offline games wanted, own grill), Q12 (limits) and Q13 (credit, Library, versioned like minds) answered; six templates confirmed. Wrote "The design in one page" and a proposed 7-slice v1 build order. | Alex approves or changes the build order; then slice 1 |
 | 2026-11-23 | **Build order approved; handoff written.** Alex asked for a whiteboard ([link](https://claude.ai/artifact/MLb7vRPPaCspVNUXH1mora)) and a handoff so the next chat starts implementing. Added "Start here" with slice 1's scope, file pointers and the slice 2 blockers. | Next chat: slice 1 (the game record and setup tools) |
+| 2026-11-23 | **Slice 1 written: the game record and setup tools.** See [Slice 1 as built](#slice-1-as-built-2026-11-23). `shared/game.ts` (record, limits, `parseGame`), server storage with version history and `POST /api/player/world/game`, `meta.game` server-only, the stage rule in `world-policy.ts` and the authority, the 🎯 Game tab, owner outlines, arrival in the lobby. **Checked:** `tsc -b` (app) and `tsc --noEmit` (sync-service) clean; 188 shared tests and 169 sync-service tests pass (22 new). **Not checked:** `npm run lint` and `npm run build` (the session's Linux sandbox had only the Mac builds of oxlint and Vite's bundler), and **no screen check at any size**: the Game tab, the outlines and the lobby arrival have never been seen running. Tests ran through Node's own TypeScript support with a small `.js` → `.ts` resolver instead of `tsx` (same reason). Committed on a local branch, `phase-10-slice-1`, **not merged or pushed**, because AGENTS.md wants UI checked first and pushing `main` is the deploy. | Screen check at the four sizes, lint, build, then push. Then slice 2 (public pages + lawyer pass first) |

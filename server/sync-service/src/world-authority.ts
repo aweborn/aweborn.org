@@ -10,6 +10,7 @@ import {
 } from "../../../shared/world-policy.js";
 import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, parseEditKey, validEditValue } from "../../../shared/terrain-edits.js";
 import { findNudge } from "../../../shared/nudge.js";
+import { stageOf } from "../../../shared/game.js";
 import { approveText, isApprovedText } from "./approved-text.js";
 
 /**
@@ -138,12 +139,14 @@ export class WorldAuthority {
     const details: string[] = [];
     const created: Array<{ id: string; rec: Rec }> = [];
     let nudges = 0;
+    // The stage (Phase 10): the arena's spot belongs to the owners. Read from the accepted meta (server-written).
+    const stage = actor.owner ? null : stageOf(this.maps.get("meta")?.game);
 
     for (const id of objIds) {
       const before = this.objects.get(id);
       const after = this.currentObject(id);
       if (sameValue(before, after)) continue;
-      let verdict = judgeObjectChange(actor, before, after);
+      let verdict = judgeObjectChange(actor, before, after, stage);
       // Words on a placed object must be ones the server checked (signs come from /api/player/lore)
       if (verdict === "ok" && after && typeof after.text === "string" && after.text !== before?.text && !isApprovedText(after.text)) verdict = "revert";
       if (verdict === "ok" && before === undefined && !allowCreate()) verdict = "revert";
