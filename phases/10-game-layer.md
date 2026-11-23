@@ -187,7 +187,8 @@ Options:
   - **Later:** MatchRank re-matching as an opt-in "teams that grow" mode.
 - **Sub-question:** do teams persist across rounds and matches (re-match), or reshuffle every match?
 
-### Q7 ⏳ NPCs in the game (mostly answered 2026-11-23, see Decisions; one follow-up waiting on Alex)
+### Q7 ✅ NPCs in the game (answered 2026-11-23, see Decisions)
+**Follow-up answered:** all three together (creators set the roster; "play now with NPCs"; a group must all agree).
 **Waiting on Alex: who picks the NPCs when a match has several human strangers?** In Smash Bros the people choosing are on one couch. Here the matchmaker groups strangers.
 - **(a)** The creators define the **NPC roster** for the game (which NPCs may play, which levels). Players choose from it per match.
 - **(b) Play now with NPCs:** a player waiting in the pool can choose to start right away with NPCs filling the other slots, instead of waiting for people. A lone player can always play. Good at low traffic.
@@ -205,7 +206,8 @@ Options:
   - **Outcomes:** a rule, never the LLM, decides scores and wins (the Where Winds Meet lesson).
   - **Later:** LLM-steered teammates, useful for human-AI teaming research.
 
-### Q8 ⬜ Joining mid-match, rounds, and the end of a match
+### Q8 ⏳ Joining mid-match, rounds, and the end of a match (asked 2026-11-23)
+*(Settled already: latecomers wait in the pool, since a roster locks at the ready check; an instance is discarded when its last player leaves. Asked: rounds and length, a player dropping out mid-match, and the end-of-match flow.)*
 - **Options** (Fortnite): late joiners spawn now, spectate, or wait for the next round. Then: how many rounds there are, team rotation, and what happens at the end (results board, rematch vote, back to the lobby).
 - **Rec:**
   - Late joiners queue in the lobby for the next round.
@@ -251,6 +253,7 @@ Options:
 | Date | Decision |
 |------|----------|
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
+| 2026-11-23 | **Q7 follow-up: who picks the NPCs.** Alex agreed with all three: <br>• **The creators set the NPC roster** for their game: which NPCs may play and at which levels. Players choose from it. <br>• **"Play now with NPCs":** a player waiting in the pool can start right away with NPCs in the other slots, so a lone player is never stuck. <br>• **A group has to agree:** during the ready countdown any matched player can propose NPCs for the empty slots; they join only if everyone in the match agrees. Default: none. |
 | 2026-11-23 | **Q7: NPCs host, play and build; players can fill empty slots with NPCs.** <br>• Alex: all three roles are important: **host** (explains rules, announces, calls results), **player** (joins a team and plays) and **builder** (helps set up the game through the planner). <br>• **Filling empty slots with NPCs is an option, per match** (replaces the "no automatic filling" recommendation). Alex: *"that's how super smash bros does it. The players themselves choose what NPCs will or will not play, their level, and their NPC model/behavior."* <br>• So an NPC player has three things players choose: **which NPC** (its model and character), **its level** (how well it plays) and **its behavior**. <br>• Accepted from the recommendation: NPC players start with fixed, deterministic behaviors (chase, guard, fetch, follow), walking only at first; **a rule, never the language model, decides scores and wins**; every NPC is **labeled as AI** in the world and **tagged in the match record** with its identity, level and behavior version, so research can separate human play from NPC play. <br>• To design: what "level" means for a behavior (reaction time, accuracy, speed, how often it makes mistakes). |
 | 2026-11-23 | **Q6: between matches, reshuffle by default, with "play again together".** <br>• After a match everyone returns to the pool and the server forms new teams (rotation finds better combinations: Salehi & Bernstein, *Hive*, 2018, cited in [RESEARCH.md](../RESEARCH.md)). <br>• Each team is offered **"play again together"**. If every member picks it, the team re-enters the pool as a unit; it works like a stay-together link and is **logged** (a team choosing to stay together is itself data). <br>• **v1 balances headcount only** (7 players → 4 against 3). Alex: *"player skill data can come way later."* |
 | 2026-11-23 | **Q5b follow-ups: always a hologram; the arena's footprint is a stage.** <br>• Alex: *"It would be cool if the lobby always had a hologram of the match they were tuned into. As well as the lobby being strategically placed to view the match."* So the lobby has **both**: the overlook and a hologram, always. <br>• **The arena's spot in the live world is a stage (amends Q1b's "the original region stays open").** Nobody plays or builds there in the live world except the creators editing the arena. Viewers see their tuned match in it, or the empty arena when no match is running. Walking into it makes you a ghost spectator. |
@@ -291,3 +294,4 @@ Options:
 | 2026-11-23 | **Q5b closed:** the lobby always shows a hologram and overlooks the arena; the arena footprint is a stage (Q1b amended). Asked Q6 (what is left of matchmaking: reshuffle or keep teams between matches). | Alex answers Q6; the template list is still unconfirmed |
 | 2026-11-23 | **Q6 answered** (reshuffle by default, "play again together", headcount balance only). Asked Q7 (NPCs in the game). | Alex answers Q7; the template list is still unconfirmed |
 | 2026-11-23 | **Q7 mostly answered:** all three NPC roles matter; players may fill empty slots with NPCs they choose (which NPC, level, behavior), Smash Bros style. Asked who picks when the match is a group of strangers. | Alex answers the Q7 follow-up |
+| 2026-11-23 | **Q7 closed** (creator roster, "play now with NPCs", group agreement). Asked Q8 (rounds, a player dropping out, the end of a match). | Alex answers Q8; the template list is still unconfirmed |
