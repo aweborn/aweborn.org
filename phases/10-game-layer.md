@@ -206,7 +206,8 @@ Options:
   - **Outcomes:** a rule, never the LLM, decides scores and wins (the Where Winds Meet lesson).
   - **Later:** LLM-steered teammates, useful for human-AI teaming research.
 
-### Q8 ⏳ Joining mid-match, rounds, and the end of a match (asked 2026-11-23)
+### Q8 ⏳ Joining mid-match, rounds, and the end of a match (parts 1 and 2 answered 2026-11-23, see Decisions; the end-of-match flow is not yet confirmed)
+**Proposed end-of-match flow, waiting on Alex:** results screen (winner, each team's score) → each team gets "play again together" → players teleport back to the lobby, and the match shows in the spectator panel as "finished x ago", opening its replay. A player can leave for the lobby at any time.
 *(Settled already: latecomers wait in the pool, since a roster locks at the ready check; an instance is discarded when its last player leaves. Asked: rounds and length, a player dropping out mid-match, and the end-of-match flow.)*
 - **Options** (Fortnite): late joiners spawn now, spectate, or wait for the next round. Then: how many rounds there are, team rotation, and what happens at the end (results board, rematch vote, back to the lobby).
 - **Rec:**
@@ -214,7 +215,7 @@ Options:
   - A results board shows at the end, followed by a 20 s rematch vote, then everyone returns to the lobby.
   - Matches are short (5–10 min) by default, so the wait stays short.
 
-### Q9 ⬜ Rewards
+### Q9 ⏳ Rewards (asked 2026-11-23)
 - **Options:** none (play for its own sake); awe/XP for playing; mana prizes.
 - **Rec:**
   - A little **awe** for taking part.
@@ -253,6 +254,7 @@ Options:
 | Date | Decision |
 |------|----------|
 | 2026-11-23 | Scope set by Alex (Goal above). **One game per world** for now. Research on custom games done first. Feature docs live in the repo, so any chat or agent can continue without Claude Code. |
+| 2026-11-23 | **Q8 (parts 1 and 2): match length and drop-outs.** <br>• **Length:** the creators set the number of rounds and the time limit; the default is one round of 5 to 10 minutes. <br>• **A player who drops out can come back for as long as the match runs.** Alex: *"whenever the drop-out returns, it can replace the NPC again if it's the same match… the window would be the rest of the match."* No fixed 60-second window. <br>• While they're away, **an NPC from the creators' roster holds their slot** if the creators allowed that for the game; otherwise the team plays short-handed. When the character returns to Aweborn and the match is still running, they may re-enter and take the slot back. <br>• The match record notes every moment a human was replaced by an NPC and every return, so research can cut the match at those points. <br>• To design: a short grace period before the NPC steps in (signal blips), and the "your match is still running, rejoin?" prompt on return. |
 | 2026-11-23 | **Q7 follow-up: who picks the NPCs.** Alex agreed with all three: <br>• **The creators set the NPC roster** for their game: which NPCs may play and at which levels. Players choose from it. <br>• **"Play now with NPCs":** a player waiting in the pool can start right away with NPCs in the other slots, so a lone player is never stuck. <br>• **A group has to agree:** during the ready countdown any matched player can propose NPCs for the empty slots; they join only if everyone in the match agrees. Default: none. |
 | 2026-11-23 | **Q7: NPCs host, play and build; players can fill empty slots with NPCs.** <br>• Alex: all three roles are important: **host** (explains rules, announces, calls results), **player** (joins a team and plays) and **builder** (helps set up the game through the planner). <br>• **Filling empty slots with NPCs is an option, per match** (replaces the "no automatic filling" recommendation). Alex: *"that's how super smash bros does it. The players themselves choose what NPCs will or will not play, their level, and their NPC model/behavior."* <br>• So an NPC player has three things players choose: **which NPC** (its model and character), **its level** (how well it plays) and **its behavior**. <br>• Accepted from the recommendation: NPC players start with fixed, deterministic behaviors (chase, guard, fetch, follow), walking only at first; **a rule, never the language model, decides scores and wins**; every NPC is **labeled as AI** in the world and **tagged in the match record** with its identity, level and behavior version, so research can separate human play from NPC play. <br>• To design: what "level" means for a behavior (reaction time, accuracy, speed, how often it makes mistakes). |
 | 2026-11-23 | **Q6: between matches, reshuffle by default, with "play again together".** <br>• After a match everyone returns to the pool and the server forms new teams (rotation finds better combinations: Salehi & Bernstein, *Hive*, 2018, cited in [RESEARCH.md](../RESEARCH.md)). <br>• Each team is offered **"play again together"**. If every member picks it, the team re-enters the pool as a unit; it works like a stay-together link and is **logged** (a team choosing to stay together is itself data). <br>• **v1 balances headcount only** (7 players → 4 against 3). Alex: *"player skill data can come way later."* |
@@ -295,3 +297,4 @@ Options:
 | 2026-11-23 | **Q6 answered** (reshuffle by default, "play again together", headcount balance only). Asked Q7 (NPCs in the game). | Alex answers Q7; the template list is still unconfirmed |
 | 2026-11-23 | **Q7 mostly answered:** all three NPC roles matter; players may fill empty slots with NPCs they choose (which NPC, level, behavior), Smash Bros style. Asked who picks when the match is a group of strangers. | Alex answers the Q7 follow-up |
 | 2026-11-23 | **Q7 closed** (creator roster, "play now with NPCs", group agreement). Asked Q8 (rounds, a player dropping out, the end of a match). | Alex answers Q8; the template list is still unconfirmed |
+| 2026-11-23 | **Q8 parts 1 and 2 answered** (creators set rounds and time, default 5 to 10 min; a drop-out may return any time while the match runs, an NPC holding the slot meanwhile). The end-of-match flow is proposed, not confirmed. Asked Q9 (rewards). | Alex answers Q9 and confirms the end-of-match flow and the template list |
