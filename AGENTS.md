@@ -16,6 +16,18 @@ first, then the frontend). Don't leave finished work sitting uncommitted.
   migrations that can't be undone, secrets), or when Alex says to hold. Ask.
 - After pushing, check the run (`gh run list --workflow deploy.yml -L 1`).
 
+## Notes live in the repo, not in chats (Alex, 2026-11-24)
+
+> *"Remember to keep notes in the repo; we can't just go off chats like this. Others will eventually work on this project and it needs to stay tidy for everyone."*
+
+A chat with an agent is not a record. Before a session ends, everything someone else would need is in the repo:
+
+- **Decisions** go in the phase file's Decisions table, with the date and Alex's words where they matter.
+- **State and next steps** go in the phase file's "Start here" and the top of `phases/README.md`.
+- **Ideas not yet decided** go in the phase file as a dated note with the questions to grill, or under `docs/research/`.
+- **A session that changed a lot** gets a short record in [`docs/sessions/`](./docs/sessions/README.md).
+- **Tidy:** one home per fact (link, don't copy); update or delete what a change made wrong; no scratch files, no stale branches left behind without a note saying what they are.
+
 ## Build for viral growth (Alex, 2026-10-20)
 
 **Aweborn aims to go viral: plan for many hundreds of players arriving
