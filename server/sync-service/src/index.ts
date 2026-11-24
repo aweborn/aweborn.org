@@ -85,7 +85,7 @@ const worldGames = new WorldGames(getDb() as unknown as SqlDb);
 rooms.worldGame = (worldId) => worldGames.get(worldId);
 // Matches (Phase 10, slices 2 to 6): every match is recorded (match-store.ts) and run by the match host (matches.ts).
 const nameOfPlayer = (playerId: string): string => characterNames([playerId])[playerId] ?? wandererTag(playerId);
-// The 18+ door (age-door.ts): a saved player's birthdate check + *Show 18+*. Being behind it is what makes a research candidate (Q10b).
+// The 18+ door (age-door.ts): a saved player's *Show 18+* toggle. Being behind it is what makes a research candidate (Q10b).
 const ageDoor = new AgeDoor(getDb() as unknown as SqlDb);
 const matchStore = new MatchStore(getDb() as unknown as SqlDb, (worldId) => rooms.lookupWorld(worldId)?.name ?? "");
 const matchHost = new MatchHost({
@@ -239,8 +239,7 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
 /**
  * `/api/player/*`: the signed-in account (session cookie, trusted origins only).
  *   GET  /api/player/me         { playerId, characters, methods, door, buildRequests, worldIndex }
- *   POST /api/player/door       { show, birthdate? } → { confirmed, show }  the 18+ door (saved players; the first
- *                               "on" needs a birthdate "YYYY-MM-DD", checked and never stored; 403 under_age + retryAt)
+ *   POST /api/player/door       { show } → { show }  the 18+ door: a toggle, saved players only (age-door.ts)
  *   POST /api/player/world/claim  { worldId, token } → admin: this character becomes creator of an Aweborn world
  *   POST /api/player/world/builders  { worldId, add | remove } → { worldId, coCreators }
  *        Creator + builders add; only the creator removes; anyone steps down (shared/world-policy.ts).
@@ -437,7 +436,7 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
       playerId: session.playerId,
       characters: listCharacters(accountId),
       methods: waysIn(accountId),
-      door: session.isAnonymous ? { confirmed: false, show: false } : ageDoor.state(accountId),
+      door: { show: !session.isAnonymous && ageDoor.open(accountId) },
       buildRequests: buildInbox(accountId),
       worldIndex: worldIndex(accountId).map((e) => {
         const w = rooms.lookupWorld(e.worldId);
@@ -461,13 +460,9 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   if (path === "/api/player/door" && req.method === "POST") {
     if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player first, then try again." });
-    const body = (await readJson(req).catch(() => null)) as { show?: unknown; birthdate?: unknown } | null;
+    const body = (await readJson(req).catch(() => null)) as { show?: unknown } | null;
     if (typeof body?.show !== "boolean") return json(400, { error: "bad_request", message: "Say whether to show 18+ content." });
-    const r = ageDoor.set(accountId, body.show, body.birthdate);
-    if (r.ok) return json(200, { confirmed: r.confirmed, show: r.show });
-    if (r.code === "under_age") return json(403, { error: r.code, retryAt: r.retryAt, message: "18+ content is for players who are 18 or older." });
-    if (r.code === "birthdate_needed") return json(400, { error: r.code, message: "Enter your date of birth to turn this on." });
-    return json(400, { error: r.code, message: "That date doesn’t look right. Check it and try again." });
+    return json(200, { show: ageDoor.set(accountId, body.show) });
   }
   if (path === "/api/player/character" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { id?: unknown } | null;

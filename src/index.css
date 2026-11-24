@@ -2787,7 +2787,7 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
 }
 .pa-notice span { flex: 1 1 14rem; }
 
-/* The 18+ door (AdultDoor.tsx): a switch, and the first time a date of birth. */
+/* The 18+ door (AdultDoor.tsx): a switch and the research note beside it. */
 .pa-door {
   display: flex;
   flex-direction: column;
@@ -2848,49 +2848,18 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
 .pa-switch:focus-visible { outline: none; }
 .pa-switch:focus-visible::before { box-shadow: 0 0 0 3px rgba(232, 185, 74, 0.35); }
 .pa-switch:disabled { opacity: 0.5; cursor: default; }
-.pa-door-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  animation: pa-rise 0.25s ease-out both;
-}
-.pa-door-notes {
+.pa-door-note {
   margin: 0;
-  padding: 0 0 0 1.1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
   font-family: var(--font-body);
   font-size: 0.875rem; /* 14px: this is the disclosure, it has to be readable */
   line-height: 1.5;
   color: var(--color-text-primary);
 }
-.pa-door-notes strong { font-weight: 600; color: var(--color-accent-secondary); }
-.pa-door-notes a { color: var(--color-accent-secondary); }
-.pa-door-date {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.pa-door-date legend { padding: 0; margin-bottom: 0.3rem; }
-.pa-door-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 0.5rem;
-}
-.pa-door-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
-.pa-door-field .pa-input { padding-left: 0.6rem; padding-right: 0.6rem; }
-.pa-door-field select.pa-input { appearance: auto; color-scheme: dark; }
-.pa-door-date .pa-hint { margin: 0; }
+.pa-door-note a { color: var(--color-accent-secondary); }
 
 @media (prefers-reduced-motion: reduce) {
   .pa-email-status,
-  .pa-confirm,
-  .pa-door-form { animation: none; }
+  .pa-confirm { animation: none; }
   .pa-switch::before, .pa-switch-knob { transition: none; }
   .pa-tab { transition: none; }
 }

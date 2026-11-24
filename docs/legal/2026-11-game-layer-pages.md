@@ -94,39 +94,39 @@
 11. **NPC labelling.** Does "always labelled as AI" satisfy the bot-disclosure laws that may apply (for example California's), now and when NPCs later talk through a language model?
 12. **Later: Social Publication.** Not described anywhere on the pages. Confirm nothing in the new text could be read as permission to publish replays outside Aweborn.
 
-## Addendum: the 18+ switch is built (2026-11-23, later the same day)
+## Addendum: the 18+ switch is built (2026-11-23; made a plain toggle 2026-11-24)
 
 **Status: not reviewed by a lawyer or an IRB.** The switch is on the branch `age-18plus-opt-in`, not deployed. It ships in the same push as these pages, after the lawyer pass.
 
-**What changed in the product:** a saved player can turn on *18+ content* in the player panel. The first time, they enter a date of birth; the server checks it is 18 or older and does not store it. Being behind the switch makes the player's match play research data (Q10b). No 18+ content exists yet.
+**What changed in the product:** a saved player can turn on *18+ content* in the player panel. It is a toggle: no date of birth and no other entry (Alex, 2026-11-24). Turning it on is the player's statement that they are 18 or older, and it makes the player's match play research data (Q10b).
 
-**What is stored** (table `age_door`, one row per account): that the date passed and when, whether the switch is on, when it last changed. Each match also records, per human player, whether they were behind the switch when it began (`match_players.research_ok`). An under-18 date stores nothing; the account is held from retrying for 24 hours in the server's memory.
+**What is stored** (table `age_door`, one row per account): whether the switch is on and when it last changed. Each match also records, per human player, whether they were behind the switch when it began (`match_players.research_ok`).
+
+**Decisions behind it (Alex, 2026-11-24, [Phase 07](../../phases/07-genai-creation.md) "Changed 2026-11-24"):** Aweborn is for everyone, with 18+ content kept in veiled 18+ worlds; the door is a toggle; a real age check only in the states and countries whose law requires one; a world is 18+ or everyone from creation and never switches.
 
 ### Every sentence added or changed
 
 | # | Page, section | Before → after |
 |---|---------------|----------------|
-| D1 | Privacy → What we collect → **The 18+ switch (optional)** (new bullet, `#door`) | New: what is asked, "We check the date and don't keep it.", what is kept, the under-18 case, "The date is your own statement: we don't verify it.", "No 18+ worlds are open yet, so today the switch shows you nothing new. It does one thing now: it makes how you play in matches part of our research". |
+| D1 | Privacy → What we collect → **The 18+ switch (optional)** (new bullet, `#door`) | New: "A saved player can turn on 18+ content in the player panel. Turning it on is your statement that you are 18 or older. We keep whether the switch is on and when it last changed. Turning it on also makes how you play in matches part of our research". |
 | D2 | Privacy → Research → How people play together (P10) | "…and we'll say this again where you make that choice. That choice isn't in the game yet; until it is, every player in our match research is an anonymous stand-in." → "…and we say this again where you make that choice: at the 18+ switch in your player panel. It covers matches that begin while your switch is on. If you turn the switch off, we stop using your traces, including those from matches you played while it was on… Matches played before you turned it on are never used as yours." |
-| D3 | Privacy → How long we keep it | New bullet: "Your 18+ choice (that your age was checked, and whether the switch is on) is kept until you ask us to delete your player. Your date of birth is never kept." |
+| D3 | Privacy → How long we keep it | New bullet: "Your 18+ choice (whether the switch is on, and when it last changed) is kept until you ask us to delete your player." |
 | D4 | Privacy → Your choices and rights | New bullet: "The 18+ switch is optional, and you can turn it off again at any time in the player panel. That also takes your match play out of our research." |
-| D5 | Terms → Research (T10) | "That choice isn't in the game yet." → "You make that choice with the 18+ switch in your player panel. It asks for your date of birth: give your real one. You can turn the switch off again at any time." |
+| D5 | Terms → Research (T10) | "That choice isn't in the game yet." → "You make that choice with the 18+ switch in your player panel. Turning it on says that you are 18 or older. You can turn it off again at any time." |
 | D6 | RESEARCH.md → Matches, rule 3 | Adds how it is built and the two rules a research copy follows (behind the door when the match began, and still). |
-| D7 | RESEARCH.md → "Not settled here" | Rewritten: the switch exists; the date is self-declared; under-18s remain an open decision. |
+| D7 | RESEARCH.md → "Not settled here" | Rewritten: Aweborn is for everyone with 18+ in veiled worlds; rule 5 and the Terms change with a lawyer. |
 
-**In the game, at the switch, before the choice:** "18+ worlds aren't open yet. You'll be ready when they are." · "Turning this on makes how you play in matches part of Aweborn's research, under a random research ID, never your name. There's no separate research form. How research works [link to Privacy `#match-research`]" · "You can turn it off here any time. Your matches then stop counting for research." · "We check the date and don't keep it."
+**In the game, at the switch:** "18+ content · for players 18 or older" and, beside the switch before it is tapped, "Turning this on also makes how you play in matches part of Aweborn's research, under a random research ID, never your name. How research works [link to Privacy `#match-research`]".
 
-### Where the pages and the product now disagree
+### Where the pages and the decisions now disagree
 
-1. **Disagreement 1 above is sharper.** Terms and Privacy still say every player must be 18+, and the game now asks some players to state it. A player who enters an under-18 date is refused the switch and nothing else happens: the account keeps playing, and we store nothing about the date. Alex has not decided whether under-18s may play (2026-11-20, open).
+1. **"For everyone" vs. "you must be 18 or older".** Alex decided on 2026-11-24 that Aweborn is for everyone. Terms ("Who can play"), Privacy ("Age") and RESEARCH.md rule 5 still say every player is 18+. They are left as they are until the lawyer has answered question 7 above, because opening to under-18s and under-13s is where COPPA and the rules on research with minors begin, and today everyone's chat and AI-creation history is studied with no opt-in.
 2. **D3 and erasure.** No route deletes a player today (a known gap). `forgetDoor(accountId)` exists for it; until it is called, D3 is true only when a person does the deletion by hand.
-3. **"We don't verify it" vs. Phase 07 decision 3.** A real age check by location is a launch requirement for 18+ *content*. The switch is built ahead of the content; the check is not built.
+3. **The age check where the law requires one is not built.** The toggle is the same everywhere today. Before 18+ content is shown in a place whose law demands a real check, either the check or a block for that place has to exist.
 
 ### More questions for the lawyer
 
-13. **A switch named "18+ content" whose only present effect is research.** The in-game text and D1 say so plainly. Is that enough, or is the name itself misleading until 18+ worlds exist? (This is question 5's bundling concern, now concrete.)
-14. **Self-declared age.** Is a date of birth with no verification an acceptable basis for (a) treating a player as an adult research subject, and (b) later showing 18+ content where no law demands a real check?
-15. **An under-18 date.** Having been told a date under 18 by an account whose Terms require 18+, must we do anything (block the account, delete its data, delete its match records)? We keep no record of it by design; does that choice hold up, or does it look like avoiding knowledge?
-16. **Asking for a date of birth and not storing it.** Is "checked and dropped" enough to stay clear of rules about collecting birth dates? Should the fact that someone passed be treated as personal data of any special kind?
-17. **Turning the switch off.** We take the player's earlier matches out of research as well. Is that required, merely cautious, or does it conflict with research already published?
-
+13. **A toggle as the statement of age.** Is tapping a switch labelled "18+ content · for players 18 or older" an acceptable basis for (a) treating a player as an adult research subject, and (b) showing 18+ content where no law demands a real check?
+14. **Which places need the real check,** and may 18+ content simply be unavailable there until a vendor is chosen?
+15. **Turning the switch off.** We take the player's earlier matches out of research as well. Is that required, merely cautious, or does it conflict with research already published?
+16. **For everyone.** What must be true before the Terms stop saying 18+: a minimum age (13?), parental consent below it, research limited to players behind the 18+ switch for *all* data and not only matches, minds (companion-chat rules for minors)?
