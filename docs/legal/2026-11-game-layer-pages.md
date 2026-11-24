@@ -130,3 +130,26 @@
 14. **Which places need the real check,** and may 18+ content simply be unavailable there until a vendor is chosen?
 15. **Turning the switch off.** We take the player's earlier matches out of research as well. Is that required, merely cautious, or does it conflict with research already published?
 16. **For everyone.** What must be true before the Terms stop saying 18+: a minimum age (13?), parental consent below it, research limited to players behind the 18+ switch for *all* data and not only matches, minds (companion-chat rules for minors)?
+
+## Addendum 2: 18+ worlds (2026-11-24)
+
+**Status: not reviewed by a lawyer.** Same branch, not deployed.
+
+**What changed in the product:** a world is for everyone or 18+, chosen by its maker when it is made and never changed. Only players with the 18+ switch on can make, see into, enter or build in an 18+ world; everyone else sees it veiled, with no name. **What may be made is the same in every world**: the checks that refuse sexual, hateful or gory requests still run inside 18+ worlds. That changes later, with its own review.
+
+| # | Page, section | Text |
+|---|---------------|------|
+| W1 | Terms → What you create → **18+ worlds** (new bullet, `#adult-worlds`) | "A world is for everyone or 18+. Its maker chooses when the world is made, and the choice can't be changed afterwards. A world planted inside an 18+ world is 18+ too. Only players who have turned on 18+ content can make an 18+ world, see into it, enter it or build in it; to everyone else it appears veiled, with no name. We don't make trading cards of 18+ worlds, and their games and minds don't go into the shared Library. Turning 18+ content on says that you are 18 or older; don't turn it on if you aren't. The community rules below apply in 18+ worlds as they do everywhere." |
+| W2 | Terms → Trading cards → Ordering cards | adds "(not of an 18+ world)" |
+| W3 | Privacy → The 18+ switch | adds "With it on you can see into, enter and make 18+ worlds; with it off they appear veiled, with no name, and we don't keep copies of them on your device." |
+| W4 | Privacy → What we collect → **18+ worlds** (new bullet) | "When a world is made as an 18+ world, we record that with the world, permanently. Its name is shown only to players who have turned on 18+ content; everyone else, and anyone who follows a link to it, sees "18+ world"." |
+
+### Where the pages and the product disagree
+
+4. **W1 says "the community rules apply in 18+ worlds as they do everywhere", and the Terms still say "Don't ask for anything sexual, hateful or gory".** Both are true of the product today. When the rater replaces the all-ages refusals inside 18+ worlds, "Making things with AI" and "Community rules" change in that push.
+
+### More questions for the lawyer
+
+17. **An 18+ label on a space whose content rules are the same as everywhere.** Any issue with offering the label before the content rules differ? Does the label itself trigger any of the age-verification laws in question 14?
+18. **Chat inside 18+ worlds** is between players behind a self-declared switch, with the same word filter as everywhere. Anything further needed before the rules inside differ?
+

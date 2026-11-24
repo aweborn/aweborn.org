@@ -44,3 +44,14 @@ test("worldsLeftToday counts only this player's worlds from the last 24 h", () =
   assert.equal(worldsLeftToday(worlds, "me", now), WORLDS_PER_DAY - 2);
   assert.equal(worldsLeftToday([w("me", 1), w("me", 2), w("me", 3), w("me", 4)], "me", now), 0);
 });
+
+test("parseWorldRequest: 18+ is asked for with adult: true and nothing else", () => {
+  const base = { name: "Velvet", color: "#112233", position: pos };
+  assert.equal(parseWorldRequest(base) && "adult" in (parseWorldRequest(base) as object), false);
+  assert.deepEqual(parseWorldRequest({ ...base, adult: true }), { name: "Velvet", color: "#112233", position: pos, adult: true });
+  for (const not of [false, "true", 1, null, "adult", {}]) {
+    assert.equal("adult" in (parseWorldRequest({ ...base, adult: not }) as object), false, String(not));
+  }
+  // A world planted inside another can ask too (inside an 18+ world it is 18+ either way: rooms.createWorld)
+  assert.deepEqual(parseWorldRequest({ ...base, parentWorldId: validParentId, adult: true }), { name: "Velvet", color: "#112233", position: pos, parentWorldId: validParentId, adult: true });
+});

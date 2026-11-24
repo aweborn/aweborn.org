@@ -172,7 +172,7 @@ function WorldOrbClose({ world }: { world: WorldEntry }) {
               fontWeight: 400,
               color: world.solidified ? '#e8b94a' : '#888',
             }}>
-              {world.solidified ? '✨ solid' : '👻 ghost'}
+              {world.tier === 'adult' ? '18+' : world.solidified ? '✨ solid' : '👻 ghost'}
               {world.playerCount > 0 && ` · ${world.playerCount} 👤`}
             </div>
           </div>

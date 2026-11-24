@@ -37,6 +37,7 @@ Walkthroughs (each prints what it checked and writes screenshots to `/tmp/rig<N>
 | `check-templates-live.mjs` | One match each of collect, capture the flag, king of the hill, survive, build together and a two-card rules game with NPCs; every record verifies. Phone size |
 | `check-library-live.mjs` | The Library against the real routes: save, list, bring into a second world, bring again, another creator brings it, credits. Phone size |
 | `check-door.mjs` | The 18+ switch in the player panel against the real server: a guest is refused, the research note at the switch, on / off / on with one tap each, no date of birth or other entry. Four screen sizes. Run it against the real frontend (`npm run dev`) or the rig |
+| `check-adult-worlds.mjs` | 18+ worlds against the real server and app, with two saved players (switch on, switch off) and a guest: who can make one, the veil (no name, colour or music in anyone else's universe), every way in shut (the app, a raw socket, ten routes), tiers flowing down, no cards, the plant sheet at four sizes, and the switch turned off while inside |
 | `match-kit.mjs` | Shared helpers for the live scripts |
 
 `check-match-server.mjs` assumes a fresh database (run `up.sh` first). The e2e has the

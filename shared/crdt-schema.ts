@@ -123,6 +123,27 @@ export interface WorldEntry {
    */
   music?: string;
   ambientSound?: string;
+
+  /**
+   * `"adult"` = an 18+ world (absent = for everyone). Chosen when the world is made and
+   * never changed (Alex, 2026-11-24); a world planted inside an 18+ world is 18+ too.
+   * Only players behind the 18+ door can make, enter, see into or change one.
+   * For an 18+ world this shared entry holds no real name and no music, because the
+   * universe goes to everyone: `name` is `ADULT_WORLD_NAME`, and the real name is on
+   * the server (`adult-worlds.ts`) and in the world's own doc. Server-written.
+   */
+  tier?: "adult";
+}
+
+/** What an 18+ world is called wherever its real name must not show (the shared universe, lists, anything public). */
+export const ADULT_WORLD_NAME = "18+ world";
+
+/** Is this an 18+ world? */
+export const isAdultWorld = (w: { tier?: unknown } | null | undefined): boolean => w?.tier === "adult";
+
+/** `{ tier }` from an untrusted value. */
+export function worldTierField(tier: unknown): { tier?: "adult" } {
+  return tier === "adult" ? { tier } : {};
 }
 
 /** Fixed interior XZ coordinates of the Return Portal inside any nested child world (right behind the `(0, 10)` spawn). */

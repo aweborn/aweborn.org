@@ -16,6 +16,9 @@ import { recordDiscovery } from "./identity.js";
 import { onFirstDiscovery } from "./awe.js";
 import type { WorldEntry, Vec3 } from "../../../shared/crdt-schema.js";
 import {
+  ADULT_WORLD_NAME,
+  isAdultWorld,
+  worldTierField,
   positionToSector,
   sectorKey,
   ORIGIN_WORLD_ID,
@@ -287,6 +290,38 @@ export class RoomManager {
 
   // ── World Rooms ──────────────────────────────────────────────────
 
+  /** Is this account behind the 18+ door (age-door.ts)? Set by index.ts. Until then, nobody is. */
+  doorOpen: (accountId: string | null | undefined) => boolean = () => false;
+
+  /** Is this an 18+ world? (Unknown worlds are not.) */
+  isAdultWorld(worldId: string): boolean {
+    return isAdultWorld(this.getWorldEntry(worldId));
+  }
+
+  /**
+   * May this socket be in this world at all? An 18+ world is only for players behind the
+   * 18+ door: no doc, no presence, no chat, no matches, no edits without it. Asked on
+   * every way in, so turning the switch off shuts the world at once.
+   */
+  private mayEnter(ws: WebSocket, worldId: string): boolean {
+    return !this.isAdultWorld(worldId) || this.doorOpen(this.accountIds.get(ws));
+  }
+
+  /** An account turned *Show 18+* off: its sockets leave every 18+ world they are in. Returns how many left. */
+  closeDoorFor(accountId: string): number {
+    let left = 0;
+    for (const [worldId, room] of this.worldRooms) {
+      if (!this.isAdultWorld(worldId)) continue;
+      for (const ws of [...room.clients]) {
+        if (this.accountIds.get(ws) !== accountId) continue;
+        if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("world-closed", new Uint8Array(0), worldId));
+        this.leaveWorld(ws, worldId);
+        left++;
+      }
+    }
+    return left;
+  }
+
   /**
    * Client enters a world. Lazy-loads the world doc from SQLite if
    * it's not already in memory.
@@ -294,6 +329,11 @@ export class RoomManager {
   joinWorld(ws: WebSocket, worldId: string): Y.Doc | null {
     // Origin is the portal: a real world entry, but it has no interior.
     if (worldId === ORIGIN_WORLD_ID) return null;
+    // 18+ worlds: only behind the 18+ door. Refused before anything is loaded or sent.
+    if (!this.mayEnter(ws, worldId)) {
+      if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("world-closed", new Uint8Array(0), worldId));
+      return null;
+    }
 
     let room = this.worldRooms.get(worldId);
 
@@ -435,14 +475,18 @@ export class RoomManager {
     intendedPosition: Vec3,
     color: string,
     parentWorldId?: string,
+    opts: { adult?: boolean } = {},
   ): WorldEntry {
+    // 18+ flows down: a world planted inside an 18+ world is 18+ (Phase 07, nested worlds). Fixed here, for good.
+    const adult = Boolean(opts.adult) || (parentWorldId ? this.isAdultWorld(parentWorldId) : false);
     const id = generateWorldId();
     const now = Date.now();
     const sector = sectorKey(positionToSector(intendedPosition));
 
     const entry: WorldEntry = {
       id,
-      name,
+      // An 18+ world's real name never goes into the shared universe; the caller keeps it (adult-worlds.ts)
+      name: adult ? ADULT_WORLD_NAME : name,
       creator,
       intendedPosition,
       resolvedPosition: { ...intendedPosition },
@@ -455,6 +499,7 @@ export class RoomManager {
       lastActive: now,
       createdAt: now,
       ...(parentWorldId ? { parentWorldId } : {}),
+      ...(adult ? { tier: "adult" as const } : {}),
     };
 
     const existingWorlds = getAllWorldEntries(this.universeDoc);
@@ -516,8 +561,8 @@ export class RoomManager {
     // Add to Universe CRDT
     addWorldToUniverse(this.universeDoc, entry);
 
-    // Create and persist the world doc
-    const worldDoc = createWorldDoc(entry);
+    // Create and persist the world doc (it carries the real name: only players behind the door ever get it)
+    const worldDoc = createWorldDoc({ ...entry, name });
     const state = Y.encodeStateAsUpdate(worldDoc);
     saveDoc(id, state, "world", entry.sector);
     worldDoc.destroy();
@@ -564,6 +609,7 @@ export class RoomManager {
         case "world-update": {
           // Client sent a CRDT update for a specific world
           if (!message.worldId || message.worldId === ORIGIN_WORLD_ID) break;
+          if (!this.mayEnter(ws, message.worldId)) break; // 18+ worlds: no edits from outside the door, online or replayed
           const room = this.worldRooms.get(message.worldId);
           if (room) {
             if (touchesChat(room.doc, message.data)) {
@@ -655,6 +701,7 @@ export class RoomManager {
           // Phase 10: lobby and match intents, handled by the match host (matches.ts)
           const playerId = this.playerIds.get(ws);
           if (!message.worldId || !playerId || message.data.length > 2048 || !this.onMatchIntent) break;
+          if (!this.mayEnter(ws, message.worldId)) break;
           try {
             this.onMatchIntent(ws, message.worldId, playerId, JSON.parse(new TextDecoder().decode(message.data)));
           } catch {
@@ -978,6 +1025,7 @@ export class RoomManager {
     const worldMap = this.universeDoc.getMap("worlds").get(worldId) as Y.Map<unknown> | undefined;
     if (!worldMap) return;
     const meta = doc.getMap("meta");
+    if (worldMap.get("tier") === "adult") return; // an 18+ world's music stays inside it: from space it plays its seeded music
     if (!worldSoundDiffers(worldMap, meta)) return;
     this.universeDoc.transact(() => copyWorldSound(worldMap, meta), "server");
   }
@@ -1210,6 +1258,7 @@ export class RoomManager {
       ...(parentWorldId ? { parentWorldId } : {}),
       ...(allowPortals !== undefined ? { allowPortals } : {}),
       ...coCreatorsField(worldMap.get("coCreators")),
+      ...worldTierField(worldMap.get("tier")),
     };
   }
 
@@ -1298,7 +1347,8 @@ export class RoomManager {
     if (!p || typeof p !== "object" || Array.isArray(p)) return;
     const x = Number(p.position?.x), y = Number(p.position?.y), z = Number(p.position?.z);
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-    const place = typeof p.inWorld === "string" ? p.inWorld : "";
+    // Presence follows the door too: nobody is "in" an 18+ world, or hears who is, from outside it
+    const place = typeof p.inWorld === "string" && this.mayEnter(sender, p.inWorld) ? p.inWorld : "";
     // A player in a match is in its instance, whatever the client says (Phase 10): one map lookup
     const group = this.groupFor(this.playerIds.get(sender), place);
     this.presence.set(sender, { json, x, y, z, group, place, at: Date.now() });
@@ -1465,6 +1515,7 @@ export class RoomManager {
   //   0x10 = sim-resume       (client → server: back online; the offline flight log follows, 9C)
   //   0x11 = steer            (server → client: 1 byte, 1 = this screen steers, 0 = another screen of the player does;
   //                            client → server: empty, "Play here", M9)
+  //   0x14 = world-closed     (server → client, worldId in header: this 18+ world is shut to you; the 18+ switch is off)
   //   0x13 = match            (JSON both ways, Phase 10: a world's lobby and matches; shared/match-protocol.ts)
   //   0x12 = mesh-signal      (JSON both ways, Network-less A2: server → client { t: "intro", peer } and
   //                            { t: "sdp", from, kind, sdp }; client → server { t: "sdp", to, kind, sdp })
@@ -1489,6 +1540,7 @@ export class RoomManager {
     "steer": 0x11,
     "mesh-signal": 0x12,
     "match": 0x13,
+    "world-closed": 0x14,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(

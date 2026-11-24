@@ -116,7 +116,7 @@ export const ACTIONS = {
 export type ActionId = keyof typeof ACTIONS;
 
 /** Socket message types that carry no intent of their own (transport, heartbeat, server → client). */
-export const WS_TRANSPORT = ["universe-sync", "world-sync", "presence-batch", "ping", "sim-correct"] as const;
+export const WS_TRANSPORT = ["universe-sync", "world-sync", "presence-batch", "ping", "sim-correct", "world-closed"] as const;
 
 /** Does an actor with these facts meet `tier`? (`world_creator` and `asset_maker` need the object in question.) */
 export function meetsTier(

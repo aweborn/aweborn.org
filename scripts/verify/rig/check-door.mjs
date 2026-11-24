@@ -45,7 +45,7 @@ try {
     const sw = await rect(page, "#player-door-switch");
     check(sw && sw.w >= 44 && sw.h >= 44, `[${size}] the switch is a 44 px target (${sw?.w}×${sw?.h})`);
     const note = await text(page, ".pa-door-note");
-    check(/Turning this on also makes how you play in matches part of Aweborn’s research/.test(note), `[${size}] research is said at the switch, before the tap`);
+    check(/Lets you enter and make 18\+ worlds\. Turning this on also makes how you play in matches part of Aweborn’s research/.test(note), `[${size}] research is said at the switch, before the tap`);
     const noteSize = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector(".pa-door-note")).fontSize));
     check(noteSize >= 14, `[${size}] the note is ≥ 14 px (${noteSize})`);
     check((await page.$$(".pa-door input, .pa-door select, .pa-door form")).length === 0, `[${size}] no date of birth or any other entry: only the switch`);
@@ -56,7 +56,7 @@ try {
     await click(page, "#player-door-switch");
     check(await checked(page, true), `[${size}] one tap turns it on`);
     check((await api(page, "/api/player/me")).data.door.show === true, `[${size}] the server agrees`);
-    check(/^How you play in matches is part of Aweborn’s research/.test(await text(page, ".pa-door-note")), `[${size}] the note says it is now in effect`);
+    check(/^You can enter and make 18\+ worlds\. How you play in matches is part of Aweborn’s research/.test(await text(page, ".pa-door-note")), `[${size}] the note says it is now in effect`);
     await sleep(300);
     await page.screenshot({ path: `${RIG_DIR}/door-${size}-2-on.png` });
 

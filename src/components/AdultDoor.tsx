@@ -10,20 +10,23 @@
  * (Privacy promises it).
  */
 
-import { useEffect, useId, useState } from 'react'
-import { getDoor, setDoor } from '../lib/door'
+import { useEffect, useId, useState, useSyncExternalStore } from 'react'
+import { getDoorSnapshot, loadDoor, setDoor, subscribeDoor } from '../lib/door'
 
 export function AdultDoor({ disabled }: { disabled?: boolean }) {
   const uid = useId()
-  const [on, setOn] = useState<boolean | null>(null)
+  const door = useSyncExternalStore(subscribeDoor, getDoorSnapshot, getDoorSnapshot)
+  const [fresh, setFresh] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Ask again when the panel opens: the switch may have been flipped on another screen
   useEffect(() => {
     let alive = true
-    void getDoor().then((show) => { if (alive) setOn(show) })
+    void loadDoor().then(() => { if (alive) setFresh(true) })
     return () => { alive = false }
   }, [])
+  const on = fresh && door.loaded ? door.show : null
 
   async function onSwitch() {
     if (disabled || busy || on === null) return
@@ -31,8 +34,7 @@ export function AdultDoor({ disabled }: { disabled?: boolean }) {
     setError(null)
     const r = await setDoor(!on)
     setBusy(false)
-    if (r.ok) setOn(r.show)
-    else setError(r.message)
+    if (!r.ok) setError(r.message)
   }
 
   return (
@@ -57,7 +59,7 @@ export function AdultDoor({ disabled }: { disabled?: boolean }) {
         </button>
       </div>
       <p id={`${uid}-note`} className="pa-door-note">
-        {on ? 'How you play in matches is part of Aweborn’s research' : 'Turning this on also makes how you play in matches part of Aweborn’s research'}
+        {on ? 'You can enter and make 18+ worlds. How you play in matches is part of Aweborn’s research' : 'Lets you enter and make 18+ worlds. Turning this on also makes how you play in matches part of Aweborn’s research'}
         , under a random research ID, never your name.{' '}
         <a href="/privacy.html#match-research" target="_blank" rel="noopener" id="player-door-privacy">How research works</a>
       </p>

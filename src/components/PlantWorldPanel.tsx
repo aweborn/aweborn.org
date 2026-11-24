@@ -12,6 +12,8 @@ import { ManaSeal, useCanChannel } from './ManaSeal'
 import { MakeTabs } from './MakeTabs'
 import { useSheet } from '../stores/sheetStore'
 import { WorldBuilders } from './BuildersPanel'
+import { isAdultWorld } from '@aweborn/shared/crdt-schema'
+import { getDoorSnapshot, refreshAdultNames, subscribeDoor } from '../lib/door'
 
 /**
  * Create World (Alex, 2026-10-21; recursive worlds-within-worlds 2026-10-23):
@@ -109,6 +111,11 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
   const worldCreator = parentEntry?.creator ?? worldMeta?.creator ?? ''
   const isCreator = Boolean(inWorld && worldCreator && myChars.includes(worldCreator))
   const allowPortals = (parentEntry?.allowPortals ?? worldMeta?.allowPortals) !== false
+  // 18+ worlds (Alex, 2026-11-24): chosen here, once, by a player behind the 18+ door. Inside an 18+ world every new world is 18+.
+  const door = useSyncExternalStore(subscribeDoor, getDoorSnapshot, getDoorSnapshot)
+  const parentAdult = isAdultWorld(parentEntry)
+  const [adultPick, setAdultPick] = useState(false)
+  const adult = parentAdult || (door.show && adultPick)
 
   const updatePolicy = async (nextAllow: boolean) => {
     if (!parentWorldId) return
@@ -169,6 +176,7 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
           color,
           position: plantPosition(inWorld),
           ...(parentWorldId ? { parentWorldId } : {}),
+          ...(adult ? { adult: true } : {}),
         }),
       })
       const j = (await res.json().catch(() => ({}))) as {
@@ -187,6 +195,7 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
         return
       }
       markMeaningfulMoment('world-created')
+      if (adult) void refreshAdultNames() // its real name isn't in the shared universe
       setPlanted({ ...j.world, leftToday: j.leftToday ?? 0 })
       void refreshProgress()
     } catch {
@@ -325,6 +334,31 @@ function PlantSheet({ parentWorldId, onClose }: { parentWorldId: string | null; 
               <input id="plant-color" type="color" value={color} onChange={(e) => setColor(e.target.value)} />
               <code>{color}</code>
             </label>
+            {(door.show || parentAdult) && (
+              <div className="plant-tier">
+                <div className="plant-tier__text">
+                  <span id="plant-adult-label" className="plant-tier__label">18+ world</span>
+                  <span id="plant-adult-note" className="plant-tier__note">
+                    {parentAdult
+                      ? 'This world is 18+, so every world planted inside it is too.'
+                      : 'Only players with 18+ content turned on can see into it, enter or build. This can’t be changed later.'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  id="plant-adult"
+                  className={`pa-switch${adult ? ' is-on' : ''}`}
+                  role="switch"
+                  aria-checked={adult}
+                  aria-labelledby="plant-adult-label"
+                  aria-describedby="plant-adult-note"
+                  disabled={parentAdult || busy}
+                  onClick={() => setAdultPick((v) => !v)}
+                >
+                  <span className="pa-switch-knob" aria-hidden="true" />
+                </button>
+              </div>
+            )}
             {error && (
               <p className="plant-error" role="alert">
                 {error}

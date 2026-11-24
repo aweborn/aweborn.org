@@ -12,6 +12,7 @@ import { BuildRequests, type SqlDb } from "./build-requests.js";
 import { WorldGames } from "./game.js";
 import { MatchStore } from "./match-store.js";
 import { AgeDoor } from "./age-door.js";
+import { AdultWorlds } from "./adult-worlds.js";
 import { MatchHost } from "./matches.js";
 import { GameLibrary, saveLibraryGame, bringLibraryGame, type LibraryRouteDeps } from "./game-library.js";
 import { tryResearchId } from "./research.js";
@@ -38,7 +39,7 @@ import { sendEmail } from "./email.js";
 import { CardOrders, CHECKOUT_BODY_LIMIT } from "./cards.js";
 import { CardSets } from "./card-sets.js";
 import { checkCreation, checkImage } from "./safety.js";
-import { handleMakingOf } from "./making-of.js";
+import { handleMakingOf, buildMakingOf } from "./making-of.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit",
@@ -87,6 +88,9 @@ rooms.worldGame = (worldId) => worldGames.get(worldId);
 const nameOfPlayer = (playerId: string): string => characterNames([playerId])[playerId] ?? wandererTag(playerId);
 // The 18+ door (age-door.ts): a saved player's *Show 18+* toggle. Being behind it is what makes a research candidate (Q10b).
 const ageDoor = new AgeDoor(getDb() as unknown as SqlDb);
+// 18+ worlds: only behind the door (rooms.ts → mayEnter); their real names stay out of the shared universe (adult-worlds.ts)
+const adultWorlds = new AdultWorlds(getDb() as unknown as SqlDb);
+rooms.doorOpen = (accountId) => ageDoor.open(accountId);
 const matchStore = new MatchStore(getDb() as unknown as SqlDb, (worldId) => rooms.lookupWorld(worldId)?.name ?? "");
 const matchHost = new MatchHost({
   game: (worldId) => worldGames.get(worldId),
@@ -156,7 +160,8 @@ function corsHeaders(req: IncomingMessage): Record<string, string> {
 /**
  * `GET /worlds/:id`: resolve a world for teleport links (`/w/<id>`).
  * Permanent public API (printed NFC cards depend on it): only ever add fields.
- *  200 { id, name, color, creator, solidified, sector, position, isOrigin }
+ *  200 { id, name, color, creator, solidified, sector, position, isOrigin, tier? }
+ *      (`tier: "adult"` = an 18+ world: its `name` here is always "18+ world", never the real one)
  *  400 { error: "invalid_id" }   not a UUIDv4
  *  404 { error: "not_found" }    unknown, or faded (worlds are never hard-deleted)
  */
@@ -191,6 +196,7 @@ function handleWorldLookup(req: IncomingMessage, res: ServerResponse, id: string
       resolvedAt: w.resolvedAt, // 0 = position not settled yet (Origin is fixed at 0, 0, 0)
       isOrigin: w.id === ORIGIN_WORLD_ID,
       ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
+      ...(w.tier ? { tier: w.tier } : {}),
     })
   );
 }
@@ -215,20 +221,34 @@ function handleNames(req: IncomingMessage, res: ServerResponse): void {
 /** One rename per character per this long. */
 const RENAME_EVERY_MS = 10_000;
 
+/** What a player outside the 18+ door is told about an 18+ world, on every route. */
+const ADULT_WORLD_SHUT = { error: "adult_world", message: "This is an 18+ world. Sign in and turn on 18+ content to go there." };
+
+/** A request's body, read once: the 18+ guard looks at it before the route does (`handlePlayerApi`). */
+const bodies = new WeakMap<IncomingMessage, { length: number; value?: unknown; bad?: true }>();
+/** The 18+ guard reads bodies up to this size (the largest JSON route, animate, is 450 kB); card checkout checks its world itself. */
+const GUARD_BODY_LIMIT = 512_000;
+
 function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
+  const seen = bodies.get(req);
+  if (seen) return seen.bad || seen.length > limit ? Promise.reject(new Error(seen.bad ? "bad json" : "too large")) : Promise.resolve(seen.value);
   return new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (chunk: Buffer) => {
       body += chunk.toString();
       if (body.length > limit) {
+        bodies.set(req, { length: body.length, bad: true });
         reject(new Error("too large"));
         req.destroy();
       }
     });
     req.on("end", () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        const value = body ? JSON.parse(body) : {};
+        bodies.set(req, { length: body.length, value });
+        resolve(value);
       } catch (err) {
+        bodies.set(req, { length: body.length, bad: true });
         reject(err as Error);
       }
     });
@@ -431,6 +451,21 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   if (tz) rooms.admission.setTimezone(session.playerId, Number(tz[1]));
   const path = req.url?.split("?")[0];
 
+  // 18+ worlds (Alex, 2026-11-24): only players behind the 18+ door can make, see into or change one.
+  // Every route here names its world as `worldId` or `parentWorldId`, in the query or the JSON body,
+  // so one check covers them all, and any route added later.
+  const door = !session.isAnonymous && ageDoor.open(accountId);
+  if (!door) {
+    const named: unknown[] = [];
+    const query = new URL(req.url ?? "/", "http://x").searchParams;
+    named.push(query.get("worldId"), query.get("parentWorldId"));
+    if (req.method === "POST" && Number(req.headers["content-length"] ?? 0) <= GUARD_BODY_LIMIT) {
+      const body = (await readJson(req, GUARD_BODY_LIMIT).catch(() => null)) as { worldId?: unknown; parentWorldId?: unknown } | null;
+      if (body && typeof body === "object") named.push(body.worldId, body.parentWorldId);
+    }
+    if (named.some((id) => typeof id === "string" && rooms.isAdultWorld(id.toLowerCase()))) return json(403, ADULT_WORLD_SHUT);
+  }
+
   if (path === "/api/player/me" && req.method === "GET") {
     return json(200, {
       playerId: session.playerId,
@@ -462,7 +497,13 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player first, then try again." });
     const body = (await readJson(req).catch(() => null)) as { show?: unknown } | null;
     if (typeof body?.show !== "boolean") return json(400, { error: "bad_request", message: "Say whether to show 18+ content." });
-    return json(200, { show: ageDoor.set(accountId, body.show) });
+    const show = ageDoor.set(accountId, body.show);
+    if (!show) rooms.closeDoorFor(accountId); // out of every 18+ world, at once
+    return json(200, { show });
+  }
+  // 18+ worlds' real names, for players behind the door only (the shared universe never carries them: adult-worlds.ts)
+  if (path === "/api/player/adult-worlds" && req.method === "GET") {
+    return json(200, { names: door ? adultWorlds.names() : {} });
   }
   if (path === "/api/player/character" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { id?: unknown } | null;
@@ -537,6 +578,12 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     return json(200, { worldId, ...r });
   }
   // Awe = experience (Rough Draft M3)
+  // An 18+ world's story stone, for players behind the door (the public /making-of refuses 18+ worlds; the guard above checked the door)
+  if (path === "/api/player/making-of" && req.method === "GET") {
+    const worldId = knownWorld(new URL(req.url ?? "/", "http://x").searchParams.get("worldId"));
+    if (!worldId) return json(400, { error: "bad_request", message: "That world isn't there." });
+    return json(200, buildMakingOf(getDb(), worldId));
+  }
   if (path === "/api/player/progress" && req.method === "GET") {
     return json(200, { progress: rooms.progress.view(session.playerId) });
   }
@@ -574,6 +621,8 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     }
     const reqd = parseWorldRequest(await readJson(req).catch(() => null));
     if ("error" in reqd) return json(400, reqd);
+    // An 18+ world is made by a player behind the 18+ door, and is 18+ for good (a parent's 18+ is inherited in createWorld)
+    if (reqd.adult && !door) return json(403, { error: "door_closed", message: "Turn on 18+ content in your player panel to make an 18+ world." });
     if (reqd.parentWorldId) {
       const parent = rooms.lookupWorld(reqd.parentWorldId);
       if (!parent) return json(404, { error: "parent_not_found", message: "Parent world not found." });
@@ -591,17 +640,19 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (left <= 0) {
       return json(429, { error: "daily_limit", message: `You can plant ${WORLDS_PER_DAY} worlds a day. Come back tomorrow.` });
     }
-    const w = rooms.createWorld(reqd.name, session.playerId, reqd.position, reqd.color, reqd.parentWorldId);
+    const w = rooms.createWorld(reqd.name, session.playerId, reqd.position, reqd.color, reqd.parentWorldId, { adult: reqd.adult });
+    if (w.tier === "adult") adultWorlds.setName(w.id, reqd.name);
     recordDiscovery(accountId, w.id, session.playerId, "sighted", "flight", Date.now(), w.solidified ? "solid" : "dreamt");
     rooms.progress.useSkill(session.playerId, "world");
     return json(200, {
       world: {
         id: w.id,
-        name: w.name,
+        name: w.tier === "adult" ? reqd.name : w.name, // the maker is behind the door: they get their world's real name
         color: w.color,
         position: w.resolvedPosition,
         solidified: w.solidified,
         ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
+        ...(w.tier ? { tier: w.tier } : {}),
       },
       leftToday: left - 1,
     });
@@ -697,12 +748,14 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   }
   if (path === "/api/player/replays" && req.method === "GET") {
     const mine = [...new Set([session.playerId, ...listCharacters(accountId).map((c) => c.id)])];
-    return json(200, { matches: matchStore.playerRecent(mine, 50) });
+    // Replays from 18+ worlds show only behind the door
+    return json(200, { matches: matchStore.playerRecent(mine, 50).filter((m) => door || !rooms.isAdultWorld(m.worldId)) });
   }
   if (path === "/api/match/record" && req.method === "GET") {
     const id = new URL(req.url ?? "/", "http://x").searchParams.get("id") ?? "";
     // A running match answers with the record so far (result null): watchers read the roster from it
     const record = /^[0-9a-f-]{36}$/.test(id) ? matchHost.record(id) : null;
+    if (record && !door && rooms.isAdultWorld(record.setup.worldId)) return json(403, ADULT_WORLD_SHUT);
     return record ? json(200, { record }) : json(404, { error: "not_found", message: "That match isn't on record." });
   }
   // The game Library (Phase 10, slice 7): browse, save this world's game, bring one here
@@ -715,6 +768,10 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; name?: unknown; libraryId?: unknown; at?: unknown } | null;
     const known = knownWorld(body?.worldId);
     const worldId = known === ORIGIN_WORLD_ID ? null : known;
+    // The game Library is one public shelf with no tiers yet, so a game made in an 18+ world isn't put on it
+    if (worldId && !path.endsWith("/bring") && rooms.isAdultWorld(worldId)) {
+      return json(403, { error: "adult_world", message: "Games made in 18+ worlds can’t go to the Library yet." });
+    }
     if (!takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
     const mine = [...new Set([session.playerId, ...listCharacters(accountId).map((c) => c.id)])];
     const r = path.endsWith("/bring")
@@ -798,6 +855,10 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   // Minds you keep (2026-11-06): history, save to the Library, give a saved mind, the shelf
   if (path === "/api/player/mind/history" && req.method === "GET") return mindHistory(rooms, session.playerId, accountId, req, json);
   if (path === "/api/player/mind/save" && req.method === "POST") {
+    const from = ((await readJson(req).catch(() => null)) as { worldId?: unknown } | null)?.worldId;
+    if (typeof from === "string" && rooms.isAdultWorld(from.toLowerCase())) {
+      return json(403, { error: "adult_world", message: "Minds from 18+ worlds can’t go to the Library yet." });
+    }
     return saveMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
   }
   if (path === "/api/player/mind/adopt" && req.method === "POST") {
@@ -1108,7 +1169,7 @@ const server = createServer((req, res) => {
   }
   if (handleManaPublic(req, res)) return;
   // How a world was made: its planner conversations, public (the story stone, making-of.ts)
-  if (handleMakingOf(req, res, corsHeaders(req))) return;
+  if (handleMakingOf(req, res, corsHeaders(req), (id) => rooms.isAdultWorld(id))) return;
   // The Library's Minds shelf and a saved mind's history: public, like made models (minds.ts)
   if (handleMindLibrary(req, res, corsHeaders(req), rooms)) return;
   if (handleAssets(req, res)) return;

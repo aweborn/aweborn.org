@@ -17,6 +17,9 @@ function fakeJpeg(width: number, height: number, pad = 0): Buffer {
 }
 const dataUrl = (b: Buffer) => `data:image/jpeg;base64,${b.toString("base64")}`;
 
+/** An 18+ world: no cards are made for it (Phase 07, decision 9). */
+const ADULT = "5c1d7e2a-9b3f-4a6c-8d2e-7f1a3b5c9d0e";
+
 function setup(opts: { unsafe?: boolean; unsafePhoto?: boolean } = {}) {
   const db = new Database(":memory:");
   const mana = new ManaLedger(db);
@@ -25,7 +28,8 @@ function setup(opts: { unsafe?: boolean; unsafePhoto?: boolean } = {}) {
   const cards = new CardOrders(db, {
     mana,
     world: (id) => (id === WORLD ? { id, name: "Moss Hill", resolvedAt: 1 }
-      : id === GHOST ? { id, name: "Far Mist", resolvedAt: 1, solidified: false } : null),
+      : id === GHOST ? { id, name: "Far Mist", resolvedAt: 1, solidified: false }
+      : id === ADULT ? { id, name: "18+ world", resolvedAt: 1, tier: "adult" as const } : null),
     nameOf: (p) => (p === "named" ? "Alex" : null),
     check: async () => (opts.unsafe ? { ok: false, message: "no" } : { ok: true }),
     checkImage: async () => (opts.unsafePhoto ? { ok: false, message: "no" } : { ok: true }),
@@ -309,4 +313,14 @@ test("photo art: a photo that fails the image check makes no order", async () =>
   assert.equal(cards.list("pending").length, 0);
   // Without a photo the same order goes through
   assert.ok((await cards.create("p", { worldId: WORLD })).ok);
+});
+
+test("no cards from 18+ worlds: checkout and event orders both refuse", async () => {
+  const { cards, db } = setup();
+  const r = await cards.create("p", { worldId: ADULT });
+  assert.deepEqual(r, { ok: false, status: 403, error: "adult_world", message: "Cards aren’t made for 18+ worlds." });
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM card_orders").get() as { n: number }).n, 0);
+  const ev = cards.createEvent({ worldIds: [WORLD, ADULT], quantity: 5, note: "Test event" });
+  assert.equal(ev.ok, false);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM card_orders").get() as { n: number }).n, 0);
 });

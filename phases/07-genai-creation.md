@@ -525,6 +525,39 @@ These replace the numbered decisions where they differ. The rest of the list sta
 - **The door is a toggle** (replaces the birthdate in decision 3; see the note there).
 - **A world is 18+ or everyone from the moment it is made, and that never changes** (replaces decision 2's "once a world holds any 18+ creation, the world is 18+", and "Owner and co-creators can flip a world", "Going back" and "Cards still work after a flip" under Containment). Alex considered a prompt when something made is flagged 18+ and dropped it: *"That's too much user interaction… worlds being created should just have a toggle and you can't switch it after a world is created."* So an 18+ creation in an everyone world is simply refused there.
 - **Policies describe the rules as they are, with no "there is no 18+ content yet" asides** (*"there will be sooner than later, that's not a thing to note"*).
+- **Only players behind the 18+ door can make, see into, enter or change an 18+ world** (*"only 18+ opted-in players can create 18+ worlds and edit/view them too of course"*).
+
+#### Built 2026-11-24: the tier, the veil and the door (branch `age-18plus-opt-in`, not deployed)
+What an 18+ world *is* and who can reach it. Checked by `scripts/verify/rig/check-adult-worlds.mjs` (70 checks against the real server and app).
+
+| What | How | Where |
+|------|-----|-------|
+| **The 18+ door** | A toggle in the saved player's panel. No date of birth. | `age-door.ts`, `AdultDoor.tsx`, `src/lib/door.ts` |
+| **A world's tier** | `tier: "adult"` on the world's universe entry, set by `adult: true` in `POST /api/player/world`, only for a player behind the door. Nothing writes it afterwards. A world planted inside an 18+ world is 18+ without asking (tiers flow down). | `shared/crdt-schema.ts`, `world-create.ts`, `rooms.ts → createWorld` |
+| **The veil** | The shared universe goes to everyone, so an 18+ world's entry there has **no real name** (`"18+ world"`) and **no music**. The real name is in the server's `adult_world_names` table and the world's own doc. Behind the door the app fetches names (`GET /api/player/adult-worlds`); outside it the world is drawn in one veil colour with an *18+* mark. This is the per-viewer redaction (containment point 4) done without splitting the universe doc: it works because the tier is fixed at creation. | `adult-worlds.ts`, `universeStore.ts → throughTheDoor`, `UniverseWorlds.tsx` |
+| **Entry** | The server refuses the world's doc, edits (live or replayed from offline), presence, chat and match messages to a socket whose account isn't behind the door (`rooms.ts → mayEnter`), on both socket routes. The app refuses first, with *"Sign in and turn on 18+ content to enter."* | `rooms.ts`, `universeStore.ts → enterWorld` |
+| **Every HTTP route** | One guard at the top of the player API: any request that names an 18+ world as `worldId` or `parentWorldId` (query or JSON body) from outside the door gets `403 adult_world`. It covers making, planning, lore, minds, the game, builders, the World Index, and any route added later. | `index.ts → handlePlayerApi` |
+| **Turning the switch off** | The account's sockets are put out of every 18+ world at once (`world-closed`, 0x14); the app steps out to the nearest everyone world or space, and the names are dropped. | `rooms.ts → closeDoorFor`, `useCRDT.ts`, `universeStore.ts → leaveToEveryone` |
+| **Public routes** | `GET /worlds/:id` says `tier: "adult"` and gives no name. `GET /making-of` refuses an 18+ world; players behind the door read `GET /api/player/making-of` (decision 11). Replays from 18+ worlds are shut outside the door. | `index.ts`, `making-of.ts` |
+| **Money firewall** | No cards from an 18+ world: checkout and event orders both refuse (decision 9). | `cards.ts` |
+| **On the device** | 18+ world docs and their offline edits are never written to the offline cache. So they don't work offline. | `offlineCache.ts → uncachedWorlds` |
+| **The Libraries** | The game Library and the minds shelf are public and have no tiers, so a game or a mind made in an 18+ world can't be saved to them. | `index.ts` |
+
+**Choices made to fill gaps (Alex to confirm):**
+- A veiled world keeps its position, size and player count; it loses its name, colour and music.
+- A world's maker who later turns the switch off is shut out of their own 18+ world like anyone else.
+- Being a builder of an 18+ world doesn't open it: the door does.
+- The story stone, replays and match lists of an 18+ world need the door; nothing of an 18+ world is on any public route except that it exists and where.
+- Games and minds can't leave an 18+ world for the shared Libraries until those have tiers.
+
+**Not built. What can be *made* is unchanged: the same rater and the same refusals run in every world, so an 18+ world holds nothing an everyone world couldn't.** The steps from here, in the order the list below already gives:
+1. **The rater replaces the all-ages refusals** inside 18+ worlds, with the hard lines everywhere ("All-ages assumptions to undo"). Before it: the apparent-age and real-person output checks, CSAM hash matching, NCMEC registration and runbook, and the quarantine path for hard-line content. These are legal requirements, not polish.
+2. **The tag on creations** (containment points 1 to 3): Make jobs carry their world, an 18+ creation is refused in an everyone world before broadcast, the Library filters by the door and the destination's tier.
+3. **18+ asset delivery** (point 5): signed, short-lived URLs under a separate prefix; today every asset URL is public and cached for a year.
+4. **Adult-capable models** (decision 5) and the public model menu.
+5. **The age check where the law requires one** (decision 3): a vendor, and a way to know where the player is. Until then the toggle is the same everywhere.
+6. **The mesh** (same-network play): joining an 18+ world over WebRTC needs a door token. Today the server only introduces peers whose presence is in the same world, and presence follows the door, so strangers are not introduced; a modified client on the same network is not stopped.
+7. Transparency pages, the appeal path, minds' care rules in 18+ worlds, research flagging (decisions 10 to 12).
 
 #### Decided
 1. **Aweborn is 18+ for everyone** (Terms and Privacy already say so). No teen or child tiers: no COPPA, no rules for minors on companion chatbots, research data stays clean. A teen tier could come later with its own grill.

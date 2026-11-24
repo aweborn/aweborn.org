@@ -2787,6 +2787,22 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
 }
 .pa-notice span { flex: 1 1 14rem; }
 
+/* Plant a world: the 18+ toggle (PlantWorldPanel.tsx). It uses the same switch as the 18+ door. */
+.plant-tier {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.6rem 0 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+.plant-tier__text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.plant-tier__label { font-family: var(--font-body); font-weight: 600; font-size: 0.95rem; color: var(--color-text-primary); }
+.plant-tier__note { font-family: var(--font-body); font-size: 0.875rem; line-height: 1.45; color: var(--color-text-secondary); }
+
 /* The 18+ door (AdultDoor.tsx): a switch and the research note beside it. */
 .pa-door {
   display: flex;

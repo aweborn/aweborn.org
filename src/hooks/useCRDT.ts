@@ -6,6 +6,8 @@ import { useSteerStore } from "../stores/steerStore";
 import { setPresenceSocketUp } from "./usePresence";
 import { onMeshSignal, setMeshSignalSender } from "../lib/mesh";
 import { onMatchMessage, setMatchSender } from "../lib/match";
+import { loadDoor } from "../lib/door";
+import { useUniverseStore, leaveToEveryone } from "../stores/universeStore";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
@@ -49,6 +51,8 @@ const MSG_TYPES: Record<string, number> = {
   "mesh-signal": 0x12,
   /** Phase 10: a world's lobby and matches, JSON both ways (shared/match-protocol.ts, src/lib/match.ts). */
   "match": 0x13,
+  /** Server → client: this 18+ world is shut to you (the 18+ switch is off). */
+  "world-closed": 0x14,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -292,6 +296,12 @@ export function useSyncConnection(
           case "world-update":
             if (msg.worldId) {
               onWorldUpdateRef.current?.(msg.type, msg.worldId, msg.data);
+            }
+            break;
+          case "world-closed":
+            // The server shut an 18+ world on us (the switch went off on another screen, or we never had it)
+            if (msg.worldId && useUniverseStore.getState().activeWorldId === msg.worldId) {
+              void loadDoor().then((open) => { if (!open) leaveToEveryone(); });
             }
             break;
           case "presence":

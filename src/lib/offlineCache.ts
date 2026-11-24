@@ -330,17 +330,27 @@ export function loadUniverseDoc(): Uint8Array | null {
   return universe
 }
 
+/**
+ * Worlds that are never kept on this device: 18+ worlds (filled by the universe store).
+ * Their docs and offline edits live only in memory, so nothing of them outlasts the tab,
+ * a sign-out or the 18+ switch being turned off.
+ */
+export const uncachedWorlds = new Set<string>()
+
 export function saveWorldDoc(worldId: string, doc: Y.Doc): void {
+  if (uncachedWorlds.has(worldId)) return
   dirtyWorlds.set(worldId, doc)
   scheduleFlush()
 }
 
 export function loadWorldDoc(worldId: string): Uint8Array | null {
+  if (uncachedWorlds.has(worldId)) return null
   if (dirtyWorlds.has(worldId)) flushOfflineCache()
   return worlds.get(worldId) ?? null
 }
 
 export function queueOfflineWorldUpdate(worldId: string, delta: Uint8Array): void {
+  if (uncachedWorlds.has(worldId)) return
   mergeInto(pending, worldId, delta)
   void persist([[K_PENDING + worldId, pending.get(worldId)!]], [])
   notifyPending()
