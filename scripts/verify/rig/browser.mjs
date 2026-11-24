@@ -148,3 +148,28 @@ export const standAt = (page, x, y, z) =>
     c.state = { ...c.state, x, y, z, vx: 0, vy: 0, vz: 0 };
     c.prev = c.state;
   }, x, y, z);
+
+/**
+ * Walk the player to a point at `speed` m/s in real time (a straight line, in small steps).
+ * Inside a match the server checks positions (shared/match-sanity.ts), so a `standAt` jump
+ * across the arena is refused there, as a teleport hack would be: scripts walk instead.
+ * Resolves when the player is there.
+ */
+export const walkTo = (page, x, y, z, speed = 6) =>
+  page.evaluate(async (x, y, z, speed) => {
+    const { interiorController: c } = await import("/src/systems/InteriorController.ts");
+    let last = performance.now();
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 50));
+      const now = performance.now();
+      // A stalled page (software rendering) catches up at the same speed, never more than half a second's worth at once
+      const reach = speed * Math.min(0.5, (now - last) / 1000);
+      last = now;
+      const dx = x - c.state.x, dy = y - c.state.y, dz = z - c.state.z;
+      const d = Math.hypot(dx, dy, dz);
+      const k = d <= reach ? 1 : reach / d;
+      c.state = { ...c.state, x: c.state.x + dx * k, y: c.state.y + dy * k, z: c.state.z + dz * k, vx: 0, vy: 0, vz: 0 };
+      c.prev = c.state;
+      if (k === 1) return;
+    }
+  }, x, y, z, speed);

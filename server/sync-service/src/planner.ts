@@ -282,6 +282,12 @@ function getSession(id: string): Session | undefined {
   return s;
 }
 
+/** A deleted player (erase-player.ts): their planner sessions leave memory too (the rows are deleted there). */
+export function forgetPlannerPlayers(playerIds: ReadonlySet<string>): void {
+  for (const [id, s] of cache) if (playerIds.has(s.playerId)) cache.delete(id);
+  for (const id of playerIds) editTimes.delete(id);
+}
+
 type Json = (status: number, body: unknown) => void;
 interface LlmOut { content: string; model: string; costUsd: number }
 

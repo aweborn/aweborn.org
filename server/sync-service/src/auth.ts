@@ -630,6 +630,26 @@ export async function getIdentity(auth: Auth, headers: Headers): Promise<Identit
   return { accountId: s.userId, playerId: s.playerId };
 }
 
+/**
+ * Who is asking to delete their player, and have they just proved it is them? The same
+ * proof as every other change to how a saved player signs in (FRESH_SESSION_MS): a
+ * passkey, e-mail code or Google round trip on this device in the last 5 minutes.
+ */
+export async function deleteStanding(auth: Auth, headers: Headers): Promise<
+  { userId: string; isAnonymous: boolean; fresh: boolean; storedEmail: string | null; realEmail: string | null } | null
+> {
+  const res = await auth.api.getSession({ headers });
+  if (!res) return null;
+  const user = res.user as RawUser;
+  return {
+    userId: user.id,
+    isAnonymous: Boolean(user.isAnonymous),
+    fresh: Date.now() - new Date(res.session.createdAt).getTime() < FRESH_SESSION_MS,
+    storedEmail: user.email ?? null,
+    realEmail: realEmail(user),
+  };
+}
+
 /** Have I Been Pwned range check (only 5 hash chars leave the server). Throws if unreachable. */
 async function passwordIsBreached(password: string): Promise<boolean> {
   const sha1 = createHash("sha1").update(password).digest("hex").toUpperCase();

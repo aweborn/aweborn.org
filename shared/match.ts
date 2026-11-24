@@ -20,6 +20,7 @@
  * (the server quantizes before stepping, so a replay sees exactly what the referee saw).
  */
 import type { Game, Vec3 } from "./game.js";
+import type { ArenaCopy } from "./arena.js";
 
 /** Referee ticks per second = 1000 / this (the presence tick). */
 export const MATCH_TICK_MS = 100;
@@ -52,6 +53,13 @@ export interface MatchSetup {
   slots: MatchSlot[];
   /** How the roster was formed, for research: the matchmaker's policy and seed, and what wasn't its own choice. */
   formed: { policy: "random-balanced" | "play-now" | "host-start"; seed: number; links: { a: string; b: string; kind: "with" | "against" }[]; together: string[][] };
+  /**
+   * The match's own copy of the arena (shared/arena.ts): the objects that stood on the stage
+   * when it started. Its players see and collide with these, not the live stage, and a replay
+   * shows them. Absent in records made before 2026-11-24 (those matches saw the live stage).
+   * The referee never reads it.
+   */
+  arena?: ArenaCopy;
 }
 
 export type MatchPhase = "countdown" | "playing" | "break" | "finished";
@@ -133,6 +141,13 @@ export type ControlInput =
   | { type: "leave"; slot: number }
   /** An NPC takes over a human's slot (they dropped), or the human takes it back. */
   | { type: "swap"; slot: number; to: "npc" | "human" }
+  /**
+   * The host refused a human's position sample (shared/match-sanity.ts): too far too fast
+   * ("speed") or outside a walled arena ("wall"). `at` is the refused position in metres.
+   * The referee ignores it (that slot simply has no sample this tick); it is in the record
+   * so research and disputes can see every refusal.
+   */
+  | { type: "reject"; slot: number; why: "speed" | "wall"; at: Vec3 }
   | { type: "host-end" };
 
 export type MatchEventType =

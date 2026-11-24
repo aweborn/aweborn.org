@@ -43,6 +43,8 @@ import { canPromptNow, onMeaningfulMoment, recordPrompted, trackPlaytime } from 
 import { EmailSignIn } from './EmailSignIn'
 import { SetPassword } from './SetPassword'
 import { AdultDoor } from './AdultDoor'
+import { DeletePlayer, DeletePlayerEntry, PlayerDeletedNotice } from './DeletePlayer'
+import { takeDeletedNotice } from '../lib/deletePlayer'
 import { OPEN_ACCOUNT_EVENT } from './ManaSeal'
 import { NameField } from './NameField'
 import { useNameStore, displayName, requestNames } from '../stores/nameStore'
@@ -100,6 +102,12 @@ export function PlayerAccount() {
   const [settingPassword, setSettingPassword] = useState(false)
   /** A change was refused until the player confirms it's them. */
   const [confirming, setConfirming] = useState(false)
+  /** The are-you-sure step of "Delete my player…" has the panel (DeletePlayer.tsx). */
+  const [deleting, setDeleting] = useState(false)
+  /** Go back to it once "Confirm it's you" is done. */
+  const [resumeDelete, setResumeDelete] = useState(false)
+  /** This page came back after a delete: say so once ("Your player is deleted"). */
+  const [deletedNotice, setDeletedNotice] = useState(false)
   /** A saved player used this device before (survives sign-out). */
   const [returning, setReturning] = useState<Returning | null>(() => getReturning())
   const [tab, setTab] = useState<Tab>(() => (getReturning() ? 'signin' : 'save'))
@@ -158,6 +166,9 @@ export function PlayerAccount() {
     setAddingEmail(false)
     setSettingPassword(false)
     setConfirming(false)
+    setDeleting(false)
+    setDeletedNotice(false)
+    setResumeDelete(false)
     const r = getReturning()
     setReturning(r)
     setTab(r ? 'signin' : 'save')
@@ -188,6 +199,14 @@ export function PlayerAccount() {
       setStatus({ tone: 'success', text: 'Confirmed. You can change how you sign in for the next 5 minutes.' })
     }
   }, [methods])
+
+  // Back after "Delete my player": the short screen, over the fresh guest this page now is.
+  const panelReady = Boolean(player && !player.isGuest && canSave)
+  useEffect(() => {
+    if (!panelReady || !dialogRef.current || !takeDeletedNotice()) return
+    setDeletedNotice(true)
+    dialogRef.current.showModal()
+  }, [panelReady])
 
   // A camera opened `/link#<code>`: open the panel with the code filled in.
   useEffect(() => {
@@ -250,6 +269,12 @@ export function PlayerAccount() {
   }
   const confirmed = (message = 'Confirmed. Now try that again: you have 5 minutes.') => {
     setConfirming(false)
+    if (resumeDelete) {
+      setResumeDelete(false)
+      setStatus(null)
+      setDeleting(true)
+      return
+    }
     setStatus({ tone: 'success', text: message })
     refreshLinked()
   }
@@ -372,13 +397,30 @@ export function PlayerAccount() {
         id="player-account-dialog"
         className="pa-dialog"
         aria-labelledby="pa-title"
-        onClose={() => setShown(false)}
+        onClose={() => {
+          setShown(false)
+          setDeleting(false)
+          setDeletedNotice(false)
+        }}
         // closedby: light dismiss + Esc (React passes unknown lowercase attrs through)
         {...{ closedby: 'any' }}
       >
         <div className="pa-panel">
           <button type="button" className="pa-close" onClick={close} aria-label="Close">×</button>
 
+          {deletedNotice ? (
+            <PlayerDeletedNotice onContinue={close} />
+          ) : deleting ? (
+            <DeletePlayer
+              onCancel={() => setDeleting(false)}
+              onNeedsConfirm={() => {
+                setResumeDelete(true)
+                setDeleting(false)
+                needConfirm()
+              }}
+            />
+          ) : (
+          <>
           {isAnonymous && (
             <div className="pa-tabs" role="tablist" aria-label="Returning or new player" onKeyDown={onTabKey}>
               {(['signin', 'save'] as const).map((t) => (
@@ -516,7 +558,9 @@ export function PlayerAccount() {
                 <div className="pa-confirm" role="group" aria-labelledby="pa-confirm-title">
                   <p id="pa-confirm-title" className="pa-confirm-title">Confirm it's you</p>
                   <p className="pa-hint pa-hint--left">
-                    Before changing how you sign in, use one of your ways in on this device. Keeps your player safe if someone else is holding it.
+                    {resumeDelete
+                      ? 'Before deleting your player, use one of your ways in on this device. Nothing is deleted yet.'
+                      : 'Before changing how you sign in, use one of your ways in on this device. Keeps your player safe if someone else is holding it.'}
                   </p>
                   {hasPasskey && methods?.passkey && (
                     <button
@@ -549,7 +593,7 @@ export function PlayerAccount() {
                   {email && methods?.email && (
                     <EmailSignIn mode="confirm" fixedEmail={email} disabled={busy !== null} onDone={confirmed} />
                   )}
-                  <button type="button" id="player-confirm-cancel" className="pa-btn pa-btn--quiet" disabled={busy !== null} onClick={() => setConfirming(false)}>
+                  <button type="button" id="player-confirm-cancel" className="pa-btn pa-btn--quiet" disabled={busy !== null} onClick={() => { setResumeDelete(false); setConfirming(false) }}>
                     Cancel
                   </button>
                 </div>
@@ -732,6 +776,19 @@ export function PlayerAccount() {
             {' · '}
             <a href="/terms.html" target="_blank" rel="noopener" id="pa-terms-link">Terms</a>
           </p>
+          {!isAnonymous && !confirming && (
+            <DeletePlayerEntry
+              disabled={busy !== null}
+              onOpen={() => {
+                setStatus(null)
+                setAddingEmail(false)
+                setSettingPassword(false)
+                setDeleting(true)
+              }}
+            />
+          )}
+          </>
+          )}
         </div>
       </dialog>
     </>

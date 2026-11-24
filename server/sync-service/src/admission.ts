@@ -75,6 +75,13 @@ export class ManaAdmission {
     return this.guests.has(playerId);
   }
 
+  /** A deleted player (erase-player.ts): out of every in-memory list here. */
+  forget(playerId: string): void {
+    this.guests.delete(playerId);
+    this.lastSeen.delete(playerId);
+    this.tz.delete(playerId);
+  }
+
   /** playerId → reported UTC offset (minutes east) and when it last changed. Memory only. */
   private tz = new Map<string, { offset: number; at: number }>();
 

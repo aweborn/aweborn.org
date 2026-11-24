@@ -100,19 +100,19 @@ await shot(O, "05-watching-hologram");
 await until("the round is on", () => A.match((s) => s.snap?.phase === "playing"), 20000);
 ok((await A.pos()).hold === false, "free to move once the countdown is over");
 await sleep(1500);
-await A.stand(14, 0, -6); // 4 m past the arena's east edge
+await A.walk(14, 0, -6); // 4 m past the arena's east edge (walked: the server refuses a jump)
 await until("A, outside the arena, gets the warning", () => A.has("#match-warning"), 8000);
 ok(/Out of bounds/.test(await A.text("#match-warning") ?? ""), "it says out of bounds, with a count", await A.text("#match-warning"));
 await until("the referee counts A as outside", () => A.match((s, slot) => (s.snap?.players.find((p) => p.slot === slot)?.outside ?? 0) > 0, started?.a.slot), 8000);
 ok(!(await B.has("#match-warning")), "B, inside, has no warning");
 await shot(A, "06-out-of-bounds");
-await A.stand(started?.a.team === 1 ? -6 : 6, 0, -3);
+await A.walk(started?.a.team === 1 ? -6 : 6, 0, -3);
 await until("back inside: the warning goes", async () => !(await A.has("#match-warning")), 8000);
 ok((await A.match((s, slot) => s.snap?.players.find((p) => p.slot === slot)?.outside ?? 0, started?.a.slot)) === 0, "and the count is cleared");
 await shot(B, "07-playing");
 
 // ── 5. The goal and the results ────────────────────────────────────
-await B.stand(GOAL[0], GOAL[1], GOAL[2]);
+await B.walk(GOAL[0], GOAL[1], GOAL[2]);
 const ended = await until("B reaches the goal: both get the result", async () => {
   const [a, c] = await Promise.all([A.match((s) => s.ended && { w: s.ended.result.winner, you: s.ended.you, awe: s.ended.awe, again: s.ended.again }), B.match((s) => s.ended && { w: s.ended.result.winner, you: s.ended.you, awe: s.ended.awe })]);
   return a && c ? { a, c } : null;
@@ -167,7 +167,7 @@ await until("the NPCs' bodies are drawn for A (name tags marked AI)", async () =
 await until("the round is on", () => A.match((s) => s.snap?.phase === "playing"), 20000);
 await sleep(2500);
 await shot(A, "12-playing-with-npcs");
-await A.stand(GOAL[0], GOAL[1], GOAL[2]);
+await A.walk(GOAL[0], GOAL[1], GOAL[2]);
 await until("A reaches the goal (or an NPC got there first): results for both", async () => (await A.has("#match-results")) && (await B.has("#match-results")), 25000);
 ok(await verifies(O, f3), "that record verifies too");
 ok(await A.click("#match-back") && await B.click("#match-back"), "both go back to the lobby");

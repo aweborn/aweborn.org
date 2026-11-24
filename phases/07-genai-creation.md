@@ -681,6 +681,41 @@ Closed in this order before any 18+ build (the 18+ build itself happens in a sep
   - **Contradiction already live:** [`privacy.html`](../public/privacy.html) and [RESEARCH.md](../RESEARCH.md) say Aweborn is **18+ only** (which keeps research data clear of COPPA), while the prompts above say all-ages.
   - [npc-brains research](../docs/research/2026-11-life-and-minds/npc-brains.md): minors and companion-chat rules (Character.AI under-18 shutdown, California SB 243).
 
+## The planner becomes the terraformer; objects get their own flow (Alex, 2026-11-24: a note, not yet grilled or built)
+
+Alex, while the game layer was being built:
+
+> *"We want a flow that leads the player through each creation feature. The world planner shouldn't offer objects anymore; there should be another Create page that maybe offers initial descriptions or default objects that could be used. We really want the planner to be for the terrain, and potentially to identify good spots for things, marking them or something for object placement. I want to ensure the world planner, and the chat, can be appended to as the creators build out the space. Imagine we do the initial blueprint, and then they say they want to add a volcano in front of where they stand. That would be terrain manipulation. We don't want the volcano to go through Meshy; we want the volcano to be in the blueprint as a mountain with lava pouring out, which are both terrain pieces. … Sort of like when I use this chatbot to build the game, but the chatbot will be specific to the terraforming of the world. Then they can create objects and place them as they are today through their own Create prompts."*
+
+**What it means, as understood**
+- **The planner is a terraforming chat.** It talks about the ground only: landforms, water, lava, materials, sky and physics. It keeps going after the first blueprint: every later message adds to the same world plan (which is already one growing, additive plan per world since 2026-11-20).
+- **It knows where you stand.** "A volcano in front of me" is a terrain change placed relative to the speaker's position and facing. Today the planner gets the world's context but not where the asker is.
+- **Big natural things are terrain, never generated models.** A volcano is a mountain feature plus lava, both terrain pieces in the blueprint. Nothing goes to the 3D model service for it.
+- **The planner stops offering objects.** Today a plan carries `assets` (models, music) beside terrain, and the Plan sheet has "Make models". Those leave the planner.
+- **Objects get their own guided step** on the Create side: starting descriptions to pick from, or default objects, then the player's own prompt, then placing by hand as today.
+- **The planner may mark good spots** for things (a clearing for a village, a ledge for a lookout) without making the things: markers a creator can walk to and place at.
+- **A led flow through each creation feature**, rather than every tool at once: shape the land → mark spots → make and place objects → life and minds → music → (now) the game.
+
+**What exists that this builds on**
+- `shared/blueprint.ts`: terrain as a seed, block palette and up to 32 `features`; physics with a water level.
+- `shared/world-plan.ts`: the additive world plan with "made" and "planned" layers, and per-item owners.
+- The story stone, which shows how a world was made: a terraforming chat that keeps growing is the same record.
+- The Make sheet's tabs (Library · Create · Plan · Portal · Game): the led flow is a reordering and relabelling of these more than a new screen.
+
+**Questions for the grill**
+1. Which terrain pieces must the blueprint gain for this to feel good (lava as a block or a fluid, rivers, cliffs, caves, overhangs)? What can voxel features express today, and what would a volcano actually come out as?
+2. "In front of where they stand": how are place and size said and confirmed? A ghost preview before it is applied, like placing an object?
+3. Can a later message reshape or remove earlier terrain, or only add? (The plan is additive today; "undo terrain changes" exists.) What happens to objects standing on ground that changes?
+4. Are spot markers part of the blueprint (the planner's suggestion) or things creators also drop by hand? Who sees them? Do they disappear once something is placed?
+5. Does the object step offer a fixed starter set, suggestions written by the planner for this world, or both? Does a suggestion cost mana before the player commits?
+6. Who may terraform by chat: creator and builders only, as terrain is today? How do several builders share one chat?
+7. Music and sky: do they stay with the planner (they are about the whole world) or get their own step?
+8. Is the flow a guide the first time and free afterwards, or always the order of the tabs?
+9. Mana: a plan carries an estimate today (a planner part and a part per generated item, `Estimate` in `shared/blueprint.ts`). What does a long terraforming chat cost once no models hang off it?
+10. The game layer: should the planner be able to lay out an arena and lobby (Phase 10, Q3 says the planner writes a game from words), as terrain plus zones?
+
+**Not to lose:** with matches running, the ground inside an arena is protected during a match (Phase 10); terraforming by chat must respect the same rule.
+
 ## Rules, goals & constraints (design, 2026-11-01)
 
 > Alex: *"Eventually we'll implement ways for players to create rules and goals and constraints."* **Not built.** **Continued in [Phase 10: the game layer](./10-game-layer.md) (2026-11-23):** boundaries, teams, a physical lobby, NPC players, research records. Design from the [harness & rules research](../docs/research/2026-11-life-and-minds/harness-and-rules.md), so the pieces built now fit.

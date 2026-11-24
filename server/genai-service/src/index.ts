@@ -31,6 +31,7 @@ import { chat, llmConfigured, type ChatMessage } from "./llm.js";
 import { MAX_ATTEMPTS, retryDelay, resumeTaskAfter } from "./retry.js";
 import { rateAsset, ratingOf, listUnrated, RATINGS, type Rating, backupJobsDb, quarantineBlocked, quarantinePending } from "./library.js";
 import { initLibrary, addToLibrary, addMedia, uploadThumb, archiveToS3, backfill, listLibrary, removeAsset, restoreAsset, listTrash, purgeAsset, CDN_URL, s3Enabled } from "./library.js";
+import { forgetMakers } from "./forget.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -348,6 +349,20 @@ app.post("/library/:sha/remove", (req, res) => {
   }
   const ok = removeAsset(db, req.params.sha, by, onlyCreator);
   res.status(ok ? 200 : 404).json({ ok });
+});
+/**
+ * POST /forget { playerIds } → { genai_jobs, genai_library, genai_trash }
+ * A player was deleted (sync-service erase-player.ts): see forget.ts for what goes and what stays.
+ */
+app.post("/forget", async (req, res) => {
+  const ids = req.body?.playerIds;
+  if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== "string")) return res.status(400).json({ error: "bad_request" });
+  try {
+    res.json(await forgetMakers(db, ids as string[], (sha) => purgeAsset(db, ASSET_DIR, sha)));
+  } catch (err) {
+    console.error("[forget] failed:", (err as Error).message);
+    res.status(500).json({ error: "forget_failed" });
+  }
 });
 app.get("/trash", (_req, res) => res.json({ assets: listTrash(db), cdn: CDN_URL || null }));
 app.post("/trash/:sha/restore", (req, res) => {

@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import type { LobbyState, MatchIntent, MatchMessage } from '@aweborn/shared/match-protocol'
 import type { MatchResult, MatchSlot } from '@aweborn/shared/match'
+import type { Game } from '@aweborn/shared/game'
+import type { ArenaObject } from '@aweborn/shared/arena'
+import { useWorldStore } from '../stores/worldStore'
 import { notePresenceLinkAlive, setPresenceInstance } from '../hooks/usePresence'
 
 /**
@@ -21,8 +24,10 @@ export interface MatchClientState {
   lobby: LobbyState | null
   /** A ready check in progress, and when its latest message arrived (performance.now()): `readyMs` is the time left as of then. */
   found: (Found & { at: number }) | null
-  /** The match this player is in. */
-  playing: { matchId: string; you: { slot: number; team: number }; roster: MatchSlot[]; gameVersion: number } | null
+  /** The match this player is in. `game` is the match's own game (the version it started with); absent from an older server. */
+  playing: { matchId: string; you: { slot: number; team: number }; roster: MatchSlot[]; gameVersion: number; game?: Game } | null
+  /** The match's own copy of the arena (sent just before `start`): what the stage is drawn and collided from while playing (lib/arenaCopy). */
+  arena: { matchId: string; objects: ArenaObject[] } | null
   /** The running match this player is tuned into from the lobby. */
   watching: string | null
   /** The watched match's roster (snapshots carry no names or teams): filled by the view layer from the match's record, and by its `end`. */
@@ -37,7 +42,7 @@ export interface MatchClientState {
   reset: () => void
 }
 
-const EMPTY = { worldId: null, lobby: null, found: null, playing: null, watching: null, watchRoster: null, snap: null, prevSnap: null, snapAt: 0, ended: null, error: null }
+const EMPTY = { worldId: null, lobby: null, found: null, playing: null, arena: null, watching: null, watchRoster: null, snap: null, prevSnap: null, snapAt: 0, ended: null, error: null }
 
 export const useMatchStore = create<MatchClientState>((set) => ({
   ...EMPTY,
@@ -99,10 +104,13 @@ export function onMatchMessage(worldId: string | null, data: Uint8Array): void {
     case 'cancel':
       if (s.found?.matchId === msg.matchId) useMatchStore.setState({ found: null })
       break
+    case 'arena':
+      useMatchStore.setState({ arena: { matchId: msg.matchId, objects: Array.isArray(msg.objects) ? msg.objects : [] } })
+      break
     case 'start':
       // Into the instance's presence group: nobody from the lobby is there
       setPresenceInstance(msg.matchId)
-      useMatchStore.setState({ worldId, found: null, ended: null, watching: null, snap: null, prevSnap: null, playing: { matchId: msg.matchId, you: msg.you, roster: msg.roster, gameVersion: msg.gameVersion } })
+      useMatchStore.setState({ worldId, found: null, ended: null, watching: null, snap: null, prevSnap: null, playing: { matchId: msg.matchId, you: msg.you, roster: msg.roster, gameVersion: msg.gameVersion, ...(msg.game ? { game: msg.game } : {}) } })
       break
     case 'snap':
       if (s.playing?.matchId === msg.matchId || s.watching === msg.matchId) useMatchStore.setState({ prevSnap: s.snap?.matchId === msg.matchId ? s.snap : null, snap: msg, snapAt: now })
@@ -112,7 +120,7 @@ export function onMatchMessage(worldId: string | null, data: Uint8Array): void {
       break
     case 'back':
       setPresenceInstance(null)
-      useMatchStore.setState({ playing: null, snap: null, prevSnap: null })
+      useMatchStore.setState({ playing: null, arena: null, snap: null, prevSnap: null })
       break
     case 'error':
       useMatchStore.setState({ error: msg.message })
@@ -121,6 +129,19 @@ export function onMatchMessage(worldId: string | null, data: Uint8Array): void {
       break
   }
   for (const fn of listeners) fn(worldId, msg)
+}
+
+/**
+ * The game that counts right now: while playing, the match's own (the version it started
+ * with, whatever the owners have saved since); otherwise the world's current game.
+ */
+export function matchGame(): Game | null {
+  return useMatchStore.getState().playing?.game ?? useWorldStore.getState().meta?.game ?? null
+}
+export function useMatchGame(): Game | null {
+  const own = useMatchStore((s) => s.playing?.game ?? null)
+  const world = useWorldStore((s) => s.meta?.game ?? null)
+  return own ?? world
 }
 
 /** Tune into a running match from the lobby (null = stop watching). */

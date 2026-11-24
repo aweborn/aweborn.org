@@ -84,6 +84,12 @@ export class FlightTelemetry {
     return rows.map((r) => ({ t: r.t, x: r.x, y: r.y, z: r.z, mode: r.mode ? "neutral" : "drive" }));
   }
 
+  /** A deleted player (erase-player.ts): drop their samples still waiting to be written. */
+  forget(playerId: string): void {
+    this.last.delete(playerId);
+    this.buffer = this.buffer.filter((row) => row[0] !== playerId);
+  }
+
   stats(): { buffered: number; dropped: number } {
     return { buffered: this.buffer.length, dropped: this.dropped };
   }

@@ -1,9 +1,10 @@
 // Sandbox rig: the play layer (Phase 10) against the REAL server, one player and NPCs.
 // A saved owner saves a race, stands in the ring, starts "Play now with NPCs" from the
-// chip's sheet, is placed at a spawn, walks (is put) into the goal, sees the results and
+// chip's sheet, is placed at a spawn, tries to jump straight into the goal (refused: the
+// server checks positions), walks there instead, sees the results and
 // goes back to the lobby. check-play.mjs covers the rest of the UI with a fake server.
 //   RIG_N=3 scripts/verify/rig/up.sh && RIG_N=3 node scripts/verify/rig/check-play-live.mjs
-import { launch, open, sleep, savedPlayer, plantWorld, enterWorld, standAt, api, store, RIG_DIR, WEB } from "./browser.mjs";
+import { launch, open, sleep, savedPlayer, plantWorld, enterWorld, standAt, walkTo, api, store, RIG_DIR, WEB } from "./browser.mjs";
 
 const VP = process.env.VP ?? "phone";
 const shot = (p, name) => p.screenshot({ path: `${RIG_DIR}/live-${VP}-${name}.png` });
@@ -56,7 +57,22 @@ await until("the round starts", () => match((s) => s.snap?.phase === "playing"),
 ok((await pos()).hold === false, "free to move once the round is on");
 ok(/^\d:\d\d$/.test(await text(".match-strip-time")), "the strip shows the clock", await text(".match-strip-time"));
 await shot(p, "03-playing");
+// A teleport to the goal (what a cheating client would send) is refused: no score, and the player is put back
+const before = await pos();
 await standAt(p, 0, 0, -13);
+await until("a jump to the goal is refused: the server puts the player back", async () => { const q = await pos(); return Math.hypot(q.x - before.x, q.z - before.z) < 1.5; }, 8000);
+ok((await store(p, "lib/matchPlay", "usePlayStore", (s) => s.toasts.map((t) => t.text))).some((t) => /Moved back/.test(t)), "the player is told (a toast)");
+await sleep(1200);
+ok((await match((s) => s.ended)) === null, "and it did not score");
+await shot(p, "03b-refused");
+{
+  const rec = (await api(p, `/api/match/record?id=${await match((s) => s.playing.matchId)}`)).data?.record;
+  const refused = (rec?.frames ?? []).flatMap((f) => (f.c ?? []).filter((c) => c.type === "reject"));
+  ok(refused.length >= 1 && refused[0].why === "speed", "the record holds the refusal", JSON.stringify(refused.slice(0, 2)));
+  ok(!(rec?.events ?? []).some((e) => e.type === "goal"), "no goal in the record");
+}
+// Walking there counts
+await walkTo(p, 0, 0, -13);
 const ended = await until("reaching the goal ends the race with results", () => match((s) => s.ended && { winner: s.ended.result.winner, awe: s.ended.awe, again: s.ended.again, you: s.ended.you }), 20000);
 console.log("     result:", JSON.stringify(ended));
 ok(ended?.winner === started?.you.team, "this player's team won");

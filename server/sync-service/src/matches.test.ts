@@ -5,11 +5,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { MatchHost, type NpcDriver, type Referee } from "./matches.js";
+import { MatchHost, type MatchHostDeps, type NpcDriver, type Referee } from "./matches.js";
 import { MatchStore } from "./match-store.js";
 import type { SqlDb } from "./build-requests.js";
 import { parseGame, gameMissing, type Game } from "../../../shared/game.js";
 import { unpackSamples, verifyRecord, type MatchRecord, type MatchState } from "../../../shared/match.js";
+import { rejectionsIn } from "../../../shared/match-sanity.js";
 import { AGAIN_MS, AWE_PER_MATCH, DROP_GRACE_MS, EMPTY_MATCH_MS, POOL_WAIT_MS, READY_MS, type MatchMessage } from "../../../shared/match-protocol.js";
 
 const W = "11111111-2222-4333-8444-555555555555";
@@ -79,7 +80,7 @@ const npc: NpcDriver = {
   stepNpc: (_setup, _state, _slot, mind) => ({ ...mind, x: mind.x + 1 }),
 };
 
-function rig(gameOver: Record<string, unknown> = {}, aweCap = Infinity, real = false) {
+function rig(gameOver: Record<string, unknown> = {}, aweCap = Infinity, real = false, extra: Partial<MatchHostDeps> = {}) {
   let t = 1_000_000;
   let seed = 1;
   let game: Game | null = makeGame(gameOver);
@@ -116,6 +117,9 @@ function rig(gameOver: Record<string, unknown> = {}, aweCap = Infinity, real = f
     ...(real ? {} : { referee, npc, verify: (r: MatchRecord) => { verified.push(r); return true; } }),
     now: () => t,
     seed: () => (seed = (seed * 1103515245 + 12345) >>> 0),
+    // The fake referee's finish line is at z = 500, far outside any arena: only the real-referee tests walk
+    checkPositions: real,
+    ...extra,
   });
   const of = <T extends MatchMessage["t"]>(id: string, type: T) => sent.filter((s) => s.to === id && s.msg.t === type).map((s) => s.msg as Extract<MatchMessage, { t: T }>);
   const last = <T extends MatchMessage["t"]>(id: string, type: T) => of(id, type).at(-1);
@@ -773,4 +777,159 @@ test("the 18+ door is read as the match starts: research copies carry only candi
   second.adults.add("ann"); second.adults.add("ben");
   const next = second.play("ann", "ben");
   assert.deepEqual(second.store.researchCopy(next, () => true)!.setup.slots.filter((s) => s.kind === "human").map((s) => s.id).sort(), ["r-ann", "r-ben"]);
+});
+
+// ── A match keeps its own copy of the arena (Q1b; Alex, 2026-11-24) ──
+
+test("the arena is copied when a match starts: later changes to the stage don't reach it, the next match gets the new stage", () => {
+  const block = (id: string, x: number, extra: Record<string, unknown> = {}) => ({ id, type: "block", x, y: 0.5, z: 0, rotX: 0, rotY: 0, rotZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1, material: "stone", color: "#ff0000", placedBy: "owner", placedAt: 1, ...extra });
+  let stage: Record<string, unknown>[] = [block("wall", 2), block("crate", -3), block("npc", 5, { mind: { name: "Sage" } }), block("far", 80)];
+  const r = rig({}, Infinity, false, { objects: () => stage });
+  const first = r.play("ann", "ben");
+  // The players were sent the copy, just before `start`, and `start` carries the match's own game
+  const kinds = r.sent.filter((s) => s.to === "ann" && (s.msg.t === "arena" || s.msg.t === "start")).map((s) => s.msg.t);
+  assert.deepEqual(kinds, ["arena", "start"]);
+  const sentArena = r.last("ann", "arena")!;
+  assert.equal(sentArena.matchId, first);
+  assert.deepEqual(sentArena.objects.map((o) => o.id).sort(), ["crate", "npc", "wall"]);
+  assert.equal(sentArena.objects.find((o) => o.id === "npc")!.mind, undefined);
+  assert.equal(JSON.stringify(sentArena).includes("placedBy"), false);
+  assert.equal(r.last("ann", "start")!.game!.version, 1);
+  // The owner moves, recolours, deletes and adds on the live stage while the match runs
+  stage = [block("wall", 9, { color: "#0000ff" }), block("new", 0), block("far", 80)];
+  r.run(1000);
+  const running = r.host.record(first)!;
+  assert.deepEqual(running.setup.arena, { objects: sentArena.objects });
+  assert.deepEqual(running.setup.arena!.objects.find((o) => o.id === "wall"), { id: "wall", type: "block", x: 2, y: 0.5, z: 0, rotX: 0, rotY: 0, rotZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1, material: "stone", color: "#ff0000" });
+  // A reload mid-match is told the same arena again
+  r.say("ann", { t: "hello" });
+  assert.deepEqual(r.last("ann", "arena"), sentArena);
+  // It ends; the record keeps the arena as it was
+  r.pos.set("ann", { x: 0, y: 0, z: 500 });
+  r.run(100);
+  r.run(AGAIN_MS + 200);
+  assert.deepEqual(r.store.record(first)!.setup.arena, { objects: sentArena.objects });
+  // The next match copies the stage as it is now
+  for (const id of ["ann", "ben"]) r.pos.set(id, { ...RING });
+  r.run(1100);
+  const second = r.play("ann", "ben");
+  assert.notEqual(second, first);
+  const next = r.store.record(second)!.setup.arena!;
+  assert.deepEqual(next.objects.map((o) => o.id).sort(), ["new", "wall"]);
+  assert.equal(next.objects.find((o) => o.id === "wall")!.x, 9);
+  assert.deepEqual(r.store.record(first)!.setup.arena, { objects: sentArena.objects });
+});
+
+test("the ground under a running match is locked, from the match's own arena, until it ends", () => {
+  const r = rig();
+  r.enter("zed");
+  assert.deepEqual(r.host.terrainLocks(W), []);
+  const id = r.play("ann", "ben");
+  const [lock] = r.host.terrainLocks(W);
+  assert.deepEqual([lock.minX, lock.maxX, lock.maxY, lock.minZ, lock.maxZ], [-21, 21, 21, -21, 21]);
+  // The owner moves the arena for the next match: the running one keeps its ground locked
+  r.setGame({ ...makeGame({ arena: { at: [200, 0, 0], size: [10, 10, 10] } }), version: 2 });
+  r.host.gameChanged(W);
+  assert.deepEqual(r.host.terrainLocks(W), [lock]);
+  assert.deepEqual(r.host.terrainLocks("another-world"), []);
+  r.say("owner", { t: "host-end", matchId: id });
+  r.on.add("owner");
+  r.say("owner", { t: "host-end", matchId: id });
+  r.run(200);
+  assert.deepEqual(r.host.terrainLocks(W), []);
+});
+
+// ── Positions are checked, not just trusted (shared/match-sanity.ts) ──
+
+test("a teleport to the goal is refused: it doesn't score, the player is sent back, and the record says so and still verifies", () => {
+  const r = rig({}, Infinity, true);
+  const id = r.play("ann", "ben");
+  const you = r.last("ann", "start")!.you;
+  r.run(6000);
+  assert.equal(r.last("ann", "snap")!.phase, "playing");
+  const from = { ...r.pos.get("ann")! };
+  const moves = r.of("ann", "move").length;
+  // Ann's client says she is standing in the goal, 21 m away, a tenth of a second later
+  r.pos.set("ann", { x: 0, y: 0.5, z: 15 });
+  r.run(100);
+  const back = r.last("ann", "move")!;
+  assert.equal(r.of("ann", "move").length, moves + 1);
+  assert.equal(back.why, "check");
+  assert.deepEqual(back.to, [from.x, from.y, from.z]);
+  // The referee never saw her there: no goal, no end, and everyone still sees her where she was
+  r.run(1000);
+  assert.equal(r.last("ann", "end"), undefined);
+  assert.equal(r.host.record(id)!.events.some((e) => e.type === "goal"), false);
+  const seen = r.last("ben", "snap")!.players.find((p) => p.slot === you.slot)!;
+  assert.deepEqual([seen.x, seen.z], [from.x, from.z]);
+  // A client that ignores the order is refused again (once per hold, not every tick)
+  r.run(3000);
+  const refused = rejectionsIn(r.host.record(id)!).filter((x) => x.slot === you.slot);
+  assert.ok(refused.length >= 2 && refused.length <= 4, `refused ${refused.length} times`);
+  assert.deepEqual(refused[0], { tick: refused[0].tick, slot: you.slot, why: "speed", at: [0, 0.5, 15] });
+  assert.equal(r.host.record(id)!.events.some((e) => e.type === "goal"), false);
+  // She goes back as told, then walks there: that counts
+  r.pos.set("ann", { ...from });
+  r.run(200);
+  for (let i = 1; i <= 40 && !r.last("ann", "end"); i++) {
+    r.pos.set("ann", { x: from.x + ((0 - from.x) * i) / 40, y: 0.5, z: (15 * i) / 40 });
+    r.run(100);
+  }
+  const end = r.last("ann", "end")!;
+  assert.ok(end, "walking to the goal ends the race");
+  assert.equal(end.result.winner, you.team);
+  const rec = r.store.record(id)!;
+  assert.ok(rejectionsIn(rec).length >= 2);
+  assert.equal(verifyRecord(rec), true);
+});
+
+test("a walled arena: a position outside the box is refused and the player is sent back inside", () => {
+  const r = rig({ settings: { teams: 2, players: { min: 2, max: 4 }, edge: "wall" } }, Infinity, true);
+  const id = r.play("ann", "ben");
+  const you = r.last("ann", "start")!.you;
+  r.run(6000);
+  const from = { ...r.pos.get("ann")! };
+  // She creeps out through the wall at walking pace: the speed is fine, the place is not
+  const dir = from.x < 0 ? -1 : 1;
+  let x = from.x;
+  while (Math.abs(x) < 21.5) {
+    x += dir * 0.4;
+    r.pos.set("ann", { x, y: from.y, z: from.z });
+    r.run(100);
+    if (r.last("ann", "move")!.why === "check") break;
+  }
+  const back = r.last("ann", "move")!;
+  assert.equal(back.why, "check");
+  assert.ok(Math.abs(back.to[0]) <= 20.5, `sent back inside (${back.to[0]})`);
+  const refused = rejectionsIn(r.host.record(id)!);
+  assert.equal(refused.length, 1);
+  assert.deepEqual([refused[0].slot, refused[0].why], [you.slot, "wall"]);
+  assert.equal(r.host.record(id)!.events.some((e) => e.type === "out-of-bounds"), false);
+});
+
+test("a reload mid-match no longer puts the player on their spawn: the jump there is refused and they are sent back to where they were", () => {
+  const r = rig({}, Infinity, true);
+  r.play("ann", "ben");
+  r.run(6000);
+  const spawn = r.last("ann", "start")!.spawn;
+  // Ann walks 12 m from her spawn
+  const dir = spawn[0] < 0 ? 1 : -1;
+  for (let i = 1; i <= 30; i++) { r.pos.set("ann", { x: spawn[0] + dir * 0.4 * i, y: spawn[1], z: 0 }); r.run(100); }
+  const stood = { ...r.pos.get("ann")! };
+  // The page reloads: the client says hello and stands on the spawn it is told about
+  r.say("ann", { t: "hello" });
+  r.pos.set("ann", { x: spawn[0], y: spawn[1], z: spawn[2] });
+  r.run(100);
+  const back = r.last("ann", "move")!;
+  assert.equal(back.why, "check");
+  assert.ok(Math.abs(back.to[0] - stood.x) < 0.01 && Math.abs(back.to[2] - stood.z) < 0.01);
+});
+
+test("the position check can be switched off (the kill switch)", () => {
+  const r = rig({}, Infinity, true, { checkPositions: false });
+  r.play("ann", "ben");
+  r.run(6000);
+  r.pos.set("ann", { x: 0, y: 0.5, z: 15 });
+  r.run(200);
+  assert.ok(r.last("ann", "end"), "trusted as before");
 });

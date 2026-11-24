@@ -10,7 +10,8 @@ import {
 } from "../../../shared/world-policy.js";
 import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, parseEditKey, validEditValue } from "../../../shared/terrain-edits.js";
 import { findNudge } from "../../../shared/nudge.js";
-import { stageOf } from "../../../shared/game.js";
+import { stageOf, type Bounds } from "../../../shared/game.js";
+import { cellLocked } from "../../../shared/arena.js";
 import { approveText, isApprovedText } from "./approved-text.js";
 
 /**
@@ -39,6 +40,19 @@ export interface ApplyResult {
   nudged: number;
   /** Object ids / map keys that were reverted (for logs). */
   details: string[];
+  /** Terrain changes refused because a match is running on that ground (Phase 10; owners included). */
+  locked: number;
+}
+
+/** The terrain's size in cells from the stored `terrain.voxel` JSON, or null. */
+function terrainSize(raw: unknown): [number, number, number] | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const size = (JSON.parse(raw) as { size?: unknown }).size;
+    return Array.isArray(size) && size.length === 3 && size.every((v) => typeof v === "number" && Number.isFinite(v)) ? (size as [number, number, number]) : null;
+  } catch {
+    return null;
+  }
 }
 
 const plain = (v: unknown): unknown => (v instanceof Y.AbstractType ? (v as Y.AbstractType<unknown>).toJSON() : v);
@@ -123,8 +137,13 @@ export class WorldAuthority {
   /**
    * Apply a client's update as `actor`, then revert whatever it wasn't allowed
    * to change. `allowCreate` is asked once per legal new object (rate limit).
+   *
+   * `terrainLocks` (Phase 10, shared/arena.ts): the ground under the arenas of the matches
+   * running in this world right now. A match keeps its own copy of the stage's objects, but
+   * not of the ground, so while it runs nobody (owners included) digs or fills there, and
+   * the whole ground is not reshaped.
    */
-  apply(update: Uint8Array, origin: unknown, actor: WorldActor, allowCreate: () => boolean = () => true): ApplyResult {
+  apply(update: Uint8Array, origin: unknown, actor: WorldActor, allowCreate: () => boolean = () => true, terrainLocks: readonly Bounds[] = []): ApplyResult {
     this.acceptDirty();
     Y.applyUpdate(this.doc, update, origin);
 
@@ -139,6 +158,8 @@ export class WorldAuthority {
     const details: string[] = [];
     const created: Array<{ id: string; rec: Rec }> = [];
     let nudges = 0;
+    let locked = 0;
+    let groundRefused = false;
     // The stage (Phase 10): the arena's spot belongs to the owners. Read from the accepted meta (server-written).
     const stage = actor.owner ? null : stageOf(this.maps.get("meta")?.game);
 
@@ -189,7 +210,10 @@ export class WorldAuthority {
       const after = type.toJSON() as Rec;
       const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
       for (const key of keys) {
-        if (judgeMapChange(actor, name, key, before[key], after[key]) === "ok") continue;
+        // Reshaping the ground reshapes the arena's ground too: not while a match runs on it
+        const groundLocked = name === "terrain" && key === "voxel" && terrainLocks.length > 0 && !sameValue(before[key], after[key]);
+        if (!groundLocked && judgeMapChange(actor, name, key, before[key], after[key]) === "ok") continue;
+        if (groundLocked) { locked++; groundRefused = true; }
         details.push(`${name}.${key}`);
         const prev = before[key];
         fixes.push(() => {
@@ -203,11 +227,21 @@ export class WorldAuthority {
       let size = this.edits.size;
       let writes = 0;
       let refused = 0;
+      const ground = terrainLocks.length > 0 ? terrainSize(this.maps.get("terrain")?.voxel) : null;
       for (const key of editKeys) {
         const before = this.edits.get(key);
         const after = this.editsType.get(key);
         if (before === after) continue;
         let ok = actor.owner;
+        // A refused reshape keeps its edits too (the reshape clears them all in the same update)
+        if (ok && groundRefused) ok = false;
+        if (ok && ground) {
+          const cell = parseEditKey(key);
+          if (cell && terrainLocks.some((l) => cellLocked(l, ground, cell[0], cell[1], cell[2]))) {
+            ok = false;
+            locked++;
+          }
+        }
         if (ok && after !== undefined) {
           const isNew = before === undefined;
           ok = parseEditKey(key) !== null && validEditValue(after) &&
@@ -232,7 +266,7 @@ export class WorldAuthority {
     for (const k of editKeys) this.dirtyEdits.add(k);
     this.acceptDirty();
 
-    return { reverted: fixes.length - nudges, nudged: nudges, details };
+    return { reverted: fixes.length - nudges, nudged: nudges, details, locked };
   }
 }
 

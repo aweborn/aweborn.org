@@ -20,6 +20,7 @@
  * kicks or removes anything there.
  */
 import { inBounds, type Bounds } from "./game.js";
+import { FORMER_PLAYER_ID } from "./names.js";
 
 export type Rec = Record<string, unknown>;
 
@@ -72,7 +73,8 @@ export function isWorldOwnerId(
   id: string | null | undefined,
   roles: { creator?: string | null; coCreators?: readonly string[] | null },
 ): boolean {
-  if (!id) return false;
+  // A deleted player's marker is nobody: it owns nothing, whoever presents it
+  if (!id || id === FORMER_PLAYER_ID) return false;
   if (roles.creator && roles.creator === id && roles.creator !== "system" && roles.creator !== "guest") return true;
   return Boolean(roles.coCreators?.includes(id));
 }
@@ -83,7 +85,8 @@ export function canEditObject(actor: WorldActor, obj: Rec | { placedBy?: unknown
   if (!actor.id || !obj) return false;
   if (onStage(stage, obj)) return false;
   const placedBy = (obj as { placedBy?: unknown }).placedBy;
-  if (typeof placedBy !== "string" || placedBy === "") return false;
+  // "" = unowned, FORMER_PLAYER_ID = its placer deleted their player: only the world's owners edit it
+  if (typeof placedBy !== "string" || placedBy === "" || placedBy === FORMER_PLAYER_ID) return false;
   return placedBy === actor.id || Boolean(actor.mine?.includes(placedBy));
 }
 
@@ -229,7 +232,7 @@ export function cleanCoCreators(raw: unknown, creator: string): string[] | null 
   for (const v of raw) {
     if (typeof v !== "string") return null;
     const id = v.trim();
-    if (!id || id.length > 64 || id === creator || id.startsWith("guest") || out.includes(id)) continue;
+    if (!id || id.length > 64 || id === creator || id === FORMER_PLAYER_ID || id.startsWith("guest") || out.includes(id)) continue;
     out.push(id);
     if (out.length >= MAX_CO_CREATORS) break;
   }
@@ -259,7 +262,7 @@ export function planBuilderChange(
   const creatorSide = actorChars.includes(roles.creator);
   if ("add" in change) {
     const id = typeof change.add === "string" ? change.add.trim() : "";
-    if (!id || id.length > 64 || id.startsWith("guest") || id === "system") {
+    if (!id || id.length > 64 || id.startsWith("guest") || id === "system" || id === FORMER_PLAYER_ID) {
       return { ok: false, error: "bad_player", message: "Only saved players can build." };
     }
     // Already in (or one of your own characters: your account already has the rights)

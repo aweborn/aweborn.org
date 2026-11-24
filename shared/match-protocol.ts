@@ -6,7 +6,8 @@
  * The server decides everything: who is in the pool, who plays together, where they
  * stand at the start, the score, the end. The client asks, and draws what it is told.
  */
-import type { Vec3 } from "./game.js";
+import type { Game, Vec3 } from "./game.js";
+import type { ArenaObject } from "./arena.js";
 import type { MatchEvent, MatchPhase, MatchResult, MatchSlot } from "./match.js";
 
 /** How long a matched group has to step out before the roster locks. */
@@ -97,12 +98,18 @@ export type MatchMessage =
   | { t: "found"; matchId: string; you: { slot: number; team: number }; roster: MatchSlot[]; readyMs: number; npc: { level: number; by: string; votes: number; needed: number } | null }
   /** The ready check fell through (someone declined and nobody could fill in). You are still in the pool. */
   | { t: "cancel"; matchId: string }
-  /** The roster is locked: you are being placed. */
-  | { t: "start"; matchId: string; you: { slot: number; team: number }; roster: MatchSlot[]; gameVersion: number; spawn: Vec3; face: Vec3 }
+  /**
+   * Sent just before `start` (and again with every repeated `start`): the match's own copy of
+   * the arena (shared/arena.ts). While you play, the stage is drawn and collided from these
+   * objects, not from the live world. Its own message so `start` stays small.
+   */
+  | { t: "arena"; matchId: string; objects: ArenaObject[] }
+  /** The roster is locked: you are being placed. `game` is the match's own game (the version it started with): its traits, wall and zones are the ones that count, whatever the world's game is now. */
+  | { t: "start"; matchId: string; you: { slot: number; team: number }; roster: MatchSlot[]; gameVersion: number; spawn: Vec3; face: Vec3; game?: Game }
   /** Ten times a second while you play or watch a match. `events` are the ones since the last snap. */
   | { t: "snap"; matchId: string; tick: number; phase: MatchPhase; round: number; left: number; scores: number[]; rounds: number[]; hill: number; players: SnapPlayer[]; items: SnapItem[]; watching: number; events: MatchEvent[] }
-  /** The referee moved you (back to spawn, or to a round's start). */
-  | { t: "move"; matchId: string; to: Vec3; face?: Vec3; why: "return" | "round" | "rejoin" }
+  /** The referee moved you (back to spawn, or to a round's start), or the host did: "check" = your position was not believed (shared/match-sanity.ts), go back to the last one that was. */
+  | { t: "move"; matchId: string; to: Vec3; face?: Vec3; why: "return" | "round" | "rejoin" | "check" }
   /** The match is over. `awe` is what you earned (0 for watchers). Answer with `again`. */
   | { t: "end"; matchId: string; result: MatchResult; roster: MatchSlot[]; awe: number; again: boolean }
   /** Back to the lobby (after the results, or when you leave). */

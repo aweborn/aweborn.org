@@ -91,6 +91,7 @@ export const ACTIONS = {
   "account.switch_character": { tier: "any_session", via: { http: "POST /api/player/character" }, offline: false, status: "enforced" },
   "account.rename_character": { tier: "any_session", via: { http: "POST /api/player/character/name" }, offline: false, status: "enforced", note: "names.ts" },
   "account.set_password": { tier: "any_session", via: { http: "POST /api/player/password" }, offline: false, status: "enforced", note: "a guest session saving itself" },
+  "account.delete": { tier: "saved", via: { http: "POST /api/player/delete" }, offline: false, status: "enforced", note: "the whole account, every character; typed word + confirmed in the last 5 minutes; 5 tries an hour; erase-player.ts" },
   "player.mute": { tier: "any_session", via: { http: "POST /api/player/mute" }, offline: false, status: "enforced" },
   "player.report": { tier: "any_session", via: { http: "POST /api/player/report" }, offline: false, status: "enforced" },
   "player.save_location": { tier: "any_session", via: { http: "POST /api/player/location" }, offline: false, status: "enforced" },

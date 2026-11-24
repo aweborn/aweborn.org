@@ -7,6 +7,7 @@ import { setPresenceSocketUp } from "./usePresence";
 import { onMeshSignal, setMeshSignalSender } from "../lib/mesh";
 import { onMatchMessage, setMatchSender } from "../lib/match";
 import { loadDoor } from "../lib/door";
+import { PLAYER_DELETED_CLOSE, deletingOnThisDevice, startOverAfterDelete } from "../lib/deletePlayer";
 import { useUniverseStore, leaveToEveryone } from "../stores/universeStore";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
@@ -259,7 +260,12 @@ export function useSyncConnection(
         console.log("[sync] connected to sync-service");
       });
 
-      sock.addEventListener("close", () => {
+      sock.addEventListener("close", (ev) => {
+        // This player was deleted from another device: nothing here is theirs any more, start over as a guest
+        if (ev.code === PLAYER_DELETED_CLOSE && !deletingOnThisDevice()) {
+          void startOverAfterDelete();
+          return;
+        }
         if (ws !== sock) return; // replaced on purpose (recycle / unmount)
         ws = null;
         wsRef.current = null;

@@ -1,7 +1,7 @@
 // Sandbox rig: what the live match walkthroughs share (check-match-e2e, check-match-more,
 // check-templates-live, check-library-live): a checklist, waits on store state, and one
 // handle per player's page with the things a script asks of it.
-import { api, sleep, store, standAt, waitFor, RIG_DIR, SYNC } from "./browser.mjs";
+import { api, sleep, store, standAt, walkTo, waitFor, RIG_DIR, SYNC } from "./browser.mjs";
 
 export function checklist() {
   const fails = [];
@@ -76,7 +76,10 @@ export function player(page, name, worldId) {
       const { interiorController: c } = await import("/src/systems/InteriorController.ts");
       return { x: c.state.x, y: c.state.y, z: c.state.z, mods: c.mods, hold: c.hold };
     }),
+    /** Put the player somewhere at once. In the lobby only: inside a match the server refuses a jump (use `walk`). */
     stand: (x, y, z) => standAt(page, x, y, z),
+    /** Walk there in real time, at a speed the server's position check believes. */
+    walk: (x, y, z, speed) => walkTo(page, x, y, z, speed),
     /** The ids of the other players this page draws as live-world bodies (presence). */
     others: () => page.evaluate(async () => [...(await import("/src/hooks/usePresence.ts")).getPresenceState().values()].filter((p) => p.inWorld).map((p) => p.id)),
     shot: (file) => page.screenshot({ path: `${RIG_DIR}/${file}.png` }),

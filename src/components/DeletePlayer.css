@@ -1,0 +1,126 @@
+/* Delete my player: the entry at the bottom of the saved player's panel, and the are-you-sure step. */
+
+.dp-entry {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--glass-border);
+  display: flex;
+  justify-content: center;
+}
+.dp-open {
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: #f2a7a7;
+  background: transparent;
+  border: 1px solid rgba(242, 167, 167, 0.3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.dp-open:hover:not(:disabled) { background: rgba(242, 167, 167, 0.1); border-color: rgba(242, 167, 167, 0.55); }
+.dp-open:focus-visible { outline: 2px solid #f2a7a7; outline-offset: 2px; }
+.dp-open:disabled { opacity: 0.55; cursor: default; }
+
+.dp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  font-family: var(--font-body);
+  text-align: left;
+}
+.dp-title {
+  margin: 0;
+  padding-right: 2rem; /* clear of the close button */
+  font-family: var(--font-display, var(--font-body));
+  font-size: var(--text-lg);
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+.dp-title:focus { outline: none; } /* focused by script so a screen reader starts here; not a control */
+.dp-lead {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.dp-lead strong { color: #f2a7a7; }
+.dp-group {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: rgba(5, 5, 16, 0.4);
+}
+.dp-group--gone { border-color: rgba(242, 167, 167, 0.35); }
+.dp-group h3 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.dp-group ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+.dp-group li strong { color: var(--color-text-primary); font-weight: 600; }
+.dp-group a { color: var(--color-accent-secondary); }
+.dp-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.dp-note a { color: var(--color-text-secondary); }
+.dp-word { font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: 0.08em; color: var(--color-text-primary); }
+.dp-input {
+  font-size: 16px; /* no iOS zoom on focus */
+  min-height: 44px;
+  letter-spacing: 0.08em;
+}
+.dp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.dp-actions .pa-btn { min-height: 44px; flex-shrink: 0; }
+.dp-delete {
+  color: #fff;
+  background: #b3261e;
+  border-color: #b3261e;
+}
+.dp-delete:not(:disabled):hover { background: #c5362d; }
+.dp-delete:focus-visible { outline-color: #f2a7a7; }
+.dp-delete:disabled {
+  color: rgba(238, 240, 246, 0.55);
+  background: rgba(179, 38, 30, 0.25);
+  border-color: rgba(242, 167, 167, 0.25);
+  opacity: 1;
+  cursor: not-allowed;
+}
+.dp-status:empty { display: none; }
+.dp-status {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: #f2a7a7;
+}
+.dp-done {
+  align-items: center;
+  text-align: center;
+  padding: var(--space-md) 0 0;
+}
+.dp-done .dp-title { padding-right: 0; }
+.dp-done .pa-btn { width: auto; min-height: 48px; padding-inline: 1.25rem; }
+
+@media (min-width: 720px) {
+  .dp-actions { flex-direction: row-reverse; }
+  .dp-actions .pa-btn { flex: 1; }
+}

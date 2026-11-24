@@ -33,8 +33,18 @@ export function cleanPlayerName(raw: unknown): NameResult {
   return { ok: true, name: text };
 }
 
+/**
+ * What stands where a deleted player's id used to be (a world's `creator`, an object's
+ * `placedBy`, a credit, a chat line kept for context). Never a real player id (those are
+ * UUIDs, guests are `guest-…`), so it owns nothing and can be given nothing: see
+ * `isWorldOwnerId` and `canEditObject` in world-policy.ts, and erase-player.ts on the server.
+ */
+export const FORMER_PLAYER_ID = "former";
+export const FORMER_PLAYER_NAME = "A former player";
+
 /** A short, stable handle for players without a name yet: "Wanderer 4K2Q". */
 export function wandererTag(id: string): string {
+  if (id === FORMER_PLAYER_ID) return FORMER_PLAYER_NAME;
   let h = 2166136261;
   for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
   return `Wanderer ${(h >>> 0).toString(36).toUpperCase().padStart(4, "0").slice(-4)}`;

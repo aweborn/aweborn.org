@@ -1,9 +1,8 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import type { Game } from '@aweborn/shared/game'
 import { MATCH_TICK_MS } from '@aweborn/shared/match'
-import { sendMatch, useMatchStore, type Snap } from '../../lib/match'
+import { sendMatch, useMatchGame, useMatchStore, type Snap } from '../../lib/match'
 import { usePlayStore } from '../../lib/matchPlay'
-import { useWorldStore } from '../../stores/worldStore'
 import { teamName } from '../GamePanel'
 import { TEAM_COLORS } from '../GameOutlines'
 import './MatchPlay.css'
@@ -45,7 +44,7 @@ export function MatchStrip() {
   const snapAt = useMatchStore((s) => s.snapAt)
   const worldId = useMatchStore((s) => s.worldId)
   const over = useMatchStore((s) => Boolean(s.ended))
-  const game = useWorldStore((s) => s.meta?.game ?? null)
+  const game = useMatchGame()
   const now = useNow(250)
   const [sure, setSure] = useState(false)
   useEffect(() => {
@@ -126,7 +125,7 @@ export function MatchHud() {
   const playing = useMatchStore((s) => s.playing)
   const snap = useMatchStore((s) => s.snap)
   const snapAt = useMatchStore((s) => s.snapAt)
-  const game = useWorldStore((s) => s.meta?.game ?? null)
+  const game = useMatchGame()
   const oob = usePlayStore((s) => s.oob)
   const now = useNow(200)
   if (!playing) return null

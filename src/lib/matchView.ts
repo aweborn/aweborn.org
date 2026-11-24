@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Game } from '@aweborn/shared/game'
+import type { ArenaObject } from '@aweborn/shared/arena'
 import { MATCH_SIM_VERSION, MATCH_TICK_MS, initMatch, spawnPoint, stepMatch, unpackSamples, type MatchEvent, type MatchFrame, type MatchPhase, type MatchRecord, type MatchSlot, type MatchState } from '@aweborn/shared/match'
 import type { MatchSummary, SnapItem, SnapPlayer } from '@aweborn/shared/match-protocol'
 import { AUTH_URL } from './player'
@@ -348,6 +349,8 @@ interface ViewState {
   listError: string | null
   /** The game the watched match runs (its own version, from its record); the world's current game until that arrives. */
   watchGame: Game | null
+  /** The watched match's own copy of the arena, from its record (absent in records older than 2026-11-24). */
+  watchArena: { matchId: string; objects: ArenaObject[] } | null
   replay: Replay | null
   /** A replay being fetched (its id), and what went wrong with the last fetch. */
   loading: string | null
@@ -362,7 +365,7 @@ interface ViewState {
 }
 
 export const useViewStore = create<ViewState>(() => ({
-  sheet: false, tab: 'live', finished: null, finishedFor: null, mine: null, listError: null, watchGame: null,
+  sheet: false, tab: 'live', finished: null, finishedFor: null, mine: null, listError: null, watchGame: null, watchArena: null,
   replay: null, loading: null, replayError: null, playing: false, speed: 1, tick: 0, ghost: false, follow: null,
 }))
 
@@ -400,13 +403,13 @@ export function tuneIn(worldId: string, matchId: string): void {
   closeReplay()
   watchMatch(worldId, matchId)
   useMatchStore.setState({ watchRoster: null })
-  useViewStore.setState({ watchGame: null })
+  useViewStore.setState({ watchGame: null, watchArena: null })
   const load = (triesLeft: number) => {
     fetchRecord(matchId)
       .then((record) => {
         if (useMatchStore.getState().watching !== matchId) return
         useMatchStore.setState({ watchRoster: record.setup.slots })
-        useViewStore.setState({ watchGame: record.setup.game })
+        useViewStore.setState({ watchGame: record.setup.game, watchArena: record.setup.arena ? { matchId, objects: record.setup.arena.objects } : null })
       })
       .catch(() => {
         if (triesLeft > 0 && useMatchStore.getState().watching === matchId) setTimeout(() => load(triesLeft - 1), 2000)
@@ -420,7 +423,7 @@ export function tuneOut(worldId: string | null): void {
   if (worldId && m.watching) watchMatch(worldId, null)
   // The result of a match that was only watched is ours to dismiss (a player's own results belong to the play layer)
   useMatchStore.setState({ watching: null, watchRoster: null, ...(m.ended && !m.ended.you ? { ended: null } : {}) })
-  useViewStore.setState({ watchGame: null })
+  useViewStore.setState({ watchGame: null, watchArena: null })
   if (!useViewStore.getState().replay) stopGhost()
 }
 
@@ -515,7 +518,7 @@ export function currentView(worldGame: Game | null): CurrentView | null {
   }
   const m = useMatchStore.getState()
   if (m.watching) return { mode: 'watch', worldId: m.worldId, matchId: m.watching, roster: m.watchRoster, game: v.watchGame ?? worldGame, frame: () => once(m.snap, () => liveFrame()), score: liveScore }
-  if (m.playing) return { mode: 'play', worldId: m.worldId, matchId: m.playing.matchId, roster: m.playing.roster, game: worldGame, frame: () => once(m.snap, () => liveFrame()), score: liveScore }
+  if (m.playing) return { mode: 'play', worldId: m.worldId, matchId: m.playing.matchId, roster: m.playing.roster, game: m.playing.game ?? worldGame, frame: () => once(m.snap, () => liveFrame()), score: liveScore }
   return null
 }
 

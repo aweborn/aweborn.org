@@ -3,7 +3,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
-import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword } from "./auth.js";
+import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword, deleteStanding } from "./auth.js";
 import { accountOfCharacter, listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex, cleanLocation, saveLocation, loadLocation, setCharacterName, characterNameAt, characterNames } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
@@ -25,7 +25,7 @@ import { timingSafeEqual, randomInt } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
 import { MindHost, startAnimate, createMind, mindHistory, saveMind, adoptMind, removeSavedMind, mindShelf, handleMindLibrary } from "./minds.js";
-import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore, hookWorldMusic } from "./planner.js";
+import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore, hookWorldMusic, forgetPlannerPlayers } from "./planner.js";
 import { sweepUnrated } from "./output-gate.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
@@ -35,11 +35,13 @@ import { CLIENT_SKILLS, type Skill } from "../../../shared/progress.js";
 import type { ProgressDelta } from "./progress.js";
 import { isNature } from "../../../shared/sky.js";
 import { RunwayWatch } from "./runway.js";
-import { sendEmail } from "./email.js";
+import { sendEmail, playerDeletedEmail } from "./email.js";
 import { CardOrders, CHECKOUT_BODY_LIMIT } from "./cards.js";
 import { CardSets } from "./card-sets.js";
 import { checkCreation, checkImage } from "./safety.js";
 import { handleMakingOf, buildMakingOf } from "./making-of.js";
+import { DELETE_CONFIRM_WORD, EraseLimiter, eraseRows, flushGenaiForget, queueGenaiForget, writeEraseAudit, type EraseCounts, type GenaiForget } from "./erase-player.js";
+import { FORMER_PLAYER_ID } from "../../../shared/names.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit",
@@ -102,14 +104,19 @@ const matchHost = new MatchHost({
   name: nameOfPlayer,
   researchId: (playerId) => tryResearchId(playerId),
   researchCandidate: (playerId) => ageDoor.open(accountOfCharacter(playerId)),
-  awe: (playerId, amount, matchId) => rooms.progress.match(playerId, amount, matchId, AWE_MATCH_DAILY_MAX).xp,
+  // A player deleted mid-match earns nothing (it would write their progress back): erasedPlayers, below
+  awe: (playerId, amount, matchId) => (erasedPlayers.has(playerId) ? 0 : rooms.progress.match(playerId, amount, matchId, AWE_MATCH_DAILY_MAX).xp),
   chat: (worldId, line) => { rooms.pushWorldChat(worldId, { sender: GAME_HOST_SENDER, text: line }); },
+  objects: (worldId) => rooms.readWorldState(worldId)?.objects ?? [],
+  gravity: (worldId) => rooms.worldGravity(worldId),
+  checkPositions: process.env.MATCH_POSITION_CHECK !== "off",
   store: matchStore,
   now: Date.now,
   seed: () => randomInt(0x100000000),
 });
 rooms.onMatchIntent = (_ws, worldId, playerId, intent) => matchHost.intent(worldId, playerId, intent);
 rooms.onLeftWorld = (worldId, playerId) => matchHost.left(worldId, playerId);
+rooms.terrainLocks = (worldId) => matchHost.terrainLocks(worldId);
 setInterval(() => matchHost.tick(), MATCH_TICK_MS);
 // The game Library (Phase 10, slice 7): games travel between worlds, versioned and credited (game-library.ts).
 const gameLibrary = new GameLibrary(getDb() as unknown as SqlDb);
@@ -371,7 +378,7 @@ function knownWorld(id: unknown): string | null {
 function ownersOf(worldId: string, coCreators?: readonly string[]): string[] {
   const w = rooms.lookupWorld(worldId);
   if (!w) return [];
-  const creator = w.creator && w.creator !== "system" && w.creator !== "guest" ? [w.creator] : [];
+  const creator = w.creator && w.creator !== "system" && w.creator !== "guest" && w.creator !== FORMER_PLAYER_ID ? [w.creator] : [];
   return [...creator, ...(coCreators ?? w.coCreators ?? [])];
 }
 
@@ -432,6 +439,81 @@ function buildInbox(accountId: string): BuildRequestView[] {
 function myBuildRequest(worldId: string, playerId: string, accountId: string): MyBuildRequest {
   if (rooms.isWorldOwner(worldId, playerId, accountId)) return { status: "builder" };
   return buildRequests.status(worldId, accountId);
+}
+
+// ── Deleting a player (erase-player.ts; Alex, 2026-11-24) ───────────
+
+/** Player ids deleted since this process started: late writers (a match that was still running) check it. Memory only. */
+const erasedPlayers = new Set<string>();
+/** Attempts per account and per address per hour (off with DEV_NO_RATE_LIMIT outside production, like the auth routes). */
+const eraseLimiter = new EraseLimiter(5);
+const eraseIpLimiter = new EraseLimiter(20);
+const ERASE_LIMITED = process.env.NODE_ENV === "production" || !process.env.DEV_NO_RATE_LIMIT;
+const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
+
+/** The genai-service's part (its own database: job history, the Library's makers and trash). Null = not reached; it is asked again later. */
+const genaiForget: GenaiForget = async (playerIds) => {
+  const res = await fetch(`${GENAI_URL}/forget`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ playerIds }),
+    signal: AbortSignal.timeout(20_000),
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  const counts: EraseCounts = {};
+  for (const [k, v] of Object.entries(body ?? {})) if (typeof v === "number" && v > 0) counts[k] = v;
+  return counts;
+};
+let genaiForgetRunning = false;
+function tellGenaiForget(): void {
+  if (genaiForgetRunning) return;
+  genaiForgetRunning = true;
+  flushGenaiForget(getDb() as unknown as SqlDb, genaiForget)
+    .then((waiting) => { if (waiting) console.warn(`[erase] the genai-service has not been told about ${waiting} deleted player(s) yet; trying again later`); })
+    .catch((err) => console.error("[erase] telling the genai-service failed:", (err as Error).message))
+    .finally(() => { genaiForgetRunning = false; });
+}
+setInterval(tellGenaiForget, 3600_000).unref();
+setTimeout(tellGenaiForget, 30_000).unref(); // anything left from before a restart
+
+/**
+ * Delete an account: every character on it and everything linked to them. One place, in
+ * an order that can be run again if it stops half-way (until the last step the account
+ * still exists, so the player simply asks again):
+ *   1. out of every match and pool, every connection closed
+ *   2. the shared documents (worlds stay, the player leaves them)
+ *   3. every table, in one transaction, with the audit line and the genai-service queue
+ *   4. this process's memory; then the genai-service is told
+ */
+function erasePlayerAccount(accountId: string, storedEmail: string | null): { characters: number; counts: EraseCounts } {
+  const ids = new Set(listCharacters(accountId).map((c) => c.id));
+  for (const id of ids) erasedPlayers.add(id);
+  const now = Date.now();
+
+  const closed = rooms.dropPlayers(ids, (worldId, id) => matchHost.intent(worldId, id, { t: "leave" }));
+  const docCounts = rooms.forgetPlayers(ids);
+
+  const db = getDb();
+  const sql = db as unknown as SqlDb;
+  let counts: EraseCounts = {};
+  db.transaction(() => {
+    const rowCounts = eraseRows(sql, { accountId, playerIds: [...ids], email: storedEmail });
+    counts = { ...docCounts, ...rowCounts, ...(closed ? { sockets: closed } : {}) };
+    const auditId = writeEraseAudit(sql, ids.size, counts, now);
+    queueGenaiForget(sql, [...ids], now, auditId);
+  })();
+
+  const released = rooms.mana.forgetPlayers(ids);
+  if (released) counts = { ...counts, "mana.holds_released": released };
+  forgetPlannerPlayers(ids);
+  for (const id of ids) progressReports.delete(id);
+  sightingWindows.delete(accountId);
+  builderWindows.delete(accountId);
+  tellGenaiForget();
+  // No ids, no names: when, how many characters, how many rows of what
+  console.log(`[erase] a player was deleted: ${ids.size} character(s), ${JSON.stringify(counts)}`);
+  return { characters: ids.size, counts };
 }
 
 async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -500,6 +582,43 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     const show = ageDoor.set(accountId, body.show);
     if (!show) rooms.closeDoorFor(accountId); // out of every 18+ world, at once
     return json(200, { show });
+  }
+  // Delete my player (Privacy "Your choices and rights"): the whole account, every character on it.
+  //   GET  → { saved, fresh, characters, worlds, word }   what the are-you-sure step needs to say
+  //   POST { confirm: "DELETE" } → { deleted: true }       saved players only, confirmed in the last 5 minutes
+  if (path === "/api/player/delete" && (req.method === "GET" || req.method === "POST")) {
+    const standing = await deleteStanding(auth, fromNodeHeaders(req.headers));
+    if (!standing) return json(401, { error: "no_session" });
+    const mine = listCharacters(accountId).map((c) => c.id);
+    if (req.method === "GET") {
+      return json(200, {
+        saved: !standing.isAnonymous, fresh: standing.fresh, characters: mine.length,
+        worlds: rooms.allWorlds().filter((w) => mine.includes(w.creator)).length, word: DELETE_CONFIRM_WORD,
+      });
+    }
+    if (standing.isAnonymous) {
+      return json(403, { error: "not_saved", message: "This player isn’t saved, so there is no sign-in to delete. To have an unsaved player’s data removed, email privacy@aweborn.org." });
+    }
+    if (ERASE_LIMITED) {
+      const xff = req.headers["x-forwarded-for"];
+      const ip = (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim() || req.socket.remoteAddress || "";
+      if (!eraseIpLimiter.take(`ip:${ip}`) || !eraseLimiter.take(`a:${accountId}`)) {
+        return json(429, { error: "slow_down", message: "Too many tries. Wait an hour, then try again." });
+      }
+    }
+    const body = (await readJson(req).catch(() => null)) as { confirm?: unknown } | null;
+    if (body?.confirm !== DELETE_CONFIRM_WORD) {
+      return json(400, { error: "confirm_word", message: `Type ${DELETE_CONFIRM_WORD} to confirm.` });
+    }
+    if (!standing.fresh) return json(403, { error: "confirm_first", code: "SESSION_NOT_FRESH", message: "For safety, confirm it's you first." });
+    try {
+      const done = erasePlayerAccount(accountId, standing.storedEmail);
+      if (standing.realEmail) void sendEmail(playerDeletedEmail(standing.realEmail));
+      return json(200, { deleted: true, characters: done.characters });
+    } catch (err) {
+      console.error("[erase] failed:", (err as Error).message);
+      return json(500, { error: "delete_failed", message: "Something went wrong and your player was not deleted. Please try again, or email privacy@aweborn.org." });
+    }
   }
   // 18+ worlds' real names, for players behind the door only (the shared universe never carries them: adult-worlds.ts)
   if (path === "/api/player/adult-worlds" && req.method === "GET") {

@@ -26,10 +26,10 @@ export const PLAYER_RADIUS = 0.3;
 export const PLAYER_HEIGHT = 1.7;
 
 const WALK_SPEED = 4; // u/s
-const SPRINT_SPEED = 8;
-const JUMP_SPEED = 5;
-const JET_ACCEL = 14; // > Earth gravity, so holding jump lifts you
-const JET_FUEL = 1.2; // seconds of jetpack per landing
+export const SPRINT_SPEED = 8;
+export const JUMP_SPEED = 5;
+export const JET_ACCEL = 14; // > Earth gravity, so holding jump lifts you
+export const JET_FUEL = 1.2; // seconds of jetpack per landing
 export const TURN_RATE = 2.5; // rad/s
 export const LOOK_RATE = 1.5; // rad/s
 const PITCH_LIMIT = 1.3; // rad

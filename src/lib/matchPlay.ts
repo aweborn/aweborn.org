@@ -4,13 +4,14 @@ import { RULE_ANNOUNCEMENTS, boundsOf, inBounds, type Game } from '@aweborn/shar
 import type { MatchEvent, MatchSlot } from '@aweborn/shared/match'
 import type { MatchMessage } from '@aweborn/shared/match-protocol'
 import type { InteriorMods } from '@aweborn/shared/sim/interior'
-import { onMatch, onMatchSender, sendMatch, useMatchStore } from './match'
+import { matchGame, onMatch, onMatchSender, sendMatch, useMatchStore } from './match'
 import { setPresenceInstance } from '../hooks/usePresence'
 import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
 import { useSheetStore } from '../stores/sheetStore'
 import { interiorController } from '../systems/InteriorController'
 import { teamName } from '../components/GamePanel'
+import { watchArenaCopy } from './arenaCopy'
 
 /**
  * Playing in a world that has a game (Phase 10, slices 2 to 4), the part that isn't
@@ -134,7 +135,9 @@ function poll(worldId: string): void {
   // Never while playing or while the results are up: the player isn't in the lobby
   const s = interiorController.state
   const was = usePlayStore.getState().oob
-  const kind = game && m.playing && !m.ended && m.snap?.phase === 'playing' ? outOfBounds(game, s.x, s.y, s.z) : null
+  // The edge that counts is the match's own (its game as it started), not what the world's game says now
+  const own = matchGame()
+  const kind = own && m.playing && !m.ended && m.snap?.phase === 'playing' ? outOfBounds(own, s.x, s.y, s.z) : null
   if (kind !== (was?.kind ?? null)) usePlayStore.setState({ oob: kind ? { kind, since: now } : null })
   if (!game?.lobby || m.playing || m.ended?.you) {
     if (usePlayStore.getState().inRing || usePlayStore.getState().alone) usePlayStore.setState({ inRing: false, alone: false })
@@ -170,7 +173,9 @@ function onMessage(worldId: string, msg: MatchMessage): void {
       session.inMatch = true
       session.matchId = msg.matchId
       session.queued = false
-      interiorController.mods = game ? matchMods(game) : null
+      // The match's own game (the version it started with) sets the traits and the wall, even if the owners have saved a new one since
+      const own = msg.game ?? game
+      interiorController.mods = own ? matchMods(own) : null
       if (same) break
       interiorController.hold = true
       // The server already spread the team across its spawn: no scatter
@@ -195,7 +200,7 @@ function onMessage(worldId: string, msg: MatchMessage): void {
         interiorController.mods = null
         interiorController.hold = false
         setPresenceInstance(null)
-        useMatchStore.setState({ playing: null, snap: null, prevSnap: null })
+        useMatchStore.setState({ playing: null, arena: null, snap: null, prevSnap: null })
         usePlayStore.setState({ oob: null, toasts: [] })
         const g = currentGame()
         if (g?.lobby) interiorController.arriveAt({ x: g.lobby.arrival[0], y: g.lobby.arrival[1], z: g.lobby.arrival[2] }, g.arena ? { x: g.arena.at[0], z: g.arena.at[2] } : undefined, 1)
@@ -208,7 +213,9 @@ function onMessage(worldId: string, msg: MatchMessage): void {
       break
     case 'move':
       if (useMatchStore.getState().playing?.matchId !== msg.matchId) break
-      interiorController.arriveAt({ x: msg.to[0], y: msg.to[1], z: msg.to[2] }, msg.face ? { x: msg.face[0], z: msg.face[2] } : undefined, 0)
+      // "check": the server didn't believe where we said we were (shared/match-sanity.ts): keep facing the way we were
+      interiorController.arriveAt({ x: msg.to[0], y: msg.to[1], z: msg.to[2] }, msg.why !== 'check' && msg.face ? { x: msg.face[0], z: msg.face[2] } : undefined, 0)
+      if (msg.why === 'check') playToast('Moved back: the server lost track of you for a moment.')
       break
     case 'snap': {
       const p = useMatchStore.getState().playing
@@ -273,9 +280,11 @@ export function useMatchPlay(): void {
   useEffect(() => {
     if (!worldId) return
     const off = onMatch(onMessage)
+    const offArena = watchArenaCopy()
     const timer = setInterval(() => poll(worldId), RING_POLL_MS)
     return () => {
       off()
+      offArena()
       clearInterval(timer)
       interiorController.mods = null
       interiorController.hold = false

@@ -3,8 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { boundsOf, type Game, type GameBox, type GameLobby } from '@aweborn/shared/game'
-import { useWorldStore } from '../../stores/worldStore'
-import { useMatchStore } from '../../lib/match'
+import { useMatchGame, useMatchStore } from '../../lib/match'
 import { usePlayStore } from '../../lib/matchPlay'
 import { useOwnsCurrentWorld } from '../../lib/worldActor'
 import { interiorController } from '../../systems/InteriorController'
@@ -165,7 +164,8 @@ function ArenaMarks({ game, team }: { game: Game; team: number }) {
 }
 
 export function MatchWorld() {
-  const game = useWorldStore((s) => s.meta?.game ?? null)
+  // While playing: the match's own zones (its game as it started); in the lobby: the world's game
+  const game = useMatchGame()
   const team = useMatchStore((s) => s.playing?.you.team ?? null)
   const owner = useOwnsCurrentWorld()
   if (!game) return null

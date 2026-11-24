@@ -14,12 +14,25 @@
  * - Forced ends (nobody left, the time cap, a host ending it) all go through the
  *   referee as a `host-end` control input, so the record still replays to the same result.
  *
+ * - **A match keeps its own copy of the arena** (shared/arena.ts): the objects on the stage
+ *   are copied into the setup when it starts, sent to its players, and stored with the
+ *   record. The ground under the arena is locked while it runs (`terrainLocks`).
+ * - **Positions are checked, not just trusted** (shared/match-sanity.ts): a human's sample
+ *   that is too far too fast, or outside a walled arena, is refused. The referee gets no
+ *   sample for that slot that tick, the client is told to go back to the last accepted
+ *   position (`move`, why "check"), and the refusal is recorded as a `reject` control
+ *   input. This stops teleports and speed hacks beyond the slack. It does not stop walking
+ *   through walls or a client that lies within the speed limit: that needs the interior
+ *   sim on the server (Phase 09, 9F).
+ *
  * No sockets and no timers in here: everything it needs is injected (`MatchHostDeps`),
  * `index.ts` wires it to rooms.ts and calls `tick()`. Nothing a player types reaches
  * another player through this file: announcements are fixed lines.
  */
 import { randomUUID } from "node:crypto";
-import { gameMissing, teamName, type Game, type Vec3 } from "../../../shared/game.js";
+import { gameMissing, teamName, type Bounds, type Game, type Vec3 } from "../../../shared/game.js";
+import { snapshotArena, terrainLock } from "../../../shared/arena.js";
+import { checkSample, sanityLimits, sanityStart, type SanityLimits, type SanityState } from "../../../shared/match-sanity.js";
 import {
   MATCH_SIM_VERSION, packSamples, q, spawnPoint,
   type ControlInput, type MatchEvent, type MatchFrame, type MatchRecord, type MatchResult, type MatchSetup, type MatchSlot, type MatchState, type Sample,
@@ -68,6 +81,16 @@ export interface MatchHostDeps {
   awe(playerId: string, amount: number, ref: string): number;
   /** A fixed host line in the world's chat. */
   chat(worldId: string, line: string): void;
+  /** Every placed object in the world right now, as plain JSON: the match copies the ones on its stage (shared/arena.ts). Absent = an empty arena copy. */
+  objects?(worldId: string): Record<string, unknown>[];
+  /**
+   * The position check (shared/match-sanity.ts). On unless this is false: the switch is there
+   * so it can be turned off without a release if it ever punishes honest players
+   * (index.ts: MATCH_POSITION_CHECK=off), and for tests that use made-up coordinates.
+   */
+  checkPositions?: boolean;
+  /** The world's gravity, for the position check's fall limit. Absent or null = Earth-like, straight down. */
+  gravity?(worldId: string): { x: number; y: number; z: number } | null;
   store: MatchRecorder;
   /** Defaults to the real referee and NPC movement (shared/). */
   referee?: Referee;
@@ -97,6 +120,9 @@ const MAX_LINKS = 8;
 /** A ready check with an NPC proposal runs at least this long from the (first) proposal. */
 const NPC_VOTE_MS = 8_000;
 const DEFAULT_NPC_LEVEL = 3;
+/** This many refused positions from one player inside this long is worth a line in the log (each one is in the record anyway). */
+const REJECT_LOG_N = 3;
+const REJECT_LOG_MS = 10_000;
 
 const HOST_LINES = {
   found: "A match is forming. Step out of the ring if you can't play.",
@@ -113,6 +139,11 @@ interface Seat {
   offSince: number | null;
   last: Pos | null;
   pin: { to: Vec3; until: number } | null;
+  /** The position check's memory: the last accepted position and what this player may still move (null until placed). */
+  sane: SanityState | null;
+  /** When this player's recent positions were refused (ms), newest last; and how many in all. */
+  rejects: number[];
+  rejected: number;
   /** Index into the match's events: what this player has been sent. */
   sent: number;
   again: boolean | null;
@@ -122,6 +153,8 @@ interface Running {
   id: string;
   worldId: string;
   setup: MatchSetup;
+  /** How fast a human may move in this match (its own game's traits and wall, the world's gravity at the start). */
+  limits: SanityLimits;
   state: MatchState;
   startedAt: number;
   frames: MatchFrame[];
@@ -265,6 +298,21 @@ export class MatchHost {
     const m = this.matches.get(matchId);
     if (!stored || !m || m.ended) return stored;
     return { ...stored, frames: [...stored.frames, ...m.frames], events: m.events };
+  }
+
+  /**
+   * The ground locked by the matches running in a world right now (shared/arena.ts): the
+   * world authority refuses terrain changes there, owners included. From each match's own
+   * game, so moving the arena mid-match doesn't unlock the ground a match is being played on.
+   */
+  terrainLocks(worldId: string): Bounds[] {
+    const out: Bounds[] = [];
+    for (const id of this.lobbies.get(worldId)?.matches ?? []) {
+      const m = this.matches.get(id);
+      const lock = m && !m.ended ? terrainLock(m.setup.game) : null;
+      if (lock) out.push(lock);
+    }
+    return out;
   }
 
   stats(): { lobbies: number; matches: number; pooled: number } {
@@ -660,7 +708,17 @@ export class MatchHost {
   private start(lobby: Lobby, game: Game, matchId: string, slots: MatchSlot[], formed: MatchSetup["formed"]): void {
     const now = this.deps.now();
     const worldId = lobby.worldId;
-    const setup: MatchSetup = { matchId, worldId, game, seed: this.deps.seed(), simVersion: MATCH_SIM_VERSION, slots, formed };
+    // The match's own copy of the arena, taken now: later edits to the live stage don't reach it
+    let arena: MatchSetup["arena"] = { objects: [] };
+    try {
+      arena = snapshotArena(this.deps.objects?.(worldId) ?? [], game);
+      if (arena.cut) console.warn(`[match] ${matchId} arena has too many objects: ${arena.cut} left out of the match`);
+    } catch (err) {
+      console.error(`[match] ${matchId} arena could not be copied:`, err);
+    }
+    const setup: MatchSetup = { matchId, worldId, game, seed: this.deps.seed(), simVersion: MATCH_SIM_VERSION, slots, formed, arena };
+    let gravity: { x: number; y: number; z: number } | null = null;
+    try { gravity = this.deps.gravity?.(worldId) ?? null; } catch { gravity = null; }
     const humans = slots.filter((s) => s.kind === "human");
     let state: MatchState;
     const minds = new Map<number, NpcMind>();
@@ -682,13 +740,13 @@ export class MatchHost {
       return;
     }
     const m: Running = {
-      id: matchId, worldId, setup, state, startedAt: now, frames: [], lastFlush: now, events: [],
+      id: matchId, worldId, setup, limits: sanityLimits(game, gravity), state, startedAt: now, frames: [], lastFlush: now, events: [],
       seats: new Map(), seatBySlot: new Map(), minds, controls: [], watchers: new Map(), emptySince: null, forced: null, ended: null,
     };
     this.matches.set(matchId, m);
     lobby.matches.add(matchId);
     for (const s of humans) {
-      const seat: Seat = { playerId: s.id, slot: s.slot, team: s.team, state: "in", offSince: null, last: null, pin: null, sent: 0, again: null };
+      const seat: Seat = { playerId: s.id, slot: s.slot, team: s.team, state: "in", offSince: null, last: null, pin: null, sane: null, rejects: [], rejected: 0, sent: 0, again: null };
       m.seats.set(s.id, seat);
       m.seatBySlot.set(s.slot, seat);
       lobby.pool.delete(s.id);
@@ -718,12 +776,19 @@ export class MatchHost {
   /** Tell a player they are in the match, at their spawn. `pinUntil` holds their samples there until presence catches up. */
   private sendStart(m: Running, seat: Seat, pinUntil: number | null): void {
     const spawn = spawnPoint(m.setup, seat.slot);
-    if (pinUntil !== null) seat.pin = { to: spawn, until: pinUntil };
-    this.deps.send(seat.playerId, m.worldId, { t: "start", matchId: m.id, you: { slot: seat.slot, team: seat.team }, roster: m.setup.slots, gameVersion: m.setup.game.version, spawn, face: this.face(m) });
+    if (pinUntil !== null) {
+      seat.pin = { to: spawn, until: pinUntil };
+      seat.sane = sanityStart(m.limits, { x: spawn[0], y: spawn[1], z: spawn[2] }, this.deps.now());
+    }
+    // The arena first, so the client has it when `start` places the player
+    this.deps.send(seat.playerId, m.worldId, { t: "arena", matchId: m.id, objects: m.setup.arena?.objects ?? [] });
+    this.deps.send(seat.playerId, m.worldId, { t: "start", matchId: m.id, you: { slot: seat.slot, team: seat.team }, roster: m.setup.slots, gameVersion: m.setup.game.version, spawn, face: this.face(m), game: m.setup.game });
   }
 
-  private move(m: Running, seat: Seat, to: Vec3, why: "return" | "round" | "rejoin", now: number): void {
+  /** The server puts a player somewhere: their samples are held there until presence catches up, and the position check starts over from it. */
+  private move(m: Running, seat: Seat, to: Vec3, why: "return" | "round" | "rejoin" | "check", now: number): void {
     seat.pin = { to, until: now + PIN_MS };
+    seat.sane = sanityStart(m.limits, { x: to[0], y: to[1], z: to[2] }, now);
     this.deps.send(seat.playerId, m.worldId, { t: "move", matchId: m.id, to, face: this.face(m), why });
   }
 
@@ -741,13 +806,37 @@ export class MatchHost {
       humansOn++;
       const pos = this.deps.position(m.worldId, seat.playerId);
       let at: Pos | null = pos ? { x: q(pos.x), y: q(pos.y), z: q(pos.z) } : null;
+      // Checked unless the server itself just put them there (or is still waiting for them to arrive)
+      let check = true;
       if (seat.pin) {
         const [px, py, pz] = seat.pin.to;
         const near = at !== null && (at.x - px) ** 2 + (at.y - py) ** 2 + (at.z - pz) ** 2 <= PIN_NEAR * PIN_NEAR;
-        if (near || now >= seat.pin.until) seat.pin = null;
-        else at = { x: q(px), y: q(py), z: q(pz) };
+        if (near && at) {
+          // Arrived where the server put them: that is the new starting point
+          seat.pin = null;
+          seat.sane = sanityStart(m.limits, at, now);
+          check = false;
+        } else if (now >= seat.pin.until) {
+          seat.pin = null; // never arrived: what they say now is judged from where they were put
+        } else {
+          at = { x: q(px), y: q(py), z: q(pz) };
+          check = false;
+        }
       }
       if (!at) continue;
+      if (check && this.deps.checkPositions !== false) {
+        if (!seat.sane) {
+          seat.sane = sanityStart(m.limits, at, now);
+        } else {
+          const v = checkSample(m.limits, seat.sane, at, now);
+          seat.sane = v.state;
+          if (!v.ok) {
+            // Not believed: the referee gets no sample for this slot this tick, and the client is sent back
+            this.reject(m, seat, at, v.why, now);
+            continue;
+          }
+        }
+      }
       seat.last = at;
       samples.push({ slot: seat.slot, x: at.x, y: at.y, z: at.z });
     }
@@ -796,6 +885,22 @@ export class MatchHost {
 
     this.sendSnaps(m);
     if (m.state.phase === "finished" || (m.forced && controls.some((c) => c.type === "host-end"))) this.end(m, m.forced ?? undefined);
+  }
+
+  /**
+   * A human's position was refused by the check (shared/match-sanity.ts). Recorded as a control
+   * input (the referee ignores it), counted, and the client is told to go back to the last
+   * accepted position. `move` pins the seat there, so there is at most one refusal per PIN_MS.
+   */
+  private reject(m: Running, seat: Seat, at: Pos, why: "speed" | "wall", now: number): void {
+    const back = seat.sane!;
+    m.controls.push({ type: "reject", slot: seat.slot, why, at: [at.x, at.y, at.z] });
+    seat.rejected++;
+    seat.rejects = [...seat.rejects.filter((t) => now - t < REJECT_LOG_MS), now];
+    if (seat.rejects.length === REJECT_LOG_N) {
+      console.warn(`[match] ${m.id} slot ${seat.slot} (${seat.playerId}): ${REJECT_LOG_N} positions refused in ${REJECT_LOG_MS / 1000} s (${why}; ${seat.rejected} in all this match)`);
+    }
+    this.move(m, seat, [q(back.x), q(back.y), q(back.z)], "check", now);
   }
 
   private sendSnaps(m: Running): void {

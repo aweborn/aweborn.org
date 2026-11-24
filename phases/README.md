@@ -52,6 +52,8 @@ Every new agent session should follow this sequence:
 
 ## Active Phase
 
+> **📝 To grill (Alex, 2026-11-24): the planner becomes a terraforming chat and objects get their own Create flow** → [Phase 07 → the note](./07-genai-creation.md#the-planner-becomes-the-terraformer-objects-get-their-own-flow-alex-2026-11-24-a-note-not-yet-grilled-or-built). Nothing decided or built.
+>
 > **➡️ NEXT UP (2026-11-23, evening): Alex plays the game layer's rough draft → [Phase 10 → Start here](./10-game-layer.md#start-here-handoff-for-the-next-chat-2026-11-23).** All seven slices exist on the local branch `phase-10-slice-1`: setup, matches in instances with all six templates, recording and replays, the lobby pool and matchmaker, spectating, NPC players, the game Library and When ▸ If ▸ Do cards. Real matches run end to end in a sandbox with scripted browsers; no person has played it, lint and build were not run, nothing is load-tested. **Do not push `main` before the lawyer pass** on Privacy, Terms and RESEARCH.md (rewritten on the branch): the push deploys match recording. The phase file lists every assumption to confirm and every known gap.
 >
 > **➡️ Previous NEXT UP (2026-11-23, later): finish slice 1 of the game layer, then slice 2 → [Phase 10 → Start here](./10-game-layer.md#start-here-handoff-for-the-next-chat-2026-11-23).** Slice 1 (the game record, its storage and versions, the stage rule, the 🎯 Game tab for owners, outlines, arrival in the lobby) is written and committed on the local branch `phase-10-slice-1`: typecheck and tests pass, but it has **not been seen on a screen, linted, built or pushed**. Do those first. Slice 2 (matches + recording) still needs Privacy, Terms and RESEARCH.md rewritten in the same push, after a lawyer pass.

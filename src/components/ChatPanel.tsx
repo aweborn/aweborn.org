@@ -9,6 +9,7 @@ import { useNameStore, requestNames, displayName } from '../stores/nameStore'
 import { isNpcSender, NPC_SENDER_PREFIX } from '@aweborn/shared/life'
 import { GAME_HOST_SENDER } from '@aweborn/shared/match-protocol'
 import { useMuteStore } from '../stores/muteStore'
+import { FORMER_PLAYER_ID } from '@aweborn/shared/names'
 
 /** Lines older than this fade out of the corner while you're not typing. */
 const FADE_MS = 14_000
@@ -122,7 +123,7 @@ export function ChatPanel() {
           const mine = m.sender === playerId
           // A mind (NPC) speaking: its name from the creation, warm, not a player to mute or report here
           if (isNpcSender(m.sender)) {
-            const mind = useWorldStore.getState().objects.get(m.sender.slice(NPC_SENDER_PREFIX.length))?.mind
+            const mind = useWorldStore.getState().liveObjects.get(m.sender.slice(NPC_SENDER_PREFIX.length))?.mind
             return (
               <p key={m.key} className="chat-line chat-line--mind">
                 <span className="chat-name chat-name--mind">{mind?.name ?? (m.sender === GAME_HOST_SENDER ? 'Host' : 'Someone')}</span>
@@ -132,7 +133,7 @@ export function ChatPanel() {
           }
           return (
             <p key={m.key} className="chat-line">
-              {mine || !open ? (
+              {mine || !open || m.sender === FORMER_PLAYER_ID ? ( // a deleted player: nobody to mute or report
                 <span className="chat-name" style={{ color: colorOf(m.sender) }}>
                   {mine ? 'You' : displayName(m.sender, names)}
                 </span>

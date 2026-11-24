@@ -522,6 +522,15 @@ export async function confirmAddEmail(email: string, code: string): Promise<Auth
   return { ok: true };
 }
 
+/**
+ * Drop this device's session cookie without reloading (the session itself is already gone:
+ * the player was deleted). A dead cookie left in place makes the next guest sign-in fail to
+ * stick: the server answers it by clearing the cookie it has just set.
+ */
+export async function dropDeadSession(): Promise<void> {
+  await authClient.signOut().catch(() => undefined);
+}
+
 /** Sign out of this device. The next visit starts a fresh anonymous player. */
 export async function signOutOfDevice(): Promise<void> {
   await authClient.signOut();

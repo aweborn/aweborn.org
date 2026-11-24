@@ -22,7 +22,8 @@ import { DEFAULT_PHYSICS, worldSoundFields } from "@aweborn/shared/crdt-schema";
 import { progress } from "./progressStore";
 import { cleanColor } from "@aweborn/shared/library";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
-import { gameField } from "@aweborn/shared/game";
+import { gameField, type Bounds } from "@aweborn/shared/game";
+import { arenaView, type ArenaObject } from "@aweborn/shared/arena";
 import { TERRAIN_EDITS_MAP, TERRAIN_EDIT_LIMITS, editKey } from "@aweborn/shared/terrain-edits";
 import { changeTerrainEdits, resetTerrainEdits, terrainCellAt } from "./worldVoxels";
 
@@ -33,8 +34,16 @@ interface WorldState {
   /** Physics parameters for this world */
   physics: PhysicsParams;
 
-  /** All placed objects in the world */
+  /**
+   * The placed objects to draw, collide with and act on. Normally the live world's. While a
+   * match's arena copy is set (`setArenaCopy`): the live objects off the stage plus the
+   * copy on it, so nothing an owner does to the stage reaches a running match (Phase 10).
+   */
   objects: Map<string, PlacedObject>;
+  /** The live world's objects, always (the doc's truth). Only what must ignore a match's copy reads this. */
+  liveObjects: Map<string, PlacedObject>;
+  /** A match's own copy of the arena, while this player plays it or looks at it (shared/arena.ts). */
+  arenaCopy: ArenaCopyView | null;
 
   /** Chat messages */
   chat: ChatMessage[];
@@ -149,6 +158,44 @@ function readObjects(doc: Y.Doc): Map<string, PlacedObject> {
   return objects;
 }
 
+/** A match's arena copy, ready to draw: the stage's box, and each copied object as a placed object (made once, so nothing re-renders while the live world changes). */
+export interface ArenaCopyView { key: string; stage: Bounds; objects: ArenaObject[]; made: Map<string, PlacedObject> }
+
+const num = (v: unknown, d: number): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
+const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+
+/** A copied object as the renderers and colliders take it (the same defaults as `readObjects`). Nobody placed it: only owners could edit it, and it is not in the doc anyway. */
+function placedFromArena(o: ArenaObject): PlacedObject {
+  return {
+    id: o.id, type: o.type, x: o.x, y: o.y, z: o.z,
+    rotX: num(o.rotX, 0), rotY: num(o.rotY, 0), rotZ: num(o.rotZ, 0),
+    scaleX: num(o.scaleX, 1), scaleY: num(o.scaleY, 1), scaleZ: num(o.scaleZ, 1),
+    material: str(o.material) ?? "default", color: str(o.color),
+    placedBy: "", placedAt: 0,
+    asset: str(o.asset), media: str(o.media) as PlacedObject["media"],
+    loop: typeof o.loop === "boolean" ? o.loop : undefined,
+    volume: typeof o.volume === "number" ? o.volume : undefined,
+    text: str(o.text),
+    life: (o.life as PlacedObject["life"]) ?? undefined,
+    stillAsset: str(o.stillAsset),
+  };
+}
+
+const viewOf = (live: Map<string, PlacedObject>, copy: ArenaCopyView | null): Map<string, PlacedObject> =>
+  copy ? arenaView(live, copy.stage, copy.objects, (o) => copy.made.get(o.id)!) : live;
+
+/**
+ * Show a match's own copy of the arena instead of the live stage (null = the live world
+ * again). `key` names the copy (the match id), so setting the same one twice does nothing.
+ * Only the view changes: the world doc is never touched.
+ */
+export function setArenaCopy(copy: { key: string; stage: Bounds; objects: ArenaObject[] } | null): void {
+  const s = useWorldStore.getState();
+  if ((s.arenaCopy?.key ?? null) === (copy?.key ?? null)) return;
+  const next: ArenaCopyView | null = copy ? { ...copy, made: new Map(copy.objects.map((o) => [o.id, placedFromArena(o)])) } : null;
+  useWorldStore.setState({ arenaCopy: next, objects: viewOf(s.liveObjects, next) });
+}
+
 type VoxelTerrain = BlueprintDraft["terrain"];
 
 /** Stored as a JSON string so concurrent writes replace it whole (last writer wins). */
@@ -250,10 +297,12 @@ function readChat(doc: Y.Doc): ChatMessage[] {
   return messages;
 }
 
-export const useWorldStore = create<WorldState>((set, _get) => ({
+export const useWorldStore = create<WorldState>((set, get) => ({
   meta: null,
   physics: { ...DEFAULT_PHYSICS },
   objects: new Map(),
+  liveObjects: new Map(),
+  arenaCopy: null,
   chat: [],
   terrainSeed: 0,
   voxelTerrain: null,
@@ -266,10 +315,12 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
     // The edit overlay first, so the first frame already shows the dug/filled ground
     resetTerrainEdits(voxelTerrain, edits.entries());
     // Read initial state
+    const live = readObjects(doc);
     set({
       meta: readMeta(doc) ?? fallbackMeta,
       physics: readPhysics(doc),
-      objects: readObjects(doc),
+      liveObjects: live,
+      objects: viewOf(live, get().arenaCopy),
       chat: readChat(doc),
       terrainSeed: (doc.getMap("terrain").get("seed") as number) ?? 0,
       voxelTerrain,
@@ -280,7 +331,10 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
     // Observe changes
     doc.getMap("meta").observeDeep(() => set({ meta: readMeta(doc) ?? fallbackMeta }));
     doc.getMap("physics").observeDeep(() => set({ physics: readPhysics(doc) }));
-    doc.getMap("objects").observeDeep(() => set({ objects: readObjects(doc) }));
+    doc.getMap("objects").observeDeep(() => {
+      const now = readObjects(doc);
+      set({ liveObjects: now, objects: viewOf(now, get().arenaCopy) });
+    });
     doc.getArray("chat").observe(() => set({ chat: readChat(doc) }));
     doc.getMap("terrain").observe((ev) => {
       const t = readVoxelTerrain(doc);
@@ -338,6 +392,8 @@ export const useWorldStore = create<WorldState>((set, _get) => ({
       meta: null,
       physics: { ...DEFAULT_PHYSICS },
       objects: new Map(),
+      liveObjects: new Map(),
+      arenaCopy: null,
       chat: [],
       terrainSeed: 0,
       loaded: false,

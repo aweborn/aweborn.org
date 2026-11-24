@@ -574,6 +574,25 @@ export class ManaLedger {
     return this.append({ kind: "release", amountMm: r.mm, creativeMm: 0, playerId: r.playerId, ref });
   }
 
+  /**
+   * A deleted player (erase-player.ts). The ledger keeps every entry (it is the public
+   * account of the money); erase-player.ts has already taken the player id, and any name
+   * shown with a card sale, off the rows. This gives their open holds back, makes sure
+   * nothing written later carries the id, and re-reads the totals (the last shown name).
+   * Returns how many holds were released.
+   */
+  forgetPlayers(playerIds: ReadonlySet<string>): number {
+    let released = 0;
+    for (const [ref, o] of [...this.open]) {
+      if (!o.playerId || !playerIds.has(o.playerId)) continue;
+      o.playerId = null;
+      if (this.release(ref)) released++;
+    }
+    this.replay();
+    this.emit();
+    return released;
+  }
+
   /** Refs of holds taken before `before` that are still open (the creations sweeper returns them). */
   staleHolds(before: number): string[] {
     const out: string[] = [];
