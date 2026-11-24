@@ -8,6 +8,7 @@
  *   - Client:  import type { WorldEntry, ... } from "@aweborn/shared/crdt-schema"
  *   - Server:  import type { WorldEntry, ... } from "../../shared/crdt-schema.js"
  */
+import type { Game } from "./game.js";
 
 // ── Spatial ──────────────────────────────────────────────────────────
 
@@ -122,6 +123,27 @@ export interface WorldEntry {
    */
   music?: string;
   ambientSound?: string;
+
+  /**
+   * `"adult"` = an 18+ world (absent = for everyone). Chosen when the world is made and
+   * never changed (Alex, 2026-11-24); a world planted inside an 18+ world is 18+ too.
+   * Only players behind the 18+ door can make, enter, see into or change one.
+   * For an 18+ world this shared entry holds no real name and no music, because the
+   * universe goes to everyone: `name` is `ADULT_WORLD_NAME`, and the real name is on
+   * the server (`adult-worlds.ts`) and in the world's own doc. Server-written.
+   */
+  tier?: "adult";
+}
+
+/** What an 18+ world is called wherever its real name must not show (the shared universe, lists, anything public). */
+export const ADULT_WORLD_NAME = "18+ world";
+
+/** Is this an 18+ world? */
+export const isAdultWorld = (w: { tier?: unknown } | null | undefined): boolean => w?.tier === "adult";
+
+/** `{ tier }` from an untrusted value. */
+export function worldTierField(tier: unknown): { tier?: "adult" } {
+  return tier === "adult" ? { tier } : {};
 }
 
 /** Fixed interior XZ coordinates of the Return Portal inside any nested child world (right behind the `(0, 10)` spawn). */
@@ -261,6 +283,8 @@ export interface WorldMeta {
   ambientSound?: string;
   /** The world's music (2026-11-03): one long instrumental loop, from the planner or Make → Music. Absent = the world's seeded version of the universe music. */
   music?: string;
+  /** The world's game (Phase 10): server-written copy of the stored record (shared/game.ts). Absent = the world isn't a game. */
+  game?: Game;
 }
 
 /** A generated audio file name, as stored in world meta. */
@@ -408,6 +432,12 @@ export interface PlayerPresence {
    * set, `position` is in that world's interior coordinates, not universe ones.
    */
   facing?: { x: number; z: number };
+  /**
+   * The match instance this player is in (Phase 10), absent in the live world. The server
+   * already partitions presence by instance; this is for the paths that don't pass through
+   * it (the same-network mesh, other tabs): a client drops presence from another instance.
+   */
+  instance?: string;
 }
 
 // ── World Index (per account; Phase 08B) ─────────────────────────────

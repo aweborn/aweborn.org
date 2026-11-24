@@ -21,6 +21,10 @@ import { interiorController } from '../systems/InteriorController'
 import type { SoundMedia } from '../lib/soundKinds'
 import { adoptWhenPlaced } from '../lib/minds'
 import { useChatStore } from './chatStore'
+import { inBounds, stageOf } from '@aweborn/shared/game'
+import { TERRAIN_LOCK_NOTICE } from '@aweborn/shared/arena'
+import { matchLocksCell } from '../lib/arenaCopy'
+import { ownsCurrentWorld } from '../lib/worldActor'
 
 export type HeldItem =
   | { kind: 'block'; block: LibraryBlock }
@@ -198,9 +202,20 @@ export function placeEquippedItem(playerId: string): string | null {
     const t = useWorldStore.getState().voxelTerrain
     const c = computeTerrainTarget(item, interiorController.state)
     if (!t || !c) return null
+    // The ground under a running match is locked (shared/arena.ts): say so instead of letting the server snap it back
+    if (matchLocksCell(t.size, c.gi, c.j, c.gk)) {
+      useChatStore.getState().showNotice(TERRAIN_LOCK_NOTICE)
+      return null
+    }
     return editTerrainCell(doc, t, c.gi, c.j, c.gk, c.v) ? editKey(c.gi, c.j, c.gk) : null
   }
   const pos = computePlacementTarget(item, interiorController.state)
+  // The stage (the arena's spot, Phase 10) is the creators': say so instead of letting the server snap it back
+  const stage = stageOf(useWorldStore.getState().meta?.game)
+  if (stage && inBounds(stage, pos.x, pos.y, pos.z) && !ownsCurrentWorld()) {
+    useChatStore.getState().showNotice('Only this world’s builders can place on the stage.')
+    return null
+  }
   if (item.kind === 'block') {
     return placeBlock(doc, item.block, { x: pos.x, y: pos.y, z: pos.z }, playerId)
   }

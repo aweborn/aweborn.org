@@ -70,6 +70,11 @@ export const ACTIONS = {
   "world.ask_to_build": { tier: "saved", via: { http: "POST /api/player/world/build-request" }, offline: false, status: "enforced", note: "waits in every owner's inbox; 10/day per account, 20 open per world, 7 days after a decline" },
   "world.withdraw_ask": { tier: "saved", via: { http: "POST /api/player/world/build-request/withdraw" }, offline: false, status: "enforced", note: "re-ask that world after 1 h" },
   "world.answer_ask": { tier: "world_creator", via: { http: "POST /api/player/world/build-request/decide" }, offline: false, status: "enforced", note: "creator or a builder; approve = add as builder" },
+  "game.set": { tier: "world_creator", via: { http: "POST /api/player/world/game" }, offline: false, status: "enforced", note: "creator + builders; the server validates (shared/game.ts), versions and writes meta.game; null removes it" },
+  "game.library_save": { tier: "world_creator", via: { http: "POST /api/player/game-library" }, offline: false, status: "enforced", note: "creator + builders, saved players; name passes the world-name check; snapshots the stage's plain objects (≤ 200)" },
+  "game.library_bring": { tier: "world_creator", via: { http: "POST /api/player/game-library/bring" }, offline: false, status: "enforced", note: "creator + builders: becomes this world's game at `at`, objects placed by the server, credits appended (server-written)" },
+  "match.lobby": { tier: "any_session", via: { ws: "match" }, offline: false, status: "enforced", note: "hello, queue, play-now, npc-propose/vote, again, link, watch, leave, rejoin: the match host decides everything (shared/match-protocol.ts)" },
+  "match.host": { tier: "world_creator", via: { ws: "match" }, offline: false, status: "enforced", note: "creator + builders present in the lobby: start early, hold or release the queue, end a match" },
   "chat.send": { tier: "any_session", via: { ws: "chat" }, offline: false, status: "enforced", note: "ChatLimiter; server writes the log" },
   "library.create_model": { tier: "saved", via: { http: "POST /api/player/create" }, offline: false, status: "enforced", note: "mana; safety check" },
   "life.animate": { tier: "saved", via: { http: "POST /api/player/animate" }, offline: false, status: "enforced", note: "mana; placer, creator or builders; Meshy rig (humanoid)" },
@@ -86,6 +91,7 @@ export const ACTIONS = {
   "account.switch_character": { tier: "any_session", via: { http: "POST /api/player/character" }, offline: false, status: "enforced" },
   "account.rename_character": { tier: "any_session", via: { http: "POST /api/player/character/name" }, offline: false, status: "enforced", note: "names.ts" },
   "account.set_password": { tier: "any_session", via: { http: "POST /api/player/password" }, offline: false, status: "enforced", note: "a guest session saving itself" },
+  "account.delete": { tier: "saved", via: { http: "POST /api/player/delete" }, offline: false, status: "enforced", note: "the whole account, every character; typed word + confirmed in the last 5 minutes; 5 tries an hour; erase-player.ts" },
   "player.mute": { tier: "any_session", via: { http: "POST /api/player/mute" }, offline: false, status: "enforced" },
   "player.report": { tier: "any_session", via: { http: "POST /api/player/report" }, offline: false, status: "enforced" },
   "player.save_location": { tier: "any_session", via: { http: "POST /api/player/location" }, offline: false, status: "enforced" },
@@ -111,7 +117,7 @@ export const ACTIONS = {
 export type ActionId = keyof typeof ACTIONS;
 
 /** Socket message types that carry no intent of their own (transport, heartbeat, server → client). */
-export const WS_TRANSPORT = ["universe-sync", "world-sync", "presence-batch", "ping", "sim-correct"] as const;
+export const WS_TRANSPORT = ["universe-sync", "world-sync", "presence-batch", "ping", "sim-correct", "world-closed"] as const;
 
 /** Does an actor with these facts meet `tier`? (`world_creator` and `asset_maker` need the object in question.) */
 export function meetsTier(

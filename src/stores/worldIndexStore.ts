@@ -26,6 +26,7 @@ import type {
 } from '@aweborn/shared/crdt-schema'
 import { ORIGIN_WORLD_ENTRY, ORIGIN_WORLD_ID } from '@aweborn/shared/crdt-schema'
 import type { BuildRequestView } from '@aweborn/shared/build-requests'
+import { FORMER_PLAYER_ID } from '@aweborn/shared/names'
 import { useUniverseStore } from './universeStore'
 import { placeOnTerrain } from './worldVoxels'
 import { useWorldStore } from './worldStore'
@@ -103,6 +104,7 @@ export function isFaceUp(e: WorldIndexEntry): boolean {
 export function creatorLabel(creator: string | undefined, myCharacters: readonly string[]): string {
   if (!creator) return 'an explorer'
   if (creator === 'system') return 'Aweborn'
+  if (creator === FORMER_PLAYER_ID) return 'a former player' // deleted their player; the world stays (erase-player.ts)
   if (myCharacters.includes(creator)) return 'you'
   if (creator === 'guest' || creator.startsWith('guest-')) return 'a guest explorer'
   return 'a fellow explorer'

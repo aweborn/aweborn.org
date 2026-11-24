@@ -264,3 +264,74 @@ test("a sign's words must be ones the server checked; old signs stay movable and
   assert.equal(act2(bob, (d) => addObject(d, "copy", BOB, { type: "sign", text: "An old sign from before the check." })), 0);
   assert.equal(obj2(server2, "copy")?.type, "sign");
 });
+
+test("the stage (Phase 10): the arena's spot is the owners' alone, and nobody writes meta.game through the doc", () => {
+  const { server, client, act, obj } = setup();
+  // Alice's own client can't set the game in the doc (the server writes it after POST /api/player/world/game)
+  assert.equal(act(alice, (d) => d.getMap("meta").set("game", { template: "race", arena: { at: [50, 0, 50], size: [10, 10, 10] } })), 1);
+  assert.equal(server.getMap("meta").get("game"), undefined);
+  assert.equal(client.getMap("meta").get("game"), undefined);
+  // The server writes it: the stage is x/z 45..55, y 0..10
+  server.transact(() => server.getMap("meta").set("game", { template: "race", arena: { at: [50, 0, 50], size: [10, 10, 10] } }), "server");
+  addObject(server, "prop", ALICE, { x: 50, z: 50 });
+
+  assert.equal(act(bob, (d) => addObject(d, "b2", BOB, { x: 50, z: 50 })), 1);
+  assert.equal(obj(server, "b2"), undefined);
+  assert.equal(act(bob, (d) => addObject(d, "b3", BOB, { x: 20, z: 20 })), 0);
+  // Bob's own thing, carried onto the stage: back where it was
+  assert.equal(act(bob, (d) => d.transact(() => { const m = d.getMap("objects").get("b3") as Y.Map<unknown>; m.set("x", 50); m.set("z", 50); })), 1);
+  assert.equal(obj(server, "b3")?.x, 20);
+  // Kicking or removing what's on the stage
+  assert.equal(act(bob, (d) => (d.getMap("objects").get("prop") as Y.Map<unknown>).set("kick", { vx: 1, vy: 2, vz: 0, t: 5 })), 1);
+  assert.equal(act(guest, (d) => d.getMap("objects").delete("prop")), 1);
+  assert.equal(obj(client, "prop")?.placedBy, ALICE);
+  // The owners work there freely
+  assert.equal(act(alice, (d) => addObject(d, "a2", ALICE, { x: 51, z: 51 })), 0);
+  assert.equal(act(alice, (d) => (d.getMap("objects").get("prop") as Y.Map<unknown>).set("x", 52)), 0);
+  // The game goes away: the spot is open again
+  server.transact(() => server.getMap("meta").delete("game"), "server");
+  assert.equal(act(bob, (d) => addObject(d, "b4", BOB, { x: 50, z: 50 })), 0);
+});
+
+// ── The ground under a running match (Phase 10, shared/arena.ts) ──
+
+test("terrain lock: while a match runs, nobody digs under its arena or reshapes the ground, owners included", () => {
+  const { server, client, authority } = setup();
+  const ground = (seed: number) => JSON.stringify({ size: [64, 32, 64], seed, blocks: [] });
+  server.getMap("terrain").set("voxel", ground(1));
+  edits(server).set("32,2,32", 0); // dug before the match
+  edits(server).set("5,2,5", 0);
+  // The arena: x -10..10, z -18..2 → cells 22..41 by 14..33 (plus the margin)
+  const lock = { minX: -11, maxX: 11, minY: -Infinity, maxY: 11, minZ: -19, maxZ: 3 };
+  const act = (edit: (doc: Y.Doc) => void, locks = [lock]) => {
+    const updates: Uint8Array[] = [];
+    const h = (u: Uint8Array, origin: unknown) => { if (origin !== "server") updates.push(u); };
+    client.on("update", h);
+    edit(client);
+    client.off("update", h);
+    let reverted = 0, locked = 0;
+    for (const u of updates) { const r = authority.apply(u, "client", alice, undefined, locks); reverted += r.reverted; locked += r.locked; }
+    return { reverted, locked };
+  };
+  // Inside the arena's columns: refused, and the owner's screen snaps back
+  assert.deepEqual(act((d) => edits(d).set("30,3,30", 0)), { reverted: 1, locked: 1 });
+  assert.equal(edits(server).has("30,3,30"), false);
+  assert.equal(edits(client).has("30,3,30"), false);
+  // Filling a hole back in there is a change too
+  assert.deepEqual(act((d) => edits(d).delete("32,2,32")), { reverted: 1, locked: 1 });
+  assert.equal(edits(client).get("32,2,32"), 0);
+  // Outside the arena the owner digs as always
+  assert.deepEqual(act((d) => edits(d).set("6,2,6", 0)), { reverted: 0, locked: 0 });
+  assert.equal(edits(server).get("6,2,6"), 0);
+  // A new ground for the whole world: refused, and the edits it would have cleared stay
+  const reshape = act((d) => d.transact(() => { d.getMap("terrain").set("voxel", ground(2)); edits(d).clear(); }));
+  assert.ok(reshape.locked >= 1);
+  assert.equal(server.getMap("terrain").get("voxel"), ground(1));
+  assert.equal(client.getMap("terrain").get("voxel"), ground(1));
+  assert.deepEqual([...edits(server).keys()].sort(), ["32,2,32", "5,2,5", "6,2,6"]);
+  assert.deepEqual([...edits(client).keys()].sort(), ["32,2,32", "5,2,5", "6,2,6"]);
+  // The match is over: all of it is allowed again
+  assert.deepEqual(act((d) => edits(d).set("30,3,30", 0), []), { reverted: 0, locked: 0 });
+  assert.deepEqual(act((d) => d.getMap("terrain").set("voxel", ground(2)), []), { reverted: 0, locked: 0 });
+  assert.equal(server.getMap("terrain").get("voxel"), ground(2));
+});

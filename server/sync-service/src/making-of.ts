@@ -124,7 +124,7 @@ export function makingOfChanged(worldId: string): void {
   cache.delete(worldId.toLowerCase());
 }
 
-export function handleMakingOf(req: IncomingMessage, res: ServerResponse, cors: Record<string, string>): boolean {
+export function handleMakingOf(req: IncomingMessage, res: ServerResponse, cors: Record<string, string>, isAdultWorld: (worldId: string) => boolean = () => false): boolean {
   const url = new URL(req.url ?? "/", "http://x");
   if (url.pathname !== "/making-of") return false;
   if (req.method === "OPTIONS") {
@@ -137,6 +137,13 @@ export function handleMakingOf(req: IncomingMessage, res: ServerResponse, cors: 
   if (req.method !== "GET" || !/^[\w-]{1,64}$/.test(worldId)) {
     res.writeHead(req.method !== "GET" ? 405 : 400, headers);
     res.end(JSON.stringify({ error: req.method !== "GET" ? "method_not_allowed" : "bad_request" }));
+    return true;
+  }
+  // An 18+ world's story stone is told only behind the 18+ door (Phase 07, decision 11): this public route
+  // has no session, so it refuses; players behind the door read GET /api/player/making-of
+  if (isAdultWorld(worldId.toLowerCase())) {
+    res.writeHead(403, { ...headers, "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ error: "adult_world" }));
     return true;
   }
   const now = Date.now();

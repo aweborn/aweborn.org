@@ -25,7 +25,7 @@ export function TouchDock() {
   const asks = useBuildRequestsStore((s) => s.requests.length)
   const chatOpen = useChatStore((s) => s.open)
   const sheet = useSheetStore((s) => s.sheet)
-  const makeOpen = sheet === 'library' || sheet === 'create' || sheet === 'plan'
+  const makeOpen = sheet === 'library' || sheet === 'create' || sheet === 'plan' || sheet === 'game'
 
   // A sheet belongs to the place it was opened in: moving between space
   // and a world closes it (the Library had no such rule of its own).

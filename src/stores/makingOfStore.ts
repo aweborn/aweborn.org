@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { AUTH_URL } from '../lib/player'
 import type { MakingOf } from '@aweborn/shared/making-of'
+import { isAdultWorld } from '@aweborn/shared/crdt-schema'
+import { useUniverseStore } from './universeStore'
 
 /**
  * How the world you're in was made (Alex, 2026-11-02): its planner conversations, public,
@@ -22,7 +24,9 @@ export function loadMakingOf(worldId: string): Promise<void> {
   if (inflight && inflightFor === worldId) return inflight
   if (useMakingOf.getState().worldId !== worldId) useMakingOf.setState({ worldId, data: null, open: false })
   inflightFor = worldId
-  inflight = fetch(`${AUTH_URL}/making-of?worldId=${encodeURIComponent(worldId)}`)
+  // An 18+ world's story is told only behind the 18+ door: the public route refuses it, the player route checks the door
+  const adult = isAdultWorld(useUniverseStore.getState().worlds.get(worldId))
+  inflight = fetch(`${AUTH_URL}${adult ? '/api/player' : ''}/making-of?worldId=${encodeURIComponent(worldId)}`, adult ? { credentials: 'include' } : undefined)
     .then((r) => (r.ok ? (r.json() as Promise<MakingOf>) : null))
     .then((data) => {
       if (data && Array.isArray(data.sessions) && useMakingOf.getState().worldId === worldId) useMakingOf.setState({ data })

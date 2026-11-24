@@ -519,10 +519,51 @@ Attribution: noted only, still needs its own `/grill-me`. Age: **decided in the 
 
 **Supersedes** the Nov 2 idea of 18+ / 13+ / younger tiers. Not legal advice: get a lawyer pass before 18+ ships.
 
+#### Changed 2026-11-24 (Alex): read these before the list below
+These replace the numbered decisions where they differ. The rest of the list stands.
+- **Aweborn is for everyone** (replaces decision 1; first said 2026-11-20). *"We want the game for everyone, but eventually there will be content that is 18+ and we need to shield the everyone environment from that, which we have the veiled worlds idea for."* The shield is decision 8 (veiled worlds) and the containment model. **Terms, Privacy and RESEARCH.md still say 18+ for everyone;** they change with a lawyer, because under-18 and under-13 players bring COPPA and the rules on research with minors.
+- **The door is a toggle** (replaces the birthdate in decision 3; see the note there).
+- **A world is 18+ or everyone from the moment it is made, and that never changes** (replaces decision 2's "once a world holds any 18+ creation, the world is 18+", and "Owner and co-creators can flip a world", "Going back" and "Cards still work after a flip" under Containment). Alex considered a prompt when something made is flagged 18+ and dropped it: *"That's too much user interaction… worlds being created should just have a toggle and you can't switch it after a world is created."* So an 18+ creation in an everyone world is simply refused there.
+- **Policies describe the rules as they are, with no "there is no 18+ content yet" asides** (*"there will be sooner than later, that's not a thing to note"*).
+- **Only players behind the 18+ door can make, see into, enter or change an 18+ world** (*"only 18+ opted-in players can create 18+ worlds and edit/view them too of course"*).
+
+#### Built 2026-11-24: the tier, the veil and the door (branch `age-18plus-opt-in`, not deployed)
+What an 18+ world *is* and who can reach it. Checked by `scripts/verify/rig/check-adult-worlds.mjs` (70 checks against the real server and app).
+
+| What | How | Where |
+|------|-----|-------|
+| **The 18+ door** | A toggle in the saved player's panel. No date of birth. | `age-door.ts`, `AdultDoor.tsx`, `src/lib/door.ts` |
+| **A world's tier** | `tier: "adult"` on the world's universe entry, set by `adult: true` in `POST /api/player/world`, only for a player behind the door. Nothing writes it afterwards. A world planted inside an 18+ world is 18+ without asking (tiers flow down). | `shared/crdt-schema.ts`, `world-create.ts`, `rooms.ts → createWorld` |
+| **The veil** | The shared universe goes to everyone, so an 18+ world's entry there has **no real name** (`"18+ world"`) and **no music**. The real name is in the server's `adult_world_names` table and the world's own doc. Behind the door the app fetches names (`GET /api/player/adult-worlds`); outside it the world is drawn in one veil colour with an *18+* mark. This is the per-viewer redaction (containment point 4) done without splitting the universe doc: it works because the tier is fixed at creation. | `adult-worlds.ts`, `universeStore.ts → throughTheDoor`, `UniverseWorlds.tsx` |
+| **Entry** | The server refuses the world's doc, edits (live or replayed from offline), presence, chat and match messages to a socket whose account isn't behind the door (`rooms.ts → mayEnter`), on both socket routes. The app refuses first, with *"Sign in and turn on 18+ content to enter."* | `rooms.ts`, `universeStore.ts → enterWorld` |
+| **Every HTTP route** | One guard at the top of the player API: any request that names an 18+ world as `worldId` or `parentWorldId` (query or JSON body) from outside the door gets `403 adult_world`. It covers making, planning, lore, minds, the game, builders, the World Index, and any route added later. | `index.ts → handlePlayerApi` |
+| **Turning the switch off** | The account's sockets are put out of every 18+ world at once (`world-closed`, 0x14); the app steps out to the nearest everyone world or space, and the names are dropped. | `rooms.ts → closeDoorFor`, `useCRDT.ts`, `universeStore.ts → leaveToEveryone` |
+| **Public routes** | `GET /worlds/:id` says `tier: "adult"` and gives no name. `GET /making-of` refuses an 18+ world; players behind the door read `GET /api/player/making-of` (decision 11). Replays from 18+ worlds are shut outside the door. | `index.ts`, `making-of.ts` |
+| **Money firewall** | No cards from an 18+ world: checkout and event orders both refuse (decision 9). | `cards.ts` |
+| **On the device** | 18+ world docs and their offline edits are never written to the offline cache. So they don't work offline. | `offlineCache.ts → uncachedWorlds` |
+| **The Libraries** | The game Library and the minds shelf are public and have no tiers, so a game or a mind made in an 18+ world can't be saved to them. | `index.ts` |
+
+**Choices made to fill gaps (Alex to confirm):**
+- A veiled world keeps its position, size and player count; it loses its name, colour and music.
+- A world's maker who later turns the switch off is shut out of their own 18+ world like anyone else.
+- Being a builder of an 18+ world doesn't open it: the door does.
+- The story stone, replays and match lists of an 18+ world need the door; nothing of an 18+ world is on any public route except that it exists and where.
+- Games and minds can't leave an 18+ world for the shared Libraries until those have tiers.
+
+**Not built. What can be *made* is unchanged: the same rater and the same refusals run in every world, so an 18+ world holds nothing an everyone world couldn't.** The steps from here, in the order the list below already gives:
+1. **The rater replaces the all-ages refusals** inside 18+ worlds, with the hard lines everywhere ("All-ages assumptions to undo"). Before it: the apparent-age and real-person output checks, CSAM hash matching, NCMEC registration and runbook, and the quarantine path for hard-line content. These are legal requirements, not polish.
+2. **The tag on creations** (containment points 1 to 3): Make jobs carry their world, an 18+ creation is refused in an everyone world before broadcast, the Library filters by the door and the destination's tier.
+3. **18+ asset delivery** (point 5): signed, short-lived URLs under a separate prefix; today every asset URL is public and cached for a year.
+4. **Adult-capable models** (decision 5) and the public model menu.
+5. **The age check where the law requires one** (decision 3): a vendor, and a way to know where the player is. Until then the toggle is the same everywhere.
+6. **The mesh** (same-network play): joining an 18+ world over WebRTC needs a door token. Today the server only introduces peers whose presence is in the same world, and presence follows the door, so strangers are not introduced; a modified client on the same network is not stopped.
+7. Transparency pages, the appeal path, minds' care rules in 18+ worlds, research flagging (decisions 10 to 12).
+
 #### Decided
 1. **Aweborn is 18+ for everyone** (Terms and Privacy already say so). No teen or child tiers: no COPPA, no rules for minors on companion chatbots, research data stays clean. A teen tier could come later with its own grill.
 2. **Two kinds of world: everyone and 18+.** Like Reddit's NSFW tag: once a world holds any 18+ creation, the world is 18+. A world's owner can also tag it 18+ up front.
 3. **The door to 18+:** be signed in, enter a birthdate (18+), and turn on *Show 18+*. A **real age check** (a one-time selfie age estimate through a vendor such as Yoti or Persona, the way scooter apps do it) is added **only where the law requires it**: the UK Online Safety Act, and US states whose age-verification laws apply once adult content is about a third or more of a site. **Revisit if 18+ grows to a large share** (Alex expects it won't; it isn't the point).
+   - **Changed 2026-11-24 (Alex): the door is sign-in + a toggle. No birthdate, no age entry of any kind** (*"I don't want an age entry or anything like that, just a toggle switch is fine… I don't even want people entering that"*). Turning *Show 18+* on is the player's own statement. The real age check stays as written here: **only in the states and countries whose law requires one.** Built as `server/sync-service/src/age-door.ts` and the player panel (`AdultDoor.tsx`); `ageDoor.open(accountId)` is what containment reads. **The location-triggered check is not built** (it needs a vendor and a way to know where the player is).
    - **Research update (2026-11-07):** the "UK + one-third states" list is too short. A real check (or blocking 18+ worlds there until one is ready) is also needed in **Australia** (its codes cover sexual AI companions, which 18+ minds are), **France, Italy, Brazil** (self-declaration is not accepted), probably **Germany**, and **US states without a one-third threshold** (reportedly Tennessee, Indiana, South Dakota, Missouri). Utah counts *animated* content, so stylized-only exempts nothing. A **check triggered by the player's location** is a launch requirement, not a later fix. Vendors: k-ID (entry API reportedly free; Discord uses it, on-device) or Yoti; no public prices, budget $0.10–1.50 per check. [Report](../docs/research/2026-11-adult-models/reports/Adult%20capable%20models%20for%20Aweborn.md#age-checks-the-law-reaches-further-than-the-uk-and-the-one-third-states).
 4. **What marks a creation 18+ (any of three):** (a) it was made with an **adult-capable model**, so the model is the gate (picking one tags it); (b) the maker tagged it; (c) the AI rater says so. Anyone who thinks a tag is wrong can ask for a human review.
 5. **Any model, from an open public menu.** Players and owners choose from an open list (OpenRouter models plus image and voice providers that allow adult content). The menu is public. **Every output, whatever the model, passes our hard-line check before anyone else sees it.** We check outputs, not just prompts.
@@ -639,6 +680,41 @@ Closed in this order before any 18+ build (the 18+ build itself happens in a sep
   - [`terms.html`](../public/terms.html): *"Don't ask for anything sexual, hateful or gory"*.
   - **Contradiction already live:** [`privacy.html`](../public/privacy.html) and [RESEARCH.md](../RESEARCH.md) say Aweborn is **18+ only** (which keeps research data clear of COPPA), while the prompts above say all-ages.
   - [npc-brains research](../docs/research/2026-11-life-and-minds/npc-brains.md): minors and companion-chat rules (Character.AI under-18 shutdown, California SB 243).
+
+## The planner becomes the terraformer; objects get their own flow (Alex, 2026-11-24: a note, not yet grilled or built)
+
+Alex, while the game layer was being built:
+
+> *"We want a flow that leads the player through each creation feature. The world planner shouldn't offer objects anymore; there should be another Create page that maybe offers initial descriptions or default objects that could be used. We really want the planner to be for the terrain, and potentially to identify good spots for things, marking them or something for object placement. I want to ensure the world planner, and the chat, can be appended to as the creators build out the space. Imagine we do the initial blueprint, and then they say they want to add a volcano in front of where they stand. That would be terrain manipulation. We don't want the volcano to go through Meshy; we want the volcano to be in the blueprint as a mountain with lava pouring out, which are both terrain pieces. … Sort of like when I use this chatbot to build the game, but the chatbot will be specific to the terraforming of the world. Then they can create objects and place them as they are today through their own Create prompts."*
+
+**What it means, as understood**
+- **The planner is a terraforming chat.** It talks about the ground only: landforms, water, lava, materials, sky and physics. It keeps going after the first blueprint: every later message adds to the same world plan (which is already one growing, additive plan per world since 2026-11-20).
+- **It knows where you stand.** "A volcano in front of me" is a terrain change placed relative to the speaker's position and facing. Today the planner gets the world's context but not where the asker is.
+- **Big natural things are terrain, never generated models.** A volcano is a mountain feature plus lava, both terrain pieces in the blueprint. Nothing goes to the 3D model service for it.
+- **The planner stops offering objects.** Today a plan carries `assets` (models, music) beside terrain, and the Plan sheet has "Make models". Those leave the planner.
+- **Objects get their own guided step** on the Create side: starting descriptions to pick from, or default objects, then the player's own prompt, then placing by hand as today.
+- **The planner may mark good spots** for things (a clearing for a village, a ledge for a lookout) without making the things: markers a creator can walk to and place at.
+- **A led flow through each creation feature**, rather than every tool at once: shape the land → mark spots → make and place objects → life and minds → music → (now) the game.
+
+**What exists that this builds on**
+- `shared/blueprint.ts`: terrain as a seed, block palette and up to 32 `features`; physics with a water level.
+- `shared/world-plan.ts`: the additive world plan with "made" and "planned" layers, and per-item owners.
+- The story stone, which shows how a world was made: a terraforming chat that keeps growing is the same record.
+- The Make sheet's tabs (Library · Create · Plan · Portal · Game): the led flow is a reordering and relabelling of these more than a new screen.
+
+**Questions for the grill**
+1. Which terrain pieces must the blueprint gain for this to feel good (lava as a block or a fluid, rivers, cliffs, caves, overhangs)? What can voxel features express today, and what would a volcano actually come out as?
+2. "In front of where they stand": how are place and size said and confirmed? A ghost preview before it is applied, like placing an object?
+3. Can a later message reshape or remove earlier terrain, or only add? (The plan is additive today; "undo terrain changes" exists.) What happens to objects standing on ground that changes?
+4. Are spot markers part of the blueprint (the planner's suggestion) or things creators also drop by hand? Who sees them? Do they disappear once something is placed?
+5. Does the object step offer a fixed starter set, suggestions written by the planner for this world, or both? Does a suggestion cost mana before the player commits?
+6. Who may terraform by chat: creator and builders only, as terrain is today? How do several builders share one chat?
+7. Music and sky: do they stay with the planner (they are about the whole world) or get their own step?
+8. Is the flow a guide the first time and free afterwards, or always the order of the tabs?
+9. Mana: a plan carries an estimate today (a planner part and a part per generated item, `Estimate` in `shared/blueprint.ts`). What does a long terraforming chat cost once no models hang off it?
+10. The game layer: should the planner be able to lay out an arena and lobby (Phase 10, Q3 says the planner writes a game from words), as terrain plus zones?
+
+**Not to lose:** with matches running, the ground inside an arena is protected during a match (Phase 10); terraforming by chat must respect the same rule.
 
 ## Rules, goals & constraints (design, 2026-11-01)
 

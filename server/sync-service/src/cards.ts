@@ -62,7 +62,7 @@ export interface CardOrderAdmin extends CardOrderPublic {
 export interface CardDeps {
   mana: ManaLedger;
   /** The world as it is now (null = gone). */
-  world: (id: string) => { id: string; name: string; resolvedAt: number; solidified?: boolean } | null;
+  world: (id: string) => { id: string; name: string; resolvedAt: number; solidified?: boolean; tier?: "adult" } | null;
   /** The buyer's character name, if they have one (for the opt-in swell line). */
   nameOf: (playerId: string) => string | null;
   /** Safety check of what will be printed. */
@@ -177,6 +177,8 @@ export class CardOrders {
     if (!isWorldId(worldId)) return { ok: false, status: 400, error: "bad_world" };
     const w = this.deps.world(worldId);
     if (!w || !(w.resolvedAt > 0)) return { ok: false, status: 404, error: "no_world", message: "That world isn't in the universe anymore." };
+    // No cards from 18+ worlds, for anyone (Phase 07, decision 9: the money firewall)
+    if (w.tier === "adult") return { ok: false, status: 403, error: "adult_world", message: "Cards aren’t made for 18+ worlds." };
     // Every card lands inside (Alex, 2026-10-13: "like a game pack, tap and you're in"); the printed
     // URL is just /w/<id>, so there is nothing to choose. The column stays for older rows.
     const arrival: CardArrival = "enter";
@@ -248,7 +250,7 @@ export class CardOrders {
     const bad: string[] = [];
     for (const id of ids) {
       const w = isWorldId(id) ? this.deps.world(id) : null;
-      if (!w || (id !== ORIGIN_WORLD_ID && !(w.resolvedAt > 0))) bad.push(id);
+      if (!w || w.tier === "adult" || (id !== ORIGIN_WORLD_ID && !(w.resolvedAt > 0))) bad.push(id); // 18+ worlds: no cards, events included
       else worlds.push({ id, name: w.name.slice(0, 60), dreamt: w.solidified === false });
     }
     if (bad.length) return { ok: false, status: 404, error: "no_world", message: `Not in the universe: ${bad.slice(0, 5).join(", ")}${bad.length > 5 ? ` and ${bad.length - 5} more` : ""}` };

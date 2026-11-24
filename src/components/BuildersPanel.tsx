@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { MAX_CO_CREATORS as MAX_BUILDERS, isWorldOwnerId } from '@aweborn/shared/world-policy'
 import { ORIGIN_WORLD_ID } from '@aweborn/shared/crdt-schema'
 import type { BuildRequestView, MyBuildRequest } from '@aweborn/shared/build-requests'
+import { FORMER_PLAYER_ID } from '@aweborn/shared/names'
 import { usePresence, getPresenceState } from '../hooks/usePresence'
 import { useUniverseStore } from '../stores/universeStore'
 import { useWorldStore } from '../stores/worldStore'
@@ -57,6 +58,8 @@ export function WorldBuilders({ worldId, fallback, canAsk = true }: { worldId: s
   const mine = useMyCharacters()
   const { creator, synced } = useRoles(worldId, fallback)
   if (!creator || creator === 'system' || worldId === ORIGIN_WORLD_ID) return null
+  // Its creator deleted their player and it has no builders: nobody is left to answer an ask
+  if (creator === FORMER_PLAYER_ID && synced.length === 0) return null
   const owner = mine.some((c) => isWorldOwnerId(c, { creator, coCreators: synced }))
   if (owner) return <BuildersPanel worldId={worldId} fallback={fallback} />
   return canAsk ? <AskToBuild worldId={worldId} /> : null

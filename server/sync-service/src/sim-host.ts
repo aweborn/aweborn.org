@@ -141,6 +141,13 @@ export class SimHost {
     return this.conns.get(key)?.state ?? null;
   }
 
+  /** A deleted player (erase-player.ts): nothing of theirs is written back at the next flush. Their connections are closed by the caller. */
+  forget(playerId: string): void {
+    for (const [key, c] of this.conns) if (c.playerId === playerId) this.conns.delete(key);
+    this.lastKnown.delete(playerId);
+    this.dirty.delete(playerId);
+  }
+
   drop(key: object): void {
     const c = this.conns.get(key);
     if (c?.state && c.playerId) this.remember(c.playerId, c.state, c.lastAt);

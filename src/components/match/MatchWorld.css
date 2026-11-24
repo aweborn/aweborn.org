@@ -1,0 +1,20 @@
+/* Labels floating in the world over the lobby's ring and a team's spawn (Phase 10, play layer). */
+.match-ring-label {
+  width: max-content;
+  max-width: 260px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(8, 10, 28, 0.7);
+  border: 1px solid rgba(159, 232, 255, 0.55);
+  color: #d6f6ff;
+  font: 700 15px/1.3 var(--font-body);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+.match-ring-label.is-on {
+  border-color: rgba(184, 255, 208, 0.8);
+  color: #d8ffe4;
+  background: rgba(10, 40, 24, 0.75);
+}

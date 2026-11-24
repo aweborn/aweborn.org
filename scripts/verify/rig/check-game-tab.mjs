@@ -1,0 +1,34 @@
+import { launch, open, sleep, savedPlayer, plantWorld, enterWorld, standAt, store, RIG_DIR, WEB } from "./browser.mjs";
+const OUT = RIG_DIR;
+const b = await launch();
+const p = await open(b, WEB, process.env.VP ?? "phone");
+const me = await savedPlayer(p);
+const w = await plantWorld(p, "Game Test");
+await enterWorld(p, w);
+console.log("player", me, "world", w, "active", await store(p, "stores/universeStore", "useUniverseStore", (s) => s.activeWorldId));
+await store(p, "stores/sheetStore", "useSheetStore", (s) => s.setSheet("game", true));
+await sleep(800);
+await p.screenshot({ path: `${OUT}/s1-a-tab.png` });
+const click = async (sel) => { const el = await p.$(sel); if (!el) throw new Error("missing " + sel); await el.evaluate((e) => e.scrollIntoView({ block: "center" })); await el.click(); await sleep(150); };
+// The places are marked in the Places section (the tab opens on Game)
+await click("#game-sub-places");
+await standAt(p, 0, 0, -8); await click("#game-arena-mark");
+await click("#game-arena-w-less"); await click("#game-arena-w-less"); await click("#game-arena-w-less"); await click("#game-arena-w-less"); await click("#game-arena-w-less");
+await click("#game-arena-d-less"); await click("#game-arena-d-less"); await click("#game-arena-d-less"); await click("#game-arena-d-less"); await click("#game-arena-d-less");
+await standAt(p, -6, 0, -8); await click("#game-zone-add-spawn-1");
+await standAt(p, 6, 0, -8); await click("#game-zone-add-spawn-2");
+await click("#game-zone-kind-goal"); await standAt(p, 0, 0, -14); await click("#game-zone-add-goal");
+await standAt(p, 0, 0, 12); await click("#game-lobby-mark");
+await sleep(300);
+await p.screenshot({ path: `${OUT}/s1-b-marked.png` });
+await p.$eval(".game-body", (e) => e.scrollTo(0, e.scrollHeight)); await sleep(200);
+await p.screenshot({ path: `${OUT}/s1-c-bottom.png` });
+await click("#game-save"); await sleep(1200);
+await click("#game-checklist"); // what a match still needs is in the Game section, one tap from anywhere
+console.log("status:", await p.$eval(".game-status", (e) => e.textContent), "| checklist:", await p.$eval("#game-checklist", (e) => e.textContent), "| missing:", await p.$$eval(".game-missing li", (l) => l.map((e) => e.textContent)));
+console.log("meta.game:", JSON.stringify(await store(p, "stores/worldStore", "useWorldStore", (s) => s.meta?.game && { v: s.meta.game.version, arena: s.meta.game.arena, zones: s.meta.game.zones.length, lobby: !!s.meta.game.lobby })));
+await store(p, "stores/sheetStore", "useSheetStore", (s) => s.close());
+await standAt(p, 0, 0, 16); await sleep(1500);
+await p.screenshot({ path: `${OUT}/s1-d-outlines.png` });
+console.log("errors:", JSON.stringify(p.errors.filter((e) => !/ERR_|Failed to load resource|fonts|stripe|google/i.test(e)).slice(0, 8), null, 1));
+await b.close();

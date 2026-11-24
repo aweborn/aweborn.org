@@ -192,6 +192,32 @@ export function wayInChangedEmail(to: string, change: string): Email {
   };
 }
 
+/** The last message to an address: its player was deleted (so a deletion nobody asked for is noticed). */
+export function playerDeletedEmail(to: string): Email {
+  const subject = "Your Aweborn player was deleted";
+  const text = [
+    "Hi there,",
+    "",
+    "Your Aweborn player was just deleted, as asked from a device signed in to it: your sign-in, your characters, your progress and your World Index are gone, and this email address has been removed from our records.",
+    "",
+    "If it was you: nothing more to do. You're welcome back any time, as a new player.",
+    "",
+    "If it wasn't you: reply to this email right away. A real person reads every one.",
+    "",
+    "With awe,",
+    "Aweborn",
+    SITE,
+  ].join("\n");
+  return {
+    to, subject, text, html: layout(subject, `
+    <p style="margin:0 0 16px">Hi there,</p>
+    <p style="margin:0 0 16px">Your Aweborn player was just deleted, as asked from a device signed in to it: your sign-in, your characters, your progress and your World Index are gone, and this email address has been removed from our records.</p>
+    <p style="margin:0 0 16px"><strong style="color:#eef0f6">If it was you:</strong> nothing more to do. You're welcome back any time, as a new player.</p>
+    <p style="margin:0 0 16px"><strong style="color:#eef0f6">If it wasn't you:</strong> reply to this email right away. A real person reads every one.</p>
+  `)
+  };
+}
+
 function layout(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">

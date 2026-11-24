@@ -1,0 +1,17 @@
+/* The game layer's chip row (Phase 10): under the world pill, centred, above the world. */
+.match-bar {
+  position: fixed;
+  top: calc(64px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 39;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: calc(100vw - 24px);
+  pointer-events: none;
+}
+.match-bar > * { pointer-events: auto; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .match-bar { top: calc(8px + env(safe-area-inset-top, 0px)); }
+}

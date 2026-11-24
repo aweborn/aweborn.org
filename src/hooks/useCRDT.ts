@@ -5,6 +5,10 @@ import { simLink } from "../lib/simLink";
 import { useSteerStore } from "../stores/steerStore";
 import { setPresenceSocketUp } from "./usePresence";
 import { onMeshSignal, setMeshSignalSender } from "../lib/mesh";
+import { onMatchMessage, setMatchSender } from "../lib/match";
+import { loadDoor } from "../lib/door";
+import { PLAYER_DELETED_CLOSE, deletingOnThisDevice, startOverAfterDelete } from "../lib/deletePlayer";
+import { useUniverseStore, leaveToEveryone } from "../stores/universeStore";
 
 const SYNC_URL = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:1234";
 
@@ -46,6 +50,10 @@ const MSG_TYPES: Record<string, number> = {
   "steer": 0x11,
   /** Network-less A2: auto-pairing intros + SDP relay for the mesh (src/lib/mesh.ts). */
   "mesh-signal": 0x12,
+  /** Phase 10: a world's lobby and matches, JSON both ways (shared/match-protocol.ts, src/lib/match.ts). */
+  "match": 0x13,
+  /** Server → client: this 18+ world is shut to you (the 18+ switch is off). */
+  "world-closed": 0x14,
 };
 
 const MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
@@ -244,10 +252,20 @@ export function useSyncConnection(
             sock.send(encodeMessage("mesh-signal", new TextEncoder().encode(JSON.stringify(m))) as unknown as ArrayBuffer);
           }
         });
+        setMatchSender((worldId, m) => {
+          if (ws === sock && sock.readyState === WebSocket.OPEN) {
+            sock.send(encodeMessage("match", new TextEncoder().encode(JSON.stringify(m)), worldId) as unknown as ArrayBuffer);
+          }
+        });
         console.log("[sync] connected to sync-service");
       });
 
-      sock.addEventListener("close", () => {
+      sock.addEventListener("close", (ev) => {
+        // This player was deleted from another device: nothing here is theirs any more, start over as a guest
+        if (ev.code === PLAYER_DELETED_CLOSE && !deletingOnThisDevice()) {
+          void startOverAfterDelete();
+          return;
+        }
         if (ws !== sock) return; // replaced on purpose (recycle / unmount)
         ws = null;
         wsRef.current = null;
@@ -286,6 +304,12 @@ export function useSyncConnection(
               onWorldUpdateRef.current?.(msg.type, msg.worldId, msg.data);
             }
             break;
+          case "world-closed":
+            // The server shut an 18+ world on us (the switch went off on another screen, or we never had it)
+            if (msg.worldId && useUniverseStore.getState().activeWorldId === msg.worldId) {
+              void loadDoor().then((open) => { if (!open) leaveToEveryone(); });
+            }
+            break;
           case "presence":
           case "presence-batch":
             onPresenceRef.current?.(msg.data);
@@ -301,6 +325,9 @@ export function useSyncConnection(
             break;
           case "mesh-signal":
             void onMeshSignal(msg.data);
+            break;
+          case "match":
+            onMatchMessage(msg.worldId, msg.data);
             break;
         }
       });

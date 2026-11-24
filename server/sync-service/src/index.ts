@@ -3,33 +3,45 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { initDb, closeDb, getDb, getStats as getDbStats } from "./persistence.js";
 import { RoomManager } from "./rooms.js";
-import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword } from "./auth.js";
+import { initAuth, getIdentity, getRawSession, isTrustedOrigin, authMethods, setPlayerPassword, deleteStanding } from "./auth.js";
 import { accountOfCharacter, listCharacters, recordDiscovery, switchCharacter, waysIn, worldIndex, cleanLocation, saveLocation, loadLocation, setCharacterName, characterNameAt, characterNames } from "./identity.js";
 import type { Identity } from "./identity.js";
 import { parseRoomPath, isWorldId, ORIGIN_WORLD_ID } from "../../../shared/crdt-schema.js";
 import { cleanCoCreators, isWorldOwnerId, planBuilderChange, type BuilderChange } from "../../../shared/world-policy.js";
 import { BuildRequests, type SqlDb } from "./build-requests.js";
+import { WorldGames } from "./game.js";
+import { MatchStore } from "./match-store.js";
+import { AgeDoor } from "./age-door.js";
+import { AdultWorlds } from "./adult-worlds.js";
+import { MatchHost } from "./matches.js";
+import { GameLibrary, saveLibraryGame, bringLibraryGame, type LibraryRouteDeps } from "./game-library.js";
+import { tryResearchId } from "./research.js";
+import { MATCH_TICK_MS } from "../../../shared/match.js";
+import { AWE_MATCH_DAILY_MAX, GAME_HOST_SENDER, type MatchMessage } from "../../../shared/match-protocol.js";
+import { wandererTag } from "../../../shared/names.js";
 import type { BuildRequestView, MyBuildRequest } from "../../../shared/build-requests.js";
 import { cleanPlayerName } from "../../../shared/names.js";
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, randomInt } from "node:crypto";
 import { MANA_FUNCTIONS, MANA_PURPOSES, INFLOW_SOURCES } from "./mana.js";
 import { startCreation, creationStatus, handleAssets, handleLibrary, manaStatus, writeLore, sweepCreations, type CreateRequest } from "./creations.js";
 import { MindHost, startAnimate, createMind, mindHistory, saveMind, adoptMind, removeSavedMind, mindShelf, handleMindLibrary } from "./minds.js";
-import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore, hookWorldMusic } from "./planner.js";
+import { planTurn, plannerModels, planResume, planManifest, planRedo, planEdit, planVersions, planRestore, hookWorldMusic, forgetPlannerPlayers } from "./planner.js";
 import { sweepUnrated } from "./output-gate.js";
 import { removeOwnAsset, uploadAssetThumb, handleTrashAdmin } from "./trash.js";
 import { SIGN_IN_MESSAGE } from "./admission.js";
-import { parseWorldRequest, worldsLeftToday, WORLDS_PER_DAY } from "./world-create.js";
+import { parseWorldRequest, worldsLeftToday, cleanWorldName, WORLDS_PER_DAY } from "./world-create.js";
 import { listMutes, setMute, fileReport, handleReportsAdmin, isPlayerId } from "./moderation.js";
 import { CLIENT_SKILLS, type Skill } from "../../../shared/progress.js";
 import type { ProgressDelta } from "./progress.js";
 import { isNature } from "../../../shared/sky.js";
 import { RunwayWatch } from "./runway.js";
-import { sendEmail } from "./email.js";
+import { sendEmail, playerDeletedEmail } from "./email.js";
 import { CardOrders, CHECKOUT_BODY_LIMIT } from "./cards.js";
 import { CardSets } from "./card-sets.js";
 import { checkCreation, checkImage } from "./safety.js";
-import { handleMakingOf } from "./making-of.js";
+import { handleMakingOf, buildMakingOf } from "./making-of.js";
+import { DELETE_CONFIRM_WORD, EraseLimiter, eraseRows, flushGenaiForget, queueGenaiForget, writeEraseAudit, type EraseCounts, type GenaiForget } from "./erase-player.js";
+import { FORMER_PLAYER_ID } from "../../../shared/names.js";
 
 /** Paid gen-AI calls: signed-in players only (Alex, 2026-10-20). Guests explore and build freely. */
 const GENAI_POST_PATHS = new Set(["/api/player/create", "/api/player/lore", "/api/player/plan", "/api/player/plan/redo", "/api/player/plan/manifest", "/api/player/plan/edit",
@@ -71,6 +83,60 @@ const cardSets = new CardSets(getDb(), (id) => rooms.lookupWorld(id) !== null);
 // Asking to build (2026-11-07): asks wait in every owner's inbox until one answers.
 // (better-sqlite3's Database has the prepare/exec shape SqlDb names; tests use node:sqlite.)
 const buildRequests = new BuildRequests(getDb() as unknown as SqlDb);
+// The game layer (Phase 10, slice 1): one game per world, every version kept (game.ts).
+const worldGames = new WorldGames(getDb() as unknown as SqlDb);
+rooms.worldGame = (worldId) => worldGames.get(worldId);
+// Matches (Phase 10, slices 2 to 6): every match is recorded (match-store.ts) and run by the match host (matches.ts).
+const nameOfPlayer = (playerId: string): string => characterNames([playerId])[playerId] ?? wandererTag(playerId);
+// The 18+ door (age-door.ts): a saved player's *Show 18+* toggle. Being behind it is what makes a research candidate (Q10b).
+const ageDoor = new AgeDoor(getDb() as unknown as SqlDb);
+// 18+ worlds: only behind the door (rooms.ts → mayEnter); their real names stay out of the shared universe (adult-worlds.ts)
+const adultWorlds = new AdultWorlds(getDb() as unknown as SqlDb);
+rooms.doorOpen = (accountId) => ageDoor.open(accountId);
+const matchStore = new MatchStore(getDb() as unknown as SqlDb, (worldId) => rooms.lookupWorld(worldId)?.name ?? "");
+const matchHost = new MatchHost({
+  game: (worldId) => worldGames.get(worldId),
+  isOwner: (worldId, playerId) => rooms.isWorldOwner(worldId, playerId, accountOfCharacter(playerId)),
+  position: (worldId, playerId) => rooms.playerPosition(worldId, playerId),
+  online: (worldId, playerId) => rooms.playerOnline(worldId, playerId),
+  send: (playerId, worldId, msg: MatchMessage) => rooms.sendMatchTo(playerId, worldId, msg),
+  setGroup: (playerId, group) => rooms.setPresenceGroup(playerId, group),
+  name: nameOfPlayer,
+  researchId: (playerId) => tryResearchId(playerId),
+  researchCandidate: (playerId) => ageDoor.open(accountOfCharacter(playerId)),
+  // A player deleted mid-match earns nothing (it would write their progress back): erasedPlayers, below
+  awe: (playerId, amount, matchId) => (erasedPlayers.has(playerId) ? 0 : rooms.progress.match(playerId, amount, matchId, AWE_MATCH_DAILY_MAX).xp),
+  chat: (worldId, line) => { rooms.pushWorldChat(worldId, { sender: GAME_HOST_SENDER, text: line }); },
+  objects: (worldId) => rooms.readWorldState(worldId)?.objects ?? [],
+  gravity: (worldId) => rooms.worldGravity(worldId),
+  checkPositions: process.env.MATCH_POSITION_CHECK !== "off",
+  store: matchStore,
+  now: Date.now,
+  seed: () => randomInt(0x100000000),
+});
+rooms.onMatchIntent = (_ws, worldId, playerId, intent) => matchHost.intent(worldId, playerId, intent);
+rooms.onLeftWorld = (worldId, playerId) => matchHost.left(worldId, playerId);
+rooms.terrainLocks = (worldId) => matchHost.terrainLocks(worldId);
+setInterval(() => matchHost.tick(), MATCH_TICK_MS);
+// The game Library (Phase 10, slice 7): games travel between worlds, versioned and credited (game-library.ts).
+const gameLibrary = new GameLibrary(getDb() as unknown as SqlDb);
+const libraryDeps = (accountId: string): LibraryRouteDeps => ({
+  lib: gameLibrary,
+  isOwner: (worldId, playerId) => rooms.isWorldOwner(worldId, playerId, accountId),
+  game: (worldId) => worldGames.get(worldId),
+  objects: (worldId) => rooms.readWorldState(worldId)?.objects ?? [],
+  cleanName: cleanWorldName,
+  saveGame: (worldId, game, by, credits) => {
+    const r = worldGames.save(worldId, game, by, Date.now(), credits);
+    if (!r.ok) return { ok: false, message: r.message };
+    rooms.setWorldGame(worldId, r.game);
+    matchHost.gameChanged(worldId);
+    return { ok: true, game: r.game, warnings: r.warnings };
+  },
+  placeObjects: (worldId, objects) => { rooms.placeWorldObjects(worldId, objects); },
+  clearProps: (worldId) => rooms.clearGameProps(worldId),
+  name: nameOfPlayer,
+});
 setInterval(() => {
   try {
     const n = buildRequests.sweep();
@@ -101,7 +167,8 @@ function corsHeaders(req: IncomingMessage): Record<string, string> {
 /**
  * `GET /worlds/:id`: resolve a world for teleport links (`/w/<id>`).
  * Permanent public API (printed NFC cards depend on it): only ever add fields.
- *  200 { id, name, color, creator, solidified, sector, position, isOrigin }
+ *  200 { id, name, color, creator, solidified, sector, position, isOrigin, tier? }
+ *      (`tier: "adult"` = an 18+ world: its `name` here is always "18+ world", never the real one)
  *  400 { error: "invalid_id" }   not a UUIDv4
  *  404 { error: "not_found" }    unknown, or faded (worlds are never hard-deleted)
  */
@@ -136,6 +203,7 @@ function handleWorldLookup(req: IncomingMessage, res: ServerResponse, id: string
       resolvedAt: w.resolvedAt, // 0 = position not settled yet (Origin is fixed at 0, 0, 0)
       isOrigin: w.id === ORIGIN_WORLD_ID,
       ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
+      ...(w.tier ? { tier: w.tier } : {}),
     })
   );
 }
@@ -160,20 +228,34 @@ function handleNames(req: IncomingMessage, res: ServerResponse): void {
 /** One rename per character per this long. */
 const RENAME_EVERY_MS = 10_000;
 
+/** What a player outside the 18+ door is told about an 18+ world, on every route. */
+const ADULT_WORLD_SHUT = { error: "adult_world", message: "This is an 18+ world. Sign in and turn on 18+ content to go there." };
+
+/** A request's body, read once: the 18+ guard looks at it before the route does (`handlePlayerApi`). */
+const bodies = new WeakMap<IncomingMessage, { length: number; value?: unknown; bad?: true }>();
+/** The 18+ guard reads bodies up to this size (the largest JSON route, animate, is 450 kB); card checkout checks its world itself. */
+const GUARD_BODY_LIMIT = 512_000;
+
 function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
+  const seen = bodies.get(req);
+  if (seen) return seen.bad || seen.length > limit ? Promise.reject(new Error(seen.bad ? "bad json" : "too large")) : Promise.resolve(seen.value);
   return new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (chunk: Buffer) => {
       body += chunk.toString();
       if (body.length > limit) {
+        bodies.set(req, { length: body.length, bad: true });
         reject(new Error("too large"));
         req.destroy();
       }
     });
     req.on("end", () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        const value = body ? JSON.parse(body) : {};
+        bodies.set(req, { length: body.length, value });
+        resolve(value);
       } catch (err) {
+        bodies.set(req, { length: body.length, bad: true });
         reject(err as Error);
       }
     });
@@ -183,10 +265,21 @@ function readJson(req: IncomingMessage, limit = 4096): Promise<unknown> {
 
 /**
  * `/api/player/*`: the signed-in account (session cookie, trusted origins only).
- *   GET  /api/player/me         { playerId, characters, methods, buildRequests, worldIndex }
+ *   GET  /api/player/me         { playerId, characters, methods, door, buildRequests, worldIndex }
+ *   POST /api/player/door       { show } → { show }  the 18+ door: a toggle, saved players only (age-door.ts)
  *   POST /api/player/world/claim  { worldId, token } → admin: this character becomes creator of an Aweborn world
  *   POST /api/player/world/builders  { worldId, add | remove } → { worldId, coCreators }
  *        Creator + builders add; only the creator removes; anyone steps down (shared/world-policy.ts).
+ *   GET  /api/match/world?worldId=  → { matches }   a world's finished matches (Phase 10; any session)
+ *   GET  /api/match/record?id=      → { record }    one match record, running or finished (any session)
+ *   GET  /api/player/replays        → { matches }   the matches this account's characters played
+ *   GET  /api/player/game-library   → { games }     the game Library (mine first)
+ *   POST /api/player/game-library        { worldId, name }            → { game }   owners save this world's game
+ *   POST /api/player/game-library/bring  { worldId, libraryId, at }   → { game }   owners bring a Library game here
+ *   POST /api/player/world/game  { worldId, game | null } → { worldId, game, changed, warnings }
+ *        The world's game (Phase 10): creator + builders only. Validated and repaired
+ *        (shared/game.ts parseGame), saved as the next version, copied to the world's
+ *        meta.game. `game: null` removes it (saved versions stay). 400 bad_game.
  *   GET  /api/player/build-requests  → { requests: BuildRequestView[] }  asks waiting for you (also in /me)
  *   GET  /api/player/world/build-request?worldId=  → MyBuildRequest (none | open | declined | builder)
  *   POST /api/player/world/build-request  { worldId } → ask to build (saved players; shared/build-requests.ts limits)
@@ -285,7 +378,7 @@ function knownWorld(id: unknown): string | null {
 function ownersOf(worldId: string, coCreators?: readonly string[]): string[] {
   const w = rooms.lookupWorld(worldId);
   if (!w) return [];
-  const creator = w.creator && w.creator !== "system" && w.creator !== "guest" ? [w.creator] : [];
+  const creator = w.creator && w.creator !== "system" && w.creator !== "guest" && w.creator !== FORMER_PLAYER_ID ? [w.creator] : [];
   return [...creator, ...(coCreators ?? w.coCreators ?? [])];
 }
 
@@ -348,6 +441,81 @@ function myBuildRequest(worldId: string, playerId: string, accountId: string): M
   return buildRequests.status(worldId, accountId);
 }
 
+// ── Deleting a player (erase-player.ts; Alex, 2026-11-24) ───────────
+
+/** Player ids deleted since this process started: late writers (a match that was still running) check it. Memory only. */
+const erasedPlayers = new Set<string>();
+/** Attempts per account and per address per hour (off with DEV_NO_RATE_LIMIT outside production, like the auth routes). */
+const eraseLimiter = new EraseLimiter(5);
+const eraseIpLimiter = new EraseLimiter(20);
+const ERASE_LIMITED = process.env.NODE_ENV === "production" || !process.env.DEV_NO_RATE_LIMIT;
+const GENAI_URL = process.env.GENAI_URL ?? "http://genai-service:3001";
+
+/** The genai-service's part (its own database: job history, the Library's makers and trash). Null = not reached; it is asked again later. */
+const genaiForget: GenaiForget = async (playerIds) => {
+  const res = await fetch(`${GENAI_URL}/forget`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ playerIds }),
+    signal: AbortSignal.timeout(20_000),
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  const counts: EraseCounts = {};
+  for (const [k, v] of Object.entries(body ?? {})) if (typeof v === "number" && v > 0) counts[k] = v;
+  return counts;
+};
+let genaiForgetRunning = false;
+function tellGenaiForget(): void {
+  if (genaiForgetRunning) return;
+  genaiForgetRunning = true;
+  flushGenaiForget(getDb() as unknown as SqlDb, genaiForget)
+    .then((waiting) => { if (waiting) console.warn(`[erase] the genai-service has not been told about ${waiting} deleted player(s) yet; trying again later`); })
+    .catch((err) => console.error("[erase] telling the genai-service failed:", (err as Error).message))
+    .finally(() => { genaiForgetRunning = false; });
+}
+setInterval(tellGenaiForget, 3600_000).unref();
+setTimeout(tellGenaiForget, 30_000).unref(); // anything left from before a restart
+
+/**
+ * Delete an account: every character on it and everything linked to them. One place, in
+ * an order that can be run again if it stops half-way (until the last step the account
+ * still exists, so the player simply asks again):
+ *   1. out of every match and pool, every connection closed
+ *   2. the shared documents (worlds stay, the player leaves them)
+ *   3. every table, in one transaction, with the audit line and the genai-service queue
+ *   4. this process's memory; then the genai-service is told
+ */
+function erasePlayerAccount(accountId: string, storedEmail: string | null): { characters: number; counts: EraseCounts } {
+  const ids = new Set(listCharacters(accountId).map((c) => c.id));
+  for (const id of ids) erasedPlayers.add(id);
+  const now = Date.now();
+
+  const closed = rooms.dropPlayers(ids, (worldId, id) => matchHost.intent(worldId, id, { t: "leave" }));
+  const docCounts = rooms.forgetPlayers(ids);
+
+  const db = getDb();
+  const sql = db as unknown as SqlDb;
+  let counts: EraseCounts = {};
+  db.transaction(() => {
+    const rowCounts = eraseRows(sql, { accountId, playerIds: [...ids], email: storedEmail });
+    counts = { ...docCounts, ...rowCounts, ...(closed ? { sockets: closed } : {}) };
+    const auditId = writeEraseAudit(sql, ids.size, counts, now);
+    queueGenaiForget(sql, [...ids], now, auditId);
+  })();
+
+  const released = rooms.mana.forgetPlayers(ids);
+  if (released) counts = { ...counts, "mana.holds_released": released };
+  forgetPlannerPlayers(ids);
+  for (const id of ids) progressReports.delete(id);
+  sightingWindows.delete(accountId);
+  builderWindows.delete(accountId);
+  tellGenaiForget();
+  // No ids, no names: when, how many characters, how many rows of what
+  console.log(`[erase] a player was deleted: ${ids.size} character(s), ${JSON.stringify(counts)}`);
+  return { characters: ids.size, counts };
+}
+
 async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const json = (status: number, body: unknown) => {
     res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -365,11 +533,27 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   if (tz) rooms.admission.setTimezone(session.playerId, Number(tz[1]));
   const path = req.url?.split("?")[0];
 
+  // 18+ worlds (Alex, 2026-11-24): only players behind the 18+ door can make, see into or change one.
+  // Every route here names its world as `worldId` or `parentWorldId`, in the query or the JSON body,
+  // so one check covers them all, and any route added later.
+  const door = !session.isAnonymous && ageDoor.open(accountId);
+  if (!door) {
+    const named: unknown[] = [];
+    const query = new URL(req.url ?? "/", "http://x").searchParams;
+    named.push(query.get("worldId"), query.get("parentWorldId"));
+    if (req.method === "POST" && Number(req.headers["content-length"] ?? 0) <= GUARD_BODY_LIMIT) {
+      const body = (await readJson(req, GUARD_BODY_LIMIT).catch(() => null)) as { worldId?: unknown; parentWorldId?: unknown } | null;
+      if (body && typeof body === "object") named.push(body.worldId, body.parentWorldId);
+    }
+    if (named.some((id) => typeof id === "string" && rooms.isAdultWorld(id.toLowerCase()))) return json(403, ADULT_WORLD_SHUT);
+  }
+
   if (path === "/api/player/me" && req.method === "GET") {
     return json(200, {
       playerId: session.playerId,
       characters: listCharacters(accountId),
       methods: waysIn(accountId),
+      door: { show: !session.isAnonymous && ageDoor.open(accountId) },
       buildRequests: buildInbox(accountId),
       worldIndex: worldIndex(accountId).map((e) => {
         const w = rooms.lookupWorld(e.worldId);
@@ -390,6 +574,55 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
         };
       }),
     });
+  }
+  if (path === "/api/player/door" && req.method === "POST") {
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player first, then try again." });
+    const body = (await readJson(req).catch(() => null)) as { show?: unknown } | null;
+    if (typeof body?.show !== "boolean") return json(400, { error: "bad_request", message: "Say whether to show 18+ content." });
+    const show = ageDoor.set(accountId, body.show);
+    if (!show) rooms.closeDoorFor(accountId); // out of every 18+ world, at once
+    return json(200, { show });
+  }
+  // Delete my player (Privacy "Your choices and rights"): the whole account, every character on it.
+  //   GET  → { saved, fresh, characters, worlds, word }   what the are-you-sure step needs to say
+  //   POST { confirm: "DELETE" } → { deleted: true }       saved players only, confirmed in the last 5 minutes
+  if (path === "/api/player/delete" && (req.method === "GET" || req.method === "POST")) {
+    const standing = await deleteStanding(auth, fromNodeHeaders(req.headers));
+    if (!standing) return json(401, { error: "no_session" });
+    const mine = listCharacters(accountId).map((c) => c.id);
+    if (req.method === "GET") {
+      return json(200, {
+        saved: !standing.isAnonymous, fresh: standing.fresh, characters: mine.length,
+        worlds: rooms.allWorlds().filter((w) => mine.includes(w.creator)).length, word: DELETE_CONFIRM_WORD,
+      });
+    }
+    if (standing.isAnonymous) {
+      return json(403, { error: "not_saved", message: "This player isn’t saved, so there is no sign-in to delete. To have an unsaved player’s data removed, email privacy@aweborn.org." });
+    }
+    if (ERASE_LIMITED) {
+      const xff = req.headers["x-forwarded-for"];
+      const ip = (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim() || req.socket.remoteAddress || "";
+      if (!eraseIpLimiter.take(`ip:${ip}`) || !eraseLimiter.take(`a:${accountId}`)) {
+        return json(429, { error: "slow_down", message: "Too many tries. Wait an hour, then try again." });
+      }
+    }
+    const body = (await readJson(req).catch(() => null)) as { confirm?: unknown } | null;
+    if (body?.confirm !== DELETE_CONFIRM_WORD) {
+      return json(400, { error: "confirm_word", message: `Type ${DELETE_CONFIRM_WORD} to confirm.` });
+    }
+    if (!standing.fresh) return json(403, { error: "confirm_first", code: "SESSION_NOT_FRESH", message: "For safety, confirm it's you first." });
+    try {
+      const done = erasePlayerAccount(accountId, standing.storedEmail);
+      if (standing.realEmail) void sendEmail(playerDeletedEmail(standing.realEmail));
+      return json(200, { deleted: true, characters: done.characters });
+    } catch (err) {
+      console.error("[erase] failed:", (err as Error).message);
+      return json(500, { error: "delete_failed", message: "Something went wrong and your player was not deleted. Please try again, or email privacy@aweborn.org." });
+    }
+  }
+  // 18+ worlds' real names, for players behind the door only (the shared universe never carries them: adult-worlds.ts)
+  if (path === "/api/player/adult-worlds" && req.method === "GET") {
+    return json(200, { names: door ? adultWorlds.names() : {} });
   }
   if (path === "/api/player/character" && req.method === "POST") {
     const body = (await readJson(req).catch(() => null)) as { id?: unknown } | null;
@@ -464,6 +697,12 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     return json(200, { worldId, ...r });
   }
   // Awe = experience (Rough Draft M3)
+  // An 18+ world's story stone, for players behind the door (the public /making-of refuses 18+ worlds; the guard above checked the door)
+  if (path === "/api/player/making-of" && req.method === "GET") {
+    const worldId = knownWorld(new URL(req.url ?? "/", "http://x").searchParams.get("worldId"));
+    if (!worldId) return json(400, { error: "bad_request", message: "That world isn't there." });
+    return json(200, buildMakingOf(getDb(), worldId));
+  }
   if (path === "/api/player/progress" && req.method === "GET") {
     return json(200, { progress: rooms.progress.view(session.playerId) });
   }
@@ -501,6 +740,8 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     }
     const reqd = parseWorldRequest(await readJson(req).catch(() => null));
     if ("error" in reqd) return json(400, reqd);
+    // An 18+ world is made by a player behind the 18+ door, and is 18+ for good (a parent's 18+ is inherited in createWorld)
+    if (reqd.adult && !door) return json(403, { error: "door_closed", message: "Turn on 18+ content in your player panel to make an 18+ world." });
     if (reqd.parentWorldId) {
       const parent = rooms.lookupWorld(reqd.parentWorldId);
       if (!parent) return json(404, { error: "parent_not_found", message: "Parent world not found." });
@@ -518,17 +759,19 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (left <= 0) {
       return json(429, { error: "daily_limit", message: `You can plant ${WORLDS_PER_DAY} worlds a day. Come back tomorrow.` });
     }
-    const w = rooms.createWorld(reqd.name, session.playerId, reqd.position, reqd.color, reqd.parentWorldId);
+    const w = rooms.createWorld(reqd.name, session.playerId, reqd.position, reqd.color, reqd.parentWorldId, { adult: reqd.adult });
+    if (w.tier === "adult") adultWorlds.setName(w.id, reqd.name);
     recordDiscovery(accountId, w.id, session.playerId, "sighted", "flight", Date.now(), w.solidified ? "solid" : "dreamt");
     rooms.progress.useSkill(session.playerId, "world");
     return json(200, {
       world: {
         id: w.id,
-        name: w.name,
+        name: w.tier === "adult" ? reqd.name : w.name, // the maker is behind the door: they get their world's real name
         color: w.color,
         position: w.resolvedPosition,
         solidified: w.solidified,
         ...(w.parentWorldId ? { parentWorldId: w.parentWorldId } : {}),
+        ...(w.tier ? { tier: w.tier } : {}),
       },
       leftToday: left - 1,
     });
@@ -591,6 +834,70 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
     if (plan.changed && !takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
     if (plan.changed && !setBuilders(worldId, plan.next, before)) return json(500, { error: "internal" });
     return json(200, { worldId, coCreators: plan.next });
+  }
+  // The world's game (Phase 10, slice 1): creator and builders set it up; the server is the only writer
+  if (path === "/api/player/world/game" && req.method === "POST") {
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player to set up a game." });
+    const body = (await readJson(req, 16_384).catch(() => null)) as { worldId?: unknown; game?: unknown } | null;
+    const worldId = knownWorld(body?.worldId);
+    if (!worldId || worldId === ORIGIN_WORLD_ID || body?.game === undefined) return json(400, { error: "bad_request" });
+    if (!rooms.isWorldOwner(worldId, session.playerId, accountId)) {
+      return json(403, { error: "not_owner", message: "Only this world’s creator and builders can set up its game." });
+    }
+    if (!takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
+    if (body.game === null) {
+      const changed = worldGames.remove(worldId);
+      rooms.setWorldGame(worldId, null);
+      matchHost.gameChanged(worldId);
+      if (changed) console.log(`[game] ${worldId} removed by ${session.playerId}`);
+      return json(200, { worldId, game: null, changed, warnings: [] });
+    }
+    const r = worldGames.save(worldId, body.game, session.playerId);
+    if (!r.ok) return json(400, r);
+    rooms.setWorldGame(worldId, r.game);
+    if (r.changed) matchHost.gameChanged(worldId);
+    if (r.changed) console.log(`[game] ${worldId} v${r.game.version} (${r.game.template}) by ${session.playerId}`);
+    return json(200, { worldId, game: r.game, changed: r.changed, warnings: r.warnings });
+  }
+  // Matches (Phase 10): a world's finished matches, a character's replays, one record (any session: a replay is watchable by id)
+  if (path === "/api/match/world" && req.method === "GET") {
+    const worldId = knownWorld(new URL(req.url ?? "/", "http://x").searchParams.get("worldId"));
+    if (!worldId) return json(400, { error: "bad_request", message: "That world isn't there." });
+    return json(200, { matches: matchStore.worldRecent(worldId, 30) });
+  }
+  if (path === "/api/player/replays" && req.method === "GET") {
+    const mine = [...new Set([session.playerId, ...listCharacters(accountId).map((c) => c.id)])];
+    // Replays from 18+ worlds show only behind the door
+    return json(200, { matches: matchStore.playerRecent(mine, 50).filter((m) => door || !rooms.isAdultWorld(m.worldId)) });
+  }
+  if (path === "/api/match/record" && req.method === "GET") {
+    const id = new URL(req.url ?? "/", "http://x").searchParams.get("id") ?? "";
+    // A running match answers with the record so far (result null): watchers read the roster from it
+    const record = /^[0-9a-f-]{36}$/.test(id) ? matchHost.record(id) : null;
+    if (record && !door && rooms.isAdultWorld(record.setup.worldId)) return json(403, ADULT_WORLD_SHUT);
+    return record ? json(200, { record }) : json(404, { error: "not_found", message: "That match isn't on record." });
+  }
+  // The game Library (Phase 10, slice 7): browse, save this world's game, bring one here
+  if (path === "/api/player/game-library" && req.method === "GET") {
+    const mine = [...new Set([session.playerId, ...listCharacters(accountId).map((c) => c.id)])];
+    return json(200, { games: gameLibrary.list(mine, (ids) => ({ ...Object.fromEntries(ids.map((id) => [id, wandererTag(id)])), ...characterNames(ids) })) });
+  }
+  if ((path === "/api/player/game-library" || path === "/api/player/game-library/bring") && req.method === "POST") {
+    if (session.isAnonymous) return json(403, { error: "sign_in_required", message: "Save your player to use the game Library." });
+    const body = (await readJson(req).catch(() => null)) as { worldId?: unknown; name?: unknown; libraryId?: unknown; at?: unknown } | null;
+    const known = knownWorld(body?.worldId);
+    const worldId = known === ORIGIN_WORLD_ID ? null : known;
+    // The game Library is one public shelf with no tiers yet, so a game made in an 18+ world isn't put on it
+    if (worldId && !path.endsWith("/bring") && rooms.isAdultWorld(worldId)) {
+      return json(403, { error: "adult_world", message: "Games made in 18+ worlds can’t go to the Library yet." });
+    }
+    if (!takeBuilderChange(accountId)) return json(429, SLOW_BUILDERS);
+    const mine = [...new Set([session.playerId, ...listCharacters(accountId).map((c) => c.id)])];
+    const r = path.endsWith("/bring")
+      ? bringLibraryGame(libraryDeps(accountId), { playerId: session.playerId }, worldId, body?.libraryId, body?.at)
+      : saveLibraryGame(libraryDeps(accountId), { playerId: session.playerId, mine }, worldId, body?.name);
+    if (r.status === 200) console.log(`[game-library] ${path.endsWith("/bring") ? "brought to" : "saved from"} ${worldId} by ${session.playerId}`);
+    return json(r.status, r.body);
   }
   // Asking to build (2026-11-07): waits in the creator's and builders' inboxes until one answers
   if (path === "/api/player/build-requests" && req.method === "GET") return json(200, { requests: buildInbox(accountId) });
@@ -667,6 +974,10 @@ async function handlePlayerApi(req: IncomingMessage, res: ServerResponse): Promi
   // Minds you keep (2026-11-06): history, save to the Library, give a saved mind, the shelf
   if (path === "/api/player/mind/history" && req.method === "GET") return mindHistory(rooms, session.playerId, accountId, req, json);
   if (path === "/api/player/mind/save" && req.method === "POST") {
+    const from = ((await readJson(req).catch(() => null)) as { worldId?: unknown } | null)?.worldId;
+    if (typeof from === "string" && rooms.isAdultWorld(from.toLowerCase())) {
+      return json(403, { error: "adult_world", message: "Minds from 18+ worlds can’t go to the Library yet." });
+    }
     return saveMind(rooms, session.playerId, accountId, (await readJson(req).catch(() => null)) as Record<string, unknown> | null, json);
   }
   if (path === "/api/player/mind/adopt" && req.method === "POST") {
@@ -977,7 +1288,7 @@ const server = createServer((req, res) => {
   }
   if (handleManaPublic(req, res)) return;
   // How a world was made: its planner conversations, public (the story stone, making-of.ts)
-  if (handleMakingOf(req, res, corsHeaders(req))) return;
+  if (handleMakingOf(req, res, corsHeaders(req), (id) => rooms.isAdultWorld(id))) return;
   // The Library's Minds shelf and a saved mind's history: public, like made models (minds.ts)
   if (handleMindLibrary(req, res, corsHeaders(req), rooms)) return;
   if (handleAssets(req, res)) return;
@@ -1000,7 +1311,7 @@ const server = createServer((req, res) => {
     if (!Number.isFinite(from) || !Number.isFinite(to)) return send(400, { error: "bad_range" });
     return send(200, { player, from, to, points: rooms.telemetry.path(player, from, to) });
   }
-  if (req.url?.startsWith("/api/player/")) {
+  if (req.url?.startsWith("/api/player/") || req.url?.startsWith("/api/match/")) {
     const origin = req.headers.origin;
     if (isTrustedOrigin(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);

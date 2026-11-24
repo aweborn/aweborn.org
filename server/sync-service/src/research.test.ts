@@ -38,7 +38,7 @@ test("forgetPlayer deletes their planner history and the link, and nobody else's
   const ev = db.prepare("INSERT INTO plan_events (session_id, kind, payload, at) VALUES (?, 'user', '{}', 0)");
   ev.run("s1"); ev.run("s1"); ev.run("s2");
 
-  assert.deepEqual(forgetPlayer("player-a", db), { sessions: 1, events: 2, researchId: a });
+  assert.deepEqual(forgetPlayer("player-a", db), { sessions: 1, events: 2, researchId: a, matches: 0 });
   assert.equal(playerForResearchId(a, db), null);
   assert.equal((db.prepare("SELECT COUNT(*) n FROM plan_events").get() as { n: number }).n, 1);
   assert.equal((db.prepare("SELECT COUNT(*) n FROM plan_sessions").get() as { n: number }).n, 1);
@@ -50,4 +50,22 @@ test("forgetPlayer works before any planning tables exist", () => {
   const db = new Database(":memory:");
   researchIdFor("player-a", db);
   assert.deepEqual(forgetPlayer("player-a", db).sessions, 0);
+});
+
+test("forgetPlayer also turns the player into a stand-in in every replay", async () => {
+  const { MatchStore } = await import("./match-store.js");
+  const { newGame } = await import("../../../shared/game.js");
+  const db = new Database(":memory:");
+  const store = new MatchStore(db as never);
+  store.begin({
+    matchId: "m1", worldId: "w", game: newGame("race"), seed: 1, simVersion: 1,
+    slots: [{ slot: 0, team: 1, kind: "human", id: "player-a", name: "Ann" }, { slot: 1, team: 2, kind: "human", id: "player-b", name: "Ben" }],
+    formed: { policy: "random-balanced", seed: 1, links: [], together: [] },
+  }, 1000, { "player-a": researchIdFor("player-a", db) });
+  store.finish("m1", [], null, 2000);
+  assert.equal(store.playerRecent(["player-a"]).length, 1);
+  assert.equal(forgetPlayer("player-a", db).matches, 1);
+  assert.deepEqual(store.playerRecent(["player-a"]), []);
+  assert.deepEqual(store.record("m1")!.setup.slots.map((s) => [s.id, s.name]), [["stand-in:0", "Player"], ["player-b", "Ben"]]);
+  assert.equal(store.playerRecent(["player-b"]).length, 1);
 });

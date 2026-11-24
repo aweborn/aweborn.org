@@ -1,6 +1,6 @@
 /**
- * Which "make" sheet is open: Library, Create, Plan (inside worlds) or
- * Plant a world (space). One at a time: on a phone they share the same
+ * Which "make" sheet is open: Library, Create, Plan, Game (inside worlds; Game is
+ * for the world's creator and builders) or Plant a world (space). One at a time: on a phone they share the same
  * sheet slot, and on desktop Library and Plan sat in the same spot anyway.
  *
  * The touch dock (TouchDock) opens them; each panel reads its own flag
@@ -10,7 +10,7 @@
 import { useCallback } from 'react'
 import { create } from 'zustand'
 
-export type SheetName = 'library' | 'create' | 'plan' | 'plant' | 'more' | 'mana'
+export type SheetName = 'library' | 'create' | 'plan' | 'plant' | 'game' | 'more' | 'mana'
 type Next = boolean | ((open: boolean) => boolean)
 
 interface SheetState {

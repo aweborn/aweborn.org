@@ -20,9 +20,12 @@ import {
   adjacentSectorKeys,
   ORIGIN_WORLD_ID,
   worldSoundFields,
+  worldTierField,
+  isAdultWorld,
 } from "@aweborn/shared/crdt-schema";
 import { useWorldStore } from "./worldStore";
 import { coCreatorsField } from "@aweborn/shared/world-policy";
+import { doorOpen, getDoorSnapshot, subscribeDoor } from "../lib/door";
 import { interiorController } from "../systems/InteriorController";
 import {
   loadUniverseDoc,
@@ -30,6 +33,7 @@ import {
   loadWorldDoc,
   saveWorldDoc,
   queueOfflineWorldUpdate,
+  uncachedWorlds,
   flushOfflineCache,
 } from "../lib/offlineCache";
 
@@ -141,7 +145,25 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     ...(allowPortals !== undefined ? { allowPortals } : {}),
     ...coCreatorsField(m.get("coCreators")),
     ...worldSoundFields(m.get("music"), m.get("ambientSound")),
+    ...worldTierField(m.get("tier")),
   };
+}
+
+/** What a veiled 18+ world looks like from outside the 18+ door: no colour of its own (its name is already withheld). */
+export const VEIL_COLOR = "#8d88a6";
+
+/**
+ * 18+ worlds as this player may see them (Phase 07, decision 8). The shared universe
+ * holds no real name for one. Behind the door the name comes from the server; outside
+ * it the world is veiled: the stand-in name and the veil colour, so every view that
+ * draws a world (orbs, radar, portals, lists) is veiled without knowing about tiers.
+ */
+function throughTheDoor(w: WorldEntry): WorldEntry {
+  if (!isAdultWorld(w)) return w;
+  const door = getDoorSnapshot();
+  if (!door.show) return { ...w, color: VEIL_COLOR };
+  const name = door.names[w.id];
+  return name ? { ...w, name } : w;
 }
 
 /**
@@ -157,7 +179,9 @@ function refreshWorlds(doc: Y.Doc): Map<string, WorldEntry> {
   worldsMap.forEach((value, key) => {
     if (key === ORIGIN_WORLD_ID) return;
     const worldMap = value as Y.Map<unknown>;
-    worlds.set(key, ymapToWorldEntry(worldMap));
+    const entry = ymapToWorldEntry(worldMap);
+    if (isAdultWorld(entry)) uncachedWorlds.add(key); // never kept on the device
+    worlds.set(key, throughTheDoor(entry));
   });
   return worlds;
 }
@@ -320,6 +344,13 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
     },
 
     enterWorld: (worldId) => {
+      // 18+ worlds: only behind the 18+ door. The server refuses too (rooms.ts → mayEnter); this is the friendly half.
+      if (isAdultWorld(get().worlds.get(worldId)) && !doorOpen()) {
+        void import("../systems/TeleportSystem").then((m) =>
+          m.showNotice({ kind: "error", title: "18+ world", detail: "Sign in and turn on 18+ content to enter." }),
+        );
+        return;
+      }
       const prevDoc = get().activeWorldDoc;
       flushOfflineCache(); // write the previous world's last edits before its doc goes
       prevDoc?.destroy();
@@ -386,6 +417,24 @@ export const useUniverseStore = create<UniverseState>((set, get) => {
     setWorldDocUpdateHandler: (handler) => set({ _worldDocUpdateHandler: handler }),
   };
 });
+
+// The 18+ door moved (switch flipped, another player signed in, names arrived): redraw the worlds
+// through it, and step out of an 18+ world the moment the door shuts.
+subscribeDoor(() => {
+  const s = useUniverseStore.getState();
+  if (s.universeDoc) useUniverseStore.setState({ worlds: refreshWorlds(s.universeDoc) });
+  const here = s.activeWorldId ? useUniverseStore.getState().worlds.get(s.activeWorldId) : undefined;
+  if (here && isAdultWorld(here) && !doorOpen()) leaveToEveryone();
+});
+
+/** Out of an 18+ world to the nearest place that is for everyone: up through its parents, else space. */
+export function leaveToEveryone(): void {
+  const s = useUniverseStore.getState();
+  let id = s.activeWorldId ? s.worlds.get(s.activeWorldId)?.parentWorldId : undefined;
+  while (id && isAdultWorld(s.worlds.get(id))) id = s.worlds.get(id)?.parentWorldId;
+  s.exitWorld(true);
+  if (id) useUniverseStore.getState().enterWorld(id);
+}
 
 // Dev only (tree-shaken from prod): lets local verify scripts reach the live world doc
 if (import.meta.env.DEV) {

@@ -19,6 +19,7 @@ import {
   sectorKey,
   ORIGIN_WORLD_ENTRY,
   worldSoundFields,
+  worldTierField,
 } from "../../../shared/crdt-schema.js";
 import { loadDoc, saveDoc } from "./persistence.js";
 
@@ -213,5 +214,6 @@ function ymapToWorldEntry(m: Y.Map<unknown>): WorldEntry {
     ...(allowPortals !== undefined ? { allowPortals } : {}),
     ...coCreatorsField(m.get("coCreators")),
     ...worldSoundFields(m.get("music"), m.get("ambientSound")),
+    ...worldTierField(m.get("tier")),
   };
 }

@@ -15,7 +15,11 @@ import type { WebSocket } from "ws";
 import { recordDiscovery } from "./identity.js";
 import { onFirstDiscovery } from "./awe.js";
 import type { WorldEntry, Vec3 } from "../../../shared/crdt-schema.js";
+import { DEFAULT_PHYSICS } from "../../../shared/crdt-schema.js";
 import {
+  ADULT_WORLD_NAME,
+  isAdultWorld,
+  worldTierField,
   positionToSector,
   sectorKey,
   ORIGIN_WORLD_ID,
@@ -41,9 +45,13 @@ import { createWorldDoc } from "./world-factory.js";
 import { resolveNewWorld } from "./resolver.js";
 import { prepareChat, cleanChatText, ChatLimiter, CHAT_HISTORY, CHAT_MAX_BYTES } from "../../../shared/chat.js";
 import { touchesChat } from "./chat-guard.js";
+import { scrubUniverseDoc, scrubWorldDoc } from "./erase-player.js";
+import { FORMER_PLAYER_ID } from "../../../shared/names.js";
 import { WorldAuthority, CreateLimiter } from "./world-authority.js";
+import { TERRAIN_LOCK_NOTICE } from "../../../shared/arena.js";
+import type { Bounds } from "../../../shared/game.js";
 import { listCharacters } from "./identity.js";
-import { isWorldOwnerId, canEditObject, coCreatorsField, type WorldActor } from "../../../shared/world-policy.js";
+import { isWorldOwnerId, canEditObject, coCreatorsField, sameValue, type WorldActor } from "../../../shared/world-policy.js";
 import { SimHost } from "./sim-host.js";
 import { sqliteSimStore } from "./sim-store.js";
 import { FlightTelemetry } from "./telemetry.js";
@@ -76,6 +84,8 @@ interface PresenceEntry {
   z: number;
   /** "" = flying in space; otherwise the world id (interior coordinates). */
   group: string;
+  /** Where the client says it is (`inWorld`, "" = space). `group` differs only for a player in a match instance. */
+  place: string;
   /** Last update time. */
   at: number;
 }
@@ -112,6 +122,10 @@ export class RoomManager {
 
   /** Authenticated playerId (active character) per socket (from the session cookie at upgrade). */
   private playerIds = new WeakMap<WebSocket, string>();
+  /** Phase 10: every open socket of a player, so the match host can find them by id in O(1). */
+  private playerSockets = new Map<string, Set<WebSocket>>();
+  /** Phase 10: players in a match instance and its presence group `<worldId>#<matchId>` (see setPresenceGroup). */
+  private presenceGroups = new Map<string, string>();
   /** Heartbeat (M7c): when each socket's last ping was answered. */
   private lastPing = new WeakMap<WebSocket, number>();
   /** Account behind a socket, for the World Index. */
@@ -192,6 +206,9 @@ export class RoomManager {
   /** Record the authenticated player behind a socket. */
   setPlayer(ws: WebSocket, playerId: string, accountId?: string): void {
     this.playerIds.set(ws, playerId);
+    let socks = this.playerSockets.get(playerId);
+    if (!socks) this.playerSockets.set(playerId, (socks = new Set()));
+    socks.add(ws);
     this.admission.markActive(playerId);
     if (accountId) this.accountIds.set(ws, accountId);
   }
@@ -278,6 +295,38 @@ export class RoomManager {
 
   // ── World Rooms ──────────────────────────────────────────────────
 
+  /** Is this account behind the 18+ door (age-door.ts)? Set by index.ts. Until then, nobody is. */
+  doorOpen: (accountId: string | null | undefined) => boolean = () => false;
+
+  /** Is this an 18+ world? (Unknown worlds are not.) */
+  isAdultWorld(worldId: string): boolean {
+    return isAdultWorld(this.getWorldEntry(worldId));
+  }
+
+  /**
+   * May this socket be in this world at all? An 18+ world is only for players behind the
+   * 18+ door: no doc, no presence, no chat, no matches, no edits without it. Asked on
+   * every way in, so turning the switch off shuts the world at once.
+   */
+  private mayEnter(ws: WebSocket, worldId: string): boolean {
+    return !this.isAdultWorld(worldId) || this.doorOpen(this.accountIds.get(ws));
+  }
+
+  /** An account turned *Show 18+* off: its sockets leave every 18+ world they are in. Returns how many left. */
+  closeDoorFor(accountId: string): number {
+    let left = 0;
+    for (const [worldId, room] of this.worldRooms) {
+      if (!this.isAdultWorld(worldId)) continue;
+      for (const ws of [...room.clients]) {
+        if (this.accountIds.get(ws) !== accountId) continue;
+        if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("world-closed", new Uint8Array(0), worldId));
+        this.leaveWorld(ws, worldId);
+        left++;
+      }
+    }
+    return left;
+  }
+
   /**
    * Client enters a world. Lazy-loads the world doc from SQLite if
    * it's not already in memory.
@@ -285,6 +334,11 @@ export class RoomManager {
   joinWorld(ws: WebSocket, worldId: string): Y.Doc | null {
     // Origin is the portal: a real world entry, but it has no interior.
     if (worldId === ORIGIN_WORLD_ID) return null;
+    // 18+ worlds: only behind the 18+ door. Refused before anything is loaded or sent.
+    if (!this.mayEnter(ws, worldId)) {
+      if (ws.readyState === ws.OPEN) ws.send(this.encodeMessage("world-closed", new Uint8Array(0), worldId));
+      return null;
+    }
 
     let room = this.worldRooms.get(worldId);
 
@@ -309,6 +363,9 @@ export class RoomManager {
         newDoc.destroy();
         console.log(`[rooms] created new world doc for "${worldId}"`);
       }
+
+      // The world's game (Phase 10): the server's table is the source; the doc carries a copy
+      this.syncWorldGame(worldId, doc);
 
       room = {
         doc,
@@ -356,7 +413,7 @@ export class RoomManager {
             this.progress.firstVisit(characterId, worldId, others.size);
             // A reaction: someone else's awe at what you made.
             const creator = entry?.creator;
-            if (creator && creator !== "system" && !listCharacters(accountId).some((c) => c.id === creator)) {
+            if (creator && creator !== "system" && creator !== FORMER_PLAYER_ID && !listCharacters(accountId).some((c) => c.id === creator)) {
               this.progress.reaction(creator, worldId, accountId);
             }
           }
@@ -386,10 +443,20 @@ export class RoomManager {
     const room = this.worldRooms.get(worldId);
     if (!room) return;
 
-    room.clients.delete(ws);
+    const had = room.clients.delete(ws);
 
     // Update player count
     updatePlayerCount(this.universeDoc, worldId, room.clients.size);
+
+    // Phase 10: the match host hears when a player's last screen leaves a world (lobby pool, links, watching)
+    const leaver = had ? this.playerIds.get(ws) : undefined;
+    if (leaver && this.onLeftWorld && !this.playerOnline(worldId, leaver)) {
+      try {
+        this.onLeftWorld(worldId, leaver);
+      } catch (err) {
+        console.error("[rooms] onLeftWorld failed:", err);
+      }
+    }
 
     if (room.clients.size === 0) {
       // Last player left — flush and unload
@@ -413,14 +480,18 @@ export class RoomManager {
     intendedPosition: Vec3,
     color: string,
     parentWorldId?: string,
+    opts: { adult?: boolean } = {},
   ): WorldEntry {
+    // 18+ flows down: a world planted inside an 18+ world is 18+ (Phase 07, nested worlds). Fixed here, for good.
+    const adult = Boolean(opts.adult) || (parentWorldId ? this.isAdultWorld(parentWorldId) : false);
     const id = generateWorldId();
     const now = Date.now();
     const sector = sectorKey(positionToSector(intendedPosition));
 
     const entry: WorldEntry = {
       id,
-      name,
+      // An 18+ world's real name never goes into the shared universe; the caller keeps it (adult-worlds.ts)
+      name: adult ? ADULT_WORLD_NAME : name,
       creator,
       intendedPosition,
       resolvedPosition: { ...intendedPosition },
@@ -433,6 +504,7 @@ export class RoomManager {
       lastActive: now,
       createdAt: now,
       ...(parentWorldId ? { parentWorldId } : {}),
+      ...(adult ? { tier: "adult" as const } : {}),
     };
 
     const existingWorlds = getAllWorldEntries(this.universeDoc);
@@ -494,8 +566,8 @@ export class RoomManager {
     // Add to Universe CRDT
     addWorldToUniverse(this.universeDoc, entry);
 
-    // Create and persist the world doc
-    const worldDoc = createWorldDoc(entry);
+    // Create and persist the world doc (it carries the real name: only players behind the door ever get it)
+    const worldDoc = createWorldDoc({ ...entry, name });
     const state = Y.encodeStateAsUpdate(worldDoc);
     saveDoc(id, state, "world", entry.sector);
     worldDoc.destroy();
@@ -542,6 +614,7 @@ export class RoomManager {
         case "world-update": {
           // Client sent a CRDT update for a specific world
           if (!message.worldId || message.worldId === ORIGIN_WORLD_ID) break;
+          if (!this.mayEnter(ws, message.worldId)) break; // 18+ worlds: no edits from outside the door, online or replayed
           const room = this.worldRooms.get(message.worldId);
           if (room) {
             if (touchesChat(room.doc, message.data)) {
@@ -629,6 +702,18 @@ export class RoomManager {
           if (pid) this.sendSteer(this.steering.active(ws, pid));
           break;
         }
+        case "match": {
+          // Phase 10: lobby and match intents, handled by the match host (matches.ts)
+          const playerId = this.playerIds.get(ws);
+          if (!message.worldId || !playerId || message.data.length > 2048 || !this.onMatchIntent) break;
+          if (!this.mayEnter(ws, message.worldId)) break;
+          try {
+            this.onMatchIntent(ws, message.worldId, playerId, JSON.parse(new TextDecoder().decode(message.data)));
+          } catch {
+            // not JSON: ignored
+          }
+          break;
+        }
         case "mesh-signal": {
           this.relayMeshSignal(ws, message.data);
           break;
@@ -655,6 +740,103 @@ export class RoomManager {
         this.leaveWorld(ws, worldId);
       }
     }
+    const pid = this.playerIds.get(ws);
+    const socks = pid ? this.playerSockets.get(pid) : undefined;
+    if (pid && socks) {
+      socks.delete(ws);
+      if (socks.size === 0) this.playerSockets.delete(pid);
+    }
+  }
+
+  // ── Deleting a player (erase-player.ts) ──────────────────────────
+
+  /** Players deleted since this process started: a page still open somewhere can't keep showing them to others. Memory only. */
+  private erasedPlayers = new Set<string>();
+
+  /**
+   * Close every connection these players have, at once. `beforeLeave` is called first for
+   * each world a player is in, while they still count as online there (the match host's
+   * leave path needs that). Returns how many sockets were closed.
+   */
+  dropPlayers(playerIds: ReadonlySet<string>, beforeLeave?: (worldId: string, playerId: string) => void): number {
+    let closed = 0;
+    for (const id of playerIds) {
+      this.erasedPlayers.add(id);
+      const socks = [...(this.playerSockets.get(id) ?? [])];
+      if (beforeLeave) {
+        for (const [worldId, room] of this.worldRooms) {
+          if (!socks.some((ws) => room.clients.has(ws))) continue;
+          try {
+            beforeLeave(worldId, id);
+          } catch (err) {
+            console.error("[rooms] leaving a world before a delete failed:", err);
+          }
+        }
+      }
+      for (const ws of socks) {
+        this.handleDisconnect(ws); // now, not when the close arrives: nothing more is accepted from it
+        this.presence.delete(ws);
+        this.playerIds.delete(ws);
+        this.accountIds.delete(ws);
+        try {
+          ws.close(4401, "Player deleted");
+        } catch { /* already closing */ }
+        closed++;
+      }
+      this.playerSockets.delete(id);
+      this.presenceGroups.delete(id);
+    }
+    return closed;
+  }
+
+  /**
+   * Take deleted players out of the shared documents and this process's memory: the
+   * universe (creator, builders), every world document that names them (found by their
+   * id in the stored bytes, plus every loaded room), space chat, flight state. What
+   * happens to each field is `scrubUniverseDoc` / `scrubWorldDoc` in erase-player.ts.
+   * Safe to run again. Returns counts for the audit line (no ids).
+   */
+  forgetPlayers(playerIds: ReadonlySet<string>): Record<string, number> {
+    const counts: Record<string, number> = {};
+    const add = (k: string, n: number) => { if (n > 0) counts[k] = (counts[k] ?? 0) + n; };
+    if (playerIds.size === 0) return counts;
+
+    let touched: string[] = [];
+    this.universeDoc.transact(() => { touched = scrubUniverseDoc(this.universeDoc, playerIds); }, "server");
+    add("universe.worlds", touched.length);
+
+    // Write what is in memory first, so the search below sees every world as it is now
+    this.flushAll();
+    const worldIds = new Set<string>([...touched, ...this.worldRooms.keys()]);
+    const find = getDb().prepare("SELECT id FROM documents WHERE doc_type = 'world' AND instr(state_vector, CAST(? AS BLOB)) > 0");
+    for (const id of playerIds) for (const r of find.all(id) as { id: string }[]) worldIds.add(r.id);
+    for (const worldId of worldIds) {
+      if (worldId === ORIGIN_WORLD_ID) continue;
+      const r = this.withWorldDoc(worldId, (doc) => scrubWorldDoc(doc, playerIds));
+      if (!r) continue;
+      add("world.meta", r.meta);
+      add("world.objects", r.objects);
+      add("world.chat", r.chat);
+    }
+
+    // Space chat (memory): the lines stay, from "a former player"
+    let space = 0;
+    this.spaceChat = this.spaceChat.map((l) => (playerIds.has(l.sender) ? (space++, { ...l, sender: FORMER_PLAYER_ID }) : l));
+    add("space.chat", space);
+    for (const id of playerIds) {
+      this.sim.forget(id);
+      this.telemetry.forget(id);
+      this.admission.forget(id);
+    }
+    this.flushAll();
+    // Checked, not assumed: is the id still in any stored document?
+    let left = 0;
+    for (const id of playerIds) left += (getDb().prepare("SELECT COUNT(*) AS n FROM documents WHERE instr(state_vector, CAST(? AS BLOB)) > 0").get(id) as { n: number }).n;
+    if (left > 0) {
+      counts["documents.still_naming_them"] = left;
+      console.error(`[erase] ${left} stored document(s) still hold a deleted player's id`);
+    }
+    return counts;
   }
 
   // ── Flush / Shutdown ─────────────────────────────────────────────
@@ -762,6 +944,139 @@ export class RoomManager {
     return this.setWorldPolicyKey(worldId, "coCreators", coCreators);
   }
 
+  /** Phase 10: a client's lobby / match intent (set by the match host). */
+  onMatchIntent: ((ws: WebSocket, worldId: string, playerId: string, intent: unknown) => void) | null = null;
+
+  /** Phase 10: send one lobby / match message to a client. */
+  sendMatch(ws: WebSocket, worldId: string, msg: unknown): void {
+    if (ws.readyState === 1) ws.send(this.encodeMessage("match", new TextEncoder().encode(JSON.stringify(msg)), worldId));
+  }
+
+  /** Phase 10: a player's last connection in a world closed or left it (set by the match host). */
+  onLeftWorld: ((worldId: string, playerId: string) => void) | null = null;
+  /** Phase 10: the ground locked by the matches running in a world right now (index.ts wires the match host). */
+  terrainLocks: ((worldId: string) => Bounds[]) | null = null;
+
+  /** Phase 10: a world's gravity (the match host's position check needs to know how fast a fall can be), or null without a live room. */
+  worldGravity(worldId: string): { x: number; y: number; z: number } | null {
+    const room = this.worldRooms.get(worldId);
+    if (!room) return null;
+    const p = room.doc.getMap("physics");
+    const n = (k: string, d: number): number => (typeof p.get(k) === "number" && Number.isFinite(p.get(k) as number) ? (p.get(k) as number) : d);
+    return { x: n("gravityX", DEFAULT_PHYSICS.gravityX), y: n("gravityY", DEFAULT_PHYSICS.gravityY), z: n("gravityZ", DEFAULT_PHYSICS.gravityZ) };
+  }
+
+  /** The presence group for a player who says they are in `place`: their match instance while they stand in its world. */
+  private groupFor(playerId: string | undefined, place: string): string {
+    const override = playerId ? this.presenceGroups.get(playerId) : undefined;
+    return override && place && override.startsWith(place + "#") ? override : place;
+  }
+
+  /**
+   * Phase 10: put a player in a match instance (`<worldId>#<matchId>`), or back in the
+   * world (null). An instance is a partition of presence: its players see each other and
+   * nobody else, at the arena's real coordinates. Applies at once to what they last sent.
+   */
+  setPresenceGroup(playerId: string, group: string | null): void {
+    if (group === null) this.presenceGroups.delete(playerId);
+    else this.presenceGroups.set(playerId, group);
+    for (const ws of this.playerSockets.get(playerId) ?? []) {
+      const e = this.presence.get(ws);
+      if (e) e.group = this.groupFor(playerId, e.place);
+    }
+  }
+
+  /** Phase 10: does this player have an open connection in the world's room? */
+  playerOnline(worldId: string, playerId: string): boolean {
+    const room = this.worldRooms.get(worldId);
+    if (!room) return false;
+    for (const ws of this.playerSockets.get(playerId) ?? []) if (ws.readyState === 1 && room.clients.has(ws)) return true;
+    return false;
+  }
+
+  /** Phase 10: where a player stands in a world (their latest presence there, in a match instance or not), or null. */
+  playerPosition(worldId: string, playerId: string): { x: number; y: number; z: number } | null {
+    let best: PresenceEntry | null = null;
+    for (const ws of this.playerSockets.get(playerId) ?? []) {
+      const e = this.presence.get(ws);
+      if (e && e.place === worldId && (!best || e.at > best.at)) best = e;
+    }
+    return best ? { x: best.x, y: best.y, z: best.z } : null;
+  }
+
+  /** Phase 10: send one lobby / match message to every screen a player has in a world. */
+  sendMatchTo(playerId: string, worldId: string, msg: unknown): void {
+    const room = this.worldRooms.get(worldId);
+    const socks = this.playerSockets.get(playerId);
+    if (!room || !socks) return;
+    let data: Uint8Array | null = null;
+    for (const ws of socks) {
+      if (ws.readyState !== 1 || !room.clients.has(ws)) continue;
+      data ??= this.encodeMessage("match", new TextEncoder().encode(JSON.stringify(msg)), worldId);
+      ws.send(data);
+    }
+  }
+
+  /** Phase 10 (game Library): place plain objects in a world as the server. Each needs an `id`; existing ids are left alone. */
+  placeWorldObjects(worldId: string, objects: Record<string, unknown>[]): number {
+    if (worldId === ORIGIN_WORLD_ID || objects.length === 0) return 0;
+    return this.withWorldDoc(worldId, (doc) => {
+      const map = doc.getMap("objects");
+      let n = 0;
+      for (const o of objects) {
+        if (typeof o.id !== "string" || map.has(o.id)) continue;
+        const m = new Y.Map<unknown>();
+        for (const [k, v] of Object.entries(o)) m.set(k, v);
+        map.set(o.id, m);
+        n++;
+      }
+      return n;
+    }) ?? 0;
+  }
+
+  /** Phase 10 (game Library): remove the objects an earlier bring placed (marked `gameProp`). Returns how many. */
+  clearGameProps(worldId: string): number {
+    if (worldId === ORIGIN_WORLD_ID) return 0;
+    return this.withWorldDoc(worldId, (doc) => {
+      const map = doc.getMap("objects");
+      const gone: string[] = [];
+      map.forEach((v, id) => {
+        if (v instanceof Y.Map && typeof v.get("gameProp") === "string") gone.push(id);
+      });
+      for (const id of gone) map.delete(id);
+      return gone.length;
+    }) ?? 0;
+  }
+
+  /**
+   * Phase 10: reads a world's current game from the server's table (set by index.ts;
+   * null = no game). The world doc's `meta.game` is a server-written copy of it.
+   */
+  worldGame: ((worldId: string) => unknown) | null = null;
+
+  /** Make a world doc's `meta.game` match the stored game (on room load: the world may have had no doc when it was saved). */
+  private syncWorldGame(worldId: string, doc: Y.Doc): void {
+    if (!this.worldGame || worldId === ORIGIN_WORLD_ID) return;
+    const want = this.worldGame(worldId) ?? null;
+    const meta = doc.getMap("meta");
+    const have = meta.get("game");
+    if (want === null ? have === undefined : sameValue(have, want)) return;
+    doc.transact(() => {
+      if (want === null) meta.delete("game");
+      else meta.set("game", want);
+    }, "server");
+  }
+
+  /** Server-only: write (or clear) the copy of a world's game in its doc. A world with no doc yet gets it when its room loads. */
+  setWorldGame(worldId: string, game: unknown | null): void {
+    if (worldId === ORIGIN_WORLD_ID) return;
+    this.withWorldDoc(worldId, (doc) => {
+      const meta = doc.getMap("meta");
+      if (game === null) meta.delete("game");
+      else meta.set("game", game);
+    });
+  }
+
   /** Server-only write of a policy key to the universe entry and the world's meta. */
   /**
    * Hand one of Aweborn's own worlds (creator `system`, never Origin) to a player
@@ -817,6 +1132,7 @@ export class RoomManager {
     const worldMap = this.universeDoc.getMap("worlds").get(worldId) as Y.Map<unknown> | undefined;
     if (!worldMap) return;
     const meta = doc.getMap("meta");
+    if (worldMap.get("tier") === "adult") return; // an 18+ world's music stays inside it: from space it plays its seeded music
     if (!worldSoundDiffers(worldMap, meta)) return;
     this.universeDoc.transact(() => copyWorldSound(worldMap, meta), "server");
   }
@@ -1011,10 +1327,12 @@ export class RoomManager {
   /** Apply a client's world update through the authority (reverting what they may not change). */
   private applyWorldUpdate(authority: WorldAuthority, update: Uint8Array, ws: WebSocket, worldId: string): void {
     const actor = this.actorFor(ws, worldId);
-    const { reverted, details } = authority.apply(update, ws, actor, () => this.createLimiter.take(ws));
+    const { reverted, details, locked } = authority.apply(update, ws, actor, () => this.createLimiter.take(ws), this.terrainLocks?.(worldId) ?? []);
     if (reverted) {
       console.warn(`[rooms] reverted ${reverted} change(s) in ${worldId} by ${actor.id ?? "guest"}: ${details.slice(0, 6).join(", ")}`);
     }
+    // The ground under a running match is locked (shared/arena.ts): tell whoever tried, owners included
+    if (locked && actor.id) this.sendMatchTo(actor.id, worldId, { t: "error", message: TERRAIN_LOCK_NOTICE });
   }
 
   private getWorldEntry(worldId: string): WorldEntry | null {
@@ -1049,6 +1367,7 @@ export class RoomManager {
       ...(parentWorldId ? { parentWorldId } : {}),
       ...(allowPortals !== undefined ? { allowPortals } : {}),
       ...coCreatorsField(worldMap.get("coCreators")),
+      ...worldTierField(worldMap.get("tier")),
     };
   }
 
@@ -1127,7 +1446,7 @@ export class RoomManager {
     // Another screen of this player steers (M9): only the driver is seen by others
     if (this.steering.isFollower(sender, this.playerIds.get(sender))) return;
     let json: string;
-    let p: { position?: { x?: unknown; y?: unknown; z?: unknown }; inWorld?: unknown };
+    let p: { id?: unknown; position?: { x?: unknown; y?: unknown; z?: unknown }; inWorld?: unknown };
     try {
       json = new TextDecoder().decode(data);
       p = JSON.parse(json);
@@ -1135,12 +1454,17 @@ export class RoomManager {
       return;
     }
     if (!p || typeof p !== "object" || Array.isArray(p)) return;
+    // A deleted player is not shown again (the id in presence is still the client's word: one set lookup)
+    if (this.erasedPlayers.size > 0 && typeof p.id === "string" && this.erasedPlayers.has(p.id)) return;
     const x = Number(p.position?.x), y = Number(p.position?.y), z = Number(p.position?.z);
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-    const group = typeof p.inWorld === "string" ? p.inWorld : "";
-    this.presence.set(sender, { json, x, y, z, group, at: Date.now() });
+    // Presence follows the door too: nobody is "in" an 18+ world, or hears who is, from outside it
+    const place = typeof p.inWorld === "string" && this.mayEnter(sender, p.inWorld) ? p.inWorld : "";
+    // A player in a match is in its instance, whatever the client says (Phase 10): one map lookup
+    const group = this.groupFor(this.playerIds.get(sender), place);
+    this.presence.set(sender, { json, x, y, z, group, place, at: Date.now() });
     // Same world + same network → introduce for a direct mesh link (A2); O(1) when nothing changed
-    this.sendIntros(this.meshIntro.place(sender, this.ips.get(sender) ?? null, group || null));
+    this.sendIntros(this.meshIntro.place(sender, this.ips.get(sender) ?? null, place || null));
   }
 
   /**
@@ -1302,6 +1626,8 @@ export class RoomManager {
   //   0x10 = sim-resume       (client → server: back online; the offline flight log follows, 9C)
   //   0x11 = steer            (server → client: 1 byte, 1 = this screen steers, 0 = another screen of the player does;
   //                            client → server: empty, "Play here", M9)
+  //   0x14 = world-closed     (server → client, worldId in header: this 18+ world is shut to you; the 18+ switch is off)
+  //   0x13 = match            (JSON both ways, Phase 10: a world's lobby and matches; shared/match-protocol.ts)
   //   0x12 = mesh-signal      (JSON both ways, Network-less A2: server → client { t: "intro", peer } and
   //                            { t: "sdp", from, kind, sdp }; client → server { t: "sdp", to, kind, sdp })
 
@@ -1324,6 +1650,8 @@ export class RoomManager {
     "sim-resume": 0x10,
     "steer": 0x11,
     "mesh-signal": 0x12,
+    "match": 0x13,
+    "world-closed": 0x14,
   };
 
   private static readonly MSG_TYPE_NAMES: Record<number, string> = Object.fromEntries(
