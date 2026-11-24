@@ -42,6 +42,7 @@ import {
 import { canPromptNow, onMeaningfulMoment, recordPrompted, trackPlaytime } from '../lib/onramp'
 import { EmailSignIn } from './EmailSignIn'
 import { SetPassword } from './SetPassword'
+import { AdultDoor } from './AdultDoor'
 import { OPEN_ACCOUNT_EVENT } from './ManaSeal'
 import { NameField } from './NameField'
 import { useNameStore, displayName, requestNames } from '../stores/nameStore'
@@ -703,6 +704,7 @@ export function PlayerAccount() {
                   )}
                 </>
               )}
+              {!confirming && <AdultDoor disabled={busy !== null} />}
               <button
                 type="button"
                 id="player-signout"

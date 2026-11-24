@@ -14,6 +14,11 @@
  * stand-in in it (Q10b): the id becomes `stand-in:<slot>`, the name "Player", the
  * research id is cleared.
  *
+ * Research (Q10b): each human slot is stamped `research_ok` at the start of the match
+ * (was the player behind the 18+ door then? see age-door.ts). `researchCopy` is the only
+ * form a record leaves in for research: research ids instead of player ids, no character
+ * names, and anyone who isn't a research candidate as a stand-in.
+ *
  * A match that never finished because the server restarted is closed on boot with a
  * null result (its frames up to the last chunk are still there).
  *
@@ -65,19 +70,27 @@ export class MatchStore {
       );
       CREATE INDEX IF NOT EXISTS match_players_player ON match_players (player_id);
     `);
+    // Added with the 18+ door: was this player a research candidate when the match began? (rows from before: 0)
+    const cols = new Set((db.prepare("PRAGMA table_info(match_players)").all() as { name: string }[]).map((c) => c.name));
+    if (!cols.has("research_ok")) db.exec("ALTER TABLE match_players ADD COLUMN research_ok INTEGER NOT NULL DEFAULT 0");
     // The server stopped while these ran: close them (result null), keep what was recorded
     db.prepare("UPDATE matches SET ended_at = ?, events = COALESCE(events, '[]') WHERE ended_at IS NULL").run(now);
   }
 
-  /** A match starts: its setup is stored whole before the first tick. `researchIds` is by player id. */
-  begin(setup: MatchSetup, startedAt: number, researchIds: Readonly<Record<string, string | undefined>> = {}): void {
+  /**
+   * A match starts: its setup is stored whole before the first tick. `researchIds` is by
+   * player id; `candidates` are the player ids behind the 18+ door right now (Q10b).
+   */
+  begin(setup: MatchSetup, startedAt: number, researchIds: Readonly<Record<string, string | undefined>> = {}, candidates: ReadonlySet<string> = new Set()): void {
     this.db.prepare(`INSERT INTO matches (id, world_id, game_version, template, seed, sim_version, started_at, setup)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(setup.matchId, setup.worldId, setup.game.version, setup.game.template, setup.seed, setup.simVersion, startedAt, JSON.stringify(setup));
-    const add = this.db.prepare("INSERT INTO match_players (match_id, slot, player_id, research_id, team, kind, name) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    const add = this.db.prepare("INSERT INTO match_players (match_id, slot, player_id, research_id, team, kind, name, research_ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     for (const s of setup.slots) {
       const human = s.kind === "human";
-      add.run(setup.matchId, s.slot, human ? s.id : null, human ? researchIds[s.id] ?? null : null, s.team, s.kind, s.name);
+      const researchId = human ? researchIds[s.id] ?? null : null;
+      // A candidate without a research id can't be keyed in a research copy, so they aren't one
+      add.run(setup.matchId, s.slot, human ? s.id : null, researchId, s.team, s.kind, s.name, human && researchId && candidates.has(s.id) ? 1 : 0);
     }
   }
 
@@ -148,6 +161,43 @@ export class MatchStore {
   }
 
   /**
+   * The record as research may see it (Q10b), or null if there is no such match.
+   *   - A human who was behind the 18+ door when the match began, and still is
+   *     (`stillCandidate`, by player id), appears under their research id.
+   *   - Every other human is an anonymous stand-in (`stand-in:<slot>`): the match stays
+   *     usable, their trace is nobody's.
+   *   - No character names and no player ids, for anyone. NPC slots are unchanged.
+   * Frames, events and the result speak in slots, so they are the record's own.
+   */
+  researchCopy(matchId: string, stillCandidate: (playerId: string) => boolean): MatchRecord | null {
+    const record = this.record(matchId);
+    if (!record) return null;
+    const seats = this.db.prepare("SELECT slot, player_id, research_id, research_ok FROM match_players WHERE match_id = ?")
+      .all(matchId) as { slot: number; player_id: string | null; research_id: string | null; research_ok: number }[];
+    const bySlot = new Map(seats.map((s) => [s.slot, s]));
+    const alias = new Map<string, string>();
+    const slots = record.setup.slots.map((s) => {
+      if (s.kind !== "human") return s;
+      const seat = bySlot.get(s.slot);
+      const ok = Boolean(seat?.research_ok && seat.research_id && seat.player_id && stillCandidate(seat.player_id));
+      const id = ok ? seat!.research_id! : `stand-in:${s.slot}`;
+      alias.set(s.id, id);
+      return { ...s, id, name: "Player" };
+    });
+    // An id in `formed` that has no slot (someone linked who didn't end up playing) is dropped, never passed through
+    const swap = (id: string) => alias.get(id) ?? (id.startsWith("npc:") ? id : null);
+    const formed = {
+      ...record.setup.formed,
+      links: (record.setup.formed?.links ?? []).flatMap((l) => {
+        const a = swap(l.a), b = swap(l.b);
+        return a && b ? [{ ...l, a, b }] : [];
+      }),
+      together: (record.setup.formed?.together ?? []).map((g) => g.map(swap).filter((id): id is string => id !== null)).filter((g) => g.length > 1),
+    };
+    return { ...record, setup: { ...record.setup, slots, formed } };
+  }
+
+  /**
    * Erase a player from every record they are in. The replays stay (they are the other
    * players' records too); this player becomes an anonymous stand-in. Returns how many
    * matches were changed.
@@ -178,7 +228,7 @@ export function eraseFromMatches(db: SqlDb, playerId: string): number {
         };
         db.prepare("UPDATE matches SET setup = ? WHERE id = ?").run(JSON.stringify(setup), seat.match_id);
       }
-      db.prepare("UPDATE match_players SET player_id = NULL, research_id = NULL, name = 'Player' WHERE match_id = ? AND slot = ?").run(seat.match_id, seat.slot);
+      db.prepare("UPDATE match_players SET player_id = NULL, research_id = NULL, research_ok = 0, name = 'Player' WHERE match_id = ? AND slot = ?").run(seat.match_id, seat.slot);
     }
     return seats.length;
   }

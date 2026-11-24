@@ -42,7 +42,7 @@ export interface NpcDriver {
   stepNpc(setup: MatchSetup, state: MatchState, slot: number, mind: NpcMind): NpcMind;
 }
 export interface MatchRecorder {
-  begin(setup: MatchSetup, startedAt: number, researchIds?: Readonly<Record<string, string | undefined>>): void;
+  begin(setup: MatchSetup, startedAt: number, researchIds?: Readonly<Record<string, string | undefined>>, candidates?: ReadonlySet<string>): void;
   appendFrames(matchId: string, frames: readonly MatchFrame[]): void;
   finish(matchId: string, events: readonly MatchEvent[], result: MatchResult | null, endedAt: number): void;
   record(matchId: string): MatchRecord | null;
@@ -62,6 +62,8 @@ export interface MatchHostDeps {
   setGroup(playerId: string, group: string | null): void;
   name(playerId: string): string;
   researchId(playerId: string): string | undefined;
+  /** Is this player behind the 18+ door, and so a research candidate (Q10b)? Asked once, as the match starts. Absent = nobody is. */
+  researchCandidate?(playerId: string): boolean;
   /** Grant awe for a finished match (`ref` = the match id, so a retry can't pay twice). Returns what was granted after the daily cap. */
   awe(playerId: string, amount: number, ref: string): number;
   /** A fixed host line in the world's chat. */
@@ -668,7 +670,8 @@ export class MatchHost {
       const researchIds: Record<string, string | undefined> = {};
       for (const s of humans) researchIds[s.id] = this.deps.researchId(s.id);
       // No match runs unrecorded: if the record can't be opened, the match doesn't start
-      this.deps.store.begin(setup, now, researchIds);
+      const candidates = new Set(humans.filter((s) => this.deps.researchCandidate?.(s.id)).map((s) => s.id));
+      this.deps.store.begin(setup, now, researchIds, candidates);
     } catch (err) {
       console.error(`[match] ${matchId} could not start:`, err);
       for (const s of humans) this.deps.send(s.id, worldId, { t: "error", message: "The match couldn't start. Try again in a moment." });

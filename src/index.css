@@ -2787,9 +2787,111 @@ html.touch-ui .hud-top-right { top: calc(var(--space-lg) + 52px); }
 }
 .pa-notice span { flex: 1 1 14rem; }
 
+/* The 18+ door (AdultDoor.tsx): a switch, and the first time a date of birth. */
+.pa-door {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+.pa-door-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.pa-door-text { min-width: 0; }
+.pa-door-text p { margin: 0; }
+.pa-door-text .pa-characters-title { text-align: left; }
+.pa-switch {
+  position: relative;
+  flex: none;
+  width: 3.25rem;
+  height: 2.75rem; /* 44px tall target; the track is drawn inside it */
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pa-switch::before {
+  content: '';
+  position: absolute;
+  inset: 0.5rem 0;
+  border-radius: 999px;
+  background: rgba(5, 5, 16, 0.55);
+  border: 1px solid var(--glass-border);
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+.pa-switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+  transform: translateY(-50%);
+  transition: transform var(--duration-fast), background var(--duration-fast);
+}
+.pa-switch.is-on::before {
+  background: rgba(232, 185, 74, 0.25);
+  border-color: rgba(232, 185, 74, 0.6);
+}
+.pa-switch.is-on .pa-switch-knob {
+  background: var(--color-accent-secondary);
+  transform: translate(1.5rem, -50%);
+}
+.pa-switch:focus-visible { outline: none; }
+.pa-switch:focus-visible::before { box-shadow: 0 0 0 3px rgba(232, 185, 74, 0.35); }
+.pa-switch:disabled { opacity: 0.5; cursor: default; }
+.pa-door-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  animation: pa-rise 0.25s ease-out both;
+}
+.pa-door-notes {
+  margin: 0;
+  padding: 0 0 0 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-family: var(--font-body);
+  font-size: 0.875rem; /* 14px: this is the disclosure, it has to be readable */
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.pa-door-notes strong { font-weight: 600; color: var(--color-accent-secondary); }
+.pa-door-notes a { color: var(--color-accent-secondary); }
+.pa-door-date {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.pa-door-date legend { padding: 0; margin-bottom: 0.3rem; }
+.pa-door-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 0.5rem;
+}
+.pa-door-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.pa-door-field .pa-input { padding-left: 0.6rem; padding-right: 0.6rem; }
+.pa-door-field select.pa-input { appearance: auto; color-scheme: dark; }
+.pa-door-date .pa-hint { margin: 0; }
+
 @media (prefers-reduced-motion: reduce) {
   .pa-email-status,
-  .pa-confirm { animation: none; }
+  .pa-confirm,
+  .pa-door-form { animation: none; }
+  .pa-switch::before, .pa-switch-knob { transition: none; }
   .pa-tab { transition: none; }
 }
 

@@ -131,3 +131,56 @@ test("records are kept forever: the store has no way to delete one", () => {
   const names = Object.getOwnPropertyNames(Object.getPrototypeOf(store));
   assert.ok(!names.some((n) => /delete|remove|purge|drop/i.test(n)));
 });
+
+test("research copies: candidates under their research id, everyone else a stand-in, no names or player ids (Q10b)", () => {
+  const { db, store } = fresh();
+  // Ann is behind the 18+ door when the match begins; Ben is not
+  store.begin(setup("m1"), 1000, { ann: "r-ann", ben: "r-ben" }, new Set(["ann"]));
+  store.appendFrames("m1", frames(0, 5));
+  store.finish("m1", events, result, 2000);
+  const rows = db.prepare("SELECT slot, research_ok FROM match_players WHERE match_id = 'm1' ORDER BY slot").all() as { slot: number; research_ok: number }[];
+  assert.deepEqual(rows.map((r) => r.research_ok), [1, 0, 0]);
+
+  const copy = store.researchCopy("m1", () => true)!;
+  assert.deepEqual(copy.setup.slots[0], { slot: 0, team: 1, kind: "human", id: "r-ann", name: "Player" });
+  assert.deepEqual(copy.setup.slots[1], { slot: 1, team: 2, kind: "human", id: "stand-in:1", name: "Player" });
+  assert.deepEqual(copy.setup.slots[2], setup("m1").slots[2]); // the NPC is unchanged
+  assert.deepEqual(copy.setup.formed.links, [{ a: "r-ann", b: "stand-in:1", kind: "against" }]);
+  assert.deepEqual(copy.setup.formed.together, []); // "cy" never played: dropped, not passed through
+  assert.equal(copy.frames.length, 5);
+  assert.deepEqual(copy.events, events);
+  assert.deepEqual(copy.result, result);
+  const text = JSON.stringify(copy);
+  for (const leak of ['"ann"', '"ben"', "Ann", "Ben", "r-ben", '"cy"']) assert.ok(!text.includes(leak), leak);
+
+  // The stored record is untouched
+  assert.equal(store.record("m1")!.setup.slots[0].id, "ann");
+  // Ann has since turned 18+ off: she is a stand-in too
+  const later = store.researchCopy("m1", () => false)!;
+  assert.deepEqual(later.setup.slots.map((s) => s.id), ["stand-in:0", "stand-in:1", "npc:bolt:1"]);
+  assert.ok(!JSON.stringify(later).includes("r-ann"));
+  // Opening the door after a match doesn't reach back into it
+  assert.equal(store.researchCopy("m1", (id) => id === "ben")!.setup.slots[1].id, "stand-in:1");
+  assert.equal(store.researchCopy("nope", () => true), null);
+});
+
+test("research copies: no candidates by default, none without a research id, none after erasure", () => {
+  const { store } = fresh();
+  store.begin(setup("m1"), 1000, { ann: "r-ann" });
+  assert.deepEqual(store.researchCopy("m1", () => true)!.setup.slots.map((s) => s.id), ["stand-in:0", "stand-in:1", "npc:bolt:1"]);
+  // Ben is a candidate but has no research id: he can't be keyed, so he isn't one
+  store.begin(setup("m2"), 2000, { ann: "r-ann" }, new Set(["ann", "ben", "npc:bolt:1"]));
+  assert.deepEqual(store.researchCopy("m2", () => true)!.setup.slots.map((s) => s.id), ["r-ann", "stand-in:1", "npc:bolt:1"]);
+  store.erasePlayer("ann");
+  assert.deepEqual(store.researchCopy("m2", () => true)!.setup.slots.map((s) => s.id), ["stand-in:0", "stand-in:1", "npc:bolt:1"]);
+});
+
+test("a match_players table from before the 18+ door gains the column, with nobody a candidate", () => {
+  const db = new DatabaseSync(":memory:") as unknown as SqlDb;
+  db.exec(`CREATE TABLE match_players (match_id TEXT NOT NULL, slot INTEGER NOT NULL, player_id TEXT, research_id TEXT,
+    team INTEGER NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (match_id, slot));
+    INSERT INTO match_players VALUES ('old', 0, 'ann', 'r-ann', 1, 'human', 'Ann');`);
+  new MatchStore(db, () => "", 1);
+  new MatchStore(db, () => "", 1); // twice is fine
+  assert.deepEqual({ ...(db.prepare("SELECT research_ok FROM match_players WHERE match_id = 'old'").get() as object) }, { research_ok: 0 });
+});

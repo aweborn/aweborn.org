@@ -91,6 +91,8 @@ function rig(gameOver: Record<string, unknown> = {}, aweCap = Infinity, real = f
   const chats: string[] = [];
   const verified: MatchRecord[] = [];
   const owners = new Set(["owner"]);
+  /** Players behind the 18+ door (research candidates, Q10b). */
+  const adults = new Set<string>();
   const store = new MatchStore(new DatabaseSync(":memory:") as unknown as SqlDb);
   let granted = 0;
   const host = new MatchHost({
@@ -102,6 +104,7 @@ function rig(gameOver: Record<string, unknown> = {}, aweCap = Infinity, real = f
     setGroup: (id, g) => { groups.set(id, g); },
     name: (id) => id.toUpperCase(),
     researchId: (id) => `r-${id}`,
+    researchCandidate: (id) => adults.has(id),
     awe: (id, amount, ref) => {
       const give = Math.max(0, Math.min(amount, aweCap - granted));
       granted += give;
@@ -134,7 +137,7 @@ function rig(gameOver: Record<string, unknown> = {}, aweCap = Infinity, real = f
     run(100);
     return start.matchId;
   };
-  return { host, store, sent, pos, on, groups, awes, chats, verified, owners, of, last, run, say, enter, queue, play, setGame: (g: Game | null) => { game = g; }, now: () => t };
+  return { host, store, sent, pos, on, groups, awes, chats, verified, owners, adults, of, last, run, say, enter, queue, play, setGame: (g: Game | null) => { game = g; }, now: () => t };
 }
 
 test("queue → found → start: the roster locks after the ready check and the players are placed in an instance", () => {
@@ -751,4 +754,23 @@ test("real referee: a match nobody is in any more ends through the referee and v
   const rec = r.store.record(id)!;
   assert.equal(rec.result!.why, "host");
   assert.equal(verifyRecord(rec), true);
+});
+
+test("the 18+ door is read as the match starts: research copies carry only candidates' own traces (Q10b)", () => {
+  const r = rig();
+  r.adults.add("ann");
+  const matchId = r.play("ann", "ben");
+  // Ben opens the door mid-match: this match was already stamped
+  r.adults.add("ben");
+  const copy = r.store.researchCopy(matchId, (id) => r.adults.has(id))!;
+  const humans = copy.setup.slots.filter((s) => s.kind === "human");
+  assert.deepEqual(humans.map((s) => s.id).sort(), ["r-ann", `stand-in:${copy.setup.slots.find((s) => s.id.startsWith("stand-in:"))!.slot}`].sort());
+  assert.ok(humans.every((s) => s.name === "Player"));
+  // The replay itself still names both
+  assert.deepEqual(r.store.record(matchId)!.setup.slots.filter((s) => s.kind === "human").map((s) => s.id).sort(), ["ann", "ben"]);
+  // His next match counts
+  const second = rig();
+  second.adults.add("ann"); second.adults.add("ben");
+  const next = second.play("ann", "ben");
+  assert.deepEqual(second.store.researchCopy(next, () => true)!.setup.slots.filter((s) => s.kind === "human").map((s) => s.id).sort(), ["r-ann", "r-ben"]);
 });
